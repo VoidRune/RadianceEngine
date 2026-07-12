@@ -1,0 +1,311 @@
+#version 460
+#extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_shader_image_load_formatted : enable
+#include "common.glsl"
+
+layout(set = 0, binding = 0) uniform accelerationStructureEXT topLevelAS;
+layout(set = 0, binding = 1, rgba32f) uniform image2D accumulationImageIn;
+layout(set = 0, binding = 2, rgba32f) uniform image2D accumulationImageOut;
+layout(set = 0, binding = 3, rgba8) uniform image2D outputImage;
+layout(set = 0, binding = 4) uniform GlobalData 
+{
+	vec4 cameraPosition;
+	vec4 cameraForward;
+	vec4 cameraRight;
+	vec4 cameraUp;
+	float tanHalfFov;
+	float aspectRatio;
+	float aperture;
+	float focusDistance;
+	uint frameIndex;
+} globalData;
+
+layout(location = 0) rayPayloadEXT RayPayload payload;
+
+struct Medium
+{
+    vec3 sigma_s;
+    vec3 sigma_a;
+    float g;
+};
+
+struct Photon
+{
+    vec3 pos;
+    vec3 dir;
+    vec3 light;
+
+	bool inMedium;
+    Medium medium;
+};
+
+const float PI = 3.14159265358979323846;
+const float EPS = 1e-5;
+
+// Returns a portion of reflected light in range [0..1]
+// where 1 minus that is refracted portion
+float FresnelDielectric(float cosThetaI, float iorI, float iorT)
+{
+	float eta = iorI / iorT;
+	float sinT2 = eta * eta * (1.0 - cosThetaI * cosThetaI);
+
+	if (sinT2 > 1.0)
+	{
+		return 1.0;
+	}
+
+	float cosT = sqrt(1 - sinT2);
+	float rt = (iorI * cosThetaI - iorT * cosT) / (iorI * cosThetaI + iorT * cosT);
+	float rs = (iorT * cosThetaI - iorI * cosT) / (iorT * cosThetaI + iorI * cosT);
+	return (rs * rs + rt * rt) * 0.5;
+}
+
+// Fresnel approximation
+float FresnelSchlick(float cosThetaI, float iorI, float iorT)
+{
+	float eta = iorI / iorT;
+	float sinT2 = eta * eta * (1.0 - cosThetaI * cosThetaI);
+
+	if (sinT2 > 1.0)
+	{
+		return 1.0;
+	}
+
+	float r0 = (1.0 - eta) / (1.0 + eta);
+	r0 *= r0;
+	return r0 + (1.0 - r0) * pow(1.0 - cosThetaI, 5.0);
+}
+
+vec3 FresnelSchlickF0(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+vec3 SampleGGX(vec3 n, float roughness, inout uint rng)
+{
+    float r = roughness * roughness;
+
+    float u1 = RandomValue(rng);
+    float u2 = RandomValue(rng);
+
+    float phi = 2.0 * 3.1415926 * u1;
+    float cosTheta = sqrt((1.0 - u2) / (1.0 + (r*r - 1.0) * u2));
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+
+    vec3 h = vec3(
+        cos(phi) * sinTheta,
+        sin(phi) * sinTheta,
+        cosTheta
+    );
+
+    vec3 t = normalize(abs(n.x) > 0.1 ? cross(n, vec3(0,1,0)) : cross(n, vec3(1,0,0)));
+    vec3 b = cross(n, t);
+
+    return normalize(h.x * t + h.y * b + h.z * n);
+}
+
+vec3 SigmaT(Medium m)
+{
+    return m.sigma_s + m.sigma_a;
+}
+
+vec3 Transmittance(vec3 sigma_t, float dist)
+{
+    return exp(-sigma_t * dist);
+}
+
+float SampleFreePath(float mu, float xi)
+{
+    return -log(max(1e-6, 1.0 - xi)) / mu;
+}
+
+vec3 SampleHG(vec3 wo, float g, inout uint rng)
+{
+    float u1 = RandomValue(rng);
+    float u2 = RandomValue(rng);
+
+    float cosTheta;
+    if (abs(g) < 1e-3)
+    {
+        cosTheta = 1.0 - 2.0 * u1;
+    }
+    else
+    {
+        float sqr = (1.0 - g*g) / (1.0 - g + 2.0*g*u1);
+        cosTheta = (1.0 + g*g - sqr*sqr) / (2.0 * g);
+    }
+
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta*cosTheta));
+    float phi = 2.0 * PI * u2;
+
+    vec3 local = vec3(
+        cos(phi) * sinTheta,
+        sin(phi) * sinTheta,
+        cosTheta
+    );
+
+    // build ONB from wo
+    vec3 t = normalize(abs(wo.z) < 0.9 ? cross(wo, vec3(0,0,1)) : cross(wo, vec3(0,1,0)));
+    vec3 b = cross(wo, t);
+
+    return normalize(local.x * t + local.y * b + local.z * wo);
+}
+
+void main()
+{
+	
+	ivec2 px = ivec2(gl_LaunchIDEXT.xy);
+	vec2 pixelCenter = vec2(px) + vec2(0.5);
+
+	uint rng = globalData.frameIndex;
+    rng = rng * (px.x + 73) * (px.y + 91);
+
+	// added tiny blur effect for anti-aliasing
+    float blurAmount = 1.0f;
+    vec2 blur = RandomCircle(rng) * blurAmount;
+	vec2 uv = (pixelCenter + blur) / vec2(gl_LaunchSizeEXT.xy);
+	vec2 d = uv * 2.0 - 1.0;
+
+	vec3 camPos = globalData.cameraPosition.xyz;
+	vec3 camFor = globalData.cameraForward.xyz;
+	vec3 camRight = globalData.cameraRight.xyz;
+	vec3 camUp = globalData.cameraUp.xyz;
+
+	vec3 rayDir = normalize(camFor + d.x * globalData.aspectRatio * globalData.tanHalfFov * camRight + d.y * globalData.tanHalfFov * camUp);
+	vec3 focusPoint = camPos + rayDir * globalData.focusDistance;
+	vec2 lens = RandomCircle(rng) * globalData.aperture;
+	vec3 rayOrigin = camPos + camRight * lens.x + camUp * lens.y;
+	rayDir = normalize(focusPoint - rayOrigin);
+	
+	float tmin = 0.0005;
+	float tmax = 1000.0;
+
+	vec3 radiance = vec3(0);
+	int raysPerDispatch = 2;
+	int bounceLimit = 16;
+	for (int j = 0; j < raysPerDispatch; j++)
+	{
+		Photon photon;
+		photon.pos = rayOrigin;
+		photon.dir = rayDir;
+		photon.light = vec3(1);
+		photon.inMedium = false;
+
+		for (int i = 0; i < bounceLimit; i++)
+		{
+			traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 
+				0, 0, 0, 
+				photon.pos, tmin, photon.dir, tmax, 0);
+			if (payload.didHit == 0)
+			{
+				vec3 emittedLight = payload.color;
+				radiance += emittedLight * photon.light;
+				break;
+			}
+
+			float tSurface = payload.hitDistance;
+			float extinction = 1.0;
+			if (photon.inMedium && extinction > 0)
+			{
+				float freePath = -log(RandomValue(rng)) / extinction;
+				float anisotropy = 0.6;
+
+				if (anisotropy < 1.0f && freePath < payload.hitDistance)
+				{
+					float transmittance = exp(-extinction * freePath);
+					photon.pos += photon.dir * freePath;
+					photon.light *= transmittance;
+					photon.dir = sampleHenyeyGreenstein(rng, anisotropy, photon.dir);
+					continue; // next bounce
+				}
+				else
+				{
+					float transmittance = exp(-extinction * payload.hitDistance);
+					photon.light *= transmittance;
+				}
+				/*
+				vec3 sigma_t = SigmaT(photon.medium);
+				float mu = max(max(sigma_t.x, sigma_t.y), sigma_t.z);
+
+				float tMedium = SampleFreePath(mu, RandomValue(rng));
+
+				if (tMedium < tSurface)
+				{
+					photon.pos += photon.dir * tMedium;
+
+					photon.light *= Transmittance(sigma_t, tMedium);
+					photon.light *= photon.medium.sigma_s / sigma_t;
+
+					photon.dir = SampleHG(-photon.dir, photon.medium.g, rng);
+					continue; // next bounce
+				}
+				else
+				{
+					photon.light *= Transmittance(sigma_t, tSurface);
+				}
+				*/
+			}
+
+
+
+			photon.pos = payload.origin;
+			bool isFrontface = dot(photon.dir, payload.normal) < 0;
+			photon.inMedium = !isFrontface;
+
+			vec3 N = payload.normal;
+            vec3 V = -photon.dir;
+
+			vec3 diffuseDir = normalize(N + RandomSphere(rng));
+			vec3 specularDir = reflect(photon.dir, N);
+
+			float ior = 1.5;
+			float iorA = isFrontface ? 1.0 : ior;
+			float iorB = isFrontface ? ior : 1.0;
+
+			//float cosI = clamp(dot(N, V), 0.0, 1.0);
+			vec3 n = isFrontface ? N : -N;
+			float cosIn = -dot(photon.dir, n);
+
+			float fresnel = FresnelSchlick(cosIn, iorA, iorB);
+
+			float w_diffuse      = (1.0 - payload.metallic) * (1.0 - payload.transmission);
+			float w_specular     = payload.metallic * fresnel * (1.0 - payload.transmission);
+			float w_transmission = payload.transmission;
+
+			float w_sum = w_diffuse + w_specular + w_transmission;
+			w_diffuse      /= w_sum;
+			w_specular     /= w_sum;
+			w_transmission /= w_sum;
+
+			float r = RandomValue(rng);
+
+			if (r < w_diffuse)
+			{
+				photon.dir = normalize(mix(diffuseDir, specularDir, payload.roughness));
+				photon.light *= payload.color;
+			}
+			else if (r < w_diffuse + w_specular)
+			{
+				photon.dir = normalize(mix(specularDir, diffuseDir, payload.roughness));
+			}
+			else
+			{
+				if (RandomValue(rng) < fresnel)
+					photon.dir = normalize(mix(reflect(photon.dir, n), diffuseDir, payload.roughness));
+				else
+				{
+					photon.dir = normalize(mix(refract(photon.dir, n, iorA / iorB), -diffuseDir, payload.roughness));
+				}
+				photon.light *= payload.color;
+			}
+
+            radiance += payload.emission * photon.light;
+		}
+	}
+	radiance /= raysPerDispatch;
+
+	if(globalData.frameIndex > 1)
+        radiance += imageLoad(accumulationImageIn, px).rgb;
+    imageStore(accumulationImageOut, px, vec4(radiance, 0));
+	imageStore(outputImage, px, vec4(radiance / globalData.frameIndex, 1));
+}
