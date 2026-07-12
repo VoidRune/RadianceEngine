@@ -1,0 +1,17 @@
+# Folders
+build/
+bin/windows-x86_64/RadianceEngine/
+
+# Extensions
+**.raw
+
+# Visual Studio files and folder
+**.pdb
+**.idb
+.claude/
+.vs/
+**.sln
+**.vcxproj
+**.vcxproj.filters
+**.vcxproj.user
+**.csproj
