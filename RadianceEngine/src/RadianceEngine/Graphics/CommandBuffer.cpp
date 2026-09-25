@@ -367,4 +367,16 @@ namespace Rdn
         vkCmdBlitImage2(toVk(m_Handle), &blitInfo);
     }
 
+    void CommandBuffer::BeginDebugLabel(const char* name)
+    {
+        VkDebugUtilsLabelEXT label{ VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
+        label.pLabelName = name;
+        vkCmdBeginDebugUtilsLabelEXT(toVk(m_Handle), &label);
+    }
+
+    void CommandBuffer::EndDebugLabel()
+    {
+        vkCmdEndDebugUtilsLabelEXT(toVk(m_Handle));
+    }
+
 }

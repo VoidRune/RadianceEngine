@@ -1,6 +1,7 @@
 #include "VulkanUtilities.h"
 #include <RadianceEngine/Core/Log.h>
 #include <vulkan/vk_enum_string_helper.h>
+#include <algorithm>
 #include <set>
 
 /* Needed for surface creation */
@@ -17,12 +18,14 @@ namespace Rdn
 
         switch (messageSeverity)
         {
+        // The message must be an argument, never the format string: validation messages
+        // routinely contain '{' / '}' (struct dumps), which makes std::vformat throw.
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-            RDN_LOG_ERROR(pCallbackData->pMessage);
+            RDN_LOG_ERROR("{}", pCallbackData->pMessage);
 
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-            RDN_LOG_WARNING(pCallbackData->pMessage);
+            RDN_LOG_WARNING("{}", pCallbackData->pMessage);
 
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
@@ -324,16 +327,30 @@ namespace Rdn
         VkSurfaceCapabilitiesKHR capabilities;
         VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(toVk(info.physicalDevice), toVk(info.surface), &capabilities));
 
+        // A swapchain can't have a zero extent. Bail before vkCreateSwapchainKHR, which would retire oldSwapchain.
+        VkExtent2D extent = FindSurfaceExtent(toVk(info.physicalDevice), toVk(info.surface), VkExtent2D{ 128, 128 });
+        if (extent.width == 0 || extent.height == 0)
+            return {};
+
         VkSurfaceFormatKHR surfaceFormat = FindSurfaceFormat(toVk(info.physicalDevice), toVk(info.surface), VK_FORMAT_B8G8R8A8_UNORM);
         VkPresentModeKHR presentMode = FindPresentMode(toVk(info.physicalDevice), toVk(info.surface), toVk(info.presentMode));
-        VkExtent2D extent = FindSurfaceExtent(toVk(info.physicalDevice), toVk(info.surface), VkExtent2D{ 128, 128 });
 
-        uint32_t imageCount = capabilities.minImageCount;
-        if (imageCount < info.desiredImageCount)
-            imageCount = info.desiredImageCount;
+        // One more than the minimum, so acquiring rarely has to wait for the presentation engine
+        uint32_t imageCount = info.desiredImageCount ? info.desiredImageCount : capabilities.minImageCount + 1;
+        imageCount = std::max(imageCount, capabilities.minImageCount);
+        if (capabilities.maxImageCount > 0)
+            imageCount = std::min(imageCount, capabilities.maxImageCount);
 
-        if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount)
-            imageCount = capabilities.maxImageCount;
+        VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        for (VkCompositeAlphaFlagBitsKHR candidate : { VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+            VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR })
+        {
+            if (capabilities.supportedCompositeAlpha & candidate)
+            {
+                compositeAlpha = candidate;
+                break;
+            }
+        }
 
         VkSwapchainCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -343,7 +360,9 @@ namespace Rdn
         createInfo.imageColorSpace = surfaceFormat.colorSpace;
         createInfo.imageExtent = extent;
         createInfo.imageArrayLayers = 1;
-        createInfo.imageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        // COLOR_ATTACHMENT is always supported, the transfer usages almost always are
+        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+            | (capabilities.supportedUsageFlags & (VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT));
 
         uint32_t indices[] = { info.graphicsFamilyIndex, info.presentFamilyIndex };
         if (indices[0] != indices[1])
@@ -360,22 +379,18 @@ namespace Rdn
         }
 
         createInfo.preTransform = capabilities.currentTransform;
-        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        createInfo.compositeAlpha = compositeAlpha;
         createInfo.presentMode = presentMode;
         createInfo.clipped = VK_TRUE;
-        createInfo.oldSwapchain = nullptr;
-        //VkSwapchainKHR oldSwapchain = _swapchain;
-        //createInfo.oldSwapchain = oldSwapchain;
+        createInfo.oldSwapchain = toVk(info.oldSwapchain);
 
         VkSwapchainKHR swapchain;
         VK_CHECK(vkCreateSwapchainKHR(toVk(info.logicalDevice), &createInfo, nullptr, &swapchain));
 
-        //if (oldSwapchain != VK_NULL_HANDLE)
-        //    vkDestroySwapchainKHR(Core::Get()->GetLogicalDevice(), oldSwapchain, nullptr);
         SwapchainOutput output;
         output.swapchain = fromVk(swapchain);
-        output.imageCount = imageCount;
         output.surfaceFormat = fromVk(surfaceFormat.format);
+        output.presentMode = static_cast<PresentMode>(presentMode);
         output.extent[0] = extent.width;
         output.extent[1] = extent.height;
         output.extent[2] = 1;

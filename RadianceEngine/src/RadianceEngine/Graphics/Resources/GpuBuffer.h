@@ -21,13 +21,14 @@ namespace Rdn
 			if (size > m_Size)
 			{
 				RDN_LOG_ERROR("Writing to GpuBuffer is invalid, size [{}] is greater than whole size [{}]", size, m_Size);
+				return;
 			}
 			if (m_MappedPtr == nullptr)
 			{
 				RDN_LOG_ERROR("Writing to GpuBuffer is invalid, mapped pointer is nullptr");
+				return;
 			}
-			uint8_t* dst = static_cast<uint8_t*>(m_MappedPtr);
-			memcpy(dst, data, size);
+			memcpy(m_MappedPtr, data, size);
 		}
 		template<typename T>
 		void Write(const T& value)
@@ -43,9 +44,11 @@ namespace Rdn
 	private:
 		BufferHandle m_Buffer;
 		AllocationHandle m_Allocation;
-		uint32_t m_Size;
-		void* m_MappedPtr;
+		uint32_t m_Size = 0;
+		void* m_MappedPtr = nullptr;
+		ResourceSyncState m_SyncState;
 
 		friend class ResourceAllocator;
+		friend class RenderGraph;
 	};
 }

@@ -12,7 +12,7 @@ namespace Rdn
 	public:
 		void* WindowHandle;
 		std::vector<const char*> InstanceExtensions;
-		uint32_t FramesInFlight;
+		uint32_t FramesInFlight = 2;
 		bool EnableValidation = true;
 	};
 
@@ -34,6 +34,7 @@ namespace Rdn
 		QueueContext& GetGraphicsQueueContext() { return m_GraphicsQueue; }
 		QueueContext& GetPresentQueueContext() { return m_PresentQueue; }
 		uint32_t GetFramesInFlightCount() { return m_FramesInFlight; }
+		bool IsDebugUtilsEnabled() const { return m_DebugUtilsEnabled; }
 
 
 		void ImmediateSubmit(std::function<void(CommandBuffer&)> fn);
@@ -47,6 +48,7 @@ namespace Rdn
 		DeviceHandle m_LogicalDevice;
 		
 		uint32_t m_FramesInFlight;
+		bool m_DebugUtilsEnabled = false;
 
 		QueueContext m_GraphicsQueue;
 		QueueContext m_PresentQueue;

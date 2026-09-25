@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <type_traits>
 
 #define DEFINE_ENUM_FLAGS_OR(EnumName) \
@@ -12,8 +13,30 @@
         return a; \
     }
 
+#define DEFINE_ENUM_FLAGS_AND(EnumName) \
+    inline constexpr EnumName operator&(EnumName a, EnumName b) { \
+        using T = std::underlying_type_t<EnumName>; \
+        return static_cast<EnumName>(static_cast<T>(a) & static_cast<T>(b)); \
+    } \
+    inline constexpr EnumName& operator&=(EnumName& a, EnumName b) { \
+        using T = std::underlying_type_t<EnumName>; \
+        a = static_cast<EnumName>(static_cast<T>(a) & static_cast<T>(b)); \
+        return a; \
+    } \
+    inline constexpr EnumName operator~(EnumName a) { \
+        using T = std::underlying_type_t<EnumName>; \
+        return static_cast<EnumName>(~static_cast<T>(a)); \
+    }
+
 namespace Rdn
 {
+    // True if any bit of a flags enum is set.
+    template<typename E> requires std::is_enum_v<E>
+    constexpr bool HasAny(E flags) { return static_cast<std::underlying_type_t<E>>(flags) != 0; }
+
+    // Buffer range that extends to the end of the buffer (VK_WHOLE_SIZE).
+    inline constexpr uint64_t WholeSize = ~0ULL;
+
     struct Extent2D
     {
         uint32_t Width = 0;
@@ -129,7 +152,9 @@ namespace Rdn
         D32_Sfloat_S8_Uint = 130,
     };
 
-    enum class PipelineStage
+    // Both sync2 flag enums need a 64-bit underlying type: a scoped enum defaults to int, and MSVC
+    // silently truncates every enumerator above bit 31 (Copy, ShaderStorageWrite, ...) to 0 (C4369).
+    enum class PipelineStage : uint64_t
     {
         None = 0ULL,
         TopOfPipe = 0x00000001ULL,
@@ -160,8 +185,9 @@ namespace Rdn
         PreRasterizationShaders = 0x4000000000ULL,
     };
     DEFINE_ENUM_FLAGS_OR(PipelineStage)
+    DEFINE_ENUM_FLAGS_AND(PipelineStage)
 
-    enum class AccessMask
+    enum class AccessMask : uint64_t
     {
         None = 0ULL,
         IndirectCommandRead = 0x00000001ULL,
@@ -186,6 +212,7 @@ namespace Rdn
         ShaderStorageWrite = 0x400000000ULL,
     };
     DEFINE_ENUM_FLAGS_OR(AccessMask)
+    DEFINE_ENUM_FLAGS_AND(AccessMask)
 
     enum class ImageAspect
     {
@@ -194,6 +221,7 @@ namespace Rdn
         Stencil = 0x00000004,
     };
     DEFINE_ENUM_FLAGS_OR(ImageAspect)
+    DEFINE_ENUM_FLAGS_AND(ImageAspect)
 
     enum class ImageLayout
     {
@@ -229,6 +257,7 @@ namespace Rdn
         InputAttachment = 0x00000080,
     };
     DEFINE_ENUM_FLAGS_OR(ImageUsage)
+    DEFINE_ENUM_FLAGS_AND(ImageUsage)
 
     enum class BufferUsage
     {
@@ -246,6 +275,7 @@ namespace Rdn
         AccelerationStructureStorage = 0x00100000,
     };
     DEFINE_ENUM_FLAGS_OR(BufferUsage)
+    DEFINE_ENUM_FLAGS_AND(BufferUsage)
 
     enum struct MemoryProperty
     {
@@ -256,6 +286,7 @@ namespace Rdn
         LazilyAllocated = 0x00000010,
     };
     DEFINE_ENUM_FLAGS_OR(MemoryProperty)
+    DEFINE_ENUM_FLAGS_AND(MemoryProperty)
 
     enum class ShaderStage
     {
@@ -268,6 +299,7 @@ namespace Rdn
         RayMiss = 0x00000800,
     };
     DEFINE_ENUM_FLAGS_OR(ShaderStage)
+    DEFINE_ENUM_FLAGS_AND(ShaderStage)
 
     enum class DescriptorType
     {
@@ -360,5 +392,19 @@ namespace Rdn
         ClampToEdge = 2,
         ClampToBorder = 3,
         MirrorClampToEdge = 4,
+    };
+
+    // Last known GPU synchronization state of a resource. The RenderGraph advances it as passes
+    // access the resource, and ResourceAllocator's immediate (fence-waited) helpers reset it, so
+    // it lives on the resource itself: it survives across frames and starts fresh when the
+    // resource is recreated, even if Vulkan hands back the same handle value.
+    struct ResourceSyncState
+    {
+        ImageLayout   Layout = ImageLayout::Undefined;      // images only
+        PipelineStage WriteStages = PipelineStage::None;    // stages of the last write (or layout transition)
+        AccessMask    WriteAccess = AccessMask::None;       // write access to make available before the next use
+        PipelineStage ReadStages = PipelineStage::None;     // stages that read since the last write (WAR)
+        PipelineStage VisibleStages = PipelineStage::None;  // the last write is visible to these stages...
+        AccessMask    VisibleAccess = AccessMask::None;     // ...for these access types
     };
 }

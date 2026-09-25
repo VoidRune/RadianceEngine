@@ -29,7 +29,7 @@ namespace Rdn
         AccessMask      SrcAccess = AccessMask::MemoryWrite;
         AccessMask      DstAccess = AccessMask::MemoryRead;
         uint64_t        Offset = 0;
-        uint64_t        Size = 0;
+        uint64_t        Size = WholeSize; // a size of 0 is invalid in a buffer barrier
     };
 
 	struct BufferWrite
@@ -96,6 +96,8 @@ namespace Rdn
 		~CommandBuffer() = default;
 		CommandBuffer(const CommandBuffer&) = delete;
 		CommandBuffer& operator=(const CommandBuffer&) = delete;
+		CommandBuffer(CommandBuffer&&) = default;
+		CommandBuffer& operator=(CommandBuffer&&) = default;
 
 		void Begin(bool oneTimeSubmit = true);
 		void End();
@@ -126,6 +128,10 @@ namespace Rdn
             ImageAspect aspect);
         void ClearColorImage(ImageHandle image, const float clearColor[4], ImageLayout layout);
         void BlitImageToImage(ImageHandle src, const Extent3D srcExtent, ImageHandle dst, const Extent3D dstExtent);
+
+        // Named regions for RenderDoc/Nsight. Requires VK_EXT_debug_utils (Device::IsDebugUtilsEnabled()).
+        void BeginDebugLabel(const char* name);
+        void EndDebugLabel();
 
 		CommandBufferHandle GetHandle() const { return m_Handle; }
 	private:

@@ -195,15 +195,16 @@ namespace Rdn
 		SurfaceHandle surface = {};
 		uint32_t graphicsFamilyIndex = {};
 		uint32_t presentFamilyIndex = {};
-		uint32_t desiredImageCount = {};
+		uint32_t desiredImageCount = {}; // 0: one more than the surface minimum
 		PresentMode presentMode = {};
+		SwapchainHandle oldSwapchain = {};
 	};
 
 	struct SwapchainOutput
 	{
-		SwapchainHandle swapchain = {};
-		uint32_t imageCount = {};
+		SwapchainHandle swapchain = {}; // null while the surface has no area (minimized)
 		Format surfaceFormat = {};
+		PresentMode presentMode = {};
 		uint32_t extent[3] = {};
 	};
 	SwapchainOutput CreateSwapchainHandle(SwapchainCreateInfo& info);

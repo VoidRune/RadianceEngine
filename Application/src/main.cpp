@@ -15,6 +15,7 @@ void GetRenderer(int rendererId, std::unique_ptr<RendererBase>& renderer,
 		return;
 
 	device->WaitIdle();
+	renderGraph->ReleaseTransientResources();
 	resourceAllocator->FreeResources();
 	renderer.reset();
 	switch (rendererId)
@@ -46,7 +47,7 @@ void main()
 	auto presentQueue = std::make_unique<Rdn::PresentQueue>(device.get(), presentMode);
 
 	auto resourceAllocator = std::make_unique<Rdn::ResourceAllocator>(device.get());
-	auto renderGraph = std::make_unique<Rdn::RenderGraph>(device.get());
+	auto renderGraph = std::make_unique<Rdn::RenderGraph>(device.get(), resourceAllocator.get());
 
 	std::unique_ptr<RendererBase> renderer;
 	GetRenderer(1, renderer, window.get(), device.get(), presentQueue.get(), resourceAllocator.get(), renderGraph.get());
@@ -60,20 +61,25 @@ void main()
 			window->SetClosed(true);
 		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F1))
 			window->SetFullscreen(!window->IsFullscreen());
+		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::V))
+			presentQueue->SetPresentMode(presentQueue->GetPresentMode() == Rdn::PresentMode::Fifo ? Rdn::PresentMode::Mailbox : Rdn::PresentMode::Fifo);
 
-		if (presentQueue->OutOfDate())
+		if (presentQueue->NeedsRecreate())
 		{
-			while (window->Width() == 0 || window->Height() == 0)
+			const Rdn::Extent2D previousExtent = presentQueue->GetExtent();
+			if (!presentQueue->Recreate())
+			{
 				window->WaitEvents();
-			device->WaitIdle();
-			presentQueue.reset();
-			presentQueue = std::make_unique<Rdn::PresentQueue>(device.get(), presentMode);
-			renderer->SwapchainResized(presentQueue.get());
+				continue;
+			}
+			if (presentQueue->GetExtent() != previousExtent)
+				renderer->SwapchainResized();
 		}
 
 		renderer->RenderFrame(timer.elapsed_sec());
 	}
 
 	device->WaitIdle();
+	renderGraph->ReleaseTransientResources();
 	resourceAllocator->FreeResources();
 }

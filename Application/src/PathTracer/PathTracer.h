@@ -75,7 +75,7 @@ public:
 	~PathTracer();
 
 	void RenderFrame(float elapsedTime);
-	void SwapchainResized(void* presentQueue);
+	void SwapchainResized();
 	void RecompileShaders();
 	void WaitForFrameEnd();
 
@@ -114,8 +114,10 @@ private:
 	std::unique_ptr<Rdn::GpuBuffer> m_MaterialBuffer;
 	std::unique_ptr<Rdn::DescriptorSet> m_SceneDescriptorSet;
 	std::unique_ptr<Rdn::GpuRingBuffer> m_GlobalDataBuffer;
-	std::unique_ptr<CameraFP> m_Camera;	
+	std::unique_ptr<CameraFP> m_Camera;
 	bool m_IsEvenFrame = false;
+	bool m_ClearAccumulation = true;
+	bool m_LogRenderGraph = false;
 
 	std::unique_ptr<Rdn::Shader> m_RayGenShader;
 	std::unique_ptr<Rdn::Shader> m_RayMissShader;

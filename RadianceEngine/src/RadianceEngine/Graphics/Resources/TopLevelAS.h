@@ -33,9 +33,6 @@ namespace Rdn
 		BufferHandle m_Buffer{};
 		AllocationHandle m_Allocation{};
 
-		BufferHandle m_InstanceBuffer;
-		AllocationHandle m_InstanceAllocation;
-
 		friend class ResourceAllocator;
 	};
 

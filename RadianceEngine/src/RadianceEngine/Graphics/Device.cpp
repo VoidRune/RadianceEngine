@@ -15,6 +15,7 @@ namespace Rdn
 			.enableValidationLayers = config.EnableValidation
 		};
 		m_Instance = CreateInstanceHandle(instanceCreateInfo);
+		m_DebugUtilsEnabled = config.EnableValidation; // VK_EXT_debug_utils is enabled together with validation
 
 		DebugUtilsMessengerCreateInfo debugUtilsMessengerInfo = {
 			.instance = m_Instance,
@@ -33,14 +34,8 @@ namespace Rdn
 		};
 		m_Surface = CreateSurfaceHandle(surfaceCreateInfo);
 
-		VkSurfaceCapabilitiesKHR capabilities;
-		VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(toVk(m_PhysicalDevice), toVk(m_Surface), &capabilities));
-
-		uint32_t framesCount = std::max(config.FramesInFlight, capabilities.minImageCount);
-		if (capabilities.maxImageCount > 0 && framesCount > capabilities.maxImageCount)
-			framesCount = capabilities.maxImageCount;
-
-		m_FramesInFlight = framesCount;
+		// Independent of the swapchain image count: PresentQueue keeps per-image and per-frame state apart
+		m_FramesInFlight = std::max(config.FramesInFlight, 1u);
 
 		QueueFamilySelectInfo queueFamilySelectInfo = {
 			.physicalDevice = m_PhysicalDevice,

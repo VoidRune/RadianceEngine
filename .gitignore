@@ -10,6 +10,7 @@ bin/windows-x86_64/RadianceEngine/
 **.idb
 .claude/
 .vs/
+.vscode/
 **.sln
 **.vcxproj
 **.vcxproj.filters

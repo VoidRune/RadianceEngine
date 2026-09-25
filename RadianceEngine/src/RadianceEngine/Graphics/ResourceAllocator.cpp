@@ -3,15 +3,208 @@
 #include "RadianceEngine/Core/Log.h"
 #include <volk/volk.h>
 #include <spirv_cross/spirv_cross.hpp>
+#include <vulkan/vk_enum_string_helper.h>
+#include <algorithm>
+#include <format>
 #include <map>
 
 namespace Rdn
 {
+    namespace
+    {
+        enum class HostAccess { None, SequentialWrite, Random };
+
+        struct VmaBuffer
+        {
+            VkBuffer Buffer = VK_NULL_HANDLE;
+            VmaAllocation Allocation = VK_NULL_HANDLE;
+            void* MappedPtr = nullptr;
+        };
+
+        VmaBuffer CreateVmaBuffer(VmaAllocator allocator, VkDeviceSize size, VkBufferUsageFlags usage, HostAccess hostAccess,
+            VkDeviceSize alignment = 0, bool persistentlyMapped = false)
+        {
+            VkBufferCreateInfo bufferInfo{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+            bufferInfo.size = size;
+            bufferInfo.usage = usage;
+            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            VmaAllocationCreateInfo allocInfo{};
+            switch (hostAccess)
+            {
+            case HostAccess::None:
+                allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+                break;
+            case HostAccess::SequentialWrite:
+                allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+                allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+                allocInfo.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                break;
+            case HostAccess::Random:
+                allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+                allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+                break;
+            }
+            if (persistentlyMapped)
+                allocInfo.flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+            VmaBuffer result;
+            VmaAllocationInfo allocationInfo{};
+            VK_CHECK(vmaCreateBufferWithAlignment(allocator, &bufferInfo, &allocInfo, alignment, &result.Buffer, &result.Allocation, &allocationInfo));
+            result.MappedPtr = allocationInfo.pMappedData;
+            return result;
+        }
+
+        struct VmaAccelerationStructure
+        {
+            VkAccelerationStructureKHR Handle = VK_NULL_HANDLE;
+            VmaBuffer Storage;
+        };
+
+        VmaAccelerationStructure CreateVmaAccelerationStructure(VkDevice device, VmaAllocator allocator, VkAccelerationStructureTypeKHR type, VkDeviceSize size)
+        {
+            VmaAccelerationStructure result;
+            result.Storage = CreateVmaBuffer(allocator, size,
+                VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, HostAccess::None);
+
+            VkAccelerationStructureCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR };
+            createInfo.buffer = result.Storage.Buffer;
+            createInfo.size = size;
+            createInfo.type = type;
+            VK_CHECK(vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &result.Handle));
+            return result;
+        }
+
+        void DestroyVmaAccelerationStructure(VkDevice device, VmaAllocator allocator, VmaAccelerationStructure& accelerationStructure)
+        {
+            vkDestroyAccelerationStructureKHR(device, accelerationStructure.Handle, nullptr);
+            vmaDestroyBuffer(allocator, accelerationStructure.Storage.Buffer, accelerationStructure.Storage.Allocation);
+            accelerationStructure = {};
+        }
+
+        HostAccess HostAccessFor(MemoryProperty memoryProperty, bool mapped)
+        {
+            if (HasAny(memoryProperty & MemoryProperty::HostCached))
+                return HostAccess::Random;
+            if (mapped || HasAny(memoryProperty & (MemoryProperty::HostVisible | MemoryProperty::HostCoherent)))
+                return HostAccess::SequentialWrite;
+            return HostAccess::None;
+        }
+
+        VkDeviceAddress GetDeviceAddress(VkDevice device, VkBuffer buffer)
+        {
+            VkBufferDeviceAddressInfo addressInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+            addressInfo.buffer = buffer;
+            return vkGetBufferDeviceAddress(device, &addressInfo);
+        }
+
+        void CmdMemoryBarrier(VkCommandBuffer cmd, VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess)
+        {
+            VkMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
+            barrier.srcStageMask = srcStage;
+            barrier.srcAccessMask = srcAccess;
+            barrier.dstStageMask = dstStage;
+            barrier.dstAccessMask = dstAccess;
+
+            VkDependencyInfo dependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+            dependency.memoryBarrierCount = 1;
+            dependency.pMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(cmd, &dependency);
+        }
+
+        void CmdImageBarrier(VkCommandBuffer cmd, VkImage image, uint32_t baseMip, uint32_t mipCount, VkImageLayout oldLayout, VkImageLayout newLayout,
+            VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess)
+        {
+            VkImageMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+            barrier.srcStageMask = srcStage;
+            barrier.srcAccessMask = srcAccess;
+            barrier.dstStageMask = dstStage;
+            barrier.dstAccessMask = dstAccess;
+            barrier.oldLayout = oldLayout;
+            barrier.newLayout = newLayout;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = image;
+            barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, baseMip, mipCount, 0, 1 };
+
+            VkDependencyInfo dependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+            dependency.imageMemoryBarrierCount = 1;
+            dependency.pImageMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(cmd, &dependency);
+        }
+
+        VkOffset3D MipExtent(Extent3D extent, uint32_t level)
+        {
+            return {
+                int32_t(std::max(1u, extent.Width >> level)),
+                int32_t(std::max(1u, extent.Height >> level)),
+                int32_t(std::max(1u, extent.Depth >> level)),
+            };
+        }
+
+        uint32_t GetFormatByteSize(Format format)
+        {
+            switch (format)
+            {
+            case Format::R8_Unorm: case Format::R8_Snorm: case Format::R8_Uint: case Format::R8_Sint: case Format::R8_Srgb:
+                return 1;
+            case Format::R8G8_Unorm: case Format::R8G8_Snorm: case Format::R8G8_Uint: case Format::R8G8_Sint: case Format::R8G8_Srgb:
+                return 2;
+            case Format::R8G8B8_Unorm: case Format::R8G8B8_Snorm: case Format::R8G8B8_Uint: case Format::R8G8B8_Sint: case Format::R8G8B8_Srgb:
+            case Format::B8G8R8_Unorm: case Format::B8G8R8_Snorm: case Format::B8G8R8_Uint: case Format::B8G8R8_Sint: case Format::B8G8R8_Srgb:
+                return 3;
+            case Format::R8G8B8A8_Unorm: case Format::R8G8B8A8_Snorm: case Format::R8G8B8A8_Uint: case Format::R8G8B8A8_Sint: case Format::R8G8B8A8_Srgb:
+            case Format::B8G8R8A8_Unorm: case Format::B8G8R8A8_Snorm: case Format::B8G8R8A8_Uint: case Format::B8G8R8A8_Sint: case Format::B8G8R8A8_Srgb:
+                return 4;
+            case Format::R16_Unorm: case Format::R16_Snorm: case Format::R16_Uint: case Format::R16_Sint: case Format::R16_Sfloat:
+                return 2;
+            case Format::R16G16_Unorm: case Format::R16G16_Snorm: case Format::R16G16_Uint: case Format::R16G16_Sint: case Format::R16G16_Sfloat:
+                return 4;
+            case Format::R16G16B16_Unorm: case Format::R16G16B16_Snorm: case Format::R16G16B16_Uint: case Format::R16G16B16_Sint: case Format::R16G16B16_Sfloat:
+                return 6;
+            case Format::R16G16B16A16_Unorm: case Format::R16G16B16A16_Snorm: case Format::R16G16B16A16_Uint: case Format::R16G16B16A16_Sint: case Format::R16G16B16A16_Sfloat:
+                return 8;
+            case Format::R32_Uint: case Format::R32_Sint: case Format::R32_Sfloat:
+                return 4;
+            case Format::R32G32_Uint: case Format::R32G32_Sint: case Format::R32G32_Sfloat:
+                return 8;
+            case Format::R32G32B32_Uint: case Format::R32G32B32_Sint: case Format::R32G32B32_Sfloat:
+                return 12;
+            case Format::R32G32B32A32_Uint: case Format::R32G32B32A32_Sint: case Format::R32G32B32A32_Sfloat:
+                return 16;
+            case Format::R64_Uint: case Format::R64_Sint: case Format::R64_Sfloat:
+                return 8;
+            case Format::R64G64_Uint: case Format::R64G64_Sint: case Format::R64G64_Sfloat:
+                return 16;
+            case Format::R64G64B64_Uint: case Format::R64G64B64_Sint: case Format::R64G64B64_Sfloat:
+                return 24;
+            case Format::R64G64B64A64_Uint: case Format::R64G64B64A64_Sint: case Format::R64G64B64A64_Sfloat:
+                return 32;
+            default:
+                return 0;
+            }
+        }
+    }
+
 	ResourceAllocator::ResourceAllocator(Device* device)
 	{
         m_Device = device;
 		m_LogicalDevice = device->GetLogicalDevice();
 		m_PhysicalDevice = device->GetPhysicalDevice();
+
+        VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationStructureProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR };
+        VkPhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
+        rayTracingProperties.pNext = &accelerationStructureProperties;
+        VkPhysicalDeviceProperties2 properties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+        properties.pNext = &rayTracingProperties;
+        vkGetPhysicalDeviceProperties2(toVk(m_PhysicalDevice), &properties);
+
+        m_Limits.MinUniformBufferOffsetAlignment = properties.properties.limits.minUniformBufferOffsetAlignment;
+        m_Limits.MinStorageBufferOffsetAlignment = properties.properties.limits.minStorageBufferOffsetAlignment;
+        m_Limits.MinAccelerationStructureScratchOffsetAlignment = accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
+        m_Limits.ShaderGroupHandleSize = rayTracingProperties.shaderGroupHandleSize;
+        m_Limits.ShaderGroupHandleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
+        m_Limits.ShaderGroupBaseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
 
         VmaVulkanFunctions vulkanFunctions = {};
         vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
@@ -21,6 +214,7 @@ namespace Rdn
         allocatorInfo.physicalDevice = toVk(m_PhysicalDevice);
         allocatorInfo.device = toVk(m_LogicalDevice);
         allocatorInfo.instance = toVk(device->GetInstance());
+        allocatorInfo.vulkanApiVersion = std::min(properties.properties.apiVersion, VK_API_VERSION_1_4);
         allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
         allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
@@ -100,250 +294,199 @@ namespace Rdn
     {
         void* data;
         VK_CHECK(vmaMapMemory(toVk(m_Allocator), toVk(buffer->m_Allocation), &data));
+        VK_CHECK(vmaInvalidateAllocation(toVk(m_Allocator), toVk(buffer->m_Allocation), 0, VK_WHOLE_SIZE));
         buffer->m_MappedPtr = data;
         return data;
     }
 
     void ResourceAllocator::UnmapMemory(GpuBuffer* buffer)
     {
+        VK_CHECK(vmaFlushAllocation(toVk(m_Allocator), toVk(buffer->m_Allocation), 0, VK_WHOLE_SIZE));
         vmaUnmapMemory(toVk(m_Allocator), toVk(buffer->m_Allocation));
-        buffer->m_MappedPtr = nullptr;
+
+        VmaAllocationInfo allocationInfo;
+        vmaGetAllocationInfo(toVk(m_Allocator), toVk(buffer->m_Allocation), &allocationInfo);
+        buffer->m_MappedPtr = allocationInfo.pMappedData;
     }
 
     void* ResourceAllocator::MapMemory(GpuRingBuffer* ringBuffer, uint32_t elementIndex)
     {
         void* data;
         VK_CHECK(vmaMapMemory(toVk(m_Allocator), toVk(ringBuffer->m_Allocation), &data));
+        VK_CHECK(vmaInvalidateAllocation(toVk(m_Allocator), toVk(ringBuffer->m_Allocation), 0, VK_WHOLE_SIZE));
         ringBuffer->m_MappedPtr = data;
-        return static_cast<uint8_t*>(data) + elementIndex * ringBuffer->GetElementSize();
+        return static_cast<uint8_t*>(data) + ringBuffer->GetOffset(elementIndex);
     }
 
     void ResourceAllocator::UnmapMemory(GpuRingBuffer* ringBuffer)
     {
+        VK_CHECK(vmaFlushAllocation(toVk(m_Allocator), toVk(ringBuffer->m_Allocation), 0, VK_WHOLE_SIZE));
         vmaUnmapMemory(toVk(m_Allocator), toVk(ringBuffer->m_Allocation));
-        ringBuffer->m_MappedPtr = nullptr;
+
+        VmaAllocationInfo allocationInfo;
+        vmaGetAllocationInfo(toVk(m_Allocator), toVk(ringBuffer->m_Allocation), &allocationInfo);
+        ringBuffer->m_MappedPtr = allocationInfo.pMappedData;
     }
 
     uint64_t ResourceAllocator::GetBufferDeviceAddress(GpuBuffer* buffer)
     {
-        VkBufferDeviceAddressInfo addressInfo = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
-        addressInfo.buffer = toVk(buffer->m_Buffer);
-        VkDeviceAddress address = vkGetBufferDeviceAddress(toVk(m_LogicalDevice), &addressInfo);
-        return address;
+        return GetDeviceAddress(toVk(m_LogicalDevice), toVk(buffer->m_Buffer));
     }
 
     void ResourceAllocator::SetDeviceLocalBufferData(GpuBuffer* buffer, const void* data, uint32_t size)
     {
-        GpuBuffer stagingBuffer;
-        CreateGpuBuffer(&stagingBuffer, GpuBufferDesc{
-            .Size = size,
-            .UsageFlags = BufferUsage::TransferSrc,
-            .MemoryProperty = MemoryProperty::HostVisible,
-        });
+        if (size > buffer->GetSize())
+        {
+            RDN_LOG_ERROR("SetDeviceLocalBufferData: {} bytes don't fit into a buffer of {} bytes", size, buffer->GetSize());
+            return;
+        }
 
-        void* dataPtr = MapMemory(&stagingBuffer);
-        memcpy(dataPtr, data, size);
-        UnmapMemory(&stagingBuffer);
+        VmaBuffer staging = CreateVmaBuffer(toVk(m_Allocator), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, HostAccess::SequentialWrite);
+        VK_CHECK(vmaCopyMemoryToAllocation(toVk(m_Allocator), data, staging.Allocation, 0, size));
 
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
-            VkBufferCopy copyRegion{};
-            copyRegion.srcOffset = 0;
-            copyRegion.dstOffset = 0;
-            copyRegion.size = size;
-
-            vkCmdCopyBuffer(
-                toVk(cmd.GetHandle()),
-                toVk(stagingBuffer.GetHandle()),
-                toVk(buffer->GetHandle()),
-                1,
-                &copyRegion
-            );
+            VkBufferCopy copyRegion{ 0, 0, size };
+            vkCmdCopyBuffer(toVk(cmd.GetHandle()), staging.Buffer, toVk(buffer->GetHandle()), 1, &copyRegion);
+            CmdMemoryBarrier(toVk(cmd.GetHandle()),
+                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
         });
+        buffer->m_SyncState = {};
 
-        ReleaseResource(&stagingBuffer);
+        vmaDestroyBuffer(toVk(m_Allocator), staging.Buffer, staging.Allocation);
     }
 
     void ResourceAllocator::SetImageData(GpuImage* image, const void* data, uint32_t size, ImageLayout newLayout)
     {
-        GpuBuffer stagingBuffer;
-        CreateGpuBuffer(&stagingBuffer, GpuBufferDesc{
-            .Size = size,
-            .UsageFlags = BufferUsage::TransferSrc,
-            .MemoryProperty = MemoryProperty::HostVisible,
-        });
+        const Extent3D extent = image->GetImageSize();
+        const uint32_t mipLevels = image->GetMipLevels();
+        const uint64_t baseLevelSize = uint64_t(extent.Width) * extent.Height * extent.Depth * GetFormatByteSize(image->GetFormat());
+        if (size < baseLevelSize)
+        {
+            RDN_LOG_ERROR("SetImageData: {} bytes given, but the base level needs {}", size, baseLevelSize);
+            return;
+        }
 
-        void* dataPtr = MapMemory(&stagingBuffer);
-        memcpy(dataPtr, data, size);
-        UnmapMemory(&stagingBuffer);
+        VkFormatProperties formatProperties;
+        vkGetPhysicalDeviceFormatProperties(toVk(m_PhysicalDevice), toVk(image->GetFormat()), &formatProperties);
+        const VkFormatFeatureFlags blitFeatures = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+        const bool canBlit = (formatProperties.optimalTilingFeatures & blitFeatures) == blitFeatures;
+        const VkFilter mipFilter = (formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+        if (mipLevels > 1 && !canBlit)
+        {
+            RDN_LOG_ERROR("SetImageData: {} can't be blitted, so mip levels 1..{} stay undefined", string_VkFormat(toVk(image->GetFormat())), mipLevels - 1);
+        }
+
+        VmaBuffer staging = CreateVmaBuffer(toVk(m_Allocator), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, HostAccess::SequentialWrite);
+        VK_CHECK(vmaCopyMemoryToAllocation(toVk(m_Allocator), data, staging.Allocation, 0, size));
 
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
-            VkImageMemoryBarrier barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = toVk(image->GetHandle());
-            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            barrier.subresourceRange.baseMipLevel = 0;
-            barrier.subresourceRange.levelCount = image->GetMipLevels();
-            barrier.subresourceRange.baseArrayLayer = 0;
-            barrier.subresourceRange.layerCount = 1;
-            barrier.srcAccessMask = 0;
-            barrier.dstAccessMask = 0;
+            const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
+            const VkImage vkImage = toVk(image->GetHandle());
 
-            vkCmdPipelineBarrier(toVk(cmd.GetHandle()), VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+            CmdImageBarrier(vkCmd, vkImage, 0, mipLevels, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
 
-            VkBufferImageCopy region = {};
-            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            region.imageSubresource.layerCount = 1;
-            region.imageExtent.width = image->GetImageSize().Width;
-            region.imageExtent.height = image->GetImageSize().Height;
-            region.imageExtent.depth = image->GetImageSize().Depth;
-            vkCmdCopyBufferToImage(toVk(cmd.GetHandle()), toVk(stagingBuffer.GetHandle()), toVk(image->GetHandle()), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            VkBufferImageCopy region{};
+            region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            region.imageExtent = { extent.Width, extent.Height, extent.Depth };
+            vkCmdCopyBufferToImage(vkCmd, staging.Buffer, vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-            VkImageMemoryBarrier use_barrier = {};
-            use_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            use_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            use_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            use_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            use_barrier.newLayout = toVk(newLayout);
-            if (image->GetMipLevels() > 1)
-                use_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            use_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            use_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            use_barrier.image = toVk(image->GetHandle());
-            use_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            use_barrier.subresourceRange.levelCount = 1;
-            use_barrier.subresourceRange.layerCount = 1;
-            vkCmdPipelineBarrier(toVk(cmd.GetHandle()), VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &use_barrier);
+            uint32_t lastWrittenLevel = 0;
+            if (canBlit)
+            {
+                for (uint32_t level = 1; level < mipLevels; level++)
+                {
+                    CmdImageBarrier(vkCmd, vkImage, level - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+
+                    VkImageBlit2 blit{ VK_STRUCTURE_TYPE_IMAGE_BLIT_2 };
+                    blit.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, 1 };
+                    blit.srcOffsets[1] = MipExtent(extent, level - 1);
+                    blit.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1 };
+                    blit.dstOffsets[1] = MipExtent(extent, level);
+
+                    VkBlitImageInfo2 blitInfo{ VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2 };
+                    blitInfo.srcImage = vkImage;
+                    blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                    blitInfo.dstImage = vkImage;
+                    blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    blitInfo.regionCount = 1;
+                    blitInfo.pRegions = &blit;
+                    blitInfo.filter = mipFilter;
+                    vkCmdBlitImage2(vkCmd, &blitInfo);
+                }
+                lastWrittenLevel = mipLevels - 1;
+            }
+
+            if (lastWrittenLevel > 0)
+            {
+                CmdImageBarrier(vkCmd, vkImage, 0, lastWrittenLevel, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, toVk(newLayout),
+                    VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+            }
+            CmdImageBarrier(vkCmd, vkImage, lastWrittenLevel, mipLevels - lastWrittenLevel, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, toVk(newLayout),
+                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
         });
+        image->m_SyncState = {};
+        image->m_SyncState.Layout = newLayout;
 
-        ReleaseResource(&stagingBuffer);
+        vmaDestroyBuffer(toVk(m_Allocator), staging.Buffer, staging.Allocation);
     }
 
-    static uint32_t GetFormatByteSize(Format format)
+    std::vector<uint8_t> ResourceAllocator::GetImageData(GpuImage* image)
     {
-        switch (format)
-        {
-        case Format::R8_Unorm: case Format::R8_Snorm: case Format::R8_Uint: case Format::R8_Sint: case Format::R8_Srgb:
-            return 1;
-        case Format::R8G8_Unorm: case Format::R8G8_Snorm: case Format::R8G8_Uint: case Format::R8G8_Sint: case Format::R8G8_Srgb:
-            return 2;
-        case Format::R8G8B8_Unorm: case Format::R8G8B8_Snorm: case Format::R8G8B8_Uint: case Format::R8G8B8_Sint: case Format::R8G8B8_Srgb:
-        case Format::B8G8R8_Unorm: case Format::B8G8R8_Snorm: case Format::B8G8R8_Uint: case Format::B8G8R8_Sint: case Format::B8G8R8_Srgb:
-            return 3;
-        case Format::R8G8B8A8_Unorm: case Format::R8G8B8A8_Snorm: case Format::R8G8B8A8_Uint: case Format::R8G8B8A8_Sint: case Format::R8G8B8A8_Srgb:
-        case Format::B8G8R8A8_Unorm: case Format::B8G8R8A8_Snorm: case Format::B8G8R8A8_Uint: case Format::B8G8R8A8_Sint: case Format::B8G8R8A8_Srgb:
-            return 4;
-        case Format::R16_Unorm: case Format::R16_Snorm: case Format::R16_Uint: case Format::R16_Sint: case Format::R16_Sfloat:
-            return 2;
-        case Format::R16G16_Unorm: case Format::R16G16_Snorm: case Format::R16G16_Uint: case Format::R16G16_Sint: case Format::R16G16_Sfloat:
-            return 4;
-        case Format::R16G16B16_Unorm: case Format::R16G16B16_Snorm: case Format::R16G16B16_Uint: case Format::R16G16B16_Sint: case Format::R16G16B16_Sfloat:
-            return 6;
-        case Format::R16G16B16A16_Unorm: case Format::R16G16B16A16_Snorm: case Format::R16G16B16A16_Uint: case Format::R16G16B16A16_Sint: case Format::R16G16B16A16_Sfloat:
-            return 8;
-        case Format::R32_Uint: case Format::R32_Sint: case Format::R32_Sfloat:
-            return 4;
-        case Format::R32G32_Uint: case Format::R32G32_Sint: case Format::R32G32_Sfloat:
-            return 8;
-        case Format::R32G32B32_Uint: case Format::R32G32B32_Sint: case Format::R32G32B32_Sfloat:
-            return 12;
-        case Format::R32G32B32A32_Uint: case Format::R32G32B32A32_Sint: case Format::R32G32B32A32_Sfloat:
-            return 16;
-        case Format::R64_Uint: case Format::R64_Sint: case Format::R64_Sfloat:
-            return 8;
-        case Format::R64G64_Uint: case Format::R64G64_Sint: case Format::R64G64_Sfloat:
-            return 16;
-        case Format::R64G64B64_Uint: case Format::R64G64B64_Sint: case Format::R64G64B64_Sfloat:
-            return 24;
-        case Format::R64G64B64A64_Uint: case Format::R64G64B64A64_Sint: case Format::R64G64B64A64_Sfloat:
-            return 32;
-        default:
-            return 0;
-        }
-    }
+        const ImageLayout currentLayout = image->m_SyncState.Layout;
+        const ImageLayout restoreLayout = (currentLayout == ImageLayout::Undefined) ? ImageLayout::TransferSrcOptimal : currentLayout;
 
-    std::vector<uint8_t> ResourceAllocator::GetImageData(GpuImage* image, ImageLayout currentLayout)
-    {
-        Extent3D extent = image->GetImageSize();
-        uint32_t texelSize = GetFormatByteSize(image->GetFormat());
+        const Extent3D extent = image->GetImageSize();
+        const uint32_t texelSize = GetFormatByteSize(image->GetFormat());
         if (texelSize == 0)
         {
             RDN_LOG_FATAL("GetImageData: image format is not a supported uncompressed color format (or is unhandled) -- cannot size the readback buffer");
             return {};
         }
+        const uint32_t size = extent.Width * extent.Height * extent.Depth * texelSize;
 
-        uint32_t size = extent.Width * extent.Height * extent.Depth * texelSize;
-
-        GpuBuffer stagingBuffer;
-        CreateGpuBuffer(&stagingBuffer, GpuBufferDesc{
-            .Size = size,
-            .UsageFlags = BufferUsage::TransferDst,
-            .MemoryProperty = MemoryProperty::HostVisible,
-        });
+        VmaBuffer readback = CreateVmaBuffer(toVk(m_Allocator), size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, HostAccess::Random);
 
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
-            cmd.TransitionImage(image->GetHandle(), currentLayout, ImageLayout::TransferSrcOptimal, PipelineStage::AllCommands, PipelineStage::Transfer, ImageAspect::Color);
+            const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
+            const VkImage vkImage = toVk(image->GetHandle());
 
-            VkBufferImageCopy region = {};
-            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            region.imageSubresource.layerCount = 1;
-            region.imageExtent.width = extent.Width;
-            region.imageExtent.height = extent.Height;
-            region.imageExtent.depth = extent.Depth;
-            vkCmdCopyImageToBuffer(toVk(cmd.GetHandle()), toVk(image->GetHandle()), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, toVk(stagingBuffer.GetHandle()), 1, &region);
+            CmdImageBarrier(vkCmd, vkImage, 0, VK_REMAINING_MIP_LEVELS, toVk(currentLayout), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
 
-            cmd.TransitionImage(image->GetHandle(), ImageLayout::TransferSrcOptimal, currentLayout, PipelineStage::Transfer, PipelineStage::AllCommands, ImageAspect::Color);
+            VkBufferImageCopy region{};
+            region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            region.imageExtent = { extent.Width, extent.Height, extent.Depth };
+            vkCmdCopyImageToBuffer(vkCmd, vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.Buffer, 1, &region);
+
+            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_READ_BIT);
+            if (restoreLayout != ImageLayout::TransferSrcOptimal)
+            {
+                CmdImageBarrier(vkCmd, vkImage, 0, VK_REMAINING_MIP_LEVELS, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, toVk(restoreLayout),
+                    VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+            }
         });
+        image->m_SyncState = {};
+        image->m_SyncState.Layout = restoreLayout;
 
         std::vector<uint8_t> result(size);
-        void* mappedPtr = MapMemory(&stagingBuffer);
-        memcpy(result.data(), mappedPtr, size);
-        UnmapMemory(&stagingBuffer);
-
-        ReleaseResource(&stagingBuffer);
-
+        VK_CHECK(vmaCopyAllocationToMemory(toVk(m_Allocator), readback.Allocation, 0, result.data(), size));
+        vmaDestroyBuffer(toVk(m_Allocator), readback.Buffer, readback.Allocation);
         return result;
     }
 
-
     void ResourceAllocator::CreateGpuBuffer(GpuBuffer* gpuBuffer, const GpuBufferDesc& desc)
     {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = desc.Size;
-        bufferInfo.usage = toVk(desc.UsageFlags);
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VmaBuffer buffer = CreateVmaBuffer(toVk(m_Allocator), desc.Size, toVk(desc.UsageFlags),
+            HostAccessFor(desc.MemoryProperty, desc.Mapped), 0, desc.Mapped);
 
-        VmaAllocationCreateInfo allocInfo = {};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        allocInfo.requiredFlags = (VkMemoryPropertyFlags)desc.MemoryProperty;
-        if (desc.Mapped)
-        {
-            allocInfo.requiredFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-            allocInfo.flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT;
-        }
-        if (allocInfo.requiredFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ||
-            allocInfo.requiredFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ||
-            allocInfo.requiredFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
-        {
-            allocInfo.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-        }
-
-        VkBuffer buffer;
-        VmaAllocation allocation;
-        VmaAllocationInfo allocationInfo;
-        VK_CHECK(vmaCreateBuffer(toVk(m_Allocator), &bufferInfo, &allocInfo,
-            &buffer,
-            &allocation,
-            &allocationInfo));
-
-        gpuBuffer->m_Buffer = fromVk(buffer);
-        gpuBuffer->m_Allocation = fromVk(allocation);
+        gpuBuffer->m_Buffer = fromVk(buffer.Buffer);
+        gpuBuffer->m_Allocation = fromVk(buffer.Allocation);
         gpuBuffer->m_Size = desc.Size;
-        gpuBuffer->m_MappedPtr = allocationInfo.pMappedData;
+        gpuBuffer->m_MappedPtr = buffer.MappedPtr;
+        gpuBuffer->m_SyncState = {};
 
         m_Buffers.insert(gpuBuffer);
     }
@@ -366,52 +509,22 @@ namespace Rdn
 
     void ResourceAllocator::CreateGpuRingBuffer(GpuRingBuffer* gpuRingBuffer, const GpuRingBufferDesc& desc)
     {
-        VkPhysicalDeviceProperties physicalDeviceProperties;
-        vkGetPhysicalDeviceProperties(toVk(m_PhysicalDevice), &physicalDeviceProperties);
+        uint64_t alignment = 1;
+        if (HasAny(desc.UsageFlags & BufferUsage::UniformBuffer))
+            alignment = std::max(alignment, m_Limits.MinUniformBufferOffsetAlignment);
+        if (HasAny(desc.UsageFlags & BufferUsage::StorageBuffer))
+            alignment = std::max(alignment, m_Limits.MinStorageBufferOffsetAlignment);
+        const uint32_t elementStride = uint32_t((desc.ElementSize + alignment - 1) & ~(alignment - 1));
 
-        uint32_t alignment = 1;
-        if ((uint32_t(desc.UsageFlags) & uint32_t(BufferUsage::UniformBuffer)) != 0)
-            alignment = std::max<uint32_t>(alignment, uint32_t(physicalDeviceProperties.limits.minUniformBufferOffsetAlignment));
-        if ((uint32_t(desc.UsageFlags) & uint32_t(BufferUsage::StorageBuffer)) != 0)
-            alignment = std::max<uint32_t>(alignment, uint32_t(physicalDeviceProperties.limits.minStorageBufferOffsetAlignment));
+        VmaBuffer buffer = CreateVmaBuffer(toVk(m_Allocator), uint64_t(desc.ElementCount) * elementStride, toVk(desc.UsageFlags),
+            HostAccessFor(desc.MemoryProperty, desc.Mapped), 0, desc.Mapped);
 
-        uint32_t elementStride = (desc.ElementSize + alignment - 1) & ~(alignment - 1);
-
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = desc.ElementCount * elementStride;
-        bufferInfo.usage = toVk(desc.UsageFlags);
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo allocInfo = {};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        allocInfo.requiredFlags = (VkMemoryPropertyFlags)desc.MemoryProperty;
-        if (desc.Mapped)
-        {
-            allocInfo.requiredFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-            allocInfo.flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT;
-        }
-        if (allocInfo.requiredFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ||
-            allocInfo.requiredFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ||
-            allocInfo.requiredFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
-        {
-            allocInfo.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-        }
-
-        VkBuffer buffer;
-        VmaAllocation allocation;
-        VmaAllocationInfo allocationInfo;
-        VK_CHECK(vmaCreateBuffer(toVk(m_Allocator), &bufferInfo, &allocInfo,
-            &buffer,
-            &allocation,
-            &allocationInfo));
-
-        gpuRingBuffer->m_Buffer = fromVk(buffer);
-        gpuRingBuffer->m_Allocation = fromVk(allocation);
+        gpuRingBuffer->m_Buffer = fromVk(buffer.Buffer);
+        gpuRingBuffer->m_Allocation = fromVk(buffer.Allocation);
         gpuRingBuffer->m_WholeSize = desc.ElementCount * elementStride;
         gpuRingBuffer->m_ElementSize = elementStride;
         gpuRingBuffer->m_ElementCount = desc.ElementCount;
-        gpuRingBuffer->m_MappedPtr = allocationInfo.pMappedData;
+        gpuRingBuffer->m_MappedPtr = buffer.MappedPtr;
 
         m_RingBuffers.insert(gpuRingBuffer);
     }
@@ -463,8 +576,7 @@ namespace Rdn
             imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
         VmaAllocationCreateInfo allocInfo = {};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
         VkImage image;
         VmaAllocation allocation;
@@ -487,20 +599,24 @@ namespace Rdn
         imageViewInfo.subresourceRange.baseArrayLayer = 0;
         imageViewInfo.subresourceRange.layerCount = 1;
 
-        VkImageView imageView;
-        VK_CHECK(vkCreateImageView(toVk(m_LogicalDevice), &imageViewInfo, nullptr, &imageView));
+        constexpr ImageUsage viewableUsages = ImageUsage::Sampled | ImageUsage::Storage | ImageUsage::ColorAttachment
+            | ImageUsage::DepthStencilAttachment | ImageUsage::TransientAttachment | ImageUsage::InputAttachment;
+        VkImageView imageView = VK_NULL_HANDLE;
+        if (HasAny(desc.UsageFlags & viewableUsages))
+            VK_CHECK(vkCreateImageView(toVk(m_LogicalDevice), &imageViewInfo, nullptr, &imageView));
         gpuImage->m_ImageView = fromVk(imageView);
         gpuImage->m_Format = desc.Format;
         gpuImage->m_ImageSize = desc.ImageSize;
         gpuImage->m_MipLevels = desc.MipLevels;
+        gpuImage->m_SyncState = {};
 
         m_Images.insert(gpuImage);
 	}
 
     void ResourceAllocator::DestroyGpuImage(GpuImage* gpuImage)
     {
-        vmaDestroyImage(toVk(m_Allocator), toVk(gpuImage->m_Image), toVk(gpuImage->m_Allocation));
         vkDestroyImageView(toVk(m_LogicalDevice), toVk(gpuImage->m_ImageView), nullptr);
+        vmaDestroyImage(toVk(m_Allocator), toVk(gpuImage->m_Image), toVk(gpuImage->m_Allocation));
     }
 
     void ResourceAllocator::ReleaseResource(GpuImage* gpuImage)
@@ -656,130 +772,85 @@ namespace Rdn
 
     void ResourceAllocator::CreateBottomLevelAS(BottomLevelAS* bottomLevelAS, const BottomLevelASDesc& desc)
     {
-        VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
-        VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
+        const VkDevice device = toVk(m_LogicalDevice);
+        const VmaAllocator allocator = toVk(m_Allocator);
 
-        VkBufferDeviceAddressInfo addrInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
-        addrInfo.buffer = toVk(desc.VertexBuffer);
-        vertexBufferDeviceAddress.deviceAddress = vkGetBufferDeviceAddress(toVk(m_LogicalDevice), &addrInfo);
-        addrInfo.buffer = toVk(desc.IndexBuffer);
-        indexBufferDeviceAddress.deviceAddress = vkGetBufferDeviceAddress(toVk(m_LogicalDevice), &addrInfo);
+        VkAccelerationStructureGeometryKHR geometry{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR };
+        geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+        geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+        geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+        geometry.geometry.triangles.vertexFormat = toVk(desc.VertexFormat);
+        geometry.geometry.triangles.vertexData.deviceAddress = GetDeviceAddress(device, toVk(desc.VertexBuffer));
+        geometry.geometry.triangles.maxVertex = desc.VertexCount > 0 ? desc.VertexCount - 1 : 0;
+        geometry.geometry.triangles.vertexStride = desc.VertexStride;
+        geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+        geometry.geometry.triangles.indexData.deviceAddress = GetDeviceAddress(device, toVk(desc.IndexBuffer));
 
-        //Build
-        VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};
-        accelerationStructureGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-        accelerationStructureGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
-        accelerationStructureGeometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-        accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-        accelerationStructureGeometry.geometry.triangles.vertexFormat = toVk(desc.VertexFormat);
-        accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
-        accelerationStructureGeometry.geometry.triangles.maxVertex = desc.VertexCount > 0 ? desc.VertexCount - 1 : 0;
-        accelerationStructureGeometry.geometry.triangles.vertexStride = desc.VertexStride;
-        accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
-        accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
+        VkAccelerationStructureBuildGeometryInfoKHR buildInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR };
+        buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+        buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR;
+        buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        buildInfo.geometryCount = 1;
+        buildInfo.pGeometries = &geometry;
 
-        //Get size info
-        VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuildGeometryInfo{};
-        accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-        accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-        accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-        accelerationStructureBuildGeometryInfo.geometryCount = 1;
-        accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
+        const uint32_t primitiveCount = desc.NumTriangles;
+        VkAccelerationStructureBuildSizesInfoKHR sizes{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
+        vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizes);
 
-        const uint32_t numTriangles = desc.NumTriangles;
-        VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
-        accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-        vkGetAccelerationStructureBuildSizesKHR(
-            toVk(m_LogicalDevice),
-            VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-            &accelerationStructureBuildGeometryInfo,
-            &numTriangles,
-            &accelerationStructureBuildSizesInfo);
+        VmaAccelerationStructure built = CreateVmaAccelerationStructure(device, allocator, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, sizes.accelerationStructureSize);
+        VmaBuffer scratch = CreateVmaBuffer(allocator, sizes.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            HostAccess::None, m_Limits.MinAccelerationStructureScratchOffsetAlignment);
+        buildInfo.dstAccelerationStructure = built.Handle;
+        buildInfo.scratchData.deviceAddress = GetDeviceAddress(device, scratch.Buffer);
 
+        VkQueryPoolCreateInfo queryPoolInfo{ VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+        queryPoolInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
+        queryPoolInfo.queryCount = 1;
+        VkQueryPool queryPool;
+        VK_CHECK(vkCreateQueryPool(device, &queryPoolInfo, nullptr, &queryPool));
 
-        VkBuffer blasBuffer;
-        VmaAllocation blasAllocation;
+        const VkAccelerationStructureBuildRangeInfoKHR buildRange{ primitiveCount, 0, 0, 0 };
+        const VkAccelerationStructureBuildRangeInfoKHR* buildRanges = &buildRange;
+        m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
+            const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
+            vkCmdResetQueryPool(vkCmd, queryPool, 0, 1);
+            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_MEMORY_READ_BIT);
+            vkCmdBuildAccelerationStructuresKHR(vkCmd, 1, &buildInfo, &buildRanges);
+            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+            vkCmdWriteAccelerationStructuresPropertiesKHR(vkCmd, 1, &built.Handle, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
+        });
+
+        VkDeviceSize compactedSize = 0;
+        VK_CHECK(vkGetQueryPoolResults(device, queryPool, 0, 1, sizeof(compactedSize), &compactedSize, sizeof(compactedSize),
+            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
+        vkDestroyQueryPool(device, queryPool, nullptr);
+        vmaDestroyBuffer(allocator, scratch.Buffer, scratch.Allocation);
+
+        VmaAccelerationStructure result = built;
+        if (compactedSize > 0 && compactedSize < sizes.accelerationStructureSize)
         {
-            VkBufferCreateInfo bufferInfo{};
-            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
-            bufferInfo.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-            VmaAllocationCreateInfo allocInfo = {};
-            allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-            allocInfo.requiredFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
-
-            VK_CHECK(vmaCreateBuffer(toVk(m_Allocator), &bufferInfo, &allocInfo,
-                &blasBuffer,
-                &blasAllocation,
-                nullptr));
-        }
-
-        VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
-        accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-        accelerationStructureCreateInfo.buffer = blasBuffer;
-        accelerationStructureCreateInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
-        accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-        VkAccelerationStructureKHR blasHandle;
-        VK_CHECK(vkCreateAccelerationStructureKHR(toVk(m_LogicalDevice), &accelerationStructureCreateInfo, nullptr, &blasHandle));
-
-        VkBuffer scratchBuffer;
-        VmaAllocation scratchBufferAllocation;
-        {
-            VkBufferCreateInfo bufferInfo{};
-            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferInfo.size = accelerationStructureBuildSizesInfo.buildScratchSize;
-            bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-            VmaAllocationCreateInfo allocInfo = {};
-            allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-            allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-            VK_CHECK(vmaCreateBuffer(toVk(m_Allocator), &bufferInfo, &allocInfo,
-                &scratchBuffer,
-                &scratchBufferAllocation,
-                nullptr));
-        }
-        addrInfo.buffer = scratchBuffer;
-        VkDeviceAddress scratchBufferDeviceAddress = vkGetBufferDeviceAddress(toVk(m_LogicalDevice), &addrInfo);
-
-        VkAccelerationStructureBuildGeometryInfoKHR accelerationBuildGeometryInfo{};
-        accelerationBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-        accelerationBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-        accelerationBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-        accelerationBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-        accelerationBuildGeometryInfo.dstAccelerationStructure = blasHandle;
-        accelerationBuildGeometryInfo.geometryCount = 1;
-        accelerationBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
-        accelerationBuildGeometryInfo.scratchData.deviceAddress = scratchBufferDeviceAddress;
-
-        VkAccelerationStructureBuildRangeInfoKHR accelerationStructureBuildRangeInfo{};
-        accelerationStructureBuildRangeInfo.primitiveCount = numTriangles;
-        accelerationStructureBuildRangeInfo.primitiveOffset = 0;
-        accelerationStructureBuildRangeInfo.firstVertex = 0;
-        accelerationStructureBuildRangeInfo.transformOffset = 0;
-        std::vector<VkAccelerationStructureBuildRangeInfoKHR*> accelerationBuildStructureRangeInfos = { &accelerationStructureBuildRangeInfo };
-
-        m_Device->ImmediateSubmit([=](CommandBuffer& cmd) {
-            vkCmdBuildAccelerationStructuresKHR(
-                toVk(cmd.GetHandle()),
-                1,
-                &accelerationBuildGeometryInfo,
-                accelerationBuildStructureRangeInfos.data());
+            result = CreateVmaAccelerationStructure(device, allocator, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, compactedSize);
+            m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
+                VkCopyAccelerationStructureInfoKHR copyInfo{ VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR };
+                copyInfo.src = built.Handle;
+                copyInfo.dst = result.Handle;
+                copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
+                vkCmdCopyAccelerationStructureKHR(toVk(cmd.GetHandle()), &copyInfo);
+                CmdMemoryBarrier(toVk(cmd.GetHandle()), VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+                    VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
             });
+            DestroyVmaAccelerationStructure(device, allocator, built);
+        }
 
-        vmaDestroyBuffer(toVk(m_Allocator), scratchBuffer, scratchBufferAllocation);
+        VkAccelerationStructureDeviceAddressInfoKHR addressInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
+        addressInfo.accelerationStructure = result.Handle;
 
-        VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
-        accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-        accelerationDeviceAddressInfo.accelerationStructure = blasHandle;
-        VkDeviceAddress blasDeviceAddress = vkGetAccelerationStructureDeviceAddressKHR(toVk(m_LogicalDevice), &accelerationDeviceAddressInfo);
-        bottomLevelAS->m_Handle = fromVk(blasHandle);
-        bottomLevelAS->m_Buffer = fromVk(blasBuffer);
-        bottomLevelAS->m_Allocation = fromVk(blasAllocation);
-        bottomLevelAS->m_DeviceAddress = blasDeviceAddress;
+        bottomLevelAS->m_Handle = fromVk(result.Handle);
+        bottomLevelAS->m_Buffer = fromVk(result.Storage.Buffer);
+        bottomLevelAS->m_Allocation = fromVk(result.Storage.Allocation);
+        bottomLevelAS->m_DeviceAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &addressInfo);
 
         m_BottomLevelASs.insert(bottomLevelAS);
     }
@@ -804,173 +875,75 @@ namespace Rdn
 
     void ResourceAllocator::BuildTopLevelAS(TopLevelAS* topLevelAS)
     {
-        DestroyTopLevelAS(topLevelAS);
+        const VkDevice device = toVk(m_LogicalDevice);
+        const VmaAllocator allocator = toVk(m_Allocator);
 
-        auto instances = topLevelAS->m_Instances;
+        if (topLevelAS->m_Handle.Valid())
+        {
+            m_Device->WaitIdle();
+            DestroyTopLevelAS(topLevelAS);
+        }
 
-        std::vector<VkAccelerationStructureInstanceKHR> vkInstances;
-        std::vector<VkTransformMatrixKHR> matrices;
-        vkInstances.resize(instances.size());
-        matrices.resize(instances.size());
+        std::vector<VkAccelerationStructureInstanceKHR> instances(topLevelAS->m_Instances.size());
         for (size_t i = 0; i < instances.size(); i++)
         {
-            VkTransformMatrixKHR& transformMatrix = matrices[i];
-            memcpy(transformMatrix.matrix, instances[i].TransformMatrix, sizeof(float) * 12);
-
-            VkAccelerationStructureInstanceKHR inst{};
-            inst.transform = transformMatrix;
-            inst.instanceCustomIndex = instances[i].InstanceCustomIndex;
-            inst.mask = 0xFF;
-            inst.instanceShaderBindingTableRecordOffset = 0;
-            inst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-            inst.accelerationStructureReference = instances[i].BottomLevelASHandle;
-            vkInstances[i] = inst;
+            const TopLevelASInstance& source = topLevelAS->m_Instances[i];
+            VkAccelerationStructureInstanceKHR& instance = instances[i];
+            memcpy(instance.transform.matrix, source.TransformMatrix, sizeof(instance.transform.matrix));
+            instance.instanceCustomIndex = source.InstanceCustomIndex;
+            instance.mask = 0xFF;
+            instance.instanceShaderBindingTableRecordOffset = 0;
+            instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+            instance.accelerationStructureReference = source.BottomLevelASHandle;
         }
 
-        VkBuffer instanceBuffer;
-        VmaAllocation instanceBufferAllocation;
-        {
-            VkBufferCreateInfo bufferInfo{};
-            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferInfo.size = sizeof(VkAccelerationStructureInstanceKHR) * vkInstances.size();
-            bufferInfo.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        const VkDeviceSize instanceBytes = std::max<size_t>(instances.size(), 1) * sizeof(VkAccelerationStructureInstanceKHR);
+        VmaBuffer instanceBuffer = CreateVmaBuffer(allocator, instanceBytes,
+            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, HostAccess::SequentialWrite, 16);
+        if (!instances.empty())
+            VK_CHECK(vmaCopyMemoryToAllocation(allocator, instances.data(), instanceBuffer.Allocation, 0, instances.size() * sizeof(VkAccelerationStructureInstanceKHR)));
 
-            VmaAllocationCreateInfo allocInfo = {};
-            allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-            allocInfo.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+        VkAccelerationStructureGeometryKHR geometry{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR };
+        geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+        geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+        geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+        geometry.geometry.instances.arrayOfPointers = VK_FALSE;
+        geometry.geometry.instances.data.deviceAddress = GetDeviceAddress(device, instanceBuffer.Buffer);
 
-            VK_CHECK(vmaCreateBuffer(toVk(m_Allocator), &bufferInfo, &allocInfo,
-                &instanceBuffer,
-                &instanceBufferAllocation,
-                nullptr));
+        VkAccelerationStructureBuildGeometryInfoKHR buildInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR };
+        buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+        buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+        buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        buildInfo.geometryCount = 1;
+        buildInfo.pGeometries = &geometry;
 
-            void* data;
-            VK_CHECK(vmaMapMemory(toVk(m_Allocator), instanceBufferAllocation, &data));
-            memcpy(data, vkInstances.data(), vkInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
-            vmaUnmapMemory(toVk(m_Allocator), instanceBufferAllocation);
-        }
+        const uint32_t primitiveCount = uint32_t(instances.size());
+        VkAccelerationStructureBuildSizesInfoKHR sizes{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
+        vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizes);
 
-        topLevelAS->m_InstanceBuffer = fromVk(instanceBuffer);
-        topLevelAS->m_InstanceAllocation = fromVk(instanceBufferAllocation);
+        VmaAccelerationStructure tlas = CreateVmaAccelerationStructure(device, allocator, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, sizes.accelerationStructureSize);
+        VmaBuffer scratch = CreateVmaBuffer(allocator, sizes.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            HostAccess::None, m_Limits.MinAccelerationStructureScratchOffsetAlignment);
+        buildInfo.dstAccelerationStructure = tlas.Handle;
+        buildInfo.scratchData.deviceAddress = GetDeviceAddress(device, scratch.Buffer);
 
-        VkBufferDeviceAddressInfo addrInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
-        addrInfo.buffer = instanceBuffer;
-        VkDeviceAddress instanceBufferDeviceAddress = vkGetBufferDeviceAddress(toVk(m_LogicalDevice), &addrInfo);
+        const VkAccelerationStructureBuildRangeInfoKHR buildRange{ primitiveCount, 0, 0, 0 };
+        const VkAccelerationStructureBuildRangeInfoKHR* buildRanges = &buildRange;
+        m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
+            const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
+            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_MEMORY_READ_BIT);
+            vkCmdBuildAccelerationStructuresKHR(vkCmd, 1, &buildInfo, &buildRanges);
+            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+        });
 
-        VkDeviceOrHostAddressConstKHR instanceDataDeviceAddress{};
-        instanceDataDeviceAddress.deviceAddress = instanceBufferDeviceAddress;
+        vmaDestroyBuffer(allocator, scratch.Buffer, scratch.Allocation);
+        vmaDestroyBuffer(allocator, instanceBuffer.Buffer, instanceBuffer.Allocation);
 
-        VkAccelerationStructureGeometryKHR accelerationStructure2Geometry{};
-        accelerationStructure2Geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-        accelerationStructure2Geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-        accelerationStructure2Geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
-        accelerationStructure2Geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-        accelerationStructure2Geometry.geometry.instances.arrayOfPointers = VK_FALSE;
-        accelerationStructure2Geometry.geometry.instances.data = instanceDataDeviceAddress;
-
-        // Get size info
-        VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuild2GeometryInfo{};
-        accelerationStructureBuild2GeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-        accelerationStructureBuild2GeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-        accelerationStructureBuild2GeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-        accelerationStructureBuild2GeometryInfo.geometryCount = 1;
-        accelerationStructureBuild2GeometryInfo.pGeometries = &accelerationStructure2Geometry;
-
-        uint32_t primitive_count = static_cast<uint32_t>(vkInstances.size());
-
-        VkAccelerationStructureBuildSizesInfoKHR tlasaccelerationStructureBuildSizesInfo{};
-        tlasaccelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-        vkGetAccelerationStructureBuildSizesKHR(
-            toVk(m_LogicalDevice),
-            VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-            &accelerationStructureBuild2GeometryInfo,
-            &primitive_count,
-            &tlasaccelerationStructureBuildSizesInfo);
-
-        VkBuffer tlasBuffer;
-        VmaAllocation tlasAllocation;
-        {
-            VkBufferCreateInfo bufferInfo{};
-            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferInfo.size = tlasaccelerationStructureBuildSizesInfo.accelerationStructureSize;
-            bufferInfo.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-            VmaAllocationCreateInfo allocInfo = {};
-            allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-            allocInfo.requiredFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
-
-            VK_CHECK(vmaCreateBuffer(toVk(m_Allocator), &bufferInfo, &allocInfo,
-                &tlasBuffer,
-                &tlasAllocation,
-                nullptr));
-        }
-
-
-        VkAccelerationStructureCreateInfoKHR tlasaccelerationStructureCreateInfo{};
-        tlasaccelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-        tlasaccelerationStructureCreateInfo.buffer = tlasBuffer;
-        tlasaccelerationStructureCreateInfo.size = tlasaccelerationStructureBuildSizesInfo.accelerationStructureSize;
-        tlasaccelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-
-        VkAccelerationStructureKHR tlas;
-        VK_CHECK(vkCreateAccelerationStructureKHR(toVk(m_LogicalDevice), &tlasaccelerationStructureCreateInfo, nullptr, &tlas));
-
-
-        VkBuffer scratchBuffer2;
-        VmaAllocation scratchBuffer2Allocation;
-        {
-            VkBufferCreateInfo bufferInfo{};
-            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferInfo.size = tlasaccelerationStructureBuildSizesInfo.buildScratchSize;
-            bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-            VmaAllocationCreateInfo allocInfo = {};
-            allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-            allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-            VK_CHECK(vmaCreateBuffer(toVk(m_Allocator), &bufferInfo, &allocInfo,
-                &scratchBuffer2,
-                &scratchBuffer2Allocation,
-                nullptr));
-        }
-        addrInfo.buffer = scratchBuffer2;
-        VkDeviceAddress scratchBuffer2DeviceAddress = vkGetBufferDeviceAddress(toVk(m_LogicalDevice), &addrInfo);
-
-
-        VkAccelerationStructureBuildGeometryInfoKHR accelerationBuild2GeometryInfo{};
-        accelerationBuild2GeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-        accelerationBuild2GeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-        accelerationBuild2GeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-        accelerationBuild2GeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-        accelerationBuild2GeometryInfo.dstAccelerationStructure = tlas;
-        accelerationBuild2GeometryInfo.geometryCount = 1;
-        accelerationBuild2GeometryInfo.pGeometries = &accelerationStructure2Geometry;
-        accelerationBuild2GeometryInfo.scratchData.deviceAddress = scratchBuffer2DeviceAddress;
-
-        VkAccelerationStructureBuildRangeInfoKHR accelerationStructureBuild2RangeInfo{};
-        accelerationStructureBuild2RangeInfo.primitiveCount = primitive_count;
-        accelerationStructureBuild2RangeInfo.primitiveOffset = 0;
-        accelerationStructureBuild2RangeInfo.firstVertex = 0;
-        accelerationStructureBuild2RangeInfo.transformOffset = 0;
-        std::vector<VkAccelerationStructureBuildRangeInfoKHR*> accelerationBuild2StructureRangeInfos = { &accelerationStructureBuild2RangeInfo };
-
-        m_Device->ImmediateSubmit([=](CommandBuffer& cmd) {
-            vkCmdBuildAccelerationStructuresKHR(
-                toVk(cmd.GetHandle()),
-                1,
-                &accelerationBuild2GeometryInfo,
-                accelerationBuild2StructureRangeInfos.data());
-            });
-
-        vmaDestroyBuffer(toVk(m_Allocator), scratchBuffer2, scratchBuffer2Allocation);
-
-        topLevelAS->m_Handle = fromVk(tlas);
-        topLevelAS->m_Buffer = fromVk(tlasBuffer);
-        topLevelAS->m_Allocation = fromVk(tlasAllocation);
+        topLevelAS->m_Handle = fromVk(tlas.Handle);
+        topLevelAS->m_Buffer = fromVk(tlas.Storage.Buffer);
+        topLevelAS->m_Allocation = fromVk(tlas.Storage.Allocation);
     }
 
     void ResourceAllocator::CreateTopLevelAS(TopLevelAS* topLevelAS)
@@ -986,7 +959,9 @@ namespace Rdn
     {
         if (topLevelAS->m_Handle.Valid()) vkDestroyAccelerationStructureKHR(toVk(m_LogicalDevice), toVk(topLevelAS->m_Handle), nullptr);
         if (topLevelAS->m_Buffer.Valid()) vmaDestroyBuffer(toVk(m_Allocator), toVk(topLevelAS->m_Buffer), toVk(topLevelAS->m_Allocation));
-        if (topLevelAS->m_InstanceBuffer.Valid()) vmaDestroyBuffer(toVk(m_Allocator), toVk(topLevelAS->m_InstanceBuffer), toVk(topLevelAS->m_InstanceAllocation));
+        topLevelAS->m_Handle = {};
+        topLevelAS->m_Buffer = {};
+        topLevelAS->m_Allocation = {};
     }
 
     void ResourceAllocator::ReleaseResource(TopLevelAS* topLevelAS)
@@ -1065,7 +1040,6 @@ namespace Rdn
         std::map<uint32_t, std::map<uint32_t, Shader::DescriptorLayoutBinding>> bindings;
 
         uint32_t pushConstantSize = 0;
-        uint32_t colorAttachCount = 0;
 
         for (const Shader* shader : desc.ShaderStages)
         {
@@ -1083,9 +1057,6 @@ namespace Rdn
             }
 
             pushConstantSize = std::max(pushConstantSize, shader->m_PushConstantSize);
-
-            if (shader->m_ShaderStage == ShaderStage::Fragment)
-                colorAttachCount = shader->m_StageOutputs;
         }
 
         uint32_t maxSetIndex = 0;
@@ -1224,9 +1195,9 @@ namespace Rdn
         // COLOR BLEND
 
         std::vector<VkPipelineColorBlendAttachmentState> blendAttachments;
-        blendAttachments.reserve(colorAttachCount);
+        blendAttachments.reserve(desc.ColorAttachmentFormats.size());
 
-        for (uint32_t i = 0; i < colorAttachCount; i++)
+        for (size_t i = 0; i < desc.ColorAttachmentFormats.size(); i++)
         {
             VkPipelineColorBlendAttachmentState att{};
             att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -1516,13 +1487,9 @@ namespace Rdn
         VK_CHECK(vkCreateRayTracingPipelinesKHR(toVk(m_LogicalDevice), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &rtPipeline));
 
 
-        VkPhysicalDeviceRayTracingPipelinePropertiesKHR rayProps{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
-        VkPhysicalDeviceProperties2 pdprops{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-        pdprops.pNext = &rayProps;
-        vkGetPhysicalDeviceProperties2(toVk(m_PhysicalDevice), &pdprops);
-        uint32_t handleSize = rayProps.shaderGroupHandleSize;
-        uint32_t handleAlign = rayProps.shaderGroupHandleAlignment;
-        uint32_t baseAlign = rayProps.shaderGroupBaseAlignment;
+        uint32_t handleSize = m_Limits.ShaderGroupHandleSize;
+        uint32_t handleAlign = m_Limits.ShaderGroupHandleAlignment;
+        uint32_t baseAlign = m_Limits.ShaderGroupBaseAlignment;
 
         uint32_t groupCount = static_cast<uint32_t>(shaderGroups.size());
         std::vector<uint8_t> handles(groupCount * handleSize);
@@ -1546,24 +1513,10 @@ namespace Rdn
             return;
         }
 
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = sbtSize;
-        bufferInfo.usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo allocInfo = {};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        allocInfo.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-
-        VkBuffer buffer;
-        VmaAllocation allocation;
-        VK_CHECK(vmaCreateBuffer(toVk(m_Allocator), &bufferInfo, &allocInfo,
-            &buffer,
-            &allocation,
-            nullptr));
-
+        VmaBuffer sbt = CreateVmaBuffer(toVk(m_Allocator), sbtSize, VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            HostAccess::SequentialWrite, baseAlign);
+        VkBuffer buffer = sbt.Buffer;
+        VmaAllocation allocation = sbt.Allocation;
 
         void* data;
         VK_CHECK(vmaMapMemory(toVk(m_Allocator), allocation, &data));
@@ -1572,9 +1525,7 @@ namespace Rdn
         memcpy((uint8_t*)data + raygenRegionSize + missRegionSize + 0 * sbtRecordSize, handles.data() + 2 * handleSize, handleSize);
         vmaUnmapMemory(toVk(m_Allocator), allocation);
 
-        VkBufferDeviceAddressInfo addrInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
-        addrInfo.buffer = buffer;
-        VkDeviceAddress address = vkGetBufferDeviceAddress(toVk(m_LogicalDevice), &addrInfo);
+        VkDeviceAddress address = GetDeviceAddress(toVk(m_LogicalDevice), buffer);
 
         raytracingPipeline->m_RayGenShaderBindingTable.DeviceAddress = address + 0;
         raytracingPipeline->m_RayGenShaderBindingTable.Stride = sbtRecordSize;
@@ -1738,5 +1689,26 @@ namespace Rdn
         }
         DestroyDescriptorSet(descriptorSet);
         m_DescriptorSets.erase(descriptorSet);
+    }
+
+    std::string ResourceAllocator::DescribeMemoryUsage() const
+    {
+        const VkPhysicalDeviceMemoryProperties* memoryProperties = nullptr;
+        vmaGetMemoryProperties(toVk(m_Allocator), &memoryProperties);
+
+        std::vector<VmaBudget> budgets(memoryProperties->memoryHeapCount);
+        vmaGetHeapBudgets(toVk(m_Allocator), budgets.data());
+
+        constexpr double MiB = 1024.0 * 1024.0;
+        std::string out = "GPU memory:\n";
+        for (uint32_t heap = 0; heap < memoryProperties->memoryHeapCount; heap++)
+        {
+            const VkMemoryHeap& heapInfo = memoryProperties->memoryHeaps[heap];
+            const VmaStatistics& stats = budgets[heap].statistics;
+            out += std::format("    heap {} ({}, {:.0f} MiB): {:.2f} MiB in {} allocations, {:.1f} MiB reserved in {} blocks\n",
+                heap, (heapInfo.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) ? "device local" : "host", heapInfo.size / MiB,
+                stats.allocationBytes / MiB, stats.allocationCount, stats.blockBytes / MiB, stats.blockCount);
+        }
+        return out;
     }
 }

@@ -414,26 +414,8 @@ void PathTracer::CreateImages()
 		};
 		m_ResourceAllocator->CreateGpuImage(m_AccumulationImage1.get(), desc);
 		m_ResourceAllocator->CreateGpuImage(m_AccumulationImage2.get(), desc);
-		const float clearColor[4] = { 0.0, 0.0, 0.0, 0.0 };
-		m_Device->ImmediateSubmit([&](Rdn::CommandBuffer& cmd) {
-			cmd.TransitionImage(m_AccumulationImage1->GetHandle(),
-				Rdn::ImageLayout::Undefined,
-				Rdn::ImageLayout::General,
-				Rdn::PipelineStage::None,
-				Rdn::PipelineStage::ComputeShader,
-				Rdn::ImageAspect::Color);
-			cmd.TransitionImage(m_AccumulationImage2->GetHandle(),
-				Rdn::ImageLayout::Undefined,
-				Rdn::ImageLayout::General,
-				Rdn::PipelineStage::None,
-				Rdn::PipelineStage::ComputeShader,
-				Rdn::ImageAspect::Color);
-
-			cmd.ClearColorImage(m_AccumulationImage1->GetHandle(), clearColor, Rdn::ImageLayout::General);
-			cmd.ClearColorImage(m_AccumulationImage2->GetHandle(), clearColor, Rdn::ImageLayout::General);
-		});
 	}
-	m_Device->WaitIdle();
+	m_ClearAccumulation = true; // done by the next frame's render graph
 
 	m_Camera->AspectRatio = extent.Width / (float)extent.Height;
 }
@@ -448,20 +430,25 @@ void PathTracer::RenderFrame(float elapsedTime)
 	static float lastTime = 0.0f;
 	float dt = elapsedTime - lastTime;
 	lastTime = elapsedTime;
-	m_IsEvenFrame = !m_IsEvenFrame;
 
 	if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::G))
 	{
-		std::vector<uint8_t> imageData = m_ResourceAllocator->GetImageData(m_OutputImage.get(), Rdn::ImageLayout::ShaderReadOnlyOptimal);
+		std::vector<uint8_t> imageData = m_ResourceAllocator->GetImageData(m_OutputImage.get());
 		std::string path = "img.png";
 		stbi_write_png(path.c_str(), m_OutputImage->GetImageSize().Width, m_OutputImage->GetImageSize().Height, 4, imageData.data(), m_OutputImage->GetImageSize().Width * 4);
 		RDN_LOG("Screenshot saved to disk");
 	}
+	if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F2))
+		m_LogRenderGraph = true;
+	if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F3))
+		RDN_LOG("{}", m_ResourceAllocator->DescribeMemoryUsage());
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(16));
 
-	Rdn::FrameContext frameData = m_PresentQueue->BeginFrame();
-	Rdn::CommandBuffer* cmd = &frameData.Cmd;
+	std::optional<Rdn::FrameContext> frameData = m_PresentQueue->BeginFrame();
+	if (!frameData)
+		return;
+	m_IsEvenFrame = !m_IsEvenFrame; // only flip the accumulation ping-pong for frames that render
 
 	m_Camera->Update(dt);
 
@@ -480,53 +467,77 @@ void PathTracer::RenderFrame(float elapsedTime)
 		globalFrameData.FrameIndex = 1;
 	}
 	
-	m_GlobalDataBuffer->Write(frameData.FrameIndex, globalFrameData);
+	m_GlobalDataBuffer->Write(frameData->FrameIndex, globalFrameData);
 
-	m_RenderGraph->Reset();
+	Rdn::RenderGraph& graph = *m_RenderGraph;
+	graph.Reset();
 
-	Rdn::GpuImage* accumImageIn = m_IsEvenFrame ? m_AccumulationImage1.get() : m_AccumulationImage2.get();
-	Rdn::GpuImage* accumImageOut = m_IsEvenFrame ? m_AccumulationImage2.get() : m_AccumulationImage1.get();
+	Rdn::RGImage backbuffer = graph.ImportBackbuffer(*frameData);
+	Rdn::RGImage accumIn = graph.ImportImage("Accumulation in", m_IsEvenFrame ? m_AccumulationImage1.get() : m_AccumulationImage2.get());
+	Rdn::RGImage accumOut = graph.ImportImage("Accumulation out", m_IsEvenFrame ? m_AccumulationImage2.get() : m_AccumulationImage1.get());
+	Rdn::RGImage output = graph.ImportImage("Output", m_OutputImage.get());
 
-	m_RenderGraph->AddPass("Trace rays",
+	if (m_ClearAccumulation)
+	{
+		m_ClearAccumulation = false;
+		graph.AddPass("Clear accumulation", Rdn::PassType::Transfer,
+			[&](Rdn::PassBuilder& builder) {
+				builder.UseImage(accumIn, Rdn::RGImageUsage::TransferDst);
+				builder.UseImage(accumOut, Rdn::RGImageUsage::TransferDst);
+			},
+			[&](Rdn::CommandBuffer& cmd, const Rdn::PassContext& ctx) {
+				const float clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+				cmd.ClearColorImage(ctx.GetImage(accumIn), clearColor, Rdn::ImageLayout::TransferDstOptimal);
+				cmd.ClearColorImage(ctx.GetImage(accumOut), clearColor, Rdn::ImageLayout::TransferDstOptimal);
+			}
+		);
+	}
+
+	graph.AddPass("Trace rays", Rdn::PassType::RayTracing,
 		[&](Rdn::PassBuilder& builder) {
-			builder.UseImage(accumImageIn->GetHandle(), Rdn::ImageLayout::General, Rdn::PipelineStage::RayTracingShader, Rdn::AccessMask::ShaderStorageRead);
-			builder.UseImage(accumImageOut->GetHandle(), Rdn::ImageLayout::General, Rdn::PipelineStage::RayTracingShader, Rdn::AccessMask::ShaderStorageWrite);
-			builder.UseImage(m_OutputImage->GetHandle(), Rdn::ImageLayout::General, Rdn::PipelineStage::RayTracingShader, Rdn::AccessMask::ShaderStorageWrite);
+			builder.UseImage(accumIn, Rdn::RGImageUsage::StorageRead);
+			builder.UseImage(accumOut, Rdn::RGImageUsage::StorageWrite);
+			builder.UseImage(output, Rdn::RGImageUsage::StorageWrite);
 		},
-		[&](Rdn::CommandBuffer& cmd, uint32_t frameIndex) {
+		[&](Rdn::CommandBuffer& cmd, const Rdn::PassContext& ctx) {
 			cmd.PushDescriptorSets(Rdn::PipelineBindPoint::RayTracing, m_RayTracingPipeline->GetLayout(), 0, Rdn::DescriptorWrite()
 				.AddWrite(Rdn::AccelerationStructureWrite(0, Rdn::DescriptorType::AccelerationStructure, m_Scene->GetHandle()))
-				.AddWrite(Rdn::ImageWrite(1, Rdn::DescriptorType::StorageImage, accumImageIn->GetImageView(), Rdn::ImageLayout::General, {}))
-				.AddWrite(Rdn::ImageWrite(2, Rdn::DescriptorType::StorageImage, accumImageOut->GetImageView(), Rdn::ImageLayout::General, {}))
-				.AddWrite(Rdn::ImageWrite(3, Rdn::DescriptorType::StorageImage, m_OutputImage->GetImageView(), Rdn::ImageLayout::General, {}))
-				.AddWrite(Rdn::BufferWrite(4, Rdn::DescriptorType::UniformBuffer, m_GlobalDataBuffer->GetHandle(), m_GlobalDataBuffer->GetOffset(frameIndex), m_GlobalDataBuffer->GetElementSize())));
+				.AddWrite(Rdn::ImageWrite(1, Rdn::DescriptorType::StorageImage, ctx.GetImageView(accumIn), Rdn::ImageLayout::General, {}))
+				.AddWrite(Rdn::ImageWrite(2, Rdn::DescriptorType::StorageImage, ctx.GetImageView(accumOut), Rdn::ImageLayout::General, {}))
+				.AddWrite(Rdn::ImageWrite(3, Rdn::DescriptorType::StorageImage, ctx.GetImageView(output), Rdn::ImageLayout::General, {}))
+				.AddWrite(Rdn::BufferWrite(4, Rdn::DescriptorType::UniformBuffer, m_GlobalDataBuffer->GetHandle(), m_GlobalDataBuffer->GetOffset(ctx.FrameIndex), m_GlobalDataBuffer->GetElementSize())));
 			cmd.BindDescriptorSets(Rdn::PipelineBindPoint::RayTracing, m_RayTracingPipeline->GetLayout(), 1, { m_SceneDescriptorSet->GetHandle() });
 
 			cmd.BindRayTracingPipeline(m_RayTracingPipeline->GetHandle());
-			cmd.TraceRays(m_RayTracingPipeline.get(), m_OutputImage->GetImageSize().Width, m_OutputImage->GetImageSize().Height, 1);
+			Rdn::Extent3D size = ctx.GetImageExtent(output);
+			cmd.TraceRays(m_RayTracingPipeline.get(), size.Width, size.Height, 1);
 		}
 	);
 
-	m_RenderGraph->SetPresentPass("Present",
+	graph.AddPass("Composite", Rdn::PassType::Graphics,
 		[&](Rdn::PassBuilder& builder) {
-			builder.UseImage(m_OutputImage->GetHandle(), Rdn::ImageLayout::ShaderReadOnlyOptimal, Rdn::PipelineStage::FragmentShader, Rdn::AccessMask::ShaderSampledRead);
+			builder.UseImage(output, Rdn::RGImageUsage::Sampled, Rdn::ShaderStage::Fragment);
+			builder.AddColorAttachment(backbuffer, Rdn::AttachmentLoadOp::Clear, Rdn::AttachmentStoreOp::Store, { 0.1f, 0.6f, 0.6f, 1.0f });
 		},
-		Rdn::AttachmentLoadOp::Clear, 0.1f, 0.6f, 0.6f, 1.0f,
-		[&](Rdn::CommandBuffer& cmd, uint32_t frameIndex) {
+		[&](Rdn::CommandBuffer& cmd, const Rdn::PassContext& ctx) {
 			cmd.BindPipeline(m_CompositePipeline->GetHandle());
 			cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_CompositePipeline->GetLayout(), 0, Rdn::DescriptorWrite()
-				.AddWrite(Rdn::ImageWrite(0, Rdn::DescriptorType::CombinedImageSampler, m_OutputImage->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_NearestSampler->GetHandle())));
-			cmd.Draw(6, 1, 0, 0);
+				.AddWrite(Rdn::ImageWrite(0, Rdn::DescriptorType::CombinedImageSampler, ctx.GetImageView(output), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_NearestSampler->GetHandle())));
+			cmd.Draw(4, 1, 0, 0);
 		}
 	);
 
-	m_RenderGraph->Execute(frameData.Cmd, frameData.FrameIndex, frameData.PresentImage, frameData.PresentImageView, m_PresentQueue->GetExtent());
+	graph.Execute(frameData->Cmd, frameData->FrameIndex);
+	if (m_LogRenderGraph)
+	{
+		RDN_LOG("{}", graph.DescribeCompiledFrame());
+		m_LogRenderGraph = false;
+	}
 	m_PresentQueue->Submit();
 }
 
-void PathTracer::SwapchainResized(void* presentQueue)
+void PathTracer::SwapchainResized()
 {
-	m_PresentQueue = static_cast<Rdn::PresentQueue*>(presentQueue);
 	globalFrameData.FrameIndex = 0;
 	CreateImages();
 }

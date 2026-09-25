@@ -22,6 +22,7 @@ namespace Rdn
 		Format GetFormat() { return m_Format; }
 		Extent3D GetImageSize() { return m_ImageSize; }
 		uint32_t GetMipLevels() { return m_MipLevels; }
+		ImageLayout GetLayout() const { return m_SyncState.Layout; }
 
 	private:
 		ImageHandle m_Image;
@@ -30,7 +31,9 @@ namespace Rdn
 		Format m_Format;
 		Extent3D m_ImageSize;
 		uint32_t m_MipLevels;
+		ResourceSyncState m_SyncState;
 
 		friend class ResourceAllocator;
+		friend class RenderGraph;
 	};
 }
