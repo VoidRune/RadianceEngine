@@ -23,6 +23,7 @@ struct SceneId
 using ModelId = SceneId<struct ModelTag>;
 using MaterialId = SceneId<struct MaterialTag>;
 using TextureId = SceneId<struct TextureTag>;
+using MediumId = SceneId<struct MediumTag>;
 
 struct Vertex
 {
@@ -44,14 +45,27 @@ struct ModelPart
 	MaterialId Material = {};
 };
 
+struct Medium
+{
+	glm::vec3 Absorption{ 0.0f };
+	glm::vec3 Scattering{ 0.0f };
+	float Anisotropy = 0.0f;
+};
+
 struct Material
 {
-	glm::vec3 Color{ 1.0f };
+	glm::vec3 BaseColor{ 1.0f };
 	glm::vec3 Emission{ 0.0f };
 	float Metallic = 0.0f;
-	float Roughness = 0.0f;
+	float Roughness = 0.5f;
 	float Transmission = 0.0f;
+	float IOR = 1.5f;
+	float Clearcoat = 0.0f;
+	float ClearcoatRoughness = 0.03f;
+	glm::vec3 Sheen{ 0.0f };
 	TextureId Texture = {};
+	MediumId Medium = {};
+	bool NullSurface = false;
 };
 
 struct Transform
@@ -75,6 +89,8 @@ public:
 	TextureId LoadTexture(const std::filesystem::path& path);
 	TextureId AddTexture(uint32_t width, uint32_t height, std::span<const uint32_t> rgba8);
 	MaterialId AddMaterial(const Material& material);
+	MediumId AddMedium(const Medium& medium);
+	void SetGlobalMedium(MediumId medium);
 	void AddInstance(ModelId model, const Transform& transform = {}, MaterialId material = {});
 	void Build();
 
@@ -90,6 +106,8 @@ private:
 		uint64_t VertexAddress = 0;
 		uint64_t IndexAddress = 0;
 		std::vector<ModelPart> Parts;
+		std::vector<glm::vec3> CpuPositions;
+		std::vector<uint32_t> CpuIndices;
 	};
 
 	struct Instance
@@ -107,8 +125,12 @@ private:
 	std::unordered_map<std::string, TextureId> m_TextureCache;
 	std::vector<Material> m_Materials;
 	std::vector<Instance> m_Instances;
+	std::vector<Medium> m_Media;
+	MediumId m_GlobalMedium = {};
 
 	std::unique_ptr<Rdn::GpuBuffer> m_MaterialBuffer;
 	std::unique_ptr<Rdn::GpuBuffer> m_PrimitiveBuffer;
+	std::unique_ptr<Rdn::GpuBuffer> m_LightBuffer;
+	std::unique_ptr<Rdn::GpuBuffer> m_MediumBuffer;
 	std::unique_ptr<Rdn::TopLevelAS> m_TopLevelAS;
 };

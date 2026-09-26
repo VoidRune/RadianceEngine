@@ -1,6 +1,8 @@
 #include "ObjLoader.h"
 #include "RadianceEngine/Core/Log.h"
 #include "tiny_obj_loader/tiny_obj_loader.h"
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <unordered_map>
 
@@ -119,11 +121,18 @@ std::optional<ObjModel> LoadObj(const std::filesystem::path& path)
 	for (const tinyobj::material_t& source : reader.GetMaterials())
 	{
 		ObjMaterial& material = model.Materials.emplace_back();
-		material.Material.Color = { source.diffuse[0], source.diffuse[1], source.diffuse[2] };
-		material.Material.Emission = { source.emission[0], source.emission[1], source.emission[2] };
-		material.Material.Metallic = source.metallic;
-		material.Material.Roughness = source.roughness;
-		material.Material.Transmission = 1.0f - source.dissolve;
+		Material& target = material.Material;
+		target.BaseColor = { source.diffuse[0], source.diffuse[1], source.diffuse[2] };
+		target.Emission = { source.emission[0], source.emission[1], source.emission[2] };
+		target.Metallic = source.metallic;
+		target.Roughness = source.roughness > 0.0f ? source.roughness : std::pow(2.0f / (std::max(source.shininess, 0.0f) + 2.0f), 0.25f);
+		target.Transmission = 1.0f - source.dissolve;
+		if (source.ior > 1.0f)
+			target.IOR = source.ior;
+		target.Clearcoat = source.clearcoat_thickness;
+		if (source.clearcoat_roughness > 0.0f)
+			target.ClearcoatRoughness = source.clearcoat_roughness;
+		target.Sheen = glm::vec3(source.sheen);
 		if (!source.diffuse_texname.empty())
 			material.DiffuseTexture = path.parent_path() / source.diffuse_texname;
 	}

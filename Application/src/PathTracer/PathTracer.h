@@ -48,6 +48,9 @@ private:
 		float Aperture = 0;
 		float FocusDistance = 0;
 		uint32_t FrameIndex = 0;
+		uint32_t MaxBounces = 64;
+		float Exposure = 1.0f;
+		uint32_t SamplesPerPixel = 1;
 	} globalFrameData;
 	
 	std::unique_ptr<Scene> m_Scene;

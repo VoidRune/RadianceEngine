@@ -1,309 +1,443 @@
 #version 460
-#extension GL_EXT_ray_tracing : enable
-#extension GL_EXT_shader_image_load_formatted : enable
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : require
 #include "common.glsl"
+#include "scene.glsl"
+#include "bsdf.glsl"
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT topLevelAS;
 layout(set = 0, binding = 1, rgba32f) uniform image2D accumulationImageIn;
 layout(set = 0, binding = 2, rgba32f) uniform image2D accumulationImageOut;
 layout(set = 0, binding = 3, rgba8) uniform image2D outputImage;
-layout(set = 0, binding = 4) uniform GlobalData 
+layout(set = 0, binding = 4) uniform GlobalData
 {
-	vec4 cameraPosition;
-	vec4 cameraForward;
-	vec4 cameraRight;
-	vec4 cameraUp;
-	float tanHalfFov;
-	float aspectRatio;
-	float aperture;
-	float focusDistance;
-	uint frameIndex;
+    vec4 cameraPosition;
+    vec4 cameraForward;
+    vec4 cameraRight;
+    vec4 cameraUp;
+    float tanHalfFov;
+    float aspectRatio;
+    float aperture;
+    float focusDistance;
+    uint frameIndex;
+    uint maxBounces;
+    float exposure;
+    uint samplesPerPixel;
 } globalData;
 
-layout(location = 0) rayPayloadEXT RayPayload payload;
+layout(location = 0) rayPayloadEXT HitPayload payload;
 
-struct Medium
+const int MEDIUM_STACK_SIZE = 4;
+const int MAX_NULL_CROSSINGS = 64;
+
+struct MediumStack
 {
-    vec3 sigma_s;
-    vec3 sigma_a;
-    float g;
+    int media[MEDIUM_STACK_SIZE];
+    int depth;
 };
 
-struct Photon
+struct LightSample
 {
-    vec3 pos;
-    vec3 dir;
-    vec3 light;
-
-	bool inMedium;
-    Medium medium;
+    vec3 position;
+    vec3 normal;
+    vec3 emission;
+    float pdfArea;
 };
 
-const float PI = 3.14159265358979323846;
-const float EPS = 1e-5;
-
-// Returns a portion of reflected light in range [0..1]
-// where 1 minus that is refracted portion
-float FresnelDielectric(float cosThetaI, float iorI, float iorT)
+MediumStack CreateMediumStack()
 {
-	float eta = iorI / iorT;
-	float sinT2 = eta * eta * (1.0 - cosThetaI * cosThetaI);
-
-	if (sinT2 > 1.0)
-	{
-		return 1.0;
-	}
-
-	float cosT = sqrt(1 - sinT2);
-	float rt = (iorI * cosThetaI - iorT * cosT) / (iorI * cosThetaI + iorT * cosT);
-	float rs = (iorT * cosThetaI - iorI * cosT) / (iorT * cosThetaI + iorI * cosT);
-	return (rs * rs + rt * rt) * 0.5;
+    MediumStack stack;
+    for (int i = 0; i < MEDIUM_STACK_SIZE; i++)
+        stack.media[i] = -1;
+    stack.media[0] = globalMedium;
+    stack.depth = 0;
+    return stack;
 }
 
-// Fresnel approximation
-float FresnelSchlick(float cosThetaI, float iorI, float iorT)
+int CurrentMedium(MediumStack stack)
 {
-	float eta = iorI / iorT;
-	float sinT2 = eta * eta * (1.0 - cosThetaI * cosThetaI);
-
-	if (sinT2 > 1.0)
-	{
-		return 1.0;
-	}
-
-	float r0 = (1.0 - eta) / (1.0 + eta);
-	r0 *= r0;
-	return r0 + (1.0 - r0) * pow(1.0 - cosThetaI, 5.0);
+    return stack.media[stack.depth];
 }
 
-vec3 FresnelSchlickF0(float cosTheta, vec3 F0)
+void CrossBoundary(inout MediumStack stack, bool entering, int medium)
 {
-    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
-}
-
-vec3 SampleGGX(vec3 n, float roughness, inout uint rng)
-{
-    float r = roughness * roughness;
-
-    float u1 = RandomValue(rng);
-    float u2 = RandomValue(rng);
-
-    float phi = 2.0 * 3.1415926 * u1;
-    float cosTheta = sqrt((1.0 - u2) / (1.0 + (r*r - 1.0) * u2));
-    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-
-    vec3 h = vec3(
-        cos(phi) * sinTheta,
-        sin(phi) * sinTheta,
-        cosTheta
-    );
-
-    vec3 t = normalize(abs(n.x) > 0.1 ? cross(n, vec3(0,1,0)) : cross(n, vec3(1,0,0)));
-    vec3 b = cross(n, t);
-
-    return normalize(h.x * t + h.y * b + h.z * n);
-}
-
-vec3 SigmaT(Medium m)
-{
-    return m.sigma_s + m.sigma_a;
-}
-
-vec3 Transmittance(vec3 sigma_t, float dist)
-{
-    return exp(-sigma_t * dist);
-}
-
-float SampleFreePath(float mu, float xi)
-{
-    return -log(max(1e-6, 1.0 - xi)) / mu;
-}
-
-vec3 SampleHG(vec3 wo, float g, inout uint rng)
-{
-    float u1 = RandomValue(rng);
-    float u2 = RandomValue(rng);
-
-    float cosTheta;
-    if (abs(g) < 1e-3)
+    if (entering)
     {
-        cosTheta = 1.0 - 2.0 * u1;
+        stack.depth = min(stack.depth + 1, MEDIUM_STACK_SIZE - 1);
+        stack.media[stack.depth] = medium;
     }
     else
     {
-        float sqr = (1.0 - g*g) / (1.0 - g + 2.0*g*u1);
-        cosTheta = (1.0 + g*g - sqr*sqr) / (2.0 * g);
+        stack.depth = max(stack.depth - 1, 0);
+    }
+}
+
+bool TraceClosest(vec3 origin, vec3 direction, float tMax)
+{
+    payload.t = -1.0;
+    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 0, origin, 0.0, direction, tMax, 0);
+    return payload.t >= 0.0;
+}
+
+SurfaceMaterial FetchMaterial(uint index, vec2 uv)
+{
+    Material m = materials[index];
+    SurfaceMaterial material;
+    material.baseColor = m.baseColor * textureLod(textures[nonuniformEXT(m.textureIndex)], uv, 0.0).rgb;
+    material.metallic = m.metallic;
+    material.emission = m.emission;
+    material.roughness = m.roughness;
+    material.sheen = m.sheen;
+    material.transmission = m.transmission;
+    material.ior = m.ior;
+    material.clearcoat = m.clearcoat;
+    material.clearcoatRoughness = m.clearcoatRoughness;
+    material.medium = m.mediumIndex;
+    material.nullSurface = (m.flags & MATERIAL_NULL_SURFACE) != 0u;
+    return material;
+}
+
+float HenyeyGreenstein(float cosTheta, float g)
+{
+    float denom = max(1.0 + g * g + 2.0 * g * cosTheta, 1e-12);
+    return INV_4PI * (1.0 - g * g) / (denom * sqrt(denom));
+}
+
+vec3 SampleHenyeyGreenstein(vec3 wo, float g, vec2 u, out float pdf)
+{
+    float cosTheta;
+    if (abs(g) < 1e-3)
+    {
+        cosTheta = 1.0 - 2.0 * u.x;
+    }
+    else
+    {
+        float s = (1.0 - g * g) / (1.0 + g - 2.0 * g * u.x);
+        cosTheta = -(1.0 + g * g - s * s) / (2.0 * g);
+    }
+    cosTheta = clamp(cosTheta, -1.0, 1.0);
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+    float phi = TWO_PI * u.y;
+    pdf = HenyeyGreenstein(cosTheta, g);
+    return ToWorld(BuildFrame(wo), vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta));
+}
+
+bool SampleMediumInteraction(Medium medium, float tMax, int hero, inout vec3 beta, inout vec3 spectralPdf, inout uint rng, out float t)
+{
+    t = tMax;
+    vec3 sigmaT = medium.sigmaA + medium.sigmaS;
+    if (MaxComponent(medium.sigmaS) <= 0.0)
+    {
+        beta *= exp(-sigmaT * tMax);
+        return false;
     }
 
-    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta*cosTheta));
-    float phi = 2.0 * PI * u2;
+    float previousPdf = Average(spectralPdf);
+    float distance = sigmaT[hero] > 0.0 ? -log(max(1.0 - Random(rng), 1e-12)) / sigmaT[hero] : INF;
+    if (distance < tMax)
+    {
+        vec3 transmittance = exp(-sigmaT * distance);
+        vec3 density = sigmaT * transmittance;
+        spectralPdf *= density / density[hero];
+        beta *= transmittance * medium.sigmaS / density[hero] * (previousPdf / Average(spectralPdf));
+        t = distance;
+        return true;
+    }
 
-    vec3 local = vec3(
-        cos(phi) * sinTheta,
-        sin(phi) * sinTheta,
-        cosTheta
-    );
+    vec3 transmittance = exp(-sigmaT * tMax);
+    spectralPdf *= transmittance / transmittance[hero];
+    beta *= transmittance / transmittance[hero] * (previousPdf / Average(spectralPdf));
+    return false;
+}
 
-    // build ONB from wo
-    vec3 t = normalize(abs(wo.z) < 0.9 ? cross(wo, vec3(0,0,1)) : cross(wo, vec3(0,1,0)));
-    vec3 b = cross(wo, t);
+bool SampleLight(inout uint rng, out LightSample light)
+{
+    if (lightCount == 0u || totalLightPower <= 0.0)
+        return false;
 
-    return normalize(local.x * t + local.y * b + local.z * wo);
+    float u = Random(rng);
+    uint low = 0u;
+    uint high = lightCount - 1u;
+    while (low < high)
+    {
+        uint mid = (low + high) / 2u;
+        if (lights[mid].cdf < u)
+            low = mid + 1u;
+        else
+            high = mid;
+    }
+
+    LightTriangle triangle = lights[low];
+    vec3 bary = SampleUniformTriangle(Random2(rng));
+    light.position = triangle.p0 * bary.x + triangle.p1 * bary.y + triangle.p2 * bary.z;
+    light.normal = normalize(cross(triangle.p1 - triangle.p0, triangle.p2 - triangle.p0));
+    light.emission = triangle.emission;
+    light.pdfArea = Luminance(triangle.emission) / totalLightPower;
+    return true;
+}
+
+float LightPdfArea(vec3 emission)
+{
+    return totalLightPower > 0.0 ? Luminance(emission) / totalLightPower : 0.0;
+}
+
+vec3 Transmittance(vec3 origin, vec3 target, MediumStack stack)
+{
+    vec3 transmittance = vec3(1.0);
+    for (int i = 0; i < MAX_NULL_CROSSINGS; i++)
+    {
+        vec3 toTarget = target - origin;
+        float distance = length(toTarget);
+        vec3 direction = toTarget / distance;
+        bool hit = TraceClosest(origin, direction, distance * 0.9999);
+        float segment = hit ? payload.t : distance;
+
+        int mediumIndex = CurrentMedium(stack);
+        if (mediumIndex >= 0)
+            transmittance *= exp(-(media[mediumIndex].sigmaA + media[mediumIndex].sigmaS) * segment);
+        if (!hit)
+            return transmittance;
+
+        Material material = materials[payload.materialIndex];
+        if ((material.flags & MATERIAL_NULL_SURFACE) == 0u || MaxComponent(transmittance) <= 0.0)
+            return vec3(0.0);
+
+        CrossBoundary(stack, payload.frontFace != 0u, material.mediumIndex);
+        vec3 ng = payload.geometricNormal;
+        origin = OffsetRay(payload.position, dot(direction, ng) > 0.0 ? ng : -ng);
+    }
+    return vec3(0.0);
+}
+
+vec3 DirectLightingSurface(vec3 position, vec3 ng, vec3 wo, mat3 frame, Bsdf bsdf, int surfaceMedium, MediumStack stack, inout uint rng)
+{
+    LightSample light;
+    if (!SampleLight(rng, light))
+        return vec3(0.0);
+
+    vec3 toLight = light.position - position;
+    float distance2 = dot(toLight, toLight);
+    vec3 wi = toLight * inversesqrt(distance2);
+    float cosLight = dot(light.normal, -wi);
+    if (cosLight <= 0.0)
+        return vec3(0.0);
+
+    float bsdfPdf;
+    vec3 f = EvalBsdf(bsdf, ToLocal(frame, wo), ToLocal(frame, wi), ToLocal(frame, ng), bsdfPdf);
+    if (MaxComponent(f) <= 0.0)
+        return vec3(0.0);
+
+    bool outside = dot(wi, ng) > 0.0;
+    if (outside != (dot(wo, ng) > 0.0))
+        CrossBoundary(stack, !outside, surfaceMedium);
+    vec3 transmittance = Transmittance(OffsetRay(position, outside ? ng : -ng), light.position, stack);
+    if (MaxComponent(transmittance) <= 0.0)
+        return vec3(0.0);
+
+    float lightPdf = light.pdfArea * distance2 / cosLight;
+    return f * abs(dot(wi, frame[2])) * light.emission * transmittance * (PowerHeuristic(lightPdf, bsdfPdf) / lightPdf);
+}
+
+vec3 DirectLightingMedium(vec3 position, vec3 wo, float g, MediumStack stack, inout uint rng)
+{
+    LightSample light;
+    if (!SampleLight(rng, light))
+        return vec3(0.0);
+
+    vec3 toLight = light.position - position;
+    float distance2 = dot(toLight, toLight);
+    vec3 wi = toLight * inversesqrt(distance2);
+    float cosLight = dot(light.normal, -wi);
+    if (cosLight <= 0.0)
+        return vec3(0.0);
+
+    vec3 transmittance = Transmittance(position, light.position, stack);
+    if (MaxComponent(transmittance) <= 0.0)
+        return vec3(0.0);
+
+    float phase = HenyeyGreenstein(dot(wo, wi), g);
+    float lightPdf = light.pdfArea * distance2 / cosLight;
+    return phase * light.emission * transmittance * (PowerHeuristic(lightPdf, phase) / lightPdf);
+}
+
+bool RussianRoulette(inout vec3 beta, uint depth, inout uint rng)
+{
+    if (depth < 3u)
+        return false;
+    float survival = min(MaxComponent(beta), 0.95);
+    if (survival <= 0.0 || Random(rng) >= survival)
+        return true;
+    beta /= survival;
+    return false;
+}
+
+vec3 TracePath(vec3 origin, vec3 direction, inout uint rng)
+{
+    vec3 radiance = vec3(0.0);
+    vec3 beta = vec3(1.0);
+    vec3 spectralPdf = vec3(1.0);
+    int hero = min(int(Random(rng) * 3.0), 2);
+    MediumStack stack = CreateMediumStack();
+    vec3 previousPosition = origin;
+    float previousPdf = 0.0;
+    bool previousNee = false;
+    uint depth = 0u;
+    int nullCrossings = 0;
+
+    while (true)
+    {
+        bool hit = TraceClosest(origin, direction, INF);
+        HitPayload surface = payload;
+
+        int mediumIndex = CurrentMedium(stack);
+        if (mediumIndex >= 0)
+        {
+            Medium medium = media[mediumIndex];
+            float t;
+            if (SampleMediumInteraction(medium, hit ? surface.t : INF, hero, beta, spectralPdf, rng, t))
+            {
+                if (++depth > globalData.maxBounces)
+                    break;
+
+                vec3 position = origin + direction * t;
+                vec3 wo = -direction;
+                radiance += beta * DirectLightingMedium(position, wo, medium.g, stack, rng);
+
+                float phasePdf;
+                direction = SampleHenyeyGreenstein(wo, medium.g, Random2(rng), phasePdf);
+                origin = position;
+                previousPosition = position;
+                previousPdf = phasePdf;
+                previousNee = true;
+                if (RussianRoulette(beta, depth, rng))
+                    break;
+                continue;
+            }
+            if (MaxComponent(beta) <= 0.0)
+                break;
+        }
+
+        if (!hit)
+        {
+            radiance += beta * EnvironmentRadiance(direction);
+            break;
+        }
+
+        SurfaceMaterial material = FetchMaterial(surface.materialIndex, surface.uv);
+        vec3 ng = surface.geometricNormal;
+        bool frontFace = surface.frontFace != 0u;
+
+        if (material.nullSurface)
+        {
+            if (++nullCrossings > MAX_NULL_CROSSINGS)
+                break;
+            CrossBoundary(stack, frontFace, material.medium);
+            origin = OffsetRay(surface.position, frontFace ? -ng : ng);
+            continue;
+        }
+
+        if (frontFace && MaxComponent(material.emission) > 0.0)
+        {
+            float weight = 1.0;
+            if (previousNee)
+            {
+                vec3 toLight = surface.position - previousPosition;
+                float lightPdf = LightPdfArea(material.emission) * dot(toLight, toLight) / max(dot(ng, -direction), 1e-8);
+                weight = PowerHeuristic(previousPdf, lightPdf);
+            }
+            radiance += beta * material.emission * weight;
+        }
+
+        if (++depth > globalData.maxBounces)
+            break;
+
+        vec3 wo = -direction;
+        mat3 frame = BuildFrame(surface.shadingNormal);
+        vec3 woLocal = ToLocal(frame, wo);
+        vec3 ngLocal = ToLocal(frame, ng);
+        Bsdf bsdf = CreateBsdf(material, woLocal);
+
+        bool nee = BsdfHasSmoothLobes(bsdf);
+        if (nee)
+            radiance += beta * DirectLightingSurface(surface.position, ng, wo, frame, bsdf, material.medium, stack, rng);
+
+        vec3 wiLocal;
+        vec3 f;
+        float pdf;
+        if (!SampleBsdf(bsdf, woLocal, ngLocal, rng, wiLocal, f, pdf))
+            break;
+
+        vec3 wi = ToWorld(frame, wiLocal);
+        beta *= f * abs(wiLocal.z) / pdf;
+
+        bool outside = dot(wi, ng) > 0.0;
+        if (outside != (dot(wo, ng) > 0.0))
+            CrossBoundary(stack, !outside, material.medium);
+
+        origin = OffsetRay(surface.position, outside ? ng : -ng);
+        direction = wi;
+        previousPosition = surface.position;
+        previousPdf = pdf;
+        previousNee = nee;
+        if (RussianRoulette(beta, depth, rng))
+            break;
+    }
+    return radiance;
+}
+
+vec3 TonemapAces(vec3 color)
+{
+    const mat3 inputMatrix = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
+    const mat3 outputMatrix = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
+    color = inputMatrix * color;
+    vec3 a = color * (color + 0.0245786) - 0.000090537;
+    vec3 b = color * (0.983729 * color + 0.4329510) + 0.238081;
+    return clamp(outputMatrix * (a / b), 0.0, 1.0);
+}
+
+vec3 LinearToSrgb(vec3 color)
+{
+    return mix(color * 12.92, 1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), color));
 }
 
 void main()
 {
-	
-	ivec2 px = ivec2(gl_LaunchIDEXT.xy);
-	vec2 pixelCenter = vec2(px) + vec2(0.5);
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    uint rng = PcgHash(uint(pixel.x) + PcgHash(uint(pixel.y) + PcgHash(globalData.frameIndex)));
 
-	uint rng = globalData.frameIndex;
-    rng = rng * (px.x + 73) * (px.y + 91);
+    vec3 cameraPosition = globalData.cameraPosition.xyz;
+    vec3 forward = globalData.cameraForward.xyz;
+    vec3 right = globalData.cameraRight.xyz;
+    vec3 up = globalData.cameraUp.xyz;
 
-	// added tiny blur effect for anti-aliasing
-    float blurAmount = 1.0f;
-    vec2 blur = RandomCircle(rng) * blurAmount;
-	vec2 uv = (pixelCenter + blur) / vec2(gl_LaunchSizeEXT.xy);
-	vec2 d = uv * 2.0 - 1.0;
+    vec3 radiance = vec3(0.0);
+    uint samples = max(globalData.samplesPerPixel, 1u);
+    for (uint s = 0u; s < samples; s++)
+    {
+        vec2 uv = (vec2(pixel) + Random2(rng)) / vec2(gl_LaunchSizeEXT.xy);
+        vec2 d = uv * 2.0 - 1.0;
+        vec3 direction = normalize(forward + d.x * globalData.aspectRatio * globalData.tanHalfFov * right + d.y * globalData.tanHalfFov * up);
+        vec3 origin = cameraPosition;
+        if (globalData.aperture > 0.0)
+        {
+            vec3 focusPoint = cameraPosition + direction * (globalData.focusDistance / dot(direction, forward));
+            vec2 lens = SampleUniformDisk(Random2(rng)) * globalData.aperture;
+            origin = cameraPosition + right * lens.x + up * lens.y;
+            direction = normalize(focusPoint - origin);
+        }
 
-	vec3 camPos = globalData.cameraPosition.xyz;
-	vec3 camFor = globalData.cameraForward.xyz;
-	vec3 camRight = globalData.cameraRight.xyz;
-	vec3 camUp = globalData.cameraUp.xyz;
+        vec3 sampleRadiance = TracePath(origin, direction, rng);
+        if (any(isnan(sampleRadiance)) || any(isinf(sampleRadiance)))
+            sampleRadiance = vec3(0.0);
+        radiance += sampleRadiance;
+    }
+    radiance /= float(samples);
 
-	vec3 rayDir = normalize(camFor + d.x * globalData.aspectRatio * globalData.tanHalfFov * camRight + d.y * globalData.tanHalfFov * camUp);
-	vec3 focusPoint = camPos + rayDir * globalData.focusDistance;
-	vec2 lens = RandomCircle(rng) * globalData.aperture;
-	vec3 rayOrigin = camPos + camRight * lens.x + camUp * lens.y;
-	rayDir = normalize(focusPoint - rayOrigin);
-	
-	float tmin = 0.0005;
-	float tmax = 1000.0;
+    vec3 accumulated = radiance;
+    if (globalData.frameIndex > 1u)
+        accumulated += imageLoad(accumulationImageIn, pixel).rgb;
+    imageStore(accumulationImageOut, pixel, vec4(accumulated, 0.0));
 
-	vec3 radiance = vec3(0);
-	int raysPerDispatch = 2;
-	int bounceLimit = 16;
-	for (int j = 0; j < raysPerDispatch; j++)
-	{
-		Photon photon;
-		photon.pos = rayOrigin;
-		photon.dir = rayDir;
-		photon.light = vec3(1);
-		photon.inMedium = false;
-
-		for (int i = 0; i < bounceLimit; i++)
-		{
-			traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 
-				0, 0, 0, 
-				photon.pos, tmin, photon.dir, tmax, 0);
-			if (payload.didHit == 0)
-			{
-				vec3 emittedLight = payload.color;
-				radiance += emittedLight * photon.light;
-				break;
-			}
-
-			float tSurface = payload.hitDistance;
-			float extinction = 1.0;
-			if (photon.inMedium && extinction > 0)
-			{
-				float freePath = -log(RandomValue(rng)) / extinction;
-				float anisotropy = 0.6;
-
-				if (anisotropy < 1.0f && freePath < payload.hitDistance)
-				{
-					float transmittance = exp(-extinction * freePath);
-					photon.pos += photon.dir * freePath;
-					photon.light *= transmittance;
-					photon.dir = sampleHenyeyGreenstein(rng, anisotropy, photon.dir);
-					continue; // next bounce
-				}
-				else
-				{
-					float transmittance = exp(-extinction * payload.hitDistance);
-					photon.light *= transmittance;
-				}
-				/*
-				vec3 sigma_t = SigmaT(photon.medium);
-				float mu = max(max(sigma_t.x, sigma_t.y), sigma_t.z);
-
-				float tMedium = SampleFreePath(mu, RandomValue(rng));
-
-				if (tMedium < tSurface)
-				{
-					photon.pos += photon.dir * tMedium;
-
-					photon.light *= Transmittance(sigma_t, tMedium);
-					photon.light *= photon.medium.sigma_s / sigma_t;
-
-					photon.dir = SampleHG(-photon.dir, photon.medium.g, rng);
-					continue; // next bounce
-				}
-				else
-				{
-					photon.light *= Transmittance(sigma_t, tSurface);
-				}
-				*/
-			}
-
-			radiance += payload.emission * photon.light;
-
-			photon.pos = payload.origin;
-			bool isFrontface = dot(photon.dir, payload.normal) < 0;
-			photon.inMedium = !isFrontface;
-
-			vec3 N = payload.normal;
-            vec3 V = -photon.dir;
-
-			vec3 diffuseDir = normalize(N + RandomSphere(rng));
-			vec3 specularDir = reflect(photon.dir, N);
-
-			float ior = 1.5;
-			float iorA = isFrontface ? 1.0 : ior;
-			float iorB = isFrontface ? ior : 1.0;
-
-			//float cosI = clamp(dot(N, V), 0.0, 1.0);
-			vec3 n = isFrontface ? N : -N;
-			float cosIn = -dot(photon.dir, n);
-
-			float fresnel = FresnelSchlick(cosIn, iorA, iorB);
-
-			float w_diffuse      = (1.0 - payload.metallic) * (1.0 - payload.transmission);
-			float w_specular     = payload.metallic * fresnel * (1.0 - payload.transmission);
-			float w_transmission = payload.transmission;
-
-			float w_sum = w_diffuse + w_specular + w_transmission;
-			w_diffuse      /= w_sum;
-			w_specular     /= w_sum;
-			w_transmission /= w_sum;
-
-			float r = RandomValue(rng);
-
-			if (r < w_diffuse)
-			{
-				photon.dir = normalize(mix(diffuseDir, specularDir, payload.roughness));
-				photon.light *= payload.color;
-			}
-			else if (r < w_diffuse + w_specular)
-			{
-				photon.dir = normalize(mix(specularDir, diffuseDir, payload.roughness));
-			}
-			else
-			{
-				if (RandomValue(rng) < fresnel)
-					photon.dir = normalize(mix(reflect(photon.dir, n), diffuseDir, payload.roughness));
-				else
-				{
-					photon.dir = normalize(mix(refract(photon.dir, n, iorA / iorB), -diffuseDir, payload.roughness));
-				}
-				photon.light *= payload.color;
-			}
-		}
-	}
-	radiance /= raysPerDispatch;
-
-	if(globalData.frameIndex > 1)
-        radiance += imageLoad(accumulationImageIn, px).rgb;
-    imageStore(accumulationImageOut, px, vec4(radiance, 0));
-	imageStore(outputImage, px, vec4(radiance / globalData.frameIndex, 1));
+    vec3 color = accumulated / float(max(globalData.frameIndex, 1u)) * globalData.exposure;
+    imageStore(outputImage, pixel, vec4(LinearToSrgb(TonemapAces(color)), 1.0));
 }

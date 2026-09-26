@@ -5,17 +5,25 @@
 #include "stb/stb_image.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <cstring>
 
 namespace
 {
 	struct GpuMaterial
 	{
-		glm::vec4 Color;
-		glm::vec4 Emission;
+		glm::vec3 BaseColor;
 		float Metallic;
+		glm::vec3 Emission;
 		float Roughness;
+		glm::vec3 Sheen;
 		float Transmission;
+		float IOR;
+		float Clearcoat;
+		float ClearcoatRoughness;
 		uint32_t TextureIndex;
+		int32_t MediumIndex;
+		uint32_t Flags;
+		uint32_t Pad[2];
 	};
 
 	struct GpuMeshPrimitive
@@ -25,13 +33,66 @@ namespace
 		uint32_t MaterialIndex;
 	};
 
-	static_assert(sizeof(Vertex) == 32);
-	static_assert(sizeof(GpuMaterial) == 48);
-	static_assert(sizeof(GpuMeshPrimitive) == 24);
+	struct GpuMedium
+	{
+		glm::vec3 SigmaA;
+		float Anisotropy;
+		glm::vec3 SigmaS;
+		float Pad;
+	};
 
+	struct GpuLightTriangle
+	{
+		glm::vec3 P0;
+		float Cdf;
+		glm::vec3 P1;
+		float Pad0;
+		glm::vec3 P2;
+		float Pad1;
+		glm::vec3 Emission;
+		float Pad2;
+	};
+
+	struct GpuLightHeader
+	{
+		uint32_t Count;
+		float TotalPower;
+		uint32_t Pad[2];
+	};
+
+	struct GpuMediumHeader
+	{
+		int32_t GlobalMedium;
+		uint32_t Count;
+		uint32_t Pad[2];
+	};
+
+	static_assert(sizeof(Vertex) == 32);
+	static_assert(sizeof(GpuMaterial) == 80);
+	static_assert(sizeof(GpuMeshPrimitive) == 24);
+	static_assert(sizeof(GpuMedium) == 32);
+	static_assert(sizeof(GpuLightTriangle) == 64);
+	static_assert(sizeof(GpuLightHeader) == 16 && sizeof(GpuMediumHeader) == 16);
+
+	constexpr uint32_t MaterialNullSurface = 1;
 	constexpr uint32_t MaxInstanceCustomIndex = (1u << 24) - 1;
 	constexpr Rdn::BufferUsage GeometryUsage = Rdn::BufferUsage::StorageBuffer | Rdn::BufferUsage::ShaderDeviceAddress
 		| Rdn::BufferUsage::AccelerationStructureBuildInputReadOnly | Rdn::BufferUsage::TransferDst;
+
+	float Luminance(const glm::vec3& color)
+	{
+		return glm::dot(color, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+	}
+
+	template<typename Header, typename Element>
+	std::vector<uint8_t> PackBuffer(const Header& header, const std::vector<Element>& elements)
+	{
+		std::vector<uint8_t> bytes(sizeof(Header) + elements.size() * sizeof(Element));
+		std::memcpy(bytes.data(), &header, sizeof(Header));
+		if (!elements.empty())
+			std::memcpy(bytes.data() + sizeof(Header), elements.data(), elements.size() * sizeof(Element));
+		return bytes;
+	}
 }
 
 glm::mat4 Transform::ToMatrix() const
@@ -129,6 +190,10 @@ ModelId Scene::AddModel(const MeshData& mesh, std::span<const ModelPart> parts)
 	model->VertexAddress = m_Allocator->GetBufferDeviceAddress(&model->Vertices);
 	model->IndexAddress = m_Allocator->GetBufferDeviceAddress(&model->Indices);
 	model->Parts.assign(parts.begin(), parts.end());
+	model->CpuPositions.reserve(mesh.Vertices.size());
+	for (const Vertex& vertex : mesh.Vertices)
+		model->CpuPositions.push_back(vertex.Position);
+	model->CpuIndices = mesh.Indices;
 	m_Models.push_back(std::move(model));
 	return { uint32_t(m_Models.size() - 1) };
 }
@@ -172,7 +237,7 @@ TextureId Scene::AddTexture(uint32_t width, uint32_t height, std::span<const uin
 	auto texture = std::make_unique<Rdn::GpuImage>();
 	m_Allocator->CreateGpuImage(texture.get(), Rdn::GpuImageDesc{
 		.ImageSize = { width, height, 1 },
-		.Format = Rdn::Format::R8G8B8A8_Unorm,
+		.Format = Rdn::Format::R8G8B8A8_Srgb,
 		.UsageFlags = Rdn::ImageUsage::TransferDst | Rdn::ImageUsage::Sampled,
 		.AspectFlags = Rdn::ImageAspect::Color,
 	});
@@ -185,6 +250,17 @@ MaterialId Scene::AddMaterial(const Material& material)
 {
 	m_Materials.push_back(material);
 	return { uint32_t(m_Materials.size() - 1) };
+}
+
+MediumId Scene::AddMedium(const Medium& medium)
+{
+	m_Media.push_back(medium);
+	return { uint32_t(m_Media.size() - 1) };
+}
+
+void Scene::SetGlobalMedium(MediumId medium)
+{
+	m_GlobalMedium = medium;
 }
 
 void Scene::AddInstance(ModelId model, const Transform& transform, MaterialId material)
@@ -202,16 +278,23 @@ void Scene::Build()
 	auto materialIndex = [&](MaterialId material) {
 		return material.IsValid() && material.Index < m_Materials.size() ? material.Index : 0u;
 	};
+	auto mediumIndex = [&](MediumId medium) {
+		return medium.IsValid() && medium.Index < m_Media.size() ? int32_t(medium.Index) : -1;
+	};
 
 	std::vector<GpuMaterial> materials;
 	materials.reserve(m_Materials.size());
 	for (const Material& material : m_Materials)
 	{
 		const uint32_t texture = material.Texture.IsValid() && material.Texture.Index < m_Textures.size() ? material.Texture.Index : 0u;
-		materials.push_back({ glm::vec4(material.Color, 1.0f), glm::vec4(material.Emission, 1.0f), material.Metallic, material.Roughness, material.Transmission, texture });
+		materials.push_back({ material.BaseColor, material.Metallic, material.Emission, material.Roughness, material.Sheen, material.Transmission,
+			material.IOR, material.Clearcoat, material.ClearcoatRoughness, texture, mediumIndex(material.Medium),
+			material.NullSurface ? MaterialNullSurface : 0u, { 0, 0 } });
 	}
 
 	std::vector<GpuMeshPrimitive> primitives;
+	std::vector<GpuLightTriangle> lights;
+	double totalPower = 0.0;
 	m_TopLevelAS->ClearInstances();
 	for (const Instance& instance : m_Instances)
 	{
@@ -232,18 +315,55 @@ void Scene::Build()
 				{ m[0][2], m[1][2], m[2][2], m[3][2] },
 			},
 		});
+
+		const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(m)));
 		for (const ModelPart& part : model.Parts)
 		{
-			const MaterialId material = instance.Material.IsValid() ? instance.Material : part.Material;
-			primitives.push_back({ model.VertexAddress, model.IndexAddress + uint64_t(part.FirstIndex) * sizeof(uint32_t), materialIndex(material) });
+			const uint32_t index = materialIndex(instance.Material.IsValid() ? instance.Material : part.Material);
+			primitives.push_back({ model.VertexAddress, model.IndexAddress + uint64_t(part.FirstIndex) * sizeof(uint32_t), index });
+
+			const Material& material = m_Materials[index];
+			const float luminance = Luminance(material.Emission);
+			if (luminance <= 0.0f || material.NullSurface)
+				continue;
+
+			for (uint32_t i = part.FirstIndex; i < part.FirstIndex + part.IndexCount; i += 3)
+			{
+				const glm::vec3& a = model.CpuPositions[model.CpuIndices[i]];
+				const glm::vec3& b = model.CpuPositions[model.CpuIndices[i + 1]];
+				const glm::vec3& c = model.CpuPositions[model.CpuIndices[i + 2]];
+				glm::vec3 p0 = glm::vec3(m * glm::vec4(a, 1.0f));
+				glm::vec3 p1 = glm::vec3(m * glm::vec4(b, 1.0f));
+				glm::vec3 p2 = glm::vec3(m * glm::vec4(c, 1.0f));
+				const glm::vec3 worldCross = glm::cross(p1 - p0, p2 - p0);
+				const float area = 0.5f * glm::length(worldCross);
+				if (area <= 0.0f)
+					continue;
+				if (glm::dot(worldCross, normalMatrix * glm::cross(b - a, c - a)) < 0.0f)
+					std::swap(p1, p2);
+
+				totalPower += double(luminance) * area;
+				lights.push_back({ p0, float(totalPower), p1, 0.0f, p2, 0.0f, material.Emission, 0.0f });
+			}
 		}
+	}
+	for (GpuLightTriangle& light : lights)
+		light.Cdf = float(light.Cdf / totalPower);
+	if (!lights.empty())
+		lights.back().Cdf = 1.0f;
+
+	std::vector<GpuMedium> media;
+	for (const Medium& medium : m_Media)
+	{
+		media.push_back({ glm::max(medium.Absorption, glm::vec3(0.0f)), std::clamp(medium.Anisotropy, -0.99f, 0.99f),
+			glm::max(medium.Scattering, glm::vec3(0.0f)), 0.0f });
 	}
 
 	if (m_MaterialBuffer)
 	{
 		m_Device->WaitIdle();
-		m_Allocator->ReleaseResource(m_MaterialBuffer.get());
-		m_Allocator->ReleaseResource(m_PrimitiveBuffer.get());
+		for (auto* buffer : { m_MaterialBuffer.get(), m_PrimitiveBuffer.get(), m_LightBuffer.get(), m_MediumBuffer.get() })
+			m_Allocator->ReleaseResource(buffer);
 	}
 	auto upload = [&](std::unique_ptr<Rdn::GpuBuffer>& buffer, const void* data, uint64_t bytes) {
 		buffer = std::make_unique<Rdn::GpuBuffer>();
@@ -252,12 +372,16 @@ void Scene::Build()
 		if (bytes > 0)
 			m_Allocator->SetDeviceLocalBufferData(buffer.get(), data, bytes);
 	};
+	const std::vector<uint8_t> lightData = PackBuffer(GpuLightHeader{ uint32_t(lights.size()), float(totalPower), { 0, 0 } }, lights);
+	const std::vector<uint8_t> mediumData = PackBuffer(GpuMediumHeader{ mediumIndex(m_GlobalMedium), uint32_t(media.size()), { 0, 0 } }, media);
 	upload(m_MaterialBuffer, materials.data(), materials.size() * sizeof(GpuMaterial));
 	upload(m_PrimitiveBuffer, primitives.data(), primitives.size() * sizeof(GpuMeshPrimitive));
+	upload(m_LightBuffer, lightData.data(), lightData.size());
+	upload(m_MediumBuffer, mediumData.data(), mediumData.size());
 
 	m_Allocator->BuildTopLevelAS(m_TopLevelAS.get());
-	RDN_LOG("Scene: {} instances, {} instanced parts, {} models, {} materials, {} textures",
-		m_TopLevelAS->GetInstanceCount(), primitives.size(), m_Models.size(), m_Materials.size(), m_Textures.size());
+	RDN_LOG("Scene: {} instances, {} instanced parts, {} models, {} materials, {} textures, {} media, {} emissive triangles",
+		m_TopLevelAS->GetInstanceCount(), primitives.size(), m_Models.size(), m_Materials.size(), m_Textures.size(), m_Media.size(), lights.size());
 }
 
 Rdn::DescriptorWrite Scene::GetDescriptorWrite(Rdn::SamplerHandle textureSampler) const
@@ -271,7 +395,9 @@ Rdn::DescriptorWrite Scene::GetDescriptorWrite(Rdn::SamplerHandle textureSampler
 
 	write.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_PrimitiveBuffer->GetHandle()));
 	write.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_MaterialBuffer->GetHandle()));
+	write.AddWrite(Rdn::BufferWrite(2, Rdn::DescriptorType::StorageBuffer, m_LightBuffer->GetHandle()));
+	write.AddWrite(Rdn::BufferWrite(3, Rdn::DescriptorType::StorageBuffer, m_MediumBuffer->GetHandle()));
 	for (uint32_t i = 0; i < m_Textures.size(); i++)
-		write.AddWrite(Rdn::ImageWrite(2, Rdn::DescriptorType::CombinedImageSampler, m_Textures[i]->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, textureSampler, i));
+		write.AddWrite(Rdn::ImageWrite(4, Rdn::DescriptorType::CombinedImageSampler, m_Textures[i]->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, textureSampler, i));
 	return write;
 }
