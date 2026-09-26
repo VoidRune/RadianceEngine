@@ -17,7 +17,9 @@ PathTracer::PathTracer(Rdn::Window* window, Rdn::Device* device, Rdn::PresentQue
 	m_RenderGraph = renderGraph;
 
 	m_Camera = std::make_unique<CameraFP>(m_Window);
-	m_Camera->Position = glm::vec3(0, 0.5f, -1.5f);
+	m_Camera->Position = glm::vec3(0.0f, 0.55f, -2.1f);
+	m_Camera->Fov = 50.0f;
+	m_Camera->Pitch = -5.0f;
 	m_Camera->MovementSpeed = 1.0f;
 
 	CreateSamplers();
@@ -44,24 +46,58 @@ void PathTracer::CreateScene()
 	Scene& scene = *m_Scene;
 
 	const ModelId plane = scene.LoadModel("res/3DModels/plane.obj");
+	const ModelId cube = scene.LoadModel("res/3DModels/cube.obj");
+	const ModelId sphere = scene.LoadModel("res/3DModels/sphere.obj");
+	const ModelId bunny = scene.LoadModel("res/3DModels/bunny.obj");
 	const ModelId dragon = scene.LoadModel("res/3DModels/dragon.obj");
 
-	const MaterialId glass = scene.AddMaterial({ .Color = { 0.95f, 0.7f, 0.7f }, .Roughness = 0.1f, .Transmission = 1.0f });
-	const MaterialId redWall = scene.AddMaterial({ .Color = { 1.0f, 0.2f, 0.3f }, .Texture = scene.LoadTexture("res/Images/Granite.jpg") });
-	const MaterialId greenWall = scene.AddMaterial({ .Color = { 0.25f, 1.0f, 0.35f }, .Metallic = 1.0f });
-	const MaterialId blueWall = scene.AddMaterial({ .Color = { 0.25f, 0.55f, 1.0f } });
-	const MaterialId whiteWall = scene.AddMaterial({ .Color = glm::vec3(0.8f) });
-	const MaterialId light = scene.AddMaterial({ .Emission = glm::vec3(15.0f) });
+	const TextureId granite = scene.LoadTexture("res/Images/Granite.jpg");
+	std::vector<uint32_t> checker(768 * 1024);
+	for (uint32_t y = 0; y < 1024; y++)
+		for (uint32_t x = 0; x < 768; x++)
+			checker[y * 768 + x] = (x / 64 + y / 64) % 2 ? 0xFF404040 : 0xFFD0D0D0;
+	const TextureId checkerboard = scene.AddTexture(768, 1024, checker);
 
-	scene.AddInstance(plane, {}, whiteWall); // FLOOR
-	scene.AddInstance(plane, { .Position = { 0.0f, 1.0f, 0.0f }, .Rotation = { 180.0f, 0.0f, 0.0f } }, whiteWall); // CEILING
-	scene.AddInstance(plane, { .Position = { 0.0f, 0.5f, 0.5f }, .Rotation = { -90.0f, 0.0f, 0.0f } }, blueWall); // BACK
-	scene.AddInstance(plane, { .Position = { -0.5f, 0.5f, 0.0f }, .Rotation = { 0.0f, 0.0f, -90.0f } }, redWall); // LEFT
-	scene.AddInstance(plane, { .Position = { 0.5f, 0.5f, 0.0f }, .Rotation = { 0.0f, 0.0f, 90.0f } }, greenWall); // RIGHT
-	scene.AddInstance(plane, { .Position = { 0.0f, 0.999f, 0.0f }, .Rotation = { 180.0f, 0.0f, 0.0f }, .Scale = glm::vec3(0.25f) }, light); // LIGHT
-	scene.AddInstance(dragon, { .Position = { 0.0f, 0.26f, 0.0f }, .Rotation = { 0.0f, 70.0f, 0.0f }, .Scale = glm::vec3(0.9f) }, glass); // DRAGON
-	//const ModelId sphere = scene.LoadModel("res/3DModels/sphere.obj");
-	//scene.AddInstance(sphere, { .Position = { 0.0f, 0.7f, 0.0f }, .Scale = glm::vec3(0.3f) }, glass);
+	const MaterialId floor = scene.AddMaterial({ .Metallic = 0.25f, .Texture = checkerboard });
+	const MaterialId whiteWall = scene.AddMaterial({ .Color = glm::vec3(0.8f) });
+	const MaterialId redWall = scene.AddMaterial({ .Color = { 1.0f, 0.2f, 0.3f }, .Texture = granite });
+	const MaterialId blueWall = scene.AddMaterial({ .Color = { 0.25f, 0.55f, 1.0f } });
+	const MaterialId mirror = scene.AddMaterial({ .Metallic = 1.0f });
+	const MaterialId light = scene.AddMaterial({ .Emission = glm::vec3(14.0f) });
+	const MaterialId marble = scene.AddMaterial({ .Color = glm::vec3(0.9f), .Texture = granite });
+	const MaterialId glass = scene.AddMaterial({ .Color = { 0.95f, 0.7f, 0.7f }, .Roughness = 0.1f, .Transmission = 1.0f });
+	const MaterialId clearGlass = scene.AddMaterial({ .Transmission = 1.0f });
+	const MaterialId chrome = scene.AddMaterial({ .Metallic = 1.0f });
+	const MaterialId brushedMetal = scene.AddMaterial({ .Metallic = 1.0f, .Roughness = 0.3f });
+	const MaterialId redLacquer = scene.AddMaterial({ .Color = { 0.8f, 0.05f, 0.05f }, .Metallic = 0.5f });
+	const MaterialId blue = scene.AddMaterial({ .Color = { 0.15f, 0.3f, 0.85f } });
+	const MaterialId yellow = scene.AddMaterial({ .Color = { 0.95f, 0.75f, 0.1f } });
+	const MaterialId green = scene.AddMaterial({ .Color = { 0.2f, 0.7f, 0.25f } });
+	const MaterialId cyanGlow = scene.AddMaterial({ .Color = glm::vec3(0.0f), .Emission = { 0.2f, 1.4f, 1.8f } });
+	const MaterialId orangeGlow = scene.AddMaterial({ .Color = glm::vec3(0.0f), .Emission = { 2.0f, 0.7f, 0.1f } });
+
+	scene.AddInstance(plane, { .Position = { 0.0f, 0.0f, -0.8f }, .Scale = { 2.4f, 1.0f, 3.2f } }, floor); // FLOOR
+	scene.AddInstance(plane, { .Position = { 0.0f, 1.2f, 0.0f }, .Rotation = { 180.0f, 0.0f, 0.0f }, .Scale = { 2.4f, 1.0f, 1.6f } }, whiteWall); // CEILING
+	scene.AddInstance(plane, { .Position = { 0.0f, 0.6f, 0.8f }, .Rotation = { -90.0f, 0.0f, 0.0f }, .Scale = { 2.4f, 1.0f, 1.2f } }, blueWall); // BACK
+	scene.AddInstance(plane, { .Position = { -1.2f, 0.6f, 0.0f }, .Rotation = { 0.0f, 0.0f, -90.0f }, .Scale = { 1.2f, 1.0f, 1.6f } }, redWall); // LEFT
+	scene.AddInstance(plane, { .Position = { 1.2f, 0.6f, 0.0f }, .Rotation = { 0.0f, 0.0f, 90.0f }, .Scale = { 1.2f, 1.0f, 1.6f } }, mirror); // RIGHT
+	scene.AddInstance(plane, { .Position = { 0.0f, 1.199f, 0.15f }, .Rotation = { 180.0f, 0.0f, 0.0f }, .Scale = { 0.7f, 1.0f, 0.45f } }, light); // LIGHT
+
+	scene.AddInstance(cube, { .Position = { 0.0f, 0.05f, 0.45f }, .Scale = { 0.95f, 0.1f, 0.5f } }, marble); // PEDESTAL
+	scene.AddInstance(dragon, { .Position = { 0.0f, 0.312f, 0.45f }, .Rotation = { 0.0f, 70.0f, 0.0f }, .Scale = glm::vec3(0.75f) }, glass);
+
+	scene.AddInstance(cube, { .Position = { -0.72f, 0.32f, 0.38f }, .Rotation = { 0.0f, 20.0f, 0.0f }, .Scale = { 0.32f, 0.64f, 0.32f } }, whiteWall); // TALL BOX
+	scene.AddInstance(sphere, { .Position = { -0.72f, 0.77f, 0.38f }, .Scale = glm::vec3(0.26f) }, chrome);
+	scene.AddInstance(cube, { .Position = { 0.75f, 0.17f, 0.3f }, .Rotation = { 0.0f, -18.0f, 0.0f }, .Scale = glm::vec3(0.34f) }, brushedMetal); // SHORT BOX
+	scene.AddInstance(bunny, { .Position = { 0.77f, 0.261f, 0.3f }, .Rotation = { 0.0f, 200.0f, 0.0f }, .Scale = glm::vec3(2.4f) }, whiteWall);
+
+	scene.AddInstance(sphere, { .Position = { -0.28f, 0.16f, -0.25f }, .Scale = glm::vec3(0.32f) }, clearGlass);
+	scene.AddInstance(sphere, { .Position = { 0.32f, 0.12f, -0.32f }, .Scale = glm::vec3(0.24f) }, redLacquer);
+	scene.AddInstance(sphere, { .Position = { 0.02f, 0.04f, -0.5f }, .Scale = glm::vec3(0.08f) }, cyanGlow);
+	scene.AddInstance(sphere, { .Position = { 0.58f, 0.04f, -0.12f }, .Scale = glm::vec3(0.08f) }, orangeGlow);
+	scene.AddInstance(cube, { .Position = { -0.82f, 0.07f, -0.3f }, .Rotation = { 0.0f, 12.0f, 0.0f }, .Scale = glm::vec3(0.14f) }, blue); // TOY BLOCKS
+	scene.AddInstance(cube, { .Position = { -0.8f, 0.21f, -0.31f }, .Rotation = { 0.0f, -20.0f, 0.0f }, .Scale = glm::vec3(0.14f) }, yellow);
+	scene.AddInstance(cube, { .Position = { -0.83f, 0.35f, -0.29f }, .Rotation = { 0.0f, 35.0f, 0.0f }, .Scale = glm::vec3(0.14f) }, green);
 
 	scene.Build();
 	CreateSceneDescriptorSet();
@@ -232,7 +268,7 @@ void PathTracer::RenderFrame(float elapsedTime)
 	globalFrameData.CameraForward = glm::vec4(m_Camera->Forward, 0);
 	globalFrameData.CameraRight = glm::vec4(m_Camera->Right, 0);
 	globalFrameData.CameraUp = glm::vec4(-m_Camera->Up, 0);
-	globalFrameData.TanHalfFov = glm::tan(m_Camera->Fov * 0.5);
+	globalFrameData.TanHalfFov = glm::tan(glm::radians(m_Camera->Fov) * 0.5f);
 	globalFrameData.AspectRatio = m_Camera->AspectRatio;
 	globalFrameData.Aperture = 0.0;
 	globalFrameData.FocusDistance = 1.0;

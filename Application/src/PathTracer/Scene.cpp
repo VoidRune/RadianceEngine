@@ -49,7 +49,7 @@ Scene::Scene(Rdn::Device* device, Rdn::ResourceAllocator* allocator)
 {
 	m_Materials.push_back(Material{});
 	const uint32_t white = 0xFFFFFFFF;
-	CreateTexture(1, 1, &white);
+	AddTexture(1, 1, { &white, 1 });
 
 	m_TopLevelAS = std::make_unique<Rdn::TopLevelAS>();
 	m_Allocator->CreateTopLevelAS(m_TopLevelAS.get());
@@ -146,13 +146,9 @@ TextureId Scene::LoadTexture(const std::filesystem::path& path)
 	{
 		RDN_LOG_ERROR("Failed to load texture {}: {}", key, stbi_failure_reason());
 	}
-	else if (m_Textures.size() >= Rdn::ResourceAllocator::MaxBindlessDescriptors)
-	{
-		RDN_LOG_ERROR("Failed to load texture {}: the scene already has {} textures", key, m_Textures.size());
-	}
 	else
 	{
-		texture = CreateTexture(uint32_t(width), uint32_t(height), pixels);
+		texture = AddTexture(uint32_t(width), uint32_t(height), { reinterpret_cast<const uint32_t*>(pixels), size_t(width) * size_t(height) });
 	}
 	stbi_image_free(pixels);
 
@@ -160,8 +156,19 @@ TextureId Scene::LoadTexture(const std::filesystem::path& path)
 	return texture;
 }
 
-TextureId Scene::CreateTexture(uint32_t width, uint32_t height, const void* rgba8)
+TextureId Scene::AddTexture(uint32_t width, uint32_t height, std::span<const uint32_t> rgba8)
 {
+	if (width == 0 || height == 0 || rgba8.size() != size_t(width) * height)
+	{
+		RDN_LOG_ERROR("AddTexture: {}x{} needs {} pixels, got {}", width, height, size_t(width) * height, rgba8.size());
+		return {};
+	}
+	if (m_Textures.size() >= Rdn::ResourceAllocator::MaxBindlessDescriptors)
+	{
+		RDN_LOG_ERROR("AddTexture: the scene already has {} textures", m_Textures.size());
+		return {};
+	}
+
 	auto texture = std::make_unique<Rdn::GpuImage>();
 	m_Allocator->CreateGpuImage(texture.get(), Rdn::GpuImageDesc{
 		.ImageSize = { width, height, 1 },
@@ -169,7 +176,7 @@ TextureId Scene::CreateTexture(uint32_t width, uint32_t height, const void* rgba
 		.UsageFlags = Rdn::ImageUsage::TransferDst | Rdn::ImageUsage::Sampled,
 		.AspectFlags = Rdn::ImageAspect::Color,
 	});
-	m_Allocator->SetImageData(texture.get(), rgba8, width * height * 4, Rdn::ImageLayout::ShaderReadOnlyOptimal);
+	m_Allocator->SetImageData(texture.get(), rgba8.data(), width * height * 4, Rdn::ImageLayout::ShaderReadOnlyOptimal);
 	m_Textures.push_back(std::move(texture));
 	return { uint32_t(m_Textures.size() - 1) };
 }

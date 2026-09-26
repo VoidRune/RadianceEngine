@@ -73,6 +73,7 @@ public:
 	ModelId LoadModel(const std::filesystem::path& path);
 	ModelId AddModel(const MeshData& mesh, std::span<const ModelPart> parts = {});
 	TextureId LoadTexture(const std::filesystem::path& path);
+	TextureId AddTexture(uint32_t width, uint32_t height, std::span<const uint32_t> rgba8);
 	MaterialId AddMaterial(const Material& material);
 	void AddInstance(ModelId model, const Transform& transform = {}, MaterialId material = {});
 	void Build();
@@ -97,8 +98,6 @@ private:
 		glm::mat4 Transform;
 		MaterialId Material;
 	};
-
-	TextureId CreateTexture(uint32_t width, uint32_t height, const void* rgba8);
 
 	Rdn::Device* m_Device;
 	Rdn::ResourceAllocator* m_Allocator;
