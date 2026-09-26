@@ -246,7 +246,7 @@ void main()
 				*/
 			}
 
-
+			radiance += payload.emission * photon.light;
 
 			photon.pos = payload.origin;
 			bool isFrontface = dot(photon.dir, payload.normal) < 0;
@@ -298,8 +298,6 @@ void main()
 				}
 				photon.light *= payload.color;
 			}
-
-            radiance += payload.emission * photon.light;
 		}
 	}
 	radiance /= raysPerDispatch;

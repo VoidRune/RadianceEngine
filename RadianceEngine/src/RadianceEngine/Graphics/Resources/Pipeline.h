@@ -38,16 +38,16 @@ namespace Rdn
 		std::vector<uint32_t> PushDescriptorSets = {};
 	};
 
-	class Pipeline
+	class Pipeline : NonCopyable
 	{
 	public:
-		PipelineHandle GetHandle() { return m_Pipeline; }
-		PipelineLayoutHandle GetLayout() { return m_PipelineLayout; }
-		DescriptorSetLayoutHandle GetSetLayout(uint32_t setIndex) { return m_SetLayouts[setIndex]; }
+		PipelineHandle GetHandle() const { return m_Pipeline; }
+		PipelineLayoutHandle GetLayout() const { return m_PipelineLayout; }
+		DescriptorSetLayoutHandle GetSetLayout(uint32_t setIndex) const { return setIndex < m_SetLayouts.size() ? m_SetLayouts[setIndex] : DescriptorSetLayoutHandle{}; }
 
 	private:
-		PipelineHandle m_Pipeline;
-		PipelineLayoutHandle m_PipelineLayout;
+		PipelineHandle m_Pipeline{};
+		PipelineLayoutHandle m_PipelineLayout{};
 		std::vector<DescriptorSetLayoutHandle> m_SetLayouts;
 
 		friend class ResourceAllocator;

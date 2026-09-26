@@ -31,7 +31,7 @@ namespace Rdn
 		void* MapMemory(GpuRingBuffer* ringBuffer, uint32_t elementIndex);
 		void UnmapMemory(GpuRingBuffer* ringBuffer);
 		uint64_t GetBufferDeviceAddress(GpuBuffer* buffer);
-		void SetDeviceLocalBufferData(GpuBuffer* buffer, const void* data, uint32_t size);
+		void SetDeviceLocalBufferData(GpuBuffer* buffer, const void* data, uint64_t size);
 		void SetImageData(GpuImage* image, const void* data, uint32_t size, ImageLayout newLayout);
 		std::vector<uint8_t> GetImageData(GpuImage* image);
 
@@ -109,22 +109,11 @@ namespace Rdn
 		};
 	private:
 
-		struct DeviceLimits
-		{
-			uint64_t MinUniformBufferOffsetAlignment = 1;
-			uint64_t MinStorageBufferOffsetAlignment = 1;
-			uint64_t MinAccelerationStructureScratchOffsetAlignment = 1;
-			uint32_t ShaderGroupHandleSize = 0;
-			uint32_t ShaderGroupHandleAlignment = 1;
-			uint32_t ShaderGroupBaseAlignment = 1;
-		};
-
 		Device* m_Device;
 		DeviceHandle m_LogicalDevice;
 		PhysicalDeviceHandle m_PhysicalDevice;
 		AllocatorHandle m_Allocator;
 		DescriptorPoolHandle m_DescriptorPool;
-		DeviceLimits m_Limits;
 
 		std::unordered_set<GpuBuffer*> m_Buffers;
 		std::unordered_set<GpuRingBuffer*> m_RingBuffers;

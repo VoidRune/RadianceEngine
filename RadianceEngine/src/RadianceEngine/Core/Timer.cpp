@@ -1,33 +1,29 @@
 #include "Timer.h"
-#include <chrono>
-
-using namespace std::chrono;
-
 
 namespace Rdn
 {
-	time_point<high_resolution_clock> timeStamp;
-
 	Timer::Timer()
+		: m_Start(Clock::now())
 	{
-		reset_time();
 	}
 
-	void Timer::reset_time()
+	void Timer::Reset()
 	{
-		timeStamp = high_resolution_clock::now();
+		m_Start = Clock::now();
 	}
 
-	double Timer::elapsed_sec()
+	double Timer::ElapsedSeconds() const
 	{
-		return 0.000001 * (time_point_cast<microseconds>(high_resolution_clock::now()).time_since_epoch().count() - time_point_cast<microseconds>(timeStamp).time_since_epoch().count());
+		return std::chrono::duration<double>(Clock::now() - m_Start).count();
 	}
-	double Timer::elapsed_mili()
+
+	double Timer::ElapsedMilliseconds() const
 	{
-		return 0.001 * (time_point_cast<microseconds>(high_resolution_clock::now()).time_since_epoch().count() - time_point_cast<microseconds>(timeStamp).time_since_epoch().count());
+		return std::chrono::duration<double, std::milli>(Clock::now() - m_Start).count();
 	}
-	double Timer::elapsed_micro()
+
+	double Timer::ElapsedMicroseconds() const
 	{
-		return (double)time_point_cast<microseconds>(high_resolution_clock::now()).time_since_epoch().count() - time_point_cast<microseconds>(timeStamp).time_since_epoch().count();
+		return std::chrono::duration<double, std::micro>(Clock::now() - m_Start).count();
 	}
 }

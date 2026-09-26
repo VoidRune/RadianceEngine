@@ -9,13 +9,13 @@ namespace Rdn
 	// notably a bindless resource heap, where VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
 	// lets ResourceAllocator::UpdateDescriptorSet write new entries into an already-
 	// allocated set without needing per-frame-in-flight copies of it.
-	class DescriptorSet
+	class DescriptorSet : NonCopyable
 	{
 	public:
-		DescriptorSetHandle GetHandle() { return m_DescriptorSet; }
+		DescriptorSetHandle GetHandle() const { return m_DescriptorSet; }
 
 	private:
-		DescriptorSetHandle m_DescriptorSet;
+		DescriptorSetHandle m_DescriptorSet{};
 
 		friend class ResourceAllocator;
 	};

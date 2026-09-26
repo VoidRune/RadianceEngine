@@ -45,8 +45,7 @@ void main()
 {
     uint primID = gl_PrimitiveID;
 
-    uint instanceIndex = gl_InstanceCustomIndexEXT;
-    MeshPrimitive mesh = meshPrimitives[instanceIndex];
+    MeshPrimitive mesh = meshPrimitives[gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT];
     VertexBuffer vb = VertexBuffer(mesh.vertexAddress);
     IndexBuffer  ib = IndexBuffer(mesh.indexAddress);
     Material mat = materials[mesh.materialIndex];
@@ -71,7 +70,7 @@ void main()
     vec3 position = gl_ObjectToWorldEXT * vec4(localPosition, 1.0);
     vec3 normal = normalize(gl_ObjectToWorldEXT * vec4(localNormal, 0));
 
-    payload.color = mat.color.rgb * texture(textures[mat.textureIndex], uv).rgb;
+    payload.color = mat.color.rgb * texture(textures[nonuniformEXT(mat.textureIndex)], uv).rgb;
     payload.origin = position;
     payload.normal = normal;
     payload.hitDistance = gl_HitTEXT;

@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 
 namespace Rdn
 {
@@ -6,13 +7,13 @@ namespace Rdn
 	{
 	public:
 		Timer();
-		void reset_time();
-		/* Time elapsed since creation or reset_time in seconds */
-		double elapsed_sec();
-		/* Time elapsed since creation or reset_time in miliseconds */
-		double elapsed_mili();
-		/* Time elapsed since creation or reset_time in microseconds */
-		double elapsed_micro();
+		void Reset();
+		double ElapsedSeconds() const;
+		double ElapsedMilliseconds() const;
+		double ElapsedMicroseconds() const;
 
+	private:
+		using Clock = std::chrono::steady_clock;
+		Clock::time_point m_Start;
 	};
 }

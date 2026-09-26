@@ -11,30 +11,30 @@ namespace Rdn
 		std::vector<uint32_t> PushDescriptorSets = {};
 	};
 
-	class RayTracingPipeline
+	class RayTracingPipeline : NonCopyable
 	{
 	public:
-		PipelineHandle GetHandle() { return m_Pipeline; }
-		PipelineLayoutHandle GetLayout() { return m_PipelineLayout; }
-		DescriptorSetLayoutHandle GetSetLayout(uint32_t setIndex) { return m_SetLayouts[setIndex]; }
+		PipelineHandle GetHandle() const { return m_Pipeline; }
+		PipelineLayoutHandle GetLayout() const { return m_PipelineLayout; }
+		DescriptorSetLayoutHandle GetSetLayout(uint32_t setIndex) const { return setIndex < m_SetLayouts.size() ? m_SetLayouts[setIndex] : DescriptorSetLayoutHandle{}; }
 
 		struct StridedDeviceAddressRegion
 		{
-			uint64_t DeviceAddress;
-			uint64_t Stride;
-			uint64_t Size;
+			uint64_t DeviceAddress = 0;
+			uint64_t Stride = 0;
+			uint64_t Size = 0;
 		};
 
-		StridedDeviceAddressRegion GetRayGenShaderBindingTable() { return m_RayGenShaderBindingTable; }
-		StridedDeviceAddressRegion GetRayMissShaderBindingTable() { return m_RayMissShaderBindingTable; }
-		StridedDeviceAddressRegion GetRayClosestHitShaderBindingTable() { return m_RayClosestHitShaderBindingTable; }
+		StridedDeviceAddressRegion GetRayGenShaderBindingTable() const { return m_RayGenShaderBindingTable; }
+		StridedDeviceAddressRegion GetRayMissShaderBindingTable() const { return m_RayMissShaderBindingTable; }
+		StridedDeviceAddressRegion GetRayClosestHitShaderBindingTable() const { return m_RayClosestHitShaderBindingTable; }
 	private:
 
-		PipelineHandle m_Pipeline;
-		PipelineLayoutHandle m_PipelineLayout;
+		PipelineHandle m_Pipeline{};
+		PipelineLayoutHandle m_PipelineLayout{};
 		std::vector<DescriptorSetLayoutHandle> m_SetLayouts;
-		BufferHandle m_ShaderBindingTableBuffer;
-		AllocationHandle m_ShaderBindingTableAllocation;
+		BufferHandle m_ShaderBindingTableBuffer{};
+		AllocationHandle m_ShaderBindingTableAllocation{};
 
 		StridedDeviceAddressRegion m_RayGenShaderBindingTable;
 		StridedDeviceAddressRegion m_RayMissShaderBindingTable;

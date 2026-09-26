@@ -8,25 +8,21 @@ namespace Rdn
 {
 	struct TopLevelASInstance
 	{
-		BottomLevelASHandle BottomLevelASHandle{};
-		uint32_t InstanceCustomIndex{};
-		float TransformMatrix[3][4];
+		uint64_t BottomLevelASAddress = 0;
+		uint32_t InstanceCustomIndex = 0;
+		float TransformMatrix[3][4] = { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 } };
 	};
 
-	class Device;
-	class TopLevelAS
+	class TopLevelAS : NonCopyable
 	{
 	public:
-		void AddInstance(const TopLevelASInstance& instance) { m_Instances.push_back(instance); };
-		void ClearInstances() { m_Instances.clear(); };
+		void AddInstance(const TopLevelASInstance& instance) { m_Instances.push_back(instance); }
+		void ClearInstances() { m_Instances.clear(); }
+		size_t GetInstanceCount() const { return m_Instances.size(); }
 
-		AccelerationStructureHandle GetHandle() { return m_Handle; }
+		AccelerationStructureHandle GetHandle() const { return m_Handle; }
 
 	private:
-		Device* m_Device;
-		DeviceHandle m_LogicalDevice;
-		AllocatorHandle m_Allocator;
-
 		std::vector<TopLevelASInstance> m_Instances;
 
 		AccelerationStructureHandle m_Handle{};
@@ -35,5 +31,4 @@ namespace Rdn
 
 		friend class ResourceAllocator;
 	};
-
 }

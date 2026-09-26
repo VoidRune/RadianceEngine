@@ -11,12 +11,13 @@ namespace Rdn
 		SamplerAddressMode AddressMode = SamplerAddressMode::MirroredRepeat;
 	};
 
-	class Sampler
+	class Sampler : NonCopyable
 	{
 	public:
-		SamplerHandle GetHandle() { return m_Sampler; }
+		SamplerHandle GetHandle() const { return m_Sampler; }
+
 	private:
-		SamplerHandle m_Sampler;
+		SamplerHandle m_Sampler{};
 
 		friend class ResourceAllocator;
 	};

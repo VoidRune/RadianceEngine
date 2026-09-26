@@ -33,7 +33,7 @@ namespace Rdn
 		QueueContext& present = device->GetPresentQueueContext();
 		m_GraphicsQueue = graphics.Handle;
 		m_PresentQueue = present.Handle;
-		m_PresentQueueMutex = (present.Handle == graphics.Handle) ? &graphics.Mutex : &present.Mutex;
+		m_PresentQueueMutex = &present.Mutex;
 
 		m_Frames.resize(device->GetFramesInFlightCount());
 		for (PerFrame& frame : m_Frames)
@@ -108,14 +108,14 @@ namespace Rdn
 		m_Swapchain = swapchainOutput.swapchain;
 		m_SurfaceFormat = swapchainOutput.surfaceFormat;
 		m_PresentMode = swapchainOutput.presentMode;
-		m_Extent = { swapchainOutput.extent[0], swapchainOutput.extent[1] };
+		m_Extent = swapchainOutput.extent;
 
-		SwapchainImagesRetreiveInfo swapchainImageRetreiveInfo =
+		SwapchainImagesRetrieveInfo swapchainImagesInfo =
 		{
 			.logicalDevice = m_LogicalDevice,
 			.swapchain = m_Swapchain,
 		};
-		m_Images = RetreiveSwapchainImages(swapchainImageRetreiveInfo);
+		m_Images = RetrieveSwapchainImages(swapchainImagesInfo);
 
 		for (ImageHandle image : m_Images)
 		{
@@ -224,15 +224,14 @@ namespace Rdn
 		VK_CHECK(vkResetFences(toVk(m_LogicalDevice), 1, &inFlightFence));
 		VK_CHECK(vkResetCommandPool(toVk(m_LogicalDevice), toVk(frame.CmdPool), 0));
 
-		VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-		VK_CHECK(vkBeginCommandBuffer(toVk(frame.Cmd), &beginInfo));
+		CommandBuffer cmd(frame.Cmd);
+		cmd.Begin();
 
 		m_ImageIndex = imageIndex;
 		m_FrameInProgress = true;
 
 		return FrameContext{
-			.Cmd = CommandBuffer(frame.Cmd),
+			.Cmd = std::move(cmd),
 			.FrameIndex = m_CurrentFrame,
 			.ImageIndex = imageIndex,
 			.PresentImage = m_Images[imageIndex],
@@ -252,7 +251,7 @@ namespace Rdn
 		m_FrameInProgress = false;
 
 		PerFrame& frame = m_Frames[m_CurrentFrame];
-		VK_CHECK(vkEndCommandBuffer(toVk(frame.Cmd)));
+		CommandBuffer(frame.Cmd).End();
 
 		VkSemaphore presentSemaphore = toVk(m_PresentSemaphores[m_ImageIndex]);
 

@@ -34,7 +34,7 @@ namespace Rdn
 		{
 			if (!glfwInit())
 			{
-				LogFatal("Failed to initialize GLFW!");
+				RDN_LOG_FATAL("Failed to initialize GLFW!");
 				return;
 			}
 		}
@@ -61,7 +61,7 @@ namespace Rdn
 		m_Window = glfwCreateWindow(width, height, desc.Title.c_str(), m_IsFullscreen ? monitor : nullptr, nullptr);
 		if (!m_Window)
 		{
-			LogFatal("Failed to create GLFW window!");
+			RDN_LOG_FATAL("Failed to create GLFW window!");
 			return;
 		}
 

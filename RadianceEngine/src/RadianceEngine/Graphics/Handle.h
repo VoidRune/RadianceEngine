@@ -82,6 +82,14 @@ namespace Rdn
 	using SwapchainHandle = Handle<SwapchainTag>;
 	using AccelerationStructureHandle = Handle<AccelerationStructureTag>;
 
+	class NonCopyable
+	{
+	public:
+		NonCopyable() = default;
+		NonCopyable(const NonCopyable&) = delete;
+		NonCopyable& operator=(const NonCopyable&) = delete;
+	};
+
 	struct QueueContext {
 		QueueContext() {}
 		QueueHandle Handle{ };

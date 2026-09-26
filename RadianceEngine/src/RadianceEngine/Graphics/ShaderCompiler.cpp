@@ -1,136 +1,196 @@
 #include "ShaderCompiler.h"
 #include "RadianceEngine/Core/Log.h"
+#include <algorithm>
+#include <array>
 #include <fstream>
-#include <filesystem>
+#include <iterator>
+#include <string_view>
 
 #include <shaderc/shaderc.hpp>
 
 namespace Rdn::ShaderCompiler
 {
-	bool ReadFile(const std::string& filePath, std::string& dataText)
+	namespace
 	{
-		std::ifstream in(filePath, std::ios::in | std::ios::binary);
-		if (in.is_open())
+		struct StageInfo
 		{
-			in.seekg(0, std::ios::end);
-			dataText.resize(in.tellg());
-			in.seekg(0, std::ios::beg);
-			in.read(dataText.data(), dataText.size());
-			in.close();
-		}
-		else
+			std::string_view Extension;
+			ShaderStage Stage;
+			shaderc_shader_kind Kind;
+		};
+
+		constexpr std::array<StageInfo, 7> Stages = { {
+			{ ".vert", ShaderStage::Vertex, shaderc_glsl_vertex_shader },
+			{ ".frag", ShaderStage::Fragment, shaderc_glsl_fragment_shader },
+			{ ".comp", ShaderStage::Compute, shaderc_glsl_compute_shader },
+			{ ".rgen", ShaderStage::RayGen, shaderc_glsl_raygen_shader },
+			{ ".rahit", ShaderStage::RayAnyHit, shaderc_glsl_anyhit_shader },
+			{ ".rchit", ShaderStage::RayClosestHit, shaderc_glsl_closesthit_shader },
+			{ ".rmiss", ShaderStage::RayMiss, shaderc_glsl_miss_shader },
+		} };
+
+		constexpr size_t MaxIncludeDepth = 32;
+
+		const StageInfo* FindStage(std::string_view extension)
 		{
-			return false;
+			for (const StageInfo& info : Stages)
+				if (info.Extension == extension)
+					return &info;
+			return nullptr;
 		}
-		return true;
-	}
 
-	class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface {
-	public:
-		shaderc_include_result* GetInclude(const char* requested_source,
-			shaderc_include_type type,
-			const char* requesting_source,
-			size_t include_depth) override {
+		const StageInfo* FindStage(ShaderStage stage)
+		{
+			for (const StageInfo& info : Stages)
+				if (info.Stage == stage)
+					return &info;
+			return nullptr;
+		}
 
-			std::filesystem::path fullPath = requesting_source;
-			std::string parentPath = fullPath.parent_path().string();
-			std::string path = parentPath + "/" + requested_source;
-			std::string dataText;
-			if (!ReadFile(parentPath + "/" + requested_source, dataText))
+		bool ReadSourceFile(const std::filesystem::path& path, std::string& content, std::vector<ShaderSourceFile>& sourceFiles)
+		{
+			std::error_code error;
+			const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, error);
+			std::ifstream file(path, std::ios::binary);
+			if (error || !file)
+				return false;
+
+			content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+			std::string name = path.generic_string();
+			if (std::ranges::none_of(sourceFiles, [&](const ShaderSourceFile& source) { return source.Path == name; }))
+				sourceFiles.push_back({ std::move(name), writeTime });
+			return true;
+		}
+
+		struct IncludeResult
+		{
+			std::string Name;
+			std::string Content;
+			shaderc_include_result Result = {};
+		};
+
+		class Includer final : public shaderc::CompileOptions::IncluderInterface
+		{
+		public:
+			explicit Includer(std::vector<ShaderSourceFile>& sourceFiles)
+				: m_SourceFiles(sourceFiles)
 			{
-				RDN_LOG_ERROR(std::string("Failed to compile shader: Could not open file ") + path);
-				return nullptr;
 			}
 
-			auto* result = new shaderc_include_result;
-			result->source_name = requested_source;
-			result->source_name_length = strlen(requested_source);
-			char* content_ptr = new char[dataText.size() + 1];
-			strcpy(content_ptr, dataText.c_str());
-			result->content = content_ptr;
-			result->content_length = dataText.size();
-			result->user_data = nullptr;
+			shaderc_include_result* GetInclude(const char* requestedSource, shaderc_include_type, const char* requestingSource, size_t includeDepth) override
+			{
+				auto* include = new IncludeResult;
+				const std::filesystem::path path = (std::filesystem::path(requestingSource).parent_path() / requestedSource).lexically_normal();
+				if (includeDepth > MaxIncludeDepth)
+					include->Content = std::format("include depth exceeds {} (recursive include?)", MaxIncludeDepth);
+				else if (ReadSourceFile(path, include->Content, m_SourceFiles))
+					include->Name = path.generic_string();
+				else
+					include->Content = std::format("cannot open {}", path.generic_string());
 
-			return result;
+				include->Result = { include->Name.c_str(), include->Name.size(), include->Content.c_str(), include->Content.size(), include };
+				return &include->Result;
+			}
+
+			void ReleaseInclude(shaderc_include_result* result) override
+			{
+				delete static_cast<IncludeResult*>(result->user_data);
+			}
+
+		private:
+			std::vector<ShaderSourceFile>& m_SourceFiles;
+		};
+
+		const shaderc::Compiler& GetCompiler()
+		{
+			static const shaderc::Compiler compiler;
+			return compiler;
 		}
 
-		void ReleaseInclude(shaderc_include_result* data) override {
-			delete[] data->content;
-			delete data;
+		std::string_view TrimNewlines(std::string_view message)
+		{
+			while (!message.empty() && (message.back() == '\n' || message.back() == '\r'))
+				message.remove_suffix(1);
+			return message;
 		}
-	};
+
+		bool CompileSource(const std::string& source, const StageInfo& stage, const std::string& name, ShaderDesc& shaderDesc)
+		{
+			shaderc::CompileOptions options;
+			options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_4);
+			options.SetPreserveBindings(true);
+#if defined(DEBUG)
+			options.SetGenerateDebugInfo();
+			options.SetOptimizationLevel(shaderc_optimization_level_zero);
+#else
+			options.SetOptimizationLevel(shaderc_optimization_level_performance);
+#endif
+			options.SetIncluder(std::make_unique<Includer>(shaderDesc.SourceFiles));
+
+			const shaderc::SpvCompilationResult result = GetCompiler().CompileGlslToSpv(source, stage.Kind, name.c_str(), options);
+			if (result.GetCompilationStatus() != shaderc_compilation_status_success)
+			{
+				RDN_LOG_ERROR("Failed to compile shader {}:\n{}", name, TrimNewlines(result.GetErrorMessage()));
+				return false;
+			}
+			if (result.GetNumWarnings() > 0)
+			{
+				RDN_LOG_WARNING("Shader {}:\n{}", name, TrimNewlines(result.GetErrorMessage()));
+			}
+
+			shaderDesc.SpirV.assign(result.cbegin(), result.cend());
+			shaderDesc.ShaderStage = stage.Stage;
+			return true;
+		}
+	}
 
 	bool Compile(const std::string& filePath, ShaderDesc& shaderDesc)
 	{
-		std::string dataText;
-		if (!ReadFile(filePath, dataText))
+		shaderDesc.SpirV.clear();
+		shaderDesc.SourceFiles.clear();
+
+		const std::filesystem::path path = std::filesystem::path(filePath).lexically_normal();
+		const std::string extension = path.extension().string();
+		const StageInfo* stage = FindStage(std::string_view(extension));
+		if (!stage)
 		{
-			RDN_LOG_ERROR(std::string("Failed to compile shader: Could not open file ") + filePath.c_str());
+			RDN_LOG_ERROR("Failed to compile shader {}: unknown shader stage extension '{}'", filePath, extension);
 			return false;
 		}
 
-		std::filesystem::path path = filePath;
-		std::string extension = path.extension().string();
-
-		auto shaderStage = ShaderStage::Vertex;
-		if (extension == ".vert") shaderStage = ShaderStage::Vertex;
-		else if (extension == ".frag") shaderStage = ShaderStage::Fragment;
-		else if (extension == ".comp") shaderStage = ShaderStage::Compute;
-		else if (extension == ".rgen") shaderStage = ShaderStage::RayGen;
-		else if (extension == ".rmiss") shaderStage = ShaderStage::RayMiss;
-		else if (extension == ".rchit") shaderStage = ShaderStage::RayClosestHit;
-		else
+		std::string source;
+		if (!ReadSourceFile(path, source, shaderDesc.SourceFiles))
 		{
-			RDN_LOG_ERROR(std::string("Failed to descipher shader stage from file: ") + filePath.c_str());
+			RDN_LOG_ERROR("Failed to compile shader {}: cannot open file", filePath);
+			return false;
 		}
 
-		return CompileFromSource(dataText, shaderStage, shaderDesc, filePath);
+		return CompileSource(source, *stage, path.generic_string(), shaderDesc);
 	}
 
 	bool CompileFromSource(const std::string& source, ShaderStage shaderStage, ShaderDesc& shaderDesc, const std::string& debugName)
 	{
-		shaderc::Compiler compiler;
-		shaderc::CompileOptions options;
-		options.SetIncluder(std::make_unique<ShaderIncluder>());
+		shaderDesc.SpirV.clear();
+		shaderDesc.SourceFiles.clear();
 
-		options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_4);
-		const bool optimize = true;
-		if (optimize)
-			options.SetOptimizationLevel(shaderc_optimization_level_performance);
-
-		auto shaderStageShaderc = shaderc_glsl_vertex_shader;
-
-		switch (shaderStage)
+		const StageInfo* stage = FindStage(shaderStage);
+		if (!stage)
 		{
-		case Rdn::ShaderStage::Vertex: shaderStageShaderc = shaderc_glsl_vertex_shader; break;
-		case Rdn::ShaderStage::Fragment: shaderStageShaderc = shaderc_glsl_fragment_shader; break;
-		case Rdn::ShaderStage::Compute: shaderStageShaderc = shaderc_glsl_compute_shader; break;
-		case Rdn::ShaderStage::RayGen: shaderStageShaderc = shaderc_glsl_raygen_shader; break;
-		case Rdn::ShaderStage::RayMiss: shaderStageShaderc = shaderc_glsl_miss_shader; break;
-		case Rdn::ShaderStage::RayClosestHit: shaderStageShaderc = shaderc_glsl_closesthit_shader; break;
-		default:
-		{
-			RDN_LOG_ERROR(std::string("Unknown shader stage: ") + debugName);
-		}
-		}
-
-		auto precompileResult = compiler.PreprocessGlsl(source.data(), shaderStageShaderc, debugName.c_str(), options);
-		if (precompileResult.GetCompilationStatus() != shaderc_compilation_status_success)
-		{
-			RDN_LOG_ERROR(std::string("Unknown shader stage: ") + debugName);
-		}
-
-		shaderc::SpvCompilationResult module = compiler.CompileGlslToSpv(source.data(), shaderStageShaderc, debugName.c_str(), options);
-		if (module.GetCompilationStatus() != shaderc_compilation_status_success)
-		{
-			RDN_LOG_ERROR("Failed to compile shader: {}", module.GetErrorMessage());
+			RDN_LOG_ERROR("Failed to compile shader {}: unsupported shader stage {}", debugName, uint32_t(shaderStage));
 			return false;
 		}
-
-		shaderDesc.SpirV = std::vector<uint32_t>(module.cbegin(), module.cend());
-		shaderDesc.ShaderStage = shaderStage;
-
-		return true;
+		return CompileSource(source, *stage, debugName, shaderDesc);
 	}
 
+	bool AnySourceChanged(std::span<const ShaderSourceFile> sourceFiles)
+	{
+		for (const ShaderSourceFile& source : sourceFiles)
+		{
+			std::error_code error;
+			const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(source.Path, error);
+			if (!error && writeTime != source.WriteTime)
+				return true;
+		}
+		return false;
+	}
 }

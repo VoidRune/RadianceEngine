@@ -1,25 +1,19 @@
 #pragma once
 #include <cstdint>
-#include <limits>
 
-class Random
+namespace Rdn
 {
-public:
-	static void SetSeed(uint32_t seed);
+	class Random
+	{
+	public:
+		static void SetSeed(uint64_t seed);
 
-	/* Returns int32_t in range [min, max] */
-	static int32_t Range(int32_t min, int32_t max);
+		static uint32_t UInt();
+		static int32_t Range(int32_t min, int32_t max);
+		static bool Chance(float probability);
 
-	/* returns true/false based on chance  */
-	static bool Chance(float chance);
-
-	/* Returns float value in range[0, 1] */
-	static float Float();
-
-	/* Returns float value in range[0, max] */
-	static float Float(float max);
-
-	/* Returns float value in range[min, max] */
-	static float Float(float min, float max);
-
-};
+		static float Float();
+		static float Float(float max);
+		static float Float(float min, float max);
+	};
+}

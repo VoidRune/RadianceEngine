@@ -1,29 +1,27 @@
 #pragma once
 #include <RadianceEngine/Graphics/Handle.h>
 #include <RadianceEngine/Graphics/Common.h>
-#define VK_NO_PROTOTYPE
+#include <RadianceEngine/Core/Log.h>
 #include <volk/volk.h>
 #include <VulkanMemoryAllocator/vk_mem_alloc.h>
+#include <cstdlib>
+#include <span>
 #include <vector>
-#include <iostream>
 
 namespace Rdn
 {
 	const char* GetVulkanResultString(VkResult result);
 
-	#if defined(DEBUG) || defined(RELEASE)
-	#define VK_CHECK(x)															\
-		{																		\
-			VkResult err_temp = x;												\
-			if (err_temp != VK_SUCCESS)														\
-			{																	\
-				std::cout <<"Detected Vulkan error: " << Rdn::GetVulkanResultString(err_temp) << std::endl; \
-				abort();														\
-			}																	\
-		}
-	#else
-	#define VK_CHECK(x) x
-	#endif
+	#define VK_CHECK(x)																\
+		do																			\
+		{																			\
+			const VkResult vkCheckResult_ = (x);									\
+			if (vkCheckResult_ != VK_SUCCESS)										\
+			{																		\
+				RDN_LOG_FATAL("{} failed: {}", #x, Rdn::GetVulkanResultString(vkCheckResult_)); \
+				std::abort();														\
+			}																		\
+		} while (0)
 
 	inline VkInstance					toVk(InstanceHandle h) { return reinterpret_cast<VkInstance>(static_cast<uintptr_t>(h.Id)); }
 	inline VkPhysicalDevice				toVk(PhysicalDeviceHandle h) { return reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(h.Id)); }
@@ -112,6 +110,7 @@ namespace Rdn
 	inline VkDescriptorType				toVk(DescriptorType e) { return static_cast<VkDescriptorType>(e); }
 	inline VkDescriptorBindingFlags		toVk(DescriptorFlag e) { return static_cast<VkDescriptorBindingFlags>(e); }
 	inline VkPrimitiveTopology			toVk(PrimitiveTopology e) { return static_cast<VkPrimitiveTopology>(e); }
+	inline VkIndexType					toVk(IndexType e) { return static_cast<VkIndexType>(e); }
 	inline VkCullModeFlags				toVk(CullMode e) { return static_cast<VkCullModeFlags>(e); }
 	inline VkCompareOp					toVk(CompareOperation e) { return static_cast<VkCompareOp>(e); }
 	inline VkPipelineBindPoint			toVk(PipelineBindPoint e) { return static_cast<VkPipelineBindPoint>(e); }
@@ -122,12 +121,26 @@ namespace Rdn
 
 	inline Format						fromVk(VkFormat e) { return static_cast<Format>(e); }
 
+	class DescriptorWrite;
+
+	struct VulkanDescriptorWrites
+	{
+		VulkanDescriptorWrites(const DescriptorWrite& write, VkDescriptorSet dstSet);
+		VulkanDescriptorWrites(const VulkanDescriptorWrites&) = delete;
+		VulkanDescriptorWrites& operator=(const VulkanDescriptorWrites&) = delete;
+
+		std::vector<VkWriteDescriptorSet> Writes;
+		std::vector<VkDescriptorBufferInfo> BufferInfos;
+		std::vector<VkDescriptorImageInfo> ImageInfos;
+		std::vector<VkAccelerationStructureKHR> AccelerationStructures;
+		std::vector<VkWriteDescriptorSetAccelerationStructureKHR> AccelerationStructureInfos;
+	};
+
 
 	struct QueueFamilyIndices
 	{
 		uint32_t GraphicsIndex = uint32_t(-1);
 		uint32_t PresentIndex = uint32_t(-1);
-		//uint32_t TransferIndex = uint32_t(-1);
 	};
 
 	struct ApiVersion
@@ -142,10 +155,17 @@ namespace Rdn
 		const char* applicationName = "";
 		const char* engineName = "";
 		ApiVersion apiVersion = ApiVersion(1, 3);
-		const std::vector<const char*>& instanceExtensions = {};
+		std::span<const char* const> instanceExtensions = {};
 		bool enableValidationLayers = false;
 	};
-	InstanceHandle CreateInstanceHandle(InstanceCreateInfo& info);
+
+	struct InstanceOutput
+	{
+		InstanceHandle instance = {};
+		bool validationEnabled = false;
+		bool debugUtilsEnabled = false;
+	};
+	InstanceOutput CreateInstanceHandle(const InstanceCreateInfo& info);
 
 	/* DEBUG UTILS MESSENGER */
 	struct DebugUtilsMessengerCreateInfo
@@ -153,14 +173,7 @@ namespace Rdn
 		InstanceHandle instance = {};
 		bool enableDebugUtilsMessenger = false;
 	};
-	DebugUtilsMessengerHandle CreateDebugUtilsMessengerHandle(DebugUtilsMessengerCreateInfo& info);
-
-	/* PHYSICAL DEVICE */
-	struct PhysicalDeviceSelectInfo
-	{
-		InstanceHandle instance = {};
-	};
-	PhysicalDeviceHandle SelectPhysicalDeviceHandle(PhysicalDeviceSelectInfo& info);
+	DebugUtilsMessengerHandle CreateDebugUtilsMessengerHandle(const DebugUtilsMessengerCreateInfo& info);
 
 	/* SURFACE */
 	struct SurfaceCreateInfo
@@ -168,15 +181,21 @@ namespace Rdn
 		InstanceHandle instance = {};
 		void* windowHandle = {};
 	};
-	SurfaceHandle CreateSurfaceHandle(SurfaceCreateInfo& info);
+	SurfaceHandle CreateSurfaceHandle(const SurfaceCreateInfo& info);
 
-	/* QUEUE FAMILIES */
-	struct QueueFamilySelectInfo
+	/* PHYSICAL DEVICE */
+	struct PhysicalDeviceSelectInfo
 	{
-		PhysicalDeviceHandle physicalDevice = {};
+		InstanceHandle instance = {};
 		SurfaceHandle surface = {};
 	};
-	QueueFamilyIndices SelectQueueFamilies(QueueFamilySelectInfo& info);
+
+	struct PhysicalDeviceSelection
+	{
+		PhysicalDeviceHandle physicalDevice = {};
+		QueueFamilyIndices queueFamilyIndices = {};
+	};
+	PhysicalDeviceSelection SelectPhysicalDevice(const PhysicalDeviceSelectInfo& info);
 
 	/* LOGICAL DEVICE */
 	struct DeviceCreateInfo
@@ -184,7 +203,13 @@ namespace Rdn
 		PhysicalDeviceHandle physicalDevice = {};
 		QueueFamilyIndices queueFamilyIndices = {};
 	};
-	DeviceHandle CreateLogicalDeviceHandle(DeviceCreateInfo& info);
+
+	struct DeviceOutput
+	{
+		DeviceHandle device = {};
+		std::vector<const char*> enabledExtensions;
+	};
+	DeviceOutput CreateLogicalDeviceHandle(const DeviceCreateInfo& info);
 
 	/* SWAPCHAIN */
 	struct SwapchainCreateInfo
@@ -205,28 +230,28 @@ namespace Rdn
 		SwapchainHandle swapchain = {}; // null while the surface has no area (minimized)
 		Format surfaceFormat = {};
 		PresentMode presentMode = {};
-		uint32_t extent[3] = {};
+		Extent2D extent = {};
 	};
-	SwapchainOutput CreateSwapchainHandle(SwapchainCreateInfo& info);
+	SwapchainOutput CreateSwapchainHandle(const SwapchainCreateInfo& info);
 
-	struct SwapchainImagesRetreiveInfo
+	struct SwapchainImagesRetrieveInfo
 	{
 		DeviceHandle logicalDevice = {};
 		SwapchainHandle swapchain = {};
 	};
-	std::vector<ImageHandle> RetreiveSwapchainImages(SwapchainImagesRetreiveInfo& info);
+	std::vector<ImageHandle> RetrieveSwapchainImages(const SwapchainImagesRetrieveInfo& info);
 
 	struct FenceCreateInfo
 	{
 		DeviceHandle logicalDevice = {};
 		bool createSignaled = {};
 	};
-	FenceHandle CreateFenceHandle(FenceCreateInfo& info);
+	FenceHandle CreateFenceHandle(const FenceCreateInfo& info);
 
 	struct SemaphoreCreateInfo
 	{
 		DeviceHandle logicalDevice = {};
 	};
-	SemaphoreHandle CreateSemaphoreHandle(SemaphoreCreateInfo& info);
+	SemaphoreHandle CreateSemaphoreHandle(const SemaphoreCreateInfo& info);
 
 }

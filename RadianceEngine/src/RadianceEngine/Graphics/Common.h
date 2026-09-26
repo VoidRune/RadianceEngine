@@ -36,6 +36,8 @@ namespace Rdn
 
     // Buffer range that extends to the end of the buffer (VK_WHOLE_SIZE).
     inline constexpr uint64_t WholeSize = ~0ULL;
+    inline constexpr uint32_t RemainingMips = ~0U;
+    inline constexpr uint32_t RemainingLayers = ~0U;
 
     struct Extent2D
     {
@@ -176,6 +178,7 @@ namespace Rdn
         AllGraphics = 0x00008000ULL,
         AllCommands = 0x00010000ULL,
         RayTracingShader = 0x00200000ULL,
+        AccelerationStructureBuild = 0x02000000ULL,
         Copy = 0x100000000ULL,
         Resolve = 0x200000000ULL,
         Blit = 0x400000000ULL,
@@ -207,6 +210,8 @@ namespace Rdn
         HostWrite = 0x00004000ULL,
         MemoryRead = 0x00008000ULL,
         MemoryWrite = 0x00010000ULL,
+        AccelerationStructureRead = 0x00200000ULL,
+        AccelerationStructureWrite = 0x00400000ULL,
         ShaderSampledRead = 0x100000000ULL,
         ShaderStorageRead = 0x200000000ULL,
         ShaderStorageWrite = 0x400000000ULL,
@@ -337,6 +342,12 @@ namespace Rdn
         TriangleListWithAdjacency = 8,
         TriangleStripWithAdjacency = 9,
         PatchList = 10,
+    };
+
+    enum class IndexType
+    {
+        Uint16 = 0,
+        Uint32 = 1,
     };
 
     enum class CullMode

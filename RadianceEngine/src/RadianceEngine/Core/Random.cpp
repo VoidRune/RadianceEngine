@@ -1,45 +1,64 @@
 #include "Random.h"
 
-
-static uint32_t s_seed = 0;
-void Random::SetSeed(uint32_t seed)
+namespace Rdn
 {
-	s_seed = seed;
-}
+	namespace
+	{
+		struct Pcg32
+		{
+			static constexpr uint64_t Multiplier = 6364136223846793005ULL;
+			static constexpr uint64_t Increment = 0xda3e39cb94b95bdbULL;
+			uint64_t State = 0x853c49e6748fea9bULL;
 
-/* https://www.youtube.com/watch?v=ZZY9YE7rZJw */
-static uint32_t Lehmer32()
-{
-	s_seed += 0xe120fc15;
-	uint64_t tmp;
-	tmp = (uint64_t)s_seed * 0x4a39b70d;
-	uint32_t m1 = static_cast<uint32_t>((tmp >> 32) ^ tmp);
-	tmp = (uint64_t)m1 * 0x12fad5c9;
-	uint32_t m2 = static_cast<uint32_t>((tmp >> 32) ^ tmp);
-	return m2;
-}
+			uint32_t Next()
+			{
+				const uint64_t old = State;
+				State = old * Multiplier + Increment;
+				const uint32_t xorShifted = uint32_t(((old >> 18) ^ old) >> 27);
+				const uint32_t rotation = uint32_t(old >> 59);
+				return (xorShifted >> rotation) | (xorShifted << ((32 - rotation) & 31));
+			}
+		};
 
-int32_t Random::Range(int32_t min, int32_t max)
-{
-	return Lehmer32() % (max - min + 1) + min;
-}
+		thread_local Pcg32 s_Generator;
+	}
 
-bool Random::Chance(float chance)
-{
-	return (Range(0, 100000) / 100000.0f) <= chance;
-}
+	void Random::SetSeed(uint64_t seed)
+	{
+		s_Generator.State = 0;
+		s_Generator.Next();
+		s_Generator.State += seed;
+		s_Generator.Next();
+	}
 
-float Random::Float()
-{
-	return Lehmer32() / (float)std::numeric_limits<uint32_t>::max();
-}
+	uint32_t Random::UInt()
+	{
+		return s_Generator.Next();
+	}
 
-float Random::Float(float max)
-{
-	return Lehmer32() / (float)std::numeric_limits<uint32_t>::max() * max;
-}
+	int32_t Random::Range(int32_t min, int32_t max)
+	{
+		const uint64_t span = uint64_t(int64_t(max) - int64_t(min)) + 1;
+		return int32_t(int64_t(min) + int64_t((uint64_t(UInt()) * span) >> 32));
+	}
 
-float Random::Float(float min, float max)
-{
-	return min + Lehmer32() / (float)std::numeric_limits<uint32_t>::max() * (max - min);
+	bool Random::Chance(float probability)
+	{
+		return Float() < probability;
+	}
+
+	float Random::Float()
+	{
+		return float(UInt() >> 8) * 0x1.0p-24f;
+	}
+
+	float Random::Float(float max)
+	{
+		return Float() * max;
+	}
+
+	float Random::Float(float min, float max)
+	{
+		return min + Float() * (max - min);
+	}
 }

@@ -1,24 +1,31 @@
 #pragma once
 #include "RadianceEngine/Graphics/Handle.h"
 #include "RadianceEngine/Graphics/Common.h"
+#include <vector>
 
 namespace Rdn
 {
+	struct BottomLevelASGeometry
+	{
+		uint32_t FirstIndex = 0;
+		uint32_t TriangleCount = 0;
+	};
+
 	struct BottomLevelASDesc
 	{
 		BufferHandle VertexBuffer = {};
 		BufferHandle IndexBuffer = {};
 		uint32_t VertexStride = 0;
 		uint32_t VertexCount = 0;
-		uint32_t NumTriangles = 0;
 		Format VertexFormat = Format::Undefined;
+		std::vector<BottomLevelASGeometry> Geometries;
 	};
 
-	typedef uint64_t BottomLevelASHandle;
-	class BottomLevelAS
+	class BottomLevelAS : NonCopyable
 	{
 	public:
-		BottomLevelASHandle GetHandle() { return m_DeviceAddress; }
+		AccelerationStructureHandle GetHandle() const { return m_Handle; }
+		uint64_t GetDeviceAddress() const { return m_DeviceAddress; }
 
 	private:
 		AccelerationStructureHandle m_Handle{};

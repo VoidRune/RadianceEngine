@@ -43,6 +43,7 @@ namespace Rdn
             case HostAccess::Random:
                 allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
                 allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+                allocInfo.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
                 break;
             }
             if (persistentlyMapped)
@@ -98,48 +99,9 @@ namespace Rdn
             return vkGetBufferDeviceAddress(device, &addressInfo);
         }
 
-        void CmdMemoryBarrier(VkCommandBuffer cmd, VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess)
+        Extent3D MipExtent(Extent3D extent, uint32_t level)
         {
-            VkMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
-            barrier.srcStageMask = srcStage;
-            barrier.srcAccessMask = srcAccess;
-            barrier.dstStageMask = dstStage;
-            barrier.dstAccessMask = dstAccess;
-
-            VkDependencyInfo dependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-            dependency.memoryBarrierCount = 1;
-            dependency.pMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(cmd, &dependency);
-        }
-
-        void CmdImageBarrier(VkCommandBuffer cmd, VkImage image, uint32_t baseMip, uint32_t mipCount, VkImageLayout oldLayout, VkImageLayout newLayout,
-            VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess)
-        {
-            VkImageMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
-            barrier.srcStageMask = srcStage;
-            barrier.srcAccessMask = srcAccess;
-            barrier.dstStageMask = dstStage;
-            barrier.dstAccessMask = dstAccess;
-            barrier.oldLayout = oldLayout;
-            barrier.newLayout = newLayout;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = image;
-            barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, baseMip, mipCount, 0, 1 };
-
-            VkDependencyInfo dependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-            dependency.imageMemoryBarrierCount = 1;
-            dependency.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(cmd, &dependency);
-        }
-
-        VkOffset3D MipExtent(Extent3D extent, uint32_t level)
-        {
-            return {
-                int32_t(std::max(1u, extent.Width >> level)),
-                int32_t(std::max(1u, extent.Height >> level)),
-                int32_t(std::max(1u, extent.Depth >> level)),
-            };
+            return { std::max(1u, extent.Width >> level), std::max(1u, extent.Height >> level), std::max(1u, extent.Depth >> level) };
         }
 
         uint32_t GetFormatByteSize(Format format)
@@ -192,20 +154,6 @@ namespace Rdn
 		m_LogicalDevice = device->GetLogicalDevice();
 		m_PhysicalDevice = device->GetPhysicalDevice();
 
-        VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationStructureProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR };
-        VkPhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
-        rayTracingProperties.pNext = &accelerationStructureProperties;
-        VkPhysicalDeviceProperties2 properties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-        properties.pNext = &rayTracingProperties;
-        vkGetPhysicalDeviceProperties2(toVk(m_PhysicalDevice), &properties);
-
-        m_Limits.MinUniformBufferOffsetAlignment = properties.properties.limits.minUniformBufferOffsetAlignment;
-        m_Limits.MinStorageBufferOffsetAlignment = properties.properties.limits.minStorageBufferOffsetAlignment;
-        m_Limits.MinAccelerationStructureScratchOffsetAlignment = accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
-        m_Limits.ShaderGroupHandleSize = rayTracingProperties.shaderGroupHandleSize;
-        m_Limits.ShaderGroupHandleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
-        m_Limits.ShaderGroupBaseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
-
         VmaVulkanFunctions vulkanFunctions = {};
         vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
         vulkanFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
@@ -214,8 +162,10 @@ namespace Rdn
         allocatorInfo.physicalDevice = toVk(m_PhysicalDevice);
         allocatorInfo.device = toVk(m_LogicalDevice);
         allocatorInfo.instance = toVk(device->GetInstance());
-        allocatorInfo.vulkanApiVersion = std::min(properties.properties.apiVersion, VK_API_VERSION_1_4);
+        allocatorInfo.vulkanApiVersion = std::min(device->GetProperties().ApiVersion, VK_API_VERSION_1_4);
         allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+        if (device->IsExtensionEnabled(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME))
+            allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
         allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
         VmaAllocator allocator;
@@ -333,7 +283,7 @@ namespace Rdn
         return GetDeviceAddress(toVk(m_LogicalDevice), toVk(buffer->m_Buffer));
     }
 
-    void ResourceAllocator::SetDeviceLocalBufferData(GpuBuffer* buffer, const void* data, uint32_t size)
+    void ResourceAllocator::SetDeviceLocalBufferData(GpuBuffer* buffer, const void* data, uint64_t size)
     {
         if (size > buffer->GetSize())
         {
@@ -345,11 +295,10 @@ namespace Rdn
         VK_CHECK(vmaCopyMemoryToAllocation(toVk(m_Allocator), data, staging.Allocation, 0, size));
 
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
-            VkBufferCopy copyRegion{ 0, 0, size };
-            vkCmdCopyBuffer(toVk(cmd.GetHandle()), staging.Buffer, toVk(buffer->GetHandle()), 1, &copyRegion);
-            CmdMemoryBarrier(toVk(cmd.GetHandle()),
-                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+            cmd.CopyBuffer(fromVk(staging.Buffer), buffer->GetHandle(), size);
+            cmd.Barrier(GlobalBarrier{
+                .SrcStage = PipelineStage::AllTransfer, .DstStage = PipelineStage::AllCommands,
+                .SrcAccess = AccessMask::TransferWrite, .DstAccess = AccessMask::MemoryRead | AccessMask::MemoryWrite });
         });
         buffer->m_SyncState = {};
 
@@ -371,7 +320,7 @@ namespace Rdn
         vkGetPhysicalDeviceFormatProperties(toVk(m_PhysicalDevice), toVk(image->GetFormat()), &formatProperties);
         const VkFormatFeatureFlags blitFeatures = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
         const bool canBlit = (formatProperties.optimalTilingFeatures & blitFeatures) == blitFeatures;
-        const VkFilter mipFilter = (formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+        const Filter mipFilter = (formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? Filter::Linear : Filter::Nearest;
         if (mipLevels > 1 && !canBlit)
         {
             RDN_LOG_ERROR("SetImageData: {} can't be blitted, so mip levels 1..{} stay undefined", string_VkFormat(toVk(image->GetFormat())), mipLevels - 1);
@@ -381,51 +330,42 @@ namespace Rdn
         VK_CHECK(vmaCopyMemoryToAllocation(toVk(m_Allocator), data, staging.Allocation, 0, size));
 
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
-            const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
-            const VkImage vkImage = toVk(image->GetHandle());
+            const ImageHandle handle = image->GetHandle();
 
-            CmdImageBarrier(vkCmd, vkImage, 0, mipLevels, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-
-            VkBufferImageCopy region{};
-            region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-            region.imageExtent = { extent.Width, extent.Height, extent.Depth };
-            vkCmdCopyBufferToImage(vkCmd, staging.Buffer, vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            cmd.Barrier(ImageBarrier{
+                .Handle = handle, .OldLayout = ImageLayout::Undefined, .NewLayout = ImageLayout::TransferDstOptimal,
+                .SrcStage = PipelineStage::None, .DstStage = PipelineStage::AllTransfer,
+                .SrcAccess = AccessMask::None, .DstAccess = AccessMask::TransferWrite });
+            cmd.CopyBufferToImage(fromVk(staging.Buffer), handle, extent);
 
             uint32_t lastWrittenLevel = 0;
             if (canBlit)
             {
                 for (uint32_t level = 1; level < mipLevels; level++)
                 {
-                    CmdImageBarrier(vkCmd, vkImage, level - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
-
-                    VkImageBlit2 blit{ VK_STRUCTURE_TYPE_IMAGE_BLIT_2 };
-                    blit.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, 1 };
-                    blit.srcOffsets[1] = MipExtent(extent, level - 1);
-                    blit.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1 };
-                    blit.dstOffsets[1] = MipExtent(extent, level);
-
-                    VkBlitImageInfo2 blitInfo{ VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2 };
-                    blitInfo.srcImage = vkImage;
-                    blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-                    blitInfo.dstImage = vkImage;
-                    blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-                    blitInfo.regionCount = 1;
-                    blitInfo.pRegions = &blit;
-                    blitInfo.filter = mipFilter;
-                    vkCmdBlitImage2(vkCmd, &blitInfo);
+                    cmd.Barrier(ImageBarrier{
+                        .Handle = handle, .OldLayout = ImageLayout::TransferDstOptimal, .NewLayout = ImageLayout::TransferSrcOptimal,
+                        .SrcStage = PipelineStage::AllTransfer, .DstStage = PipelineStage::AllTransfer,
+                        .SrcAccess = AccessMask::TransferWrite, .DstAccess = AccessMask::TransferRead,
+                        .BaseMip = level - 1, .MipCount = 1 });
+                    cmd.BlitImage(handle, MipExtent(extent, level - 1), handle, MipExtent(extent, level), mipFilter, level - 1, level);
                 }
                 lastWrittenLevel = mipLevels - 1;
             }
 
             if (lastWrittenLevel > 0)
             {
-                CmdImageBarrier(vkCmd, vkImage, 0, lastWrittenLevel, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, toVk(newLayout),
-                    VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+                cmd.Barrier(ImageBarrier{
+                    .Handle = handle, .OldLayout = ImageLayout::TransferSrcOptimal, .NewLayout = newLayout,
+                    .SrcStage = PipelineStage::AllTransfer, .DstStage = PipelineStage::AllCommands,
+                    .SrcAccess = AccessMask::None, .DstAccess = AccessMask::MemoryRead,
+                    .MipCount = lastWrittenLevel });
             }
-            CmdImageBarrier(vkCmd, vkImage, lastWrittenLevel, mipLevels - lastWrittenLevel, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, toVk(newLayout),
-                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+            cmd.Barrier(ImageBarrier{
+                .Handle = handle, .OldLayout = ImageLayout::TransferDstOptimal, .NewLayout = newLayout,
+                .SrcStage = PipelineStage::AllTransfer, .DstStage = PipelineStage::AllCommands,
+                .SrcAccess = AccessMask::TransferWrite, .DstAccess = AccessMask::MemoryRead,
+                .BaseMip = lastWrittenLevel, .MipCount = mipLevels - lastWrittenLevel });
         });
         image->m_SyncState = {};
         image->m_SyncState.Layout = newLayout;
@@ -450,22 +390,22 @@ namespace Rdn
         VmaBuffer readback = CreateVmaBuffer(toVk(m_Allocator), size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, HostAccess::Random);
 
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
-            const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
-            const VkImage vkImage = toVk(image->GetHandle());
+            const ImageHandle handle = image->GetHandle();
 
-            CmdImageBarrier(vkCmd, vkImage, 0, VK_REMAINING_MIP_LEVELS, toVk(currentLayout), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
-
-            VkBufferImageCopy region{};
-            region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-            region.imageExtent = { extent.Width, extent.Height, extent.Depth };
-            vkCmdCopyImageToBuffer(vkCmd, vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.Buffer, 1, &region);
-
-            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_READ_BIT);
+            cmd.Barrier(ImageBarrier{
+                .Handle = handle, .OldLayout = currentLayout, .NewLayout = ImageLayout::TransferSrcOptimal,
+                .SrcStage = PipelineStage::AllCommands, .DstStage = PipelineStage::AllTransfer,
+                .SrcAccess = AccessMask::MemoryWrite, .DstAccess = AccessMask::TransferRead });
+            cmd.CopyImageToBuffer(handle, fromVk(readback.Buffer), extent);
+            cmd.Barrier(GlobalBarrier{
+                .SrcStage = PipelineStage::AllTransfer, .DstStage = PipelineStage::Host,
+                .SrcAccess = AccessMask::TransferWrite, .DstAccess = AccessMask::HostRead });
             if (restoreLayout != ImageLayout::TransferSrcOptimal)
             {
-                CmdImageBarrier(vkCmd, vkImage, 0, VK_REMAINING_MIP_LEVELS, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, toVk(restoreLayout),
-                    VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+                cmd.Barrier(ImageBarrier{
+                    .Handle = handle, .OldLayout = ImageLayout::TransferSrcOptimal, .NewLayout = restoreLayout,
+                    .SrcStage = PipelineStage::AllTransfer, .DstStage = PipelineStage::AllCommands,
+                    .SrcAccess = AccessMask::None, .DstAccess = AccessMask::MemoryRead | AccessMask::MemoryWrite });
             }
         });
         image->m_SyncState = {};
@@ -511,9 +451,9 @@ namespace Rdn
     {
         uint64_t alignment = 1;
         if (HasAny(desc.UsageFlags & BufferUsage::UniformBuffer))
-            alignment = std::max(alignment, m_Limits.MinUniformBufferOffsetAlignment);
+            alignment = std::max(alignment, m_Device->GetProperties().MinUniformBufferOffsetAlignment);
         if (HasAny(desc.UsageFlags & BufferUsage::StorageBuffer))
-            alignment = std::max(alignment, m_Limits.MinStorageBufferOffsetAlignment);
+            alignment = std::max(alignment, m_Device->GetProperties().MinStorageBufferOffsetAlignment);
         const uint32_t elementStride = uint32_t((desc.ElementSize + alignment - 1) & ~(alignment - 1));
 
         VmaBuffer buffer = CreateVmaBuffer(toVk(m_Allocator), uint64_t(desc.ElementCount) * elementStride, toVk(desc.UsageFlags),
@@ -774,32 +714,47 @@ namespace Rdn
     {
         const VkDevice device = toVk(m_LogicalDevice);
         const VmaAllocator allocator = toVk(m_Allocator);
+        if (desc.Geometries.empty())
+        {
+            RDN_LOG_ERROR("CreateBottomLevelAS: no geometries");
+            return;
+        }
 
-        VkAccelerationStructureGeometryKHR geometry{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR };
-        geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
-        geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-        geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-        geometry.geometry.triangles.vertexFormat = toVk(desc.VertexFormat);
-        geometry.geometry.triangles.vertexData.deviceAddress = GetDeviceAddress(device, toVk(desc.VertexBuffer));
-        geometry.geometry.triangles.maxVertex = desc.VertexCount > 0 ? desc.VertexCount - 1 : 0;
-        geometry.geometry.triangles.vertexStride = desc.VertexStride;
-        geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
-        geometry.geometry.triangles.indexData.deviceAddress = GetDeviceAddress(device, toVk(desc.IndexBuffer));
+        const VkDeviceAddress vertexAddress = GetDeviceAddress(device, toVk(desc.VertexBuffer));
+        const VkDeviceAddress indexAddress = GetDeviceAddress(device, toVk(desc.IndexBuffer));
+        std::vector<VkAccelerationStructureGeometryKHR> geometries;
+        std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges;
+        std::vector<uint32_t> primitiveCounts;
+        for (const BottomLevelASGeometry& part : desc.Geometries)
+        {
+            VkAccelerationStructureGeometryKHR& geometry = geometries.emplace_back(VkAccelerationStructureGeometryKHR{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR });
+            geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+            geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+            geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+            geometry.geometry.triangles.vertexFormat = toVk(desc.VertexFormat);
+            geometry.geometry.triangles.vertexData.deviceAddress = vertexAddress;
+            geometry.geometry.triangles.maxVertex = desc.VertexCount > 0 ? desc.VertexCount - 1 : 0;
+            geometry.geometry.triangles.vertexStride = desc.VertexStride;
+            geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+            geometry.geometry.triangles.indexData.deviceAddress = indexAddress;
+
+            ranges.push_back({ part.TriangleCount, part.FirstIndex * uint32_t(sizeof(uint32_t)), 0, 0 });
+            primitiveCounts.push_back(part.TriangleCount);
+        }
 
         VkAccelerationStructureBuildGeometryInfoKHR buildInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR };
         buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
         buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR;
         buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-        buildInfo.geometryCount = 1;
-        buildInfo.pGeometries = &geometry;
+        buildInfo.geometryCount = uint32_t(geometries.size());
+        buildInfo.pGeometries = geometries.data();
 
-        const uint32_t primitiveCount = desc.NumTriangles;
         VkAccelerationStructureBuildSizesInfoKHR sizes{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
-        vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizes);
+        vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, primitiveCounts.data(), &sizes);
 
         VmaAccelerationStructure built = CreateVmaAccelerationStructure(device, allocator, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, sizes.accelerationStructureSize);
         VmaBuffer scratch = CreateVmaBuffer(allocator, sizes.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            HostAccess::None, m_Limits.MinAccelerationStructureScratchOffsetAlignment);
+            HostAccess::None, m_Device->GetProperties().MinAccelerationStructureScratchOffsetAlignment);
         buildInfo.dstAccelerationStructure = built.Handle;
         buildInfo.scratchData.deviceAddress = GetDeviceAddress(device, scratch.Buffer);
 
@@ -809,16 +764,17 @@ namespace Rdn
         VkQueryPool queryPool;
         VK_CHECK(vkCreateQueryPool(device, &queryPoolInfo, nullptr, &queryPool));
 
-        const VkAccelerationStructureBuildRangeInfoKHR buildRange{ primitiveCount, 0, 0, 0 };
-        const VkAccelerationStructureBuildRangeInfoKHR* buildRanges = &buildRange;
+        const VkAccelerationStructureBuildRangeInfoKHR* buildRanges = ranges.data();
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
             const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
             vkCmdResetQueryPool(vkCmd, queryPool, 0, 1);
-            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_MEMORY_READ_BIT);
+            cmd.Barrier(GlobalBarrier{
+                .SrcStage = PipelineStage::AllCommands, .DstStage = PipelineStage::AccelerationStructureBuild,
+                .SrcAccess = AccessMask::MemoryWrite, .DstAccess = AccessMask::MemoryRead });
             vkCmdBuildAccelerationStructuresKHR(vkCmd, 1, &buildInfo, &buildRanges);
-            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+            cmd.Barrier(GlobalBarrier{
+                .SrcStage = PipelineStage::AccelerationStructureBuild, .DstStage = PipelineStage::AllCommands,
+                .SrcAccess = AccessMask::AccelerationStructureWrite, .DstAccess = AccessMask::MemoryRead });
             vkCmdWriteAccelerationStructuresPropertiesKHR(vkCmd, 1, &built.Handle, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
         });
 
@@ -838,8 +794,9 @@ namespace Rdn
                 copyInfo.dst = result.Handle;
                 copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
                 vkCmdCopyAccelerationStructureKHR(toVk(cmd.GetHandle()), &copyInfo);
-                CmdMemoryBarrier(toVk(cmd.GetHandle()), VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-                    VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+                cmd.Barrier(GlobalBarrier{
+                    .SrcStage = PipelineStage::AllCommands, .DstStage = PipelineStage::AllCommands,
+                    .SrcAccess = AccessMask::AccelerationStructureWrite, .DstAccess = AccessMask::MemoryRead });
             });
             DestroyVmaAccelerationStructure(device, allocator, built);
         }
@@ -894,7 +851,7 @@ namespace Rdn
             instance.mask = 0xFF;
             instance.instanceShaderBindingTableRecordOffset = 0;
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-            instance.accelerationStructureReference = source.BottomLevelASHandle;
+            instance.accelerationStructureReference = source.BottomLevelASAddress;
         }
 
         const VkDeviceSize instanceBytes = std::max<size_t>(instances.size(), 1) * sizeof(VkAccelerationStructureInstanceKHR);
@@ -923,19 +880,20 @@ namespace Rdn
 
         VmaAccelerationStructure tlas = CreateVmaAccelerationStructure(device, allocator, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, sizes.accelerationStructureSize);
         VmaBuffer scratch = CreateVmaBuffer(allocator, sizes.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            HostAccess::None, m_Limits.MinAccelerationStructureScratchOffsetAlignment);
+            HostAccess::None, m_Device->GetProperties().MinAccelerationStructureScratchOffsetAlignment);
         buildInfo.dstAccelerationStructure = tlas.Handle;
         buildInfo.scratchData.deviceAddress = GetDeviceAddress(device, scratch.Buffer);
 
         const VkAccelerationStructureBuildRangeInfoKHR buildRange{ primitiveCount, 0, 0, 0 };
         const VkAccelerationStructureBuildRangeInfoKHR* buildRanges = &buildRange;
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
-            const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
-            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_MEMORY_READ_BIT);
-            vkCmdBuildAccelerationStructuresKHR(vkCmd, 1, &buildInfo, &buildRanges);
-            CmdMemoryBarrier(vkCmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+            cmd.Barrier(GlobalBarrier{
+                .SrcStage = PipelineStage::AllCommands, .DstStage = PipelineStage::AccelerationStructureBuild,
+                .SrcAccess = AccessMask::MemoryWrite, .DstAccess = AccessMask::MemoryRead });
+            vkCmdBuildAccelerationStructuresKHR(toVk(cmd.GetHandle()), 1, &buildInfo, &buildRanges);
+            cmd.Barrier(GlobalBarrier{
+                .SrcStage = PipelineStage::AccelerationStructureBuild, .DstStage = PipelineStage::AllCommands,
+                .SrcAccess = AccessMask::AccelerationStructureWrite, .DstAccess = AccessMask::MemoryRead });
         });
 
         vmaDestroyBuffer(allocator, scratch.Buffer, scratch.Allocation);
@@ -948,10 +906,6 @@ namespace Rdn
 
     void ResourceAllocator::CreateTopLevelAS(TopLevelAS* topLevelAS)
     {
-        topLevelAS->m_Device = m_Device;
-        topLevelAS->m_LogicalDevice = m_LogicalDevice;
-        topLevelAS->m_Allocator = m_Allocator;
-
         m_TopLevelASs.insert(topLevelAS);
     }
 
@@ -1487,9 +1441,9 @@ namespace Rdn
         VK_CHECK(vkCreateRayTracingPipelinesKHR(toVk(m_LogicalDevice), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &rtPipeline));
 
 
-        uint32_t handleSize = m_Limits.ShaderGroupHandleSize;
-        uint32_t handleAlign = m_Limits.ShaderGroupHandleAlignment;
-        uint32_t baseAlign = m_Limits.ShaderGroupBaseAlignment;
+        uint32_t handleSize = m_Device->GetProperties().ShaderGroupHandleSize;
+        uint32_t handleAlign = m_Device->GetProperties().ShaderGroupHandleAlignment;
+        uint32_t baseAlign = m_Device->GetProperties().ShaderGroupBaseAlignment;
 
         uint32_t groupCount = static_cast<uint32_t>(shaderGroups.size());
         std::vector<uint8_t> handles(groupCount * handleSize);
@@ -1596,82 +1550,8 @@ namespace Rdn
 
     void ResourceAllocator::UpdateDescriptorSet(DescriptorSet* descriptorSet, const DescriptorWrite& write)
     {
-        VkDescriptorSet dstSet = toVk(descriptorSet->GetHandle());
-
-        std::vector<VkWriteDescriptorSet> writes;
-        writes.reserve(write.m_BufferWrites.size() + write.m_ImageWrites.size() + write.m_AccelerationStructureWrites.size());
-
-        std::vector<VkDescriptorBufferInfo> bufferInfos;
-        bufferInfos.reserve(write.m_BufferWrites.size());
-
-        for (auto& bw : write.m_BufferWrites)
-        {
-            VkDescriptorBufferInfo bufferInfo = {};
-            bufferInfo.buffer = toVk(bw.Buffer);
-            bufferInfo.offset = bw.Offset;
-            bufferInfo.range = bw.Size == 0 ? VK_WHOLE_SIZE : bw.Size;
-            bufferInfos.push_back(bufferInfo);
-
-            VkWriteDescriptorSet writeInfo = {};
-            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeInfo.dstSet = dstSet;
-            writeInfo.dstBinding = bw.Binding;
-            writeInfo.dstArrayElement = bw.ArrayElement;
-            writeInfo.descriptorType = toVk(bw.Type);
-            writeInfo.descriptorCount = 1;
-            writeInfo.pBufferInfo = &bufferInfos[bufferInfos.size() - 1];
-            writes.push_back(writeInfo);
-        }
-
-        std::vector<VkDescriptorImageInfo> imageInfos;
-        imageInfos.reserve(write.m_ImageWrites.size());
-
-        for (auto& iw : write.m_ImageWrites)
-        {
-            VkDescriptorImageInfo imageInfo = {};
-            imageInfo.imageView = toVk(iw.ImageView);
-            imageInfo.imageLayout = toVk(iw.ImageLayout);
-            imageInfo.sampler = toVk(iw.Sampler);
-            imageInfos.push_back(imageInfo);
-
-            VkWriteDescriptorSet writeInfo = {};
-            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeInfo.dstSet = dstSet;
-            writeInfo.dstBinding = iw.Binding;
-            writeInfo.dstArrayElement = iw.ArrayElement;
-            writeInfo.descriptorType = toVk(iw.Type);
-            writeInfo.descriptorCount = 1;
-            writeInfo.pImageInfo = &imageInfos[imageInfos.size() - 1];
-            writes.push_back(writeInfo);
-        }
-
-        std::vector<VkAccelerationStructureKHR> accelerationHandles;
-        accelerationHandles.reserve(write.m_AccelerationStructureWrites.size());
-
-        std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accelerationInfos;
-        accelerationInfos.reserve(write.m_AccelerationStructureWrites.size());
-
-        for (auto& sw : write.m_AccelerationStructureWrites)
-        {
-            accelerationHandles.push_back(toVk(sw.AccelerationStructure));
-            VkWriteDescriptorSetAccelerationStructureKHR accelInfo{};
-            accelInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-            accelInfo.accelerationStructureCount = 1;
-            accelInfo.pAccelerationStructures = &accelerationHandles[accelerationHandles.size() - 1];
-            accelerationInfos.push_back(accelInfo);
-
-            VkWriteDescriptorSet writeInfo = {};
-            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeInfo.pNext = &accelerationInfos[accelerationInfos.size() - 1];
-            writeInfo.dstSet = dstSet;
-            writeInfo.dstBinding = sw.Binding;
-            writeInfo.dstArrayElement = sw.ArrayElement;
-            writeInfo.descriptorType = toVk(sw.Type);
-            writeInfo.descriptorCount = 1;
-            writes.push_back(writeInfo);
-        }
-
-        vkUpdateDescriptorSets(toVk(m_LogicalDevice), uint32_t(writes.size()), writes.data(), 0, nullptr);
+        const VulkanDescriptorWrites writes(write, toVk(descriptorSet->GetHandle()));
+        vkUpdateDescriptorSets(toVk(m_LogicalDevice), uint32_t(writes.Writes.size()), writes.Writes.data(), 0, nullptr);
     }
 
     void ResourceAllocator::DestroyDescriptorSet(DescriptorSet* descriptorSet)
@@ -1699,15 +1579,20 @@ namespace Rdn
         std::vector<VmaBudget> budgets(memoryProperties->memoryHeapCount);
         vmaGetHeapBudgets(toVk(m_Allocator), budgets.data());
 
+        const bool driverBudget = m_Device->IsExtensionEnabled(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+
         constexpr double MiB = 1024.0 * 1024.0;
         std::string out = "GPU memory:\n";
         for (uint32_t heap = 0; heap < memoryProperties->memoryHeapCount; heap++)
         {
             const VkMemoryHeap& heapInfo = memoryProperties->memoryHeaps[heap];
             const VmaStatistics& stats = budgets[heap].statistics;
-            out += std::format("    heap {} ({}, {:.0f} MiB): {:.2f} MiB in {} allocations, {:.1f} MiB reserved in {} blocks\n",
+            out += std::format("    heap {} ({}, {:.0f} MiB): {:.2f} MiB in {} allocations, {:.1f} MiB reserved in {} blocks",
                 heap, (heapInfo.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) ? "device local" : "host", heapInfo.size / MiB,
                 stats.allocationBytes / MiB, stats.allocationCount, stats.blockBytes / MiB, stats.blockCount);
+            if (driverBudget)
+                out += std::format(", process usage {:.1f} MiB of a {:.1f} MiB budget", budgets[heap].usage / MiB, budgets[heap].budget / MiB);
+            out += "\n";
         }
         return out;
     }

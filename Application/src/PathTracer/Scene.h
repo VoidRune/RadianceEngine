@@ -1,0 +1,115 @@
+#pragma once
+#include <RadianceEngine/Graphics/Device.h>
+#include <RadianceEngine/Graphics/ResourceAllocator.h>
+#include <RadianceEngine/Graphics/Resources/TopLevelAS.h>
+#include <glm/glm.hpp>
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <span>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+template<typename Tag>
+struct SceneId
+{
+	uint32_t Index = UINT32_MAX;
+
+	bool IsValid() const { return Index != UINT32_MAX; }
+	bool operator==(const SceneId&) const = default;
+};
+
+using ModelId = SceneId<struct ModelTag>;
+using MaterialId = SceneId<struct MaterialTag>;
+using TextureId = SceneId<struct TextureTag>;
+
+struct Vertex
+{
+	glm::vec3 Position{ 0.0f };
+	glm::vec3 Normal{ 0.0f };
+	glm::vec2 UV{ 0.0f };
+};
+
+struct MeshData
+{
+	std::vector<Vertex> Vertices;
+	std::vector<uint32_t> Indices;
+};
+
+struct ModelPart
+{
+	uint32_t FirstIndex = 0;
+	uint32_t IndexCount = 0;
+	MaterialId Material = {};
+};
+
+struct Material
+{
+	glm::vec3 Color{ 1.0f };
+	glm::vec3 Emission{ 0.0f };
+	float Metallic = 0.0f;
+	float Roughness = 0.0f;
+	float Transmission = 0.0f;
+	TextureId Texture = {};
+};
+
+struct Transform
+{
+	glm::vec3 Position{ 0.0f };
+	glm::vec3 Rotation{ 0.0f };
+	glm::vec3 Scale{ 1.0f };
+
+	glm::mat4 ToMatrix() const;
+};
+
+class Scene
+{
+public:
+	Scene(Rdn::Device* device, Rdn::ResourceAllocator* allocator);
+	Scene(const Scene&) = delete;
+	Scene& operator=(const Scene&) = delete;
+
+	ModelId LoadModel(const std::filesystem::path& path);
+	ModelId AddModel(const MeshData& mesh, std::span<const ModelPart> parts = {});
+	TextureId LoadTexture(const std::filesystem::path& path);
+	MaterialId AddMaterial(const Material& material);
+	void AddInstance(ModelId model, const Transform& transform = {}, MaterialId material = {});
+	void Build();
+
+	Rdn::AccelerationStructureHandle GetTopLevelAS() const { return m_TopLevelAS->GetHandle(); }
+	Rdn::DescriptorWrite GetDescriptorWrite(Rdn::SamplerHandle textureSampler) const;
+
+private:
+	struct GpuModel
+	{
+		Rdn::GpuBuffer Vertices;
+		Rdn::GpuBuffer Indices;
+		Rdn::BottomLevelAS BottomLevelAS;
+		uint64_t VertexAddress = 0;
+		uint64_t IndexAddress = 0;
+		std::vector<ModelPart> Parts;
+	};
+
+	struct Instance
+	{
+		ModelId Model;
+		glm::mat4 Transform;
+		MaterialId Material;
+	};
+
+	TextureId CreateTexture(uint32_t width, uint32_t height, const void* rgba8);
+
+	Rdn::Device* m_Device;
+	Rdn::ResourceAllocator* m_Allocator;
+
+	std::vector<std::unique_ptr<GpuModel>> m_Models;
+	std::vector<std::unique_ptr<Rdn::GpuImage>> m_Textures;
+	std::unordered_map<std::string, TextureId> m_TextureCache;
+	std::vector<Material> m_Materials;
+	std::vector<Instance> m_Instances;
+
+	std::unique_ptr<Rdn::GpuBuffer> m_MaterialBuffer;
+	std::unique_ptr<Rdn::GpuBuffer> m_PrimitiveBuffer;
+	std::unique_ptr<Rdn::TopLevelAS> m_TopLevelAS;
+};

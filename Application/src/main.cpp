@@ -63,6 +63,8 @@ void main()
 			window->SetFullscreen(!window->IsFullscreen());
 		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::V))
 			presentQueue->SetPresentMode(presentQueue->GetPresentMode() == Rdn::PresentMode::Fifo ? Rdn::PresentMode::Mailbox : Rdn::PresentMode::Fifo);
+		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F5))
+			renderer->RecompileShaders();
 
 		if (presentQueue->NeedsRecreate())
 		{
@@ -76,7 +78,7 @@ void main()
 				renderer->SwapchainResized();
 		}
 
-		renderer->RenderFrame(timer.elapsed_sec());
+		renderer->RenderFrame(float(timer.ElapsedSeconds()));
 	}
 
 	device->WaitIdle();

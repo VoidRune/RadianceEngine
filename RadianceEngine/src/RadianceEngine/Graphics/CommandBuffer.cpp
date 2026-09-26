@@ -1,8 +1,58 @@
 #include "CommandBuffer.h"
+#include "Resources/RaytracingPipeline.h"
 #include "VulkanInternal/VulkanUtilities.h"
+#include <vector>
 
 namespace Rdn
 {
+    static_assert(sizeof(DrawIndirectCommand) == sizeof(VkDrawIndirectCommand));
+    static_assert(sizeof(DrawIndexedIndirectCommand) == sizeof(VkDrawIndexedIndirectCommand));
+    static_assert(sizeof(DispatchIndirectCommand) == sizeof(VkDispatchIndirectCommand));
+
+    namespace
+    {
+        template<typename T, size_t N>
+        class InlineArray
+        {
+        public:
+            explicit InlineArray(size_t size)
+                : m_Size(uint32_t(size))
+            {
+                if (size > N)
+                {
+                    m_Heap.resize(size);
+                    m_Data = m_Heap.data();
+                }
+            }
+            InlineArray(const InlineArray&) = delete;
+            InlineArray& operator=(const InlineArray&) = delete;
+
+            T& operator[](size_t index) { return m_Data[index]; }
+            const T* Data() const { return m_Data; }
+            uint32_t Size() const { return m_Size; }
+
+        private:
+            T m_Inline[N];
+            std::vector<T> m_Heap;
+            T* m_Data = m_Inline;
+            uint32_t m_Size;
+        };
+
+        VkOffset3D ToOffset(Extent3D extent)
+        {
+            return { int32_t(extent.Width), int32_t(extent.Height), int32_t(extent.Depth) };
+        }
+
+        VkBufferImageCopy ColorCopyRegion(Extent3D extent, uint32_t mipLevel, uint64_t bufferOffset)
+        {
+            VkBufferImageCopy region{};
+            region.bufferOffset = bufferOffset;
+            region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, mipLevel, 0, 1 };
+            region.imageExtent = { extent.Width, extent.Height, extent.Depth };
+            return region;
+        }
+    }
+
 	CommandBuffer::CommandBuffer(CommandBufferHandle handle)
 		: m_Handle(handle)
 	{
@@ -13,13 +63,52 @@ namespace Rdn
 	{
 		VkCommandBufferBeginInfo info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 		info.flags = oneTimeSubmit ? VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT : 0;
-		vkBeginCommandBuffer(toVk(m_Handle), &info);
+		VK_CHECK(vkBeginCommandBuffer(toVk(m_Handle), &info));
 	}
 
 	void CommandBuffer::End()
 	{
-		vkEndCommandBuffer(toVk(m_Handle));
+		VK_CHECK(vkEndCommandBuffer(toVk(m_Handle)));
 	}
+
+    void CommandBuffer::BeginRendering(std::span<const ColorAttachment> colorAttachments, const std::optional<DepthAttachment>& depthAttachment, const Extent2D area)
+    {
+        InlineArray<VkRenderingAttachmentInfo, 8> colorInfos(colorAttachments.size());
+        for (size_t i = 0; i < colorAttachments.size(); i++)
+        {
+            const ColorAttachment& attachment = colorAttachments[i];
+            VkRenderingAttachmentInfo& info = colorInfos[i];
+            info = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+            info.imageView = toVk(attachment.ImageView);
+            info.imageLayout = toVk(attachment.ImageLayout);
+            info.loadOp = toVk(attachment.LoadOp);
+            info.storeOp = toVk(attachment.StoreOp);
+            info.clearValue.color = { { attachment.ClearColor[0], attachment.ClearColor[1], attachment.ClearColor[2], attachment.ClearColor[3] } };
+        }
+
+        VkRenderingAttachmentInfo depthInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+        if (depthAttachment)
+        {
+            depthInfo.imageView = toVk(depthAttachment->ImageView);
+            depthInfo.imageLayout = toVk(depthAttachment->ImageLayout);
+            depthInfo.loadOp = toVk(depthAttachment->LoadOp);
+            depthInfo.storeOp = toVk(depthAttachment->StoreOp);
+            depthInfo.clearValue.depthStencil = { depthAttachment->ClearDepth, 0 };
+        }
+
+        VkRenderingInfo renderingInfo{ VK_STRUCTURE_TYPE_RENDERING_INFO };
+        renderingInfo.renderArea = { { 0, 0 }, { area.Width, area.Height } };
+        renderingInfo.layerCount = 1;
+        renderingInfo.colorAttachmentCount = colorInfos.Size();
+        renderingInfo.pColorAttachments = colorInfos.Data();
+        renderingInfo.pDepthAttachment = depthAttachment ? &depthInfo : nullptr;
+        vkCmdBeginRendering(toVk(m_Handle), &renderingInfo);
+    }
+
+    void CommandBuffer::EndRendering()
+    {
+        vkCmdEndRendering(toVk(m_Handle));
+    }
 
     void CommandBuffer::SetViewport(const Extent2D area)
     {
@@ -41,156 +130,9 @@ namespace Rdn
         vkCmdSetScissor(toVk(m_Handle), 0, 1, &scissor);
     }
 
-    void CommandBuffer::BeginRendering(const std::vector<ColorAttachment>& colorAttachments, std::optional<DepthAttachment> depthAttachment, const Extent2D area)
-    {
-        std::vector<VkRenderingAttachmentInfo> colorInfo(colorAttachments.size());
-        for (size_t i = 0; i < colorInfo.size(); i++)
-        {
-            auto& info = colorInfo[i];
-            auto& colorAttachment = colorAttachments[i];
-            info = {};
-            info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            info.imageView = toVk(colorAttachment.ImageView);
-            info.imageLayout = toVk(colorAttachment.ImageLayout);
-            info.loadOp = toVk(colorAttachment.LoadOp);
-            info.storeOp = toVk(colorAttachment.StoreOp);
-            info.clearValue = { colorAttachment.ClearColor[0], colorAttachment.ClearColor[1], colorAttachment.ClearColor[2], colorAttachment.ClearColor[3] };
-        }
-
-        VkRenderingInfo renderingInfo = {};
-        renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        renderingInfo.renderArea = VkRect2D{ {0, 0}, { area.Width, area.Height } };
-        renderingInfo.layerCount = 1;
-        renderingInfo.colorAttachmentCount = (uint32_t)colorInfo.size();
-        renderingInfo.pColorAttachments = colorInfo.data();
-        if (depthAttachment.has_value())
-        {
-            auto& da = depthAttachment.value();
-            VkRenderingAttachmentInfo depthInfo = {};
-            depthInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            depthInfo.imageView = toVk(da.ImageView);
-            depthInfo.imageLayout = toVk(da.ImageLayout);
-            depthInfo.loadOp = toVk(da.LoadOp);
-            depthInfo.storeOp = toVk(da.StoreOp);
-            depthInfo.clearValue.depthStencil = { da.ClearDepth, uint32_t(0) };
-            renderingInfo.pDepthAttachment = &depthInfo;
-        }
-
-        vkCmdBeginRendering(toVk(m_Handle), &renderingInfo);
-    }
-
-    void CommandBuffer::EndRendering()
-    {
-        vkCmdEndRendering(toVk(m_Handle));
-    }
-
-    void CommandBuffer::BindDescriptorSets(PipelineBindPoint bindPoint, PipelineLayoutHandle layout, uint32_t firstSet, const std::vector<DescriptorSetHandle>& descriptorSets)
-    {
-        std::vector<VkDescriptorSet> sets(descriptorSets.size());
-        for (size_t i = 0; i < descriptorSets.size(); i++)
-        {
-            sets[i] = toVk(descriptorSets[i]);
-        }
-
-        vkCmdBindDescriptorSets(toVk(m_Handle), toVk(bindPoint), toVk(layout), firstSet, (uint32_t)sets.size(), sets.data(), 0, nullptr);
-    }
-
-    void CommandBuffer::PushDescriptorSets(PipelineBindPoint bindPoint, PipelineLayoutHandle layout, uint32_t set, const DescriptorWrite& descriptorWrite)
-    {
-        std::vector<VkWriteDescriptorSet> writes;
-        writes.reserve(descriptorWrite.m_BufferWrites.size() + descriptorWrite.m_ImageWrites.size());
-
-        std::vector<VkDescriptorBufferInfo> bufferInfos;
-        bufferInfos.reserve(descriptorWrite.m_BufferWrites.size());
-
-        for (auto& bw : descriptorWrite.m_BufferWrites)
-        {
-            VkDescriptorBufferInfo bufferInfo = {};
-            bufferInfo.buffer = toVk(bw.Buffer);
-            bufferInfo.offset = bw.Offset;
-            bufferInfo.range = bw.Size == 0 ? VK_WHOLE_SIZE : bw.Size;
-            bufferInfos.push_back(bufferInfo);
-
-            VkWriteDescriptorSet writeInfo = {};
-            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeInfo.dstSet = nullptr;
-            writeInfo.dstBinding = bw.Binding;
-            writeInfo.dstArrayElement = bw.ArrayElement;
-            writeInfo.descriptorType = toVk(bw.Type);
-            writeInfo.descriptorCount = 1;
-            writeInfo.pBufferInfo = &bufferInfos[bufferInfos.size() - 1];
-            writes.push_back(writeInfo);
-        }
-
-        std::vector<VkDescriptorImageInfo> imageInfos;
-        imageInfos.reserve(descriptorWrite.m_ImageWrites.size());
-
-        for (auto& iw : descriptorWrite.m_ImageWrites)
-        {
-            VkDescriptorImageInfo imageInfo = {};
-            imageInfo.imageView = toVk(iw.ImageView);
-            imageInfo.imageLayout = toVk(iw.ImageLayout);
-            imageInfo.sampler = toVk(iw.Sampler);
-            imageInfos.push_back(imageInfo);
-
-            VkWriteDescriptorSet writeInfo = {};
-            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeInfo.dstSet = nullptr;
-            writeInfo.dstBinding = iw.Binding;
-            writeInfo.dstArrayElement = iw.ArrayElement;
-            writeInfo.descriptorType = toVk(iw.Type);
-            writeInfo.descriptorCount = 1;
-            writeInfo.pImageInfo = &imageInfos[imageInfos.size() - 1];
-            writes.push_back(writeInfo);
-        }
-
-        std::vector<VkAccelerationStructureKHR> accelerationHandles;
-        accelerationHandles.reserve(descriptorWrite.m_AccelerationStructureWrites.size());
-
-        std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accelerationInfos;
-        accelerationInfos.reserve(descriptorWrite.m_AccelerationStructureWrites.size());
-
-        for (auto& sw : descriptorWrite.m_AccelerationStructureWrites)
-        {
-            accelerationHandles.push_back(toVk(sw.AccelerationStructure));
-            VkWriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo{};
-            descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-            descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
-            descriptorAccelerationStructureInfo.pAccelerationStructures = &accelerationHandles[accelerationHandles.size() - 1];
-            accelerationInfos.push_back(descriptorAccelerationStructureInfo);
-
-            VkWriteDescriptorSet writeInfo = {};
-            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeInfo.pNext = &accelerationInfos[accelerationInfos.size() - 1];
-            writeInfo.dstSet = nullptr;
-            writeInfo.dstBinding = sw.Binding;
-            writeInfo.dstArrayElement = sw.ArrayElement;
-            writeInfo.descriptorType = toVk(sw.Type);
-            writeInfo.descriptorCount = 1;
-            writes.push_back(writeInfo);
-        }
-
-        vkCmdPushDescriptorSet(toVk(m_Handle), toVk(bindPoint), toVk(layout), set, (uint32_t)writes.size(), writes.data());
-    }
-
-    void CommandBuffer::PushConstants(ShaderStage shaderStage, PipelineLayoutHandle layout, const void* data, uint32_t size)
-    {
-        vkCmdPushConstants(toVk(m_Handle), toVk(layout), toVk(shaderStage), 0, size, data);
-    }
-
     void CommandBuffer::BindPipeline(PipelineHandle pipeline)
     {
         vkCmdBindPipeline(toVk(m_Handle), VK_PIPELINE_BIND_POINT_GRAPHICS, toVk(pipeline));
-    }
-
-    void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance)
-    {
-        vkCmdDraw(toVk(m_Handle), vertexCount, instanceCount, firstVertex, firstInstance);
-    }
-
-    void CommandBuffer::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t vertexOffset, uint32_t firstInstance)
-    {
-        vkCmdDrawIndexed(toVk(m_Handle), indexCount, instanceCount, firstVertex, vertexOffset, firstInstance);
     }
 
     void CommandBuffer::BindComputePipeline(PipelineHandle pipeline)
@@ -198,63 +140,100 @@ namespace Rdn
         vkCmdBindPipeline(toVk(m_Handle), VK_PIPELINE_BIND_POINT_COMPUTE, toVk(pipeline));
     }
 
-    void CommandBuffer::Dispatch(uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
-    {
-        vkCmdDispatch(toVk(m_Handle), groupCountX, groupCountY, groupCountZ);
-    }
-
     void CommandBuffer::BindRayTracingPipeline(PipelineHandle pipeline)
     {
         vkCmdBindPipeline(toVk(m_Handle), VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, toVk(pipeline));
     }
 
-    void CommandBuffer::TraceRays(RayTracingPipeline* pipeline, uint32_t width, uint32_t height, uint32_t depth)
+    void CommandBuffer::BindDescriptorSets(PipelineBindPoint bindPoint, PipelineLayoutHandle layout, uint32_t firstSet, std::span<const DescriptorSetHandle> descriptorSets)
     {
-        VkStridedDeviceAddressRegionKHR rayGenSBT{};
-        rayGenSBT.deviceAddress = pipeline->GetRayGenShaderBindingTable().DeviceAddress;
-        rayGenSBT.stride = pipeline->GetRayGenShaderBindingTable().Stride;
-        rayGenSBT.size = pipeline->GetRayGenShaderBindingTable().Size;
+        InlineArray<VkDescriptorSet, 8> sets(descriptorSets.size());
+        for (size_t i = 0; i < descriptorSets.size(); i++)
+            sets[i] = toVk(descriptorSets[i]);
 
-        VkStridedDeviceAddressRegionKHR rayMissSBT{};
-        rayMissSBT.deviceAddress = pipeline->GetRayMissShaderBindingTable().DeviceAddress;
-        rayMissSBT.stride = pipeline->GetRayMissShaderBindingTable().Stride;
-        rayMissSBT.size = pipeline->GetRayMissShaderBindingTable().Size;
-
-        VkStridedDeviceAddressRegionKHR rayClosestHitSBT{};
-        rayClosestHitSBT.deviceAddress = pipeline->GetRayClosestHitShaderBindingTable().DeviceAddress;
-        rayClosestHitSBT.stride = pipeline->GetRayClosestHitShaderBindingTable().Stride;
-        rayClosestHitSBT.size = pipeline->GetRayClosestHitShaderBindingTable().Size;
-
-        VkStridedDeviceAddressRegionKHR rayCallableSBT{};
-
-        vkCmdTraceRaysKHR(toVk(m_Handle),
-            &rayGenSBT,
-            &rayMissSBT,
-            &rayClosestHitSBT,
-            &rayCallableSBT,
-            width, height, depth);
+        vkCmdBindDescriptorSets(toVk(m_Handle), toVk(bindPoint), toVk(layout), firstSet, sets.Size(), sets.Data(), 0, nullptr);
     }
 
-
-    void CommandBuffer::Barrier(std::span<const ImageBarrier>  imageBarriers,
-        std::span<const BufferBarrier> bufferBarriers)
+    void CommandBuffer::BindDescriptorSets(PipelineBindPoint bindPoint, PipelineLayoutHandle layout, uint32_t firstSet, std::initializer_list<DescriptorSetHandle> descriptorSets)
     {
-        VkImageMemoryBarrier2  vkImgBarriers[16];
-        VkBufferMemoryBarrier2 vkBufBarriers[16];
+        BindDescriptorSets(bindPoint, layout, firstSet, std::span(descriptorSets.begin(), descriptorSets.size()));
+    }
 
-        std::vector<VkImageMemoryBarrier2>  imgHeap;
-        std::vector<VkBufferMemoryBarrier2> bufHeap;
+    void CommandBuffer::PushDescriptorSets(PipelineBindPoint bindPoint, PipelineLayoutHandle layout, uint32_t set, const DescriptorWrite& descriptorWrite)
+    {
+        const VulkanDescriptorWrites writes(descriptorWrite, VK_NULL_HANDLE);
+        vkCmdPushDescriptorSet(toVk(m_Handle), toVk(bindPoint), toVk(layout), set, uint32_t(writes.Writes.size()), writes.Writes.data());
+    }
 
-        VkImageMemoryBarrier2* pImg = vkImgBarriers;
-        VkBufferMemoryBarrier2* pBuf = vkBufBarriers;
+    void CommandBuffer::PushConstants(ShaderStage shaderStage, PipelineLayoutHandle layout, const void* data, uint32_t size, uint32_t offset)
+    {
+        vkCmdPushConstants(toVk(m_Handle), toVk(layout), toVk(shaderStage), offset, size, data);
+    }
 
-        if (imageBarriers.size() > 16) { imgHeap.resize(imageBarriers.size());  pImg = imgHeap.data(); }
-        if (bufferBarriers.size() > 16) { bufHeap.resize(bufferBarriers.size()); pBuf = bufHeap.data(); }
+    void CommandBuffer::BindVertexBuffer(uint32_t binding, BufferHandle buffer, uint64_t offset)
+    {
+        const VkBuffer vkBuffer = toVk(buffer);
+        vkCmdBindVertexBuffers(toVk(m_Handle), binding, 1, &vkBuffer, &offset);
+    }
 
+    void CommandBuffer::BindIndexBuffer(BufferHandle buffer, IndexType indexType, uint64_t offset)
+    {
+        vkCmdBindIndexBuffer(toVk(m_Handle), toVk(buffer), offset, toVk(indexType));
+    }
+
+    void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance)
+    {
+        vkCmdDraw(toVk(m_Handle), vertexCount, instanceCount, firstVertex, firstInstance);
+    }
+
+    void CommandBuffer::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
+    {
+        vkCmdDrawIndexed(toVk(m_Handle), indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+    }
+
+    void CommandBuffer::DrawIndirect(BufferHandle buffer, uint64_t offset, uint32_t drawCount, uint32_t stride)
+    {
+        vkCmdDrawIndirect(toVk(m_Handle), toVk(buffer), offset, drawCount, stride);
+    }
+
+    void CommandBuffer::DrawIndexedIndirect(BufferHandle buffer, uint64_t offset, uint32_t drawCount, uint32_t stride)
+    {
+        vkCmdDrawIndexedIndirect(toVk(m_Handle), toVk(buffer), offset, drawCount, stride);
+    }
+
+    void CommandBuffer::Dispatch(uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
+    {
+        vkCmdDispatch(toVk(m_Handle), groupCountX, groupCountY, groupCountZ);
+    }
+
+    void CommandBuffer::DispatchIndirect(BufferHandle buffer, uint64_t offset)
+    {
+        vkCmdDispatchIndirect(toVk(m_Handle), toVk(buffer), offset);
+    }
+
+    void CommandBuffer::TraceRays(RayTracingPipeline* pipeline, uint32_t width, uint32_t height, uint32_t depth)
+    {
+        auto toVkRegion = [](const RayTracingPipeline::StridedDeviceAddressRegion& region) {
+            return VkStridedDeviceAddressRegionKHR{ region.DeviceAddress, region.Stride, region.Size };
+        };
+        const VkStridedDeviceAddressRegionKHR rayGen = toVkRegion(pipeline->GetRayGenShaderBindingTable());
+        const VkStridedDeviceAddressRegionKHR miss = toVkRegion(pipeline->GetRayMissShaderBindingTable());
+        const VkStridedDeviceAddressRegionKHR closestHit = toVkRegion(pipeline->GetRayClosestHitShaderBindingTable());
+        const VkStridedDeviceAddressRegionKHR callable{};
+
+        vkCmdTraceRaysKHR(toVk(m_Handle), &rayGen, &miss, &closestHit, &callable, width, height, depth);
+    }
+
+    void CommandBuffer::Barrier(std::span<const ImageBarrier> imageBarriers, std::span<const BufferBarrier> bufferBarriers, std::span<const GlobalBarrier> globalBarriers)
+    {
+        if (imageBarriers.empty() && bufferBarriers.empty() && globalBarriers.empty())
+            return;
+
+        InlineArray<VkImageMemoryBarrier2, 16> images(imageBarriers.size());
         for (size_t i = 0; i < imageBarriers.size(); i++)
         {
-            const auto& b = imageBarriers[i];
-            auto& vkb = pImg[i];
+            const ImageBarrier& b = imageBarriers[i];
+            VkImageMemoryBarrier2& vkb = images[i];
             vkb = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
             vkb.srcStageMask = toVk(b.SrcStage);
             vkb.srcAccessMask = toVk(b.SrcAccess);
@@ -265,15 +244,14 @@ namespace Rdn
             vkb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             vkb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             vkb.image = toVk(b.Handle);
-            vkb.subresourceRange = {
-                toVk(b.Aspect), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS
-            };
+            vkb.subresourceRange = { toVk(b.Aspect), b.BaseMip, b.MipCount, b.BaseLayer, b.LayerCount };
         }
 
+        InlineArray<VkBufferMemoryBarrier2, 16> buffers(bufferBarriers.size());
         for (size_t i = 0; i < bufferBarriers.size(); i++)
         {
-            const auto& b = bufferBarriers[i];
-            auto& vkb = pBuf[i];
+            const BufferBarrier& b = bufferBarriers[i];
+            VkBufferMemoryBarrier2& vkb = buffers[i];
             vkb = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
             vkb.srcStageMask = toVk(b.SrcStage);
             vkb.srcAccessMask = toVk(b.SrcAccess);
@@ -286,89 +264,97 @@ namespace Rdn
             vkb.size = b.Size;
         }
 
-        VkDependencyInfo dep{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-        dep.imageMemoryBarrierCount = uint32_t(imageBarriers.size());
-        dep.pImageMemoryBarriers = pImg;
-        dep.bufferMemoryBarrierCount = uint32_t(bufferBarriers.size());
-        dep.pBufferMemoryBarriers = pBuf;
+        InlineArray<VkMemoryBarrier2, 4> globals(globalBarriers.size());
+        for (size_t i = 0; i < globalBarriers.size(); i++)
+        {
+            const GlobalBarrier& b = globalBarriers[i];
+            VkMemoryBarrier2& vkb = globals[i];
+            vkb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
+            vkb.srcStageMask = toVk(b.SrcStage);
+            vkb.srcAccessMask = toVk(b.SrcAccess);
+            vkb.dstStageMask = toVk(b.DstStage);
+            vkb.dstAccessMask = toVk(b.DstAccess);
+        }
 
-        vkCmdPipelineBarrier2(toVk(m_Handle), &dep);
+        VkDependencyInfo dependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+        dependency.memoryBarrierCount = globals.Size();
+        dependency.pMemoryBarriers = globals.Data();
+        dependency.bufferMemoryBarrierCount = buffers.Size();
+        dependency.pBufferMemoryBarriers = buffers.Data();
+        dependency.imageMemoryBarrierCount = images.Size();
+        dependency.pImageMemoryBarriers = images.Data();
+        vkCmdPipelineBarrier2(toVk(m_Handle), &dependency);
     }
 
-    void CommandBuffer::TransitionImage(ImageHandle image,
-        ImageLayout oldLayout, ImageLayout newLayout,
-        PipelineStage srcStage, PipelineStage dstStage,
-        ImageAspect aspect)
+    void CommandBuffer::Barrier(const ImageBarrier& barrier)
     {
-        ImageBarrier barrier{};
-        barrier.Handle = image;
-        barrier.OldLayout = oldLayout;
-        barrier.NewLayout = newLayout;
-        barrier.SrcStage = srcStage;
-        barrier.DstStage = dstStage;
-        barrier.SrcAccess = (oldLayout == ImageLayout::Undefined)
-            ? AccessMask::None
-            : AccessMask::MemoryWrite;
-        barrier.DstAccess = (newLayout == ImageLayout::ShaderReadOnlyOptimal)
-            ? AccessMask::ShaderRead
-            : AccessMask::MemoryWrite | AccessMask::MemoryRead;
-        barrier.Aspect = aspect;
-        Barrier({ &barrier, 1 }, {});
+        Barrier(std::span(&barrier, 1));
     }
 
-    void CommandBuffer::ClearColorImage(ImageHandle image, const float clearColor[4], ImageLayout layout)
+    void CommandBuffer::Barrier(const BufferBarrier& barrier)
     {
-        VkClearColorValue clearValue;
-        clearValue = { {clearColor[0], clearColor[1], clearColor[2], clearColor[3]} };
-
-        VkImageSubresourceRange subImage{};
-        subImage.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        subImage.baseMipLevel = 0;
-        subImage.levelCount = VK_REMAINING_MIP_LEVELS;
-        subImage.baseArrayLayer = 0;
-        subImage.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-        vkCmdClearColorImage(toVk(m_Handle), toVk(image), toVk(layout), &clearValue, 1, &subImage);
+        Barrier({}, std::span(&barrier, 1));
     }
 
-    void CommandBuffer::BlitImageToImage(ImageHandle src, const Extent3D srcExtent, ImageHandle dst, const Extent3D dstExtent)
+    void CommandBuffer::Barrier(const GlobalBarrier& barrier)
     {
-        VkImageBlit2 blitRegion = {};
-        blitRegion.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
-        blitRegion.pNext = nullptr;
+        Barrier({}, {}, std::span(&barrier, 1));
+    }
 
-        blitRegion.srcOffsets[1].x = srcExtent.Width;
-        blitRegion.srcOffsets[1].y = srcExtent.Height;
-        blitRegion.srcOffsets[1].z = srcExtent.Depth;
+    void CommandBuffer::CopyBuffer(BufferHandle src, BufferHandle dst, uint64_t size, uint64_t srcOffset, uint64_t dstOffset)
+    {
+        const VkBufferCopy region{ srcOffset, dstOffset, size };
+        vkCmdCopyBuffer(toVk(m_Handle), toVk(src), toVk(dst), 1, &region);
+    }
 
-        blitRegion.dstOffsets[1].x = dstExtent.Width;
-        blitRegion.dstOffsets[1].y = dstExtent.Height;
-        blitRegion.dstOffsets[1].z = dstExtent.Depth;
+    void CommandBuffer::CopyBufferToImage(BufferHandle src, ImageHandle dst, const Extent3D extent, uint32_t mipLevel, uint64_t bufferOffset)
+    {
+        const VkBufferImageCopy region = ColorCopyRegion(extent, mipLevel, bufferOffset);
+        vkCmdCopyBufferToImage(toVk(m_Handle), toVk(src), toVk(dst), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    }
 
-        blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blitRegion.srcSubresource.baseArrayLayer = 0;
-        blitRegion.srcSubresource.layerCount = 1;
-        blitRegion.srcSubresource.mipLevel = 0;
+    void CommandBuffer::CopyImageToBuffer(ImageHandle src, BufferHandle dst, const Extent3D extent, uint32_t mipLevel, uint64_t bufferOffset)
+    {
+        const VkBufferImageCopy region = ColorCopyRegion(extent, mipLevel, bufferOffset);
+        vkCmdCopyImageToBuffer(toVk(m_Handle), toVk(src), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, toVk(dst), 1, &region);
+    }
 
-        blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blitRegion.dstSubresource.baseArrayLayer = 0;
-        blitRegion.dstSubresource.layerCount = 1;
-        blitRegion.dstSubresource.mipLevel = 0;
+    void CommandBuffer::BlitImage(ImageHandle src, const Extent3D srcExtent, ImageHandle dst, const Extent3D dstExtent, Filter filter, uint32_t srcMip, uint32_t dstMip)
+    {
+        VkImageBlit2 region{ VK_STRUCTURE_TYPE_IMAGE_BLIT_2 };
+        region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, srcMip, 0, 1 };
+        region.srcOffsets[1] = ToOffset(srcExtent);
+        region.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, dstMip, 0, 1 };
+        region.dstOffsets[1] = ToOffset(dstExtent);
 
-        VkBlitImageInfo2 blitInfo{ .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2, .pNext = nullptr };
-        blitInfo.dstImage = toVk(dst);
-        blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        VkBlitImageInfo2 blitInfo{ VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2 };
         blitInfo.srcImage = toVk(src);
         blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        blitInfo.filter = VK_FILTER_LINEAR;
+        blitInfo.dstImage = toVk(dst);
+        blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         blitInfo.regionCount = 1;
-        blitInfo.pRegions = &blitRegion;
-
+        blitInfo.pRegions = &region;
+        blitInfo.filter = toVk(filter);
         vkCmdBlitImage2(toVk(m_Handle), &blitInfo);
+    }
+
+    void CommandBuffer::FillBuffer(BufferHandle buffer, uint32_t value, uint64_t offset, uint64_t size)
+    {
+        vkCmdFillBuffer(toVk(m_Handle), toVk(buffer), offset, size, value);
+    }
+
+    void CommandBuffer::ClearColorImage(ImageHandle image, const std::array<float, 4>& clearColor, ImageLayout layout)
+    {
+        const VkClearColorValue clearValue{ { clearColor[0], clearColor[1], clearColor[2], clearColor[3] } };
+        const VkImageSubresourceRange range{ VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
+        vkCmdClearColorImage(toVk(m_Handle), toVk(image), toVk(layout), &clearValue, 1, &range);
     }
 
     void CommandBuffer::BeginDebugLabel(const char* name)
     {
+        if (!vkCmdBeginDebugUtilsLabelEXT)
+            return;
+
         VkDebugUtilsLabelEXT label{ VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
         label.pLabelName = name;
         vkCmdBeginDebugUtilsLabelEXT(toVk(m_Handle), &label);
@@ -376,7 +362,7 @@ namespace Rdn
 
     void CommandBuffer::EndDebugLabel()
     {
-        vkCmdEndDebugUtilsLabelEXT(toVk(m_Handle));
+        if (vkCmdEndDebugUtilsLabelEXT)
+            vkCmdEndDebugUtilsLabelEXT(toVk(m_Handle));
     }
-
 }

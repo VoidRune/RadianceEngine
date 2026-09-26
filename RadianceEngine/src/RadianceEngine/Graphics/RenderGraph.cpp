@@ -856,8 +856,6 @@ namespace Rdn
 
     void RenderGraph::RecordPasses(CommandBuffer& cmd, uint32_t frameIndex)
     {
-        const bool debugLabels = m_Device->IsDebugUtilsEnabled();
-
         PassContext context;
         context.m_Graph = this;
         context.FrameIndex = frameIndex;
@@ -868,11 +866,8 @@ namespace Rdn
             if (pass.Culled)
                 continue;
 
-            if (debugLabels)
-                cmd.BeginDebugLabel(pass.Name.c_str());
-
-            if (!pass.ImageBarriers.empty() || !pass.BufferBarriers.empty())
-                cmd.Barrier(pass.ImageBarriers, pass.BufferBarriers);
+            cmd.BeginDebugLabel(pass.Name.c_str());
+            cmd.Barrier(pass.ImageBarriers, pass.BufferBarriers);
 
             const bool rendering = !pass.ColorAttachments.empty() || pass.DepthAttachment.has_value();
             if (rendering)
@@ -913,12 +908,10 @@ namespace Rdn
             if (rendering)
                 cmd.EndRendering();
 
-            if (debugLabels)
-                cmd.EndDebugLabel();
+            cmd.EndDebugLabel();
         }
 
-        if (!m_FinalBarriers.empty())
-            cmd.Barrier(m_FinalBarriers, {});
+        cmd.Barrier(m_FinalBarriers);
     }
 
     void RenderGraph::ReleaseTransientResources()
