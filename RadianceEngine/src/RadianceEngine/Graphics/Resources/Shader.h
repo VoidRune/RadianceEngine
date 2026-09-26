@@ -34,6 +34,7 @@ namespace Rdn
 		ShaderStage m_ShaderStage = {};
 		uint32_t m_PushConstantSize = 0;
 		uint32_t m_StageOutputs = 0;
+		Extent3D m_WorkgroupSize{ 1, 1, 1 };
 
 		struct DescriptorLayoutBinding
 		{

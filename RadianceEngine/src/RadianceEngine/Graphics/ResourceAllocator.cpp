@@ -235,6 +235,9 @@ namespace Rdn
         for (auto& res : m_RaytracingPipelines)
             DestroyRaytracingPipeline(res);
         m_RaytracingPipelines.clear();
+        for (auto& res : m_ComputePipelines)
+            DestroyComputePipeline(res);
+        m_ComputePipelines.clear();
         for (auto& res : m_DescriptorSets)
             DestroyDescriptorSet(res);
         m_DescriptorSets.clear();
@@ -690,6 +693,14 @@ namespace Rdn
         }
 
         shader->m_StageOutputs = uint32_t(res.stage_outputs.size());
+        if (desc.ShaderStage == ShaderStage::Compute)
+        {
+            shader->m_WorkgroupSize = {
+                comp.get_execution_mode_argument(spv::ExecutionModeLocalSize, 0),
+                comp.get_execution_mode_argument(spv::ExecutionModeLocalSize, 1),
+                comp.get_execution_mode_argument(spv::ExecutionModeLocalSize, 2),
+            };
+        }
 
         m_Shaders.insert(shader);
     }
@@ -989,104 +1000,60 @@ namespace Rdn
         return layout;
     }
 
-    void ResourceAllocator::CreatePipeline(Pipeline* pipeline, const PipelineDesc& desc)
+    PipelineLayoutHandle ResourceAllocator::CreatePipelineLayout(std::span<Shader* const> shaders, std::span<const uint32_t> pushDescriptorSets, std::vector<DescriptorSetLayoutHandle>& setLayouts)
     {
         std::map<uint32_t, std::map<uint32_t, Shader::DescriptorLayoutBinding>> bindings;
-
+        ShaderStage stages = {};
         uint32_t pushConstantSize = 0;
-
-        for (const Shader* shader : desc.ShaderStages)
+        for (const Shader* shader : shaders)
         {
-            for (const auto& b : shader->m_LayoutBindings)
+            for (const Shader::DescriptorLayoutBinding& binding : shader->m_LayoutBindings)
             {
-                auto& set = bindings[b.SetIndex];
-                if (!set.contains(b.Binding))
-                {
-                    set[b.Binding] = b;
-                }
-                else
-                {
-                    set[b.Binding].Stage |= shader->m_ShaderStage;
-                }
+                const auto [it, inserted] = bindings[binding.SetIndex].try_emplace(binding.Binding, binding);
+                if (!inserted)
+                    it->second.Stage |= shader->m_ShaderStage;
             }
-
+            stages |= shader->m_ShaderStage;
             pushConstantSize = std::max(pushConstantSize, shader->m_PushConstantSize);
         }
 
-        uint32_t maxSetIndex = 0;
-        for (const auto& [setIdx, _] : bindings)
-            maxSetIndex = std::max(maxSetIndex, setIdx);
-
+        const uint32_t setCount = bindings.empty() ? 0 : bindings.rbegin()->first + 1;
         std::vector<VkDescriptorSetLayout> layouts;
-        layouts.reserve(maxSetIndex + 1);
-
-        for (uint32_t setIdx = 0; setIdx <= maxSetIndex; setIdx++)
+        layouts.reserve(setCount);
+        setLayouts.clear();
+        for (uint32_t setIndex = 0; setIndex < setCount; setIndex++)
         {
-            auto setIt = bindings.find(setIdx);
-            if (setIt == bindings.end())
-            {
-                DescriptorSetLayoutKey emptyKey{};
-                layouts.push_back(toVk(GetOrCreateDescriptorSetLayout(emptyKey)));
-                continue;
-            }
-
             DescriptorSetLayoutKey key;
-
-            key.UsePushDescriptors = false;
-            for (const uint32_t& pd : desc.PushDescriptorSets)
+            if (const auto set = bindings.find(setIndex); set != bindings.end())
             {
-                if (pd == setIdx)
+                key.UsePushDescriptors = std::ranges::find(pushDescriptorSets, setIndex) != pushDescriptorSets.end();
+                for (const auto& [bindingIndex, binding] : set->second)
                 {
-                    key.UsePushDescriptors = true;
-                    break;
+                    key.Bindings.push_back({ binding.Binding, binding.DescriptorCount, binding.Type, binding.Stage, binding.IsBindless });
+                    key.HasBindless |= binding.IsBindless;
                 }
             }
-
-            for (const auto& [bindIdx, b] : setIt->second)
-            {
-                DescriptorSetLayoutKey::BindingKey bk;
-                bk.Binding = b.Binding;
-                bk.Count = b.DescriptorCount;
-                bk.Type = b.Type;
-                bk.Stages = b.Stage;
-                bk.IsBindless = b.IsBindless;
-                key.Bindings.push_back(bk);
-
-                if (b.IsBindless)
-                    key.HasBindless = true;
-            }
-
-            std::sort(key.Bindings.begin(), key.Bindings.end(), [](const auto& a, const auto& b) { return a.Binding < b.Binding; });
-
-            layouts.push_back(toVk(GetOrCreateDescriptorSetLayout(key)));
+            setLayouts.push_back(GetOrCreateDescriptorSetLayout(key));
+            layouts.push_back(toVk(setLayouts.back()));
         }
 
-        // PUSH CONSTANT RANGE
-
-        VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        pushConstantRange.offset = 0;
-        pushConstantRange.size = pushConstantSize;
-
-        // PIPELINE LAYOUT
-
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(layouts.size());
-        pipelineLayoutInfo.pSetLayouts = layouts.data();
+        const VkPushConstantRange pushConstantRange{ VkShaderStageFlags(toVk(stages)), 0, pushConstantSize };
+        VkPipelineLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        layoutInfo.setLayoutCount = uint32_t(layouts.size());
+        layoutInfo.pSetLayouts = layouts.data();
         if (pushConstantSize > 0)
         {
-            pipelineLayoutInfo.pushConstantRangeCount = 1;
-            pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+            layoutInfo.pushConstantRangeCount = 1;
+            layoutInfo.pPushConstantRanges = &pushConstantRange;
         }
 
         VkPipelineLayout pipelineLayout;
-        VK_CHECK(vkCreatePipelineLayout(toVk(m_LogicalDevice), &pipelineLayoutInfo, nullptr, &pipelineLayout));
-        pipeline->m_PipelineLayout = fromVk(pipelineLayout);
-
-        pipeline->m_SetLayouts.resize(layouts.size());
-        for (size_t i = 0; i < layouts.size(); i++)
-            pipeline->m_SetLayouts[i] = fromVk(layouts[i]);
+        VK_CHECK(vkCreatePipelineLayout(toVk(m_LogicalDevice), &layoutInfo, nullptr, &pipelineLayout));
+        return fromVk(pipelineLayout);
+    }
+    void ResourceAllocator::CreatePipeline(Pipeline* pipeline, const PipelineDesc& desc)
+    {
+        pipeline->m_PipelineLayout = CreatePipelineLayout(desc.ShaderStages, desc.PushDescriptorSets, pipeline->m_SetLayouts);
 
         // SHADER STAGES
 
@@ -1249,97 +1216,7 @@ namespace Rdn
 
     void ResourceAllocator::CreateRaytracingPipeline(RayTracingPipeline* raytracingPipeline, const RayTracingPipelineDesc& desc)
     {
-        std::map<uint32_t, std::map<uint32_t, Shader::DescriptorLayoutBinding>> bindings;
-
-        uint32_t pushConstantSize = 0;
-
-        for (const Shader* shader : desc.ShaderStages)
-        {
-            for (const auto& b : shader->m_LayoutBindings)
-            {
-                auto& set = bindings[b.SetIndex];
-                if (!set.contains(b.Binding))
-                {
-                    set[b.Binding] = b;
-                }
-                else
-                {
-                    set[b.Binding].Stage |= shader->m_ShaderStage;
-                }
-            }
-
-            pushConstantSize = std::max(pushConstantSize, shader->m_PushConstantSize);
-        }
-
-        uint32_t maxSetIndex = 0;
-        for (const auto& [setIdx, _] : bindings)
-            maxSetIndex = std::max(maxSetIndex, setIdx);
-
-        std::vector<VkDescriptorSetLayout> layouts;
-        layouts.reserve(maxSetIndex + 1);
-
-        for (uint32_t setIdx = 0; setIdx <= maxSetIndex; setIdx++)
-        {
-            auto setIt = bindings.find(setIdx);
-            if (setIt == bindings.end())
-            {
-                DescriptorSetLayoutKey emptyKey{};
-                layouts.push_back(toVk(GetOrCreateDescriptorSetLayout(emptyKey)));
-                continue;
-            }
-
-            DescriptorSetLayoutKey key;
-
-            key.UsePushDescriptors = false;
-            for (const uint32_t& pd : desc.PushDescriptorSets)
-            {
-                if (pd == setIdx)
-                {
-                    key.UsePushDescriptors = true;
-                    break;
-                }
-            }
-
-            for (const auto& [bindIdx, b] : setIt->second)
-            {
-                DescriptorSetLayoutKey::BindingKey bk;
-                bk.Binding = b.Binding;
-                bk.Count = b.DescriptorCount;
-                bk.Type = b.Type;
-                bk.Stages = b.Stage;
-                bk.IsBindless = b.IsBindless;
-                key.Bindings.push_back(bk);
-
-                if (b.IsBindless)
-                    key.HasBindless = true;
-            }
-
-            std::sort(key.Bindings.begin(), key.Bindings.end(), [](const auto& a, const auto& b) { return a.Binding < b.Binding; });
-
-            layouts.push_back(toVk(GetOrCreateDescriptorSetLayout(key)));
-        }
-
-        VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR;
-        pushConstantRange.offset = 0;
-        pushConstantRange.size = pushConstantSize;
-
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(layouts.size());
-        pipelineLayoutInfo.pSetLayouts = layouts.data();
-        if (pushConstantSize > 0)
-        {
-            pipelineLayoutInfo.pushConstantRangeCount = 1;
-            pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-        }
-
-        VkPipelineLayout pipelineLayout;
-        VK_CHECK(vkCreatePipelineLayout(toVk(m_LogicalDevice), &pipelineLayoutInfo, nullptr, &pipelineLayout));
-
-        raytracingPipeline->m_SetLayouts.resize(layouts.size());
-        for (size_t i = 0; i < layouts.size(); i++)
-            raytracingPipeline->m_SetLayouts[i] = fromVk(layouts[i]);
+        const VkPipelineLayout pipelineLayout = toVk(CreatePipelineLayout(desc.ShaderStages, desc.PushDescriptorSets, raytracingPipeline->m_SetLayouts));
 
         std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
         std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
@@ -1515,6 +1392,55 @@ namespace Rdn
         vmaDestroyBuffer(toVk(m_Allocator), toVk(raytracingPipeline->m_ShaderBindingTableBuffer), toVk(raytracingPipeline->m_ShaderBindingTableAllocation));
         vkDestroyPipelineLayout(toVk(m_LogicalDevice), toVk(raytracingPipeline->m_PipelineLayout), nullptr);
         vkDestroyPipeline(toVk(m_LogicalDevice), toVk(raytracingPipeline->m_Pipeline), nullptr);
+    }
+
+    void ResourceAllocator::CreateComputePipeline(ComputePipeline* computePipeline, const ComputePipelineDesc& desc)
+    {
+        Shader* shader = desc.ComputeShader;
+        if (!shader || shader->m_ShaderStage != ShaderStage::Compute)
+        {
+            RDN_LOG_ERROR("CreateComputePipeline: ComputeShader must be a compute shader");
+            return;
+        }
+
+        computePipeline->m_PipelineLayout = CreatePipelineLayout({ &shader, 1 }, desc.PushDescriptorSets, computePipeline->m_SetLayouts);
+
+        VkComputePipelineCreateInfo pipelineInfo{ VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
+        pipelineInfo.stage = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
+        pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        pipelineInfo.stage.module = toVk(shader->m_Module);
+        pipelineInfo.stage.pName = shader->m_EntryPoint.c_str();
+        pipelineInfo.layout = toVk(computePipeline->m_PipelineLayout);
+        pipelineInfo.basePipelineIndex = -1;
+
+        VkPipeline pipeline;
+        VK_CHECK(vkCreateComputePipelines(toVk(m_LogicalDevice), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline));
+        computePipeline->m_Pipeline = fromVk(pipeline);
+        computePipeline->m_WorkgroupSize = shader->m_WorkgroupSize;
+
+        m_ComputePipelines.insert(computePipeline);
+    }
+
+    void ResourceAllocator::DestroyComputePipeline(ComputePipeline* computePipeline)
+    {
+        vkDestroyPipelineLayout(toVk(m_LogicalDevice), toVk(computePipeline->m_PipelineLayout), nullptr);
+        vkDestroyPipeline(toVk(m_LogicalDevice), toVk(computePipeline->m_Pipeline), nullptr);
+    }
+
+    void ResourceAllocator::ReleaseResource(ComputePipeline* computePipeline)
+    {
+        if (!m_ComputePipelines.contains(computePipeline))
+        {
+            RDN_LOG_FATAL("Cannot find ComputePipeline resource to release!");
+            return;
+        }
+        DestroyComputePipeline(computePipeline);
+        m_ComputePipelines.erase(computePipeline);
+    }
+
+    void ResourceAllocator::AllocateDescriptorSet(DescriptorSet* descriptorSet, ComputePipeline* pipeline, uint32_t setIndex, uint32_t variableDescriptorCount)
+    {
+        AllocateDescriptorSetFromLayout(descriptorSet, pipeline->GetSetLayout(setIndex), variableDescriptorCount);
     }
 
     void ResourceAllocator::AllocateDescriptorSet(DescriptorSet* descriptorSet, Pipeline* pipeline, uint32_t setIndex, uint32_t variableDescriptorCount)

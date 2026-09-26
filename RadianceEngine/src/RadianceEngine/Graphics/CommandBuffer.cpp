@@ -1,5 +1,6 @@
 #include "CommandBuffer.h"
 #include "Resources/RaytracingPipeline.h"
+#include "Resources/ComputePipeline.h"
 #include "VulkanInternal/VulkanUtilities.h"
 #include <vector>
 
@@ -209,6 +210,13 @@ namespace Rdn
     void CommandBuffer::DispatchIndirect(BufferHandle buffer, uint64_t offset)
     {
         vkCmdDispatchIndirect(toVk(m_Handle), toVk(buffer), offset);
+    }
+
+    void CommandBuffer::DispatchThreads(const ComputePipeline* pipeline, uint32_t threadCountX, uint32_t threadCountY, uint32_t threadCountZ)
+    {
+        const Extent3D groupSize = pipeline->GetWorkgroupSize();
+        auto groups = [](uint32_t threads, uint32_t size) { return (threads + size - 1) / size; };
+        vkCmdDispatch(toVk(m_Handle), groups(threadCountX, groupSize.Width), groups(threadCountY, groupSize.Height), groups(threadCountZ, groupSize.Depth));
     }
 
     void CommandBuffer::TraceRays(RayTracingPipeline* pipeline, uint32_t width, uint32_t height, uint32_t depth)

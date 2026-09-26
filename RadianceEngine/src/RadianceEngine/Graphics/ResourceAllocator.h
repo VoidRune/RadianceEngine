@@ -9,6 +9,7 @@
 #include "Resources/TopLevelAS.h"
 #include "Resources/Pipeline.h"
 #include "Resources/RaytracingPipeline.h"
+#include "Resources/ComputePipeline.h"
 #include "Resources/DescriptorSet.h"
 #include "CommandBuffer.h"
 
@@ -45,9 +46,11 @@ namespace Rdn
 		void BuildTopLevelAS(TopLevelAS* topLevelAS);
 		void CreatePipeline(Pipeline* pipeline, const PipelineDesc& desc);
 		void CreateRaytracingPipeline(RayTracingPipeline* raytracingPipeline, const RayTracingPipelineDesc& desc);
+		void CreateComputePipeline(ComputePipeline* computePipeline, const ComputePipelineDesc& desc);
 
 		void AllocateDescriptorSet(DescriptorSet* descriptorSet, Pipeline* pipeline, uint32_t setIndex, uint32_t variableDescriptorCount = MaxBindlessDescriptors);
 		void AllocateDescriptorSet(DescriptorSet* descriptorSet, RayTracingPipeline* pipeline, uint32_t setIndex, uint32_t variableDescriptorCount = MaxBindlessDescriptors);
+		void AllocateDescriptorSet(DescriptorSet* descriptorSet, ComputePipeline* pipeline, uint32_t setIndex, uint32_t variableDescriptorCount = MaxBindlessDescriptors);
 		void UpdateDescriptorSet(DescriptorSet* descriptorSet, const DescriptorWrite& write);
 
 		void ReleaseResource(GpuBuffer* gpuBuffer);
@@ -59,6 +62,7 @@ namespace Rdn
 		void ReleaseResource(TopLevelAS* topLevelAS);
 		void ReleaseResource(Pipeline* pipeline);
 		void ReleaseResource(RayTracingPipeline* raytracingPipeline);
+		void ReleaseResource(ComputePipeline* computePipeline);
 		void ReleaseResource(DescriptorSet* descriptorSet);
 		void FreeResources();
 
@@ -124,10 +128,12 @@ namespace Rdn
 		std::unordered_set<TopLevelAS*> m_TopLevelASs;
 		std::unordered_set<Pipeline*> m_Pipelines;
 		std::unordered_set<RayTracingPipeline*> m_RaytracingPipelines;
+		std::unordered_set<ComputePipeline*> m_ComputePipelines;
 		std::unordered_set<DescriptorSet*> m_DescriptorSets;
 
 
 		DescriptorSetLayoutHandle GetOrCreateDescriptorSetLayout(const DescriptorSetLayoutKey& key);
+		PipelineLayoutHandle CreatePipelineLayout(std::span<Shader* const> shaders, std::span<const uint32_t> pushDescriptorSets, std::vector<DescriptorSetLayoutHandle>& setLayouts);
 		void AllocateDescriptorSetFromLayout(DescriptorSet* descriptorSet, DescriptorSetLayoutHandle layout, uint32_t variableDescriptorCount);
 
 		void DestroyGpuBuffer(GpuBuffer* gpuBuffer);
@@ -139,6 +145,7 @@ namespace Rdn
 		void DestroyTopLevelAS(TopLevelAS* topLevelAS);
 		void DestroyPipeline(Pipeline* pipeline);
 		void DestroyRaytracingPipeline(RayTracingPipeline* raytracingPipeline);
+		void DestroyComputePipeline(ComputePipeline* computePipeline);
 		void DestroyDescriptorSet(DescriptorSet* descriptorSet);
 
 		std::unordered_map<DescriptorSetLayoutKey, DescriptorSetLayoutHandle, DescriptorSetLayoutKeyHasher> m_DescriptorSetLayouts;

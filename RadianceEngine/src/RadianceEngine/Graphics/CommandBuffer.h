@@ -11,6 +11,7 @@
 namespace Rdn
 {
     class RayTracingPipeline;
+    class ComputePipeline;
 
     struct ImageBarrier
     {
@@ -105,6 +106,7 @@ namespace Rdn
         void DrawIndexedIndirect(BufferHandle buffer, uint64_t offset = 0, uint32_t drawCount = 1, uint32_t stride = sizeof(DrawIndexedIndirectCommand));
         void Dispatch(uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ);
         void DispatchIndirect(BufferHandle buffer, uint64_t offset = 0);
+        void DispatchThreads(const ComputePipeline* pipeline, uint32_t threadCountX, uint32_t threadCountY = 1, uint32_t threadCountZ = 1);
         void TraceRays(RayTracingPipeline* pipeline, uint32_t width, uint32_t height, uint32_t depth);
 
         void Barrier(std::span<const ImageBarrier> imageBarriers, std::span<const BufferBarrier> bufferBarriers = {}, std::span<const GlobalBarrier> globalBarriers = {});
