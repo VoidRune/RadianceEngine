@@ -22,6 +22,8 @@ namespace Rdn
 
 			VkPhysicalDeviceMemoryProperties memoryProperties;
 			vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
+			VkPhysicalDeviceFeatures features;
+			vkGetPhysicalDeviceFeatures(physicalDevice, &features);
 
 			DeviceProperties result;
 			result.Name = properties.properties.deviceName;
@@ -38,6 +40,7 @@ namespace Rdn
 			result.ShaderGroupHandleSize = rayTracingProperties.shaderGroupHandleSize;
 			result.ShaderGroupHandleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
 			result.ShaderGroupBaseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
+			result.TextureCompressionBC = features.textureCompressionBC == VK_TRUE;
 			return result;
 		}
 	}

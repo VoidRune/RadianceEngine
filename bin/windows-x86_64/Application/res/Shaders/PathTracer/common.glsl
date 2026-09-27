@@ -12,7 +12,10 @@ struct HitPayload
     uint materialIndex;
     vec3 shadingNormal;
     uint frontFace;
+    vec4 tangent;
     vec2 uv;
+    uint seed;
+    uint shadowQuery;
 };
 
 uint PcgHash(uint value)

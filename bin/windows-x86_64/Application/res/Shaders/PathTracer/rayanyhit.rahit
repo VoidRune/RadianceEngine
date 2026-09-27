@@ -1,0 +1,43 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_buffer_reference2 : require
+#include "common.glsl"
+#include "scene.glsl"
+
+layout(location = 0) rayPayloadInEXT HitPayload payload;
+
+layout(buffer_reference, scalar) readonly buffer VertexBuffer { Vertex vertices[]; };
+layout(buffer_reference, scalar) readonly buffer IndexBuffer { uint indices[]; };
+
+hitAttributeEXT vec2 attribs;
+
+void main()
+{
+    MeshPrimitive mesh = meshPrimitives[gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT];
+    Material material = materials[mesh.materialIndex];
+    uint alphaMode = material.flags & (MATERIAL_ALPHA_MASK | MATERIAL_ALPHA_BLEND);
+    if (alphaMode == 0u)
+        return;
+
+    VertexBuffer vertexBuffer = VertexBuffer(mesh.vertexAddress);
+    IndexBuffer indexBuffer = IndexBuffer(mesh.indexAddress);
+    uint baseIndex = gl_PrimitiveID * 3;
+    vec2 uv0 = vertexBuffer.vertices[indexBuffer.indices[baseIndex + 0]].uv;
+    vec2 uv1 = vertexBuffer.vertices[indexBuffer.indices[baseIndex + 1]].uv;
+    vec2 uv2 = vertexBuffer.vertices[indexBuffer.indices[baseIndex + 2]].uv;
+    vec2 uv = uv0 * (1.0 - attribs.x - attribs.y) + uv1 * attribs.x + uv2 * attribs.y;
+    float alpha = MaterialAlpha(material, MaterialUv(material, uv));
+
+    float threshold = material.alphaCutoff;
+    if (alphaMode == MATERIAL_ALPHA_BLEND)
+    {
+        uint hash = PcgHash(payload.seed ^ PcgHash(uint(gl_PrimitiveID) ^ PcgHash(uint(gl_InstanceID) * 4099u + uint(gl_GeometryIndexEXT))));
+        threshold = float(hash >> 8) * (1.0 / 16777216.0);
+    }
+    if (alpha < threshold)
+        ignoreIntersectionEXT;
+}

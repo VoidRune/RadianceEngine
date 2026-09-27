@@ -146,6 +146,38 @@ namespace Rdn
                 return 0;
             }
         }
+
+        struct FormatBlock
+        {
+            uint32_t Width = 1;
+            uint32_t Height = 1;
+            uint32_t Bytes = 0;
+        };
+
+        FormatBlock GetFormatBlock(Format format)
+        {
+            switch (format)
+            {
+            case Format::BC1_RGB_Unorm: case Format::BC1_RGB_Srgb: case Format::BC1_RGBA_Unorm: case Format::BC1_RGBA_Srgb:
+            case Format::BC4_Unorm: case Format::BC4_Snorm:
+                return { 4, 4, 8 };
+            case Format::BC2_Unorm: case Format::BC2_Srgb: case Format::BC3_Unorm: case Format::BC3_Srgb:
+            case Format::BC5_Unorm: case Format::BC5_Snorm: case Format::BC6H_Ufloat: case Format::BC6H_Sfloat:
+            case Format::BC7_Unorm: case Format::BC7_Srgb:
+                return { 4, 4, 16 };
+            default:
+                return { 1, 1, GetFormatByteSize(format) };
+            }
+        }
+
+        uint64_t GetMipLevelSize(Format format, Extent3D extent, uint32_t level)
+        {
+            const FormatBlock block = GetFormatBlock(format);
+            const Extent3D mip = MipExtent(extent, level);
+            const uint64_t blocksX = (mip.Width + block.Width - 1) / block.Width;
+            const uint64_t blocksY = (mip.Height + block.Height - 1) / block.Height;
+            return blocksX * blocksY * mip.Depth * block.Bytes;
+        }
     }
 
 	ResourceAllocator::ResourceAllocator(Device* device)
@@ -173,8 +205,8 @@ namespace Rdn
         m_Allocator = fromVk(allocator);
 
         VkDescriptorPoolSize poolSizes[] = {
-            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4096 },
-            { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 4096 },
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 * MaxBindlessDescriptors },
+            { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 2 * MaxBindlessDescriptors },
             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024 },
             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 256 },
             { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 256 },
@@ -308,29 +340,36 @@ namespace Rdn
         vmaDestroyBuffer(toVk(m_Allocator), staging.Buffer, staging.Allocation);
     }
 
-    void ResourceAllocator::SetImageData(GpuImage* image, const void* data, uint32_t size, ImageLayout newLayout)
+    void ResourceAllocator::SetImageData(GpuImage* image, const void* data, uint64_t size, ImageLayout newLayout)
     {
         const Extent3D extent = image->GetImageSize();
+        const Format format = image->GetFormat();
         const uint32_t mipLevels = image->GetMipLevels();
-        const uint64_t baseLevelSize = uint64_t(extent.Width) * extent.Height * extent.Depth * GetFormatByteSize(image->GetFormat());
-        if (size < baseLevelSize)
+        const uint64_t baseLevelSize = GetMipLevelSize(format, extent, 0);
+        if (baseLevelSize == 0 || size < baseLevelSize)
         {
-            RDN_LOG_ERROR("SetImageData: {} bytes given, but the base level needs {}", size, baseLevelSize);
+            RDN_LOG_ERROR("SetImageData: {} bytes given, but the base level of a {} image needs {}", size, string_VkFormat(toVk(format)), baseLevelSize);
             return;
         }
 
+        uint64_t chainSize = 0;
+        for (uint32_t level = 0; level < mipLevels; level++)
+            chainSize += GetMipLevelSize(format, extent, level);
+        const uint32_t providedLevels = size >= chainSize ? mipLevels : 1;
+        const uint64_t uploadSize = providedLevels == mipLevels ? chainSize : baseLevelSize;
+
         VkFormatProperties formatProperties;
-        vkGetPhysicalDeviceFormatProperties(toVk(m_PhysicalDevice), toVk(image->GetFormat()), &formatProperties);
+        vkGetPhysicalDeviceFormatProperties(toVk(m_PhysicalDevice), toVk(format), &formatProperties);
         const VkFormatFeatureFlags blitFeatures = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
-        const bool canBlit = (formatProperties.optimalTilingFeatures & blitFeatures) == blitFeatures;
+        const bool canBlit = providedLevels < mipLevels && (formatProperties.optimalTilingFeatures & blitFeatures) == blitFeatures;
         const Filter mipFilter = (formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? Filter::Linear : Filter::Nearest;
-        if (mipLevels > 1 && !canBlit)
+        if (providedLevels < mipLevels && !canBlit)
         {
-            RDN_LOG_ERROR("SetImageData: {} can't be blitted, so mip levels 1..{} stay undefined", string_VkFormat(toVk(image->GetFormat())), mipLevels - 1);
+            RDN_LOG_ERROR("SetImageData: {} can't be blitted and only the base level was given, so mip levels 1..{} stay undefined", string_VkFormat(toVk(format)), mipLevels - 1);
         }
 
-        VmaBuffer staging = CreateVmaBuffer(toVk(m_Allocator), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, HostAccess::SequentialWrite);
-        VK_CHECK(vmaCopyMemoryToAllocation(toVk(m_Allocator), data, staging.Allocation, 0, size));
+        VmaBuffer staging = CreateVmaBuffer(toVk(m_Allocator), uploadSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, HostAccess::SequentialWrite);
+        VK_CHECK(vmaCopyMemoryToAllocation(toVk(m_Allocator), data, staging.Allocation, 0, uploadSize));
 
         m_Device->ImmediateSubmit([&](CommandBuffer& cmd) {
             const ImageHandle handle = image->GetHandle();
@@ -339,7 +378,12 @@ namespace Rdn
                 .Handle = handle, .OldLayout = ImageLayout::Undefined, .NewLayout = ImageLayout::TransferDstOptimal,
                 .SrcStage = PipelineStage::None, .DstStage = PipelineStage::AllTransfer,
                 .SrcAccess = AccessMask::None, .DstAccess = AccessMask::TransferWrite });
-            cmd.CopyBufferToImage(fromVk(staging.Buffer), handle, extent);
+            uint64_t offset = 0;
+            for (uint32_t level = 0; level < providedLevels; level++)
+            {
+                cmd.CopyBufferToImage(fromVk(staging.Buffer), handle, MipExtent(extent, level), level, offset);
+                offset += GetMipLevelSize(format, extent, level);
+            }
 
             uint32_t lastWrittenLevel = 0;
             if (canBlit)
@@ -739,7 +783,7 @@ namespace Rdn
         for (const BottomLevelASGeometry& part : desc.Geometries)
         {
             VkAccelerationStructureGeometryKHR& geometry = geometries.emplace_back(VkAccelerationStructureGeometryKHR{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR });
-            geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+            geometry.flags = part.Opaque ? VK_GEOMETRY_OPAQUE_BIT_KHR : VK_GEOMETRY_NO_DUPLICATE_ANY_HIT_INVOCATION_BIT_KHR;
             geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
             geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
             geometry.geometry.triangles.vertexFormat = toVk(desc.VertexFormat);
@@ -862,6 +906,8 @@ namespace Rdn
             instance.mask = 0xFF;
             instance.instanceShaderBindingTableRecordOffset = 0;
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+            if (source.ForceNoOpaque)
+                instance.flags |= VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
             instance.accelerationStructureReference = source.BottomLevelASAddress;
         }
 
@@ -873,7 +919,6 @@ namespace Rdn
 
         VkAccelerationStructureGeometryKHR geometry{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR };
         geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-        geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
         geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
         geometry.geometry.instances.arrayOfPointers = VK_FALSE;
         geometry.geometry.instances.data.deviceAddress = GetDeviceAddress(device, instanceBuffer.Buffer);
@@ -1302,6 +1347,16 @@ namespace Rdn
             shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
             shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
             shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+
+            if (Shader* anyHit = GetShaderWithStage(ShaderStage::RayAnyHit, desc.ShaderStages))
+            {
+                VkPipelineShaderStageCreateInfo anyHitStage{ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
+                anyHitStage.stage = VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+                anyHitStage.module = toVk(anyHit->m_Module);
+                anyHitStage.pName = anyHit->m_EntryPoint.c_str();
+                shaderStages.push_back(anyHitStage);
+                shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+            }
             shaderGroups.push_back(shaderGroup);
         }
 

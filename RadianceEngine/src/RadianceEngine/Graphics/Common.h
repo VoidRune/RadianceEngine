@@ -152,6 +152,22 @@ namespace Rdn
         D16_Unorm_S8_Uint = 128,
         D24_Unorm_S8_Uint = 129,
         D32_Sfloat_S8_Uint = 130,
+        BC1_RGB_Unorm = 131,
+        BC1_RGB_Srgb = 132,
+        BC1_RGBA_Unorm = 133,
+        BC1_RGBA_Srgb = 134,
+        BC2_Unorm = 135,
+        BC2_Srgb = 136,
+        BC3_Unorm = 137,
+        BC3_Srgb = 138,
+        BC4_Unorm = 139,
+        BC4_Snorm = 140,
+        BC5_Unorm = 141,
+        BC5_Snorm = 142,
+        BC6H_Ufloat = 143,
+        BC6H_Sfloat = 144,
+        BC7_Unorm = 145,
+        BC7_Srgb = 146,
     };
 
     // Both sync2 flag enums need a 64-bit underlying type: a scoped enum defaults to int, and MSVC

@@ -22,7 +22,7 @@ namespace Rdn
 	class ResourceAllocator
 	{
 	public:
-		static constexpr uint32_t MaxBindlessDescriptors = 1024;
+		static constexpr uint32_t MaxBindlessDescriptors = 16384;
 
 		ResourceAllocator(Device* device);
 		~ResourceAllocator();
@@ -33,7 +33,7 @@ namespace Rdn
 		void UnmapMemory(GpuRingBuffer* ringBuffer);
 		uint64_t GetBufferDeviceAddress(GpuBuffer* buffer);
 		void SetDeviceLocalBufferData(GpuBuffer* buffer, const void* data, uint64_t size);
-		void SetImageData(GpuImage* image, const void* data, uint32_t size, ImageLayout newLayout);
+		void SetImageData(GpuImage* image, const void* data, uint64_t size, ImageLayout newLayout);
 		std::vector<uint8_t> GetImageData(GpuImage* image);
 
 		void CreateGpuBuffer(GpuBuffer* gpuBuffer, const GpuBufferDesc& desc);

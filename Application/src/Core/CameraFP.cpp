@@ -22,21 +22,20 @@ CameraFP::~CameraFP()
 void CameraFP::Update(double deltaTime)
 {
     HasMoved = false;
-    double mouseX = Rdn::Input::GetMouseX();
-    double mouseY = Rdn::Input::GetMouseY();
+    const bool looking = Rdn::Input::IsKeyDown(Rdn::KeyCode::MouseRight);
+    m_Window->SetCursorMode(looking ? Rdn::CursorMode::Disabled : Rdn::CursorMode::Normal);
 
-    if (Rdn::Input::IsKeyDown(Rdn::KeyCode::MouseRight))
+    const float mouseDeltaX = Rdn::Input::GetMouseDeltaX();
+    const float mouseDeltaY = Rdn::Input::GetMouseDeltaY();
+    if (looking && (mouseDeltaX != 0.0f || mouseDeltaY != 0.0f))
     {
-        Yaw -= (mouseX - LastMouseX) * Sensitivity;
-        Pitch -= (mouseY - LastMouseY) * Sensitivity;
+        Yaw -= mouseDeltaX * Sensitivity;
+        Pitch -= mouseDeltaY * Sensitivity;
 
         Yaw = fmod(Yaw, 360.0f);
         Pitch = std::clamp(Pitch, -89.9f, 89.9f);
-        if (LastMouseX != mouseX || LastMouseY != mouseY)
-            HasMoved = true;
+        HasMoved = true;
     }
-    LastMouseX = mouseX;
-    LastMouseY = mouseY;
 
     Forward = glm::normalize(glm::vec3{
         cos(glm::radians(Yaw)) * cos(glm::radians(Pitch)),

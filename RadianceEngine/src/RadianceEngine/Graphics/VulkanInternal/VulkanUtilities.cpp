@@ -122,6 +122,7 @@ namespace Rdn
         };
 
         const DeviceFeature OptionalFeatures[] = {
+            RDN_DEVICE_FEATURE(Core.features.textureCompressionBC),
             RDN_DEVICE_FEATURE(Vulkan12.hostQueryReset),
             RDN_DEVICE_FEATURE(RayTracingPipeline.rayTraversalPrimitiveCulling),
         };

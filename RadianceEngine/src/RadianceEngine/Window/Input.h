@@ -11,15 +11,19 @@ namespace Rdn
 		static bool IsKeyPressed(KeyCode keyCode);
 		static bool IsKeyReleased(KeyCode keyCode);
 
-		static float GetScrollVertical();
-		static float GetScrollHorizontal();
 		static float GetMouseX();
 		static float GetMouseY();
+		static float GetMouseDeltaX();
+		static float GetMouseDeltaY();
+		static float GetScrollVertical();
+		static float GetScrollHorizontal();
 
 	private:
-		static void TransitionFrame();
-		static void UpdateMouseAndScroll(float mouseX, float mouseY, float scrollX, float scrollY);
-		static void SetKey(KeyCode keyCode, bool isDown);
+		static void BeginFrame();
+		static void SetKey(int key, bool isDown);
+		static void SetMousePosition(double x, double y);
+		static void MoveMouse(double x, double y);
+		static void AddScroll(double x, double y);
 
 		friend class Window;
 	};

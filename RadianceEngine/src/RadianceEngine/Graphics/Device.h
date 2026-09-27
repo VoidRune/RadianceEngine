@@ -30,6 +30,7 @@ namespace Rdn
 		uint32_t ShaderGroupHandleSize = 0;
 		uint32_t ShaderGroupHandleAlignment = 1;
 		uint32_t ShaderGroupBaseAlignment = 1;
+		bool TextureCompressionBC = false;
 	};
 
 	class Device

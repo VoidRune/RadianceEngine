@@ -11,6 +11,7 @@ namespace Rdn
 		uint64_t BottomLevelASAddress = 0;
 		uint32_t InstanceCustomIndex = 0;
 		float TransformMatrix[3][4] = { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 } };
+		bool ForceNoOpaque = false;
 	};
 
 	class TopLevelAS : NonCopyable

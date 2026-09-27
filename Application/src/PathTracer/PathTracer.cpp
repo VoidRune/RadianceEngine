@@ -4,17 +4,23 @@
 #include "RadianceEngine/Core/Log.h"
 #include "RadianceEngine/Core/Timer.h"
 #include "stb/stb_image_write.h"
+#include <format>
 #include <thread>
 
 using namespace glm;
 
-PathTracer::PathTracer(Rdn::Window* window, Rdn::Device* device, Rdn::PresentQueue* presentQueue, Rdn::ResourceAllocator* resourceAllocator, Rdn::RenderGraph* renderGraph)
+PathTracer::PathTracer(Rdn::Window* window, Rdn::Device* device, Rdn::PresentQueue* presentQueue, Rdn::ResourceAllocator* resourceAllocator, Rdn::RenderGraph* renderGraph,
+	const PathTracerOptions& options)
 {
 	m_Window = window;
 	m_Device = device;
 	m_PresentQueue = presentQueue;
 	m_ResourceAllocator = resourceAllocator;
 	m_RenderGraph = renderGraph;
+	m_Options = options;
+	globalFrameData.Exposure = options.Exposure;
+	globalFrameData.IndirectClamp = options.IndirectClamp;
+	globalFrameData.FilterSigma = options.FilterSigma;
 
 	m_Camera = std::make_unique<CameraFP>(m_Window);
 	m_Camera->Position = glm::vec3(0.0f, 0.55f, -2.1f);
@@ -43,6 +49,61 @@ PathTracer::PathTracer(Rdn::Window* window, Rdn::Device* device, Rdn::PresentQue
 void PathTracer::CreateScene()
 {
 	m_Scene = std::make_unique<Scene>(m_Device, m_ResourceAllocator);
+
+	std::optional<SceneImport> imported;
+	if (!m_Options.ScenePath.empty())
+	{
+		imported = m_Scene->Import(m_Options.ScenePath);
+		if (!imported)
+			RDN_LOG_ERROR("Showing the built-in scene instead of {}", m_Options.ScenePath.generic_string());
+	}
+	if (imported)
+		FrameCamera(*imported);
+	else
+		CreateShowcaseScene();
+
+	if (m_Options.Camera)
+	{
+		m_Camera->Position = m_Options.Camera->Position;
+		m_Camera->Yaw = m_Options.Camera->Yaw;
+		m_Camera->Pitch = m_Options.Camera->Pitch;
+		m_Camera->Fov = m_Options.Camera->Fov;
+	}
+	if (!m_Options.EnvironmentPath.empty())
+		m_Scene->SetEnvironment(m_Options.EnvironmentPath);
+	m_Scene->SetEnvironmentIntensity(m_Options.EnvironmentIntensity);
+	m_Scene->SetEnvironmentRotation(m_Options.EnvironmentRotation);
+
+	m_Scene->Build();
+	CreateSceneDescriptorSet();
+}
+
+void PathTracer::FrameCamera(const SceneImport& imported)
+{
+	const glm::vec3 center = (imported.BoundsMin + imported.BoundsMax) * 0.5f;
+	const float radius = std::max(glm::length(imported.BoundsMax - imported.BoundsMin) * 0.5f, 1e-3f);
+	m_Camera->MovementSpeed = std::clamp(radius * 0.1f, 0.25f, 50.0f);
+
+	if (!imported.Cameras.empty())
+	{
+		const SceneCamera& camera = imported.Cameras.front();
+		m_Camera->Position = camera.Position;
+		m_Camera->Yaw = glm::degrees(std::atan2(camera.Forward.z, camera.Forward.x));
+		m_Camera->Pitch = glm::degrees(std::asin(std::clamp(camera.Forward.y, -1.0f, 1.0f)));
+		m_Camera->Fov = camera.VerticalFov;
+		RDN_LOG("Using the scene's camera \"{}\" ({} cameras in the file)", camera.Name, imported.Cameras.size());
+		return;
+	}
+
+	const float distance = radius / std::tan(glm::radians(m_Camera->Fov) * 0.5f);
+	const float height = radius * 0.25f;
+	m_Camera->Position = center + glm::vec3(0.0f, height, -distance);
+	m_Camera->Yaw = 90.0f;
+	m_Camera->Pitch = -glm::degrees(std::atan(height / distance));
+}
+
+void PathTracer::CreateShowcaseScene()
+{
 	Scene& scene = *m_Scene;
 
 	const ModelId plane = scene.LoadModel("res/3DModels/plane.obj");
@@ -62,13 +123,13 @@ void PathTracer::CreateScene()
 	const MediumId blueTint = scene.AddMedium({ .Absorption = { 3.0f, 1.2f, 0.3f } });
 	const MediumId smoke = scene.AddMedium({ .Absorption = glm::vec3(0.2f), .Scattering = glm::vec3(5.0f), .Anisotropy = 0.4f });
 
-	const MaterialId floor = scene.AddMaterial({ .Roughness = 0.45f, .Clearcoat = 0.6f, .ClearcoatRoughness = 0.06f, .Texture = checkerboard });
+	const MaterialId floor = scene.AddMaterial({ .Roughness = 0.45f, .Clearcoat = 0.6f, .ClearcoatRoughness = 0.06f, .BaseColorTexture = checkerboard });
 	const MaterialId whiteWall = scene.AddMaterial({ .BaseColor = glm::vec3(0.8f), .Roughness = 0.9f });
-	const MaterialId redWall = scene.AddMaterial({ .BaseColor = { 1.0f, 0.2f, 0.3f }, .Roughness = 0.8f, .Texture = granite });
+	const MaterialId redWall = scene.AddMaterial({ .BaseColor = { 1.0f, 0.2f, 0.3f }, .Roughness = 0.8f, .BaseColorTexture = granite });
 	const MaterialId blueWall = scene.AddMaterial({ .BaseColor = { 0.25f, 0.55f, 1.0f }, .Roughness = 0.9f });
 	const MaterialId mirror = scene.AddMaterial({ .BaseColor = glm::vec3(0.95f), .Metallic = 1.0f, .Roughness = 0.02f });
 	const MaterialId light = scene.AddMaterial({ .BaseColor = glm::vec3(0.0f), .Emission = glm::vec3(14.0f) });
-	const MaterialId marble = scene.AddMaterial({ .BaseColor = glm::vec3(0.9f), .Roughness = 0.25f, .Texture = granite });
+	const MaterialId marble = scene.AddMaterial({ .BaseColor = glm::vec3(0.9f), .Roughness = 0.25f, .BaseColorTexture = granite });
 	const MaterialId jadeGlass = scene.AddMaterial({ .Roughness = 0.25f, .Transmission = 1.0f, .IOR = 1.62f, .Medium = jade });
 	const MaterialId tintedGlass = scene.AddMaterial({ .Roughness = 0.0f, .Transmission = 1.0f, .IOR = 1.5f, .Medium = blueTint });
 	const MaterialId frostedGlass = scene.AddMaterial({ .Roughness = 0.3f, .Transmission = 1.0f, .IOR = 1.5f });
@@ -106,10 +167,8 @@ void PathTracer::CreateScene()
 	scene.AddInstance(cube, { .Position = { -0.82f, 0.07f, -0.3f }, .Rotation = { 0.0f, 12.0f, 0.0f }, .Scale = glm::vec3(0.14f) }, blue); // TOY BLOCKS
 	scene.AddInstance(cube, { .Position = { -0.8f, 0.21f, -0.31f }, .Rotation = { 0.0f, -20.0f, 0.0f }, .Scale = glm::vec3(0.14f) }, yellow);
 	scene.AddInstance(cube, { .Position = { -0.83f, 0.35f, -0.29f }, .Rotation = { 0.0f, 35.0f, 0.0f }, .Scale = glm::vec3(0.14f) }, green);
-
-	scene.Build();
-	CreateSceneDescriptorSet();
 }
+
 void PathTracer::CreateSceneDescriptorSet()
 {
 	if (!m_RayTracingPipeline || !m_Scene)
@@ -118,8 +177,8 @@ void PathTracer::CreateSceneDescriptorSet()
 	if (m_SceneDescriptorSet)
 		m_ResourceAllocator->ReleaseResource(m_SceneDescriptorSet.get());
 	m_SceneDescriptorSet = std::make_unique<Rdn::DescriptorSet>();
-	m_ResourceAllocator->AllocateDescriptorSet(m_SceneDescriptorSet.get(), m_RayTracingPipeline.get(), 1);
-	m_ResourceAllocator->UpdateDescriptorSet(m_SceneDescriptorSet.get(), m_Scene->GetDescriptorWrite(m_LinearSampler->GetHandle()));
+	m_ResourceAllocator->AllocateDescriptorSet(m_SceneDescriptorSet.get(), m_RayTracingPipeline.get(), 1, m_Scene->GetTextureCount());
+	m_ResourceAllocator->UpdateDescriptorSet(m_SceneDescriptorSet.get(), m_Scene->GetDescriptorWrite());
 }
 
 bool PathTracer::CreatePipelines()
@@ -128,6 +187,7 @@ bool PathTracer::CreatePipelines()
 		{ "res/Shaders/PathTracer/raygen.rgen", &m_RayGenShader },
 		{ "res/Shaders/PathTracer/raymiss.rmiss", &m_RayMissShader },
 		{ "res/Shaders/PathTracer/rayclosesthit.rchit", &m_RayClosestHitShader },
+		{ "res/Shaders/PathTracer/rayanyhit.rahit", &m_RayAnyHitShader },
 		{ "res/Shaders/PathTracer/shader.vert", &m_CompositeVertShader },
 		{ "res/Shaders/PathTracer/shader.frag", &m_CompositeFragShader },
 	};
@@ -160,7 +220,7 @@ bool PathTracer::CreatePipelines()
 
 	m_RayTracingPipeline = std::make_unique<Rdn::RayTracingPipeline>();
 	m_ResourceAllocator->CreateRaytracingPipeline(m_RayTracingPipeline.get(), Rdn::RayTracingPipelineDesc{
-		.ShaderStages = { m_RayGenShader.get(), m_RayMissShader.get(), m_RayClosestHitShader.get()},
+		.ShaderStages = { m_RayGenShader.get(), m_RayMissShader.get(), m_RayClosestHitShader.get(), m_RayAnyHitShader.get() },
 		.PushDescriptorSets = { 0 }
 	});
 
@@ -180,12 +240,6 @@ void PathTracer::CreateSamplers()
 	m_ResourceAllocator->CreateSampler(m_NearestSampler.get(), Rdn::SamplerDesc{
 		.MinFilter = Rdn::Filter::Nearest,
 		.MagFilter = Rdn::Filter::Nearest,
-		.AddressMode = Rdn::SamplerAddressMode::Repeat
-	});
-	m_LinearSampler = std::make_unique<Rdn::Sampler>();
-	m_ResourceAllocator->CreateSampler(m_LinearSampler.get(), Rdn::SamplerDesc{
-		.MinFilter = Rdn::Filter::Linear,
-		.MagFilter = Rdn::Filter::Linear,
 		.AddressMode = Rdn::SamplerAddressMode::Repeat
 	});
 }
@@ -241,18 +295,31 @@ void PathTracer::RenderFrame(float elapsedTime)
 	float dt = elapsedTime - lastTime;
 	lastTime = elapsedTime;
 
-	if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::G))
+	const bool finishedFrames = m_Options.ScreenshotFrames > 0 && globalFrameData.FrameIndex >= m_Options.ScreenshotFrames;
+	if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::G) || finishedFrames)
 	{
+		const std::string path = finishedFrames && !m_Options.ScreenshotPath.empty() ? m_Options.ScreenshotPath.string() : "img.png";
 		std::vector<uint8_t> imageData = m_ResourceAllocator->GetImageData(m_OutputImage.get());
-		std::string path = "img.png";
 		stbi_write_png(path.c_str(), m_OutputImage->GetImageSize().Width, m_OutputImage->GetImageSize().Height, 4, imageData.data(), m_OutputImage->GetImageSize().Width * 4);
-		RDN_LOG("Screenshot saved to disk");
+		RDN_LOG("Screenshot saved to {}", path);
+		if (finishedFrames)
+		{
+			const float seconds = elapsedTime - m_FirstFrameTime;
+			RDN_LOG("Rendered {} frames in {:.2f} s ({:.2f} ms per frame)", globalFrameData.FrameIndex, seconds, 1000.0f * seconds / globalFrameData.FrameIndex);
+			m_Window->SetClosed(true);
+			return;
+		}
 	}
 	if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F2))
 		m_LogRenderGraph = true;
 	if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F3))
 	{
 		RDN_LOG("{}", m_ResourceAllocator->DescribeMemoryUsage());
+	}
+	if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::P))
+	{
+		RDN_LOG("Camera: --camera {:.3f},{:.3f},{:.3f},{:.2f},{:.2f},{:.1f}", m_Camera->Position.x, m_Camera->Position.y, m_Camera->Position.z,
+			m_Camera->Yaw, m_Camera->Pitch, m_Camera->Fov);
 	}
 	if (elapsedTime >= m_NextShaderCheckTime)
 	{
@@ -286,6 +353,8 @@ void PathTracer::RenderFrame(float elapsedTime)
 	{
 		globalFrameData.FrameIndex = 1;
 	}
+	if (globalFrameData.FrameIndex == 1)
+		m_FirstFrameTime = elapsedTime;
 	
 	m_GlobalDataBuffer->Write(frameData->FrameIndex, globalFrameData);
 
@@ -380,4 +449,10 @@ void PathTracer::RecompileShaders()
 void PathTracer::WaitForFrameEnd()
 {
 
+}
+
+std::string PathTracer::GetStatus() const
+{
+	const Rdn::Extent3D size = m_OutputImage->GetImageSize();
+	return std::format("{}x{}, {} spp", size.Width, size.Height, globalFrameData.FrameIndex * globalFrameData.SamplesPerPixel);
 }

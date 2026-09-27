@@ -9,6 +9,7 @@ namespace Rdn
 	{
 		uint32_t FirstIndex = 0;
 		uint32_t TriangleCount = 0;
+		bool Opaque = true;
 	};
 
 	struct BottomLevelASDesc

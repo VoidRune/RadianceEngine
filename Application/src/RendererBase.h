@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 
 class RendererBase
 {
@@ -9,4 +10,5 @@ public:
 	virtual void SwapchainResized() {}
 	virtual void RecompileShaders() {}
 	virtual void WaitForFrameEnd() {}
+	virtual std::string GetStatus() const { return {}; }
 };

@@ -25,6 +25,7 @@ struct SurfaceMaterial
     float clearcoatRoughness;
     int medium;
     bool nullSurface;
+    bool thinWalled;
 };
 
 struct Bsdf
@@ -46,6 +47,8 @@ struct Bsdf
     float pMetal;
     float pGlass;
     float pDiffuse;
+    bool thin;
+    bool thinTransmission;
 };
 
 float FresnelDielectric(float cosThetaI, float eta)
@@ -197,13 +200,47 @@ bool SampleDielectric(vec3 wo, float alpha, float eta, vec3 u, out vec3 wi)
     return Refract(wo, wm, eta, wi) && wo.z * wi.z < 0.0;
 }
 
+float ThinSlabReflectance(float F)
+{
+    return 2.0 * F / (1.0 + F);
+}
+
+vec3 EvalThinDielectric(vec3 wo, vec3 wi, float alpha, float eta, vec3 tint, bool transmission, out float pdf)
+{
+    pdf = 0.0;
+    bool reflection = wo.z * wi.z > 0.0;
+    if (!reflection && !transmission)
+        return vec3(0.0);
+
+    vec3 o = vec3(wo.xy, abs(wo.z));
+    vec3 i = vec3(wi.xy, abs(wi.z));
+    vec3 h = normalize(o + i);
+    float oh = max(dot(o, h), 1e-8);
+    float reflectance = ThinSlabReflectance(FresnelDielectric(oh, eta));
+    float weight = reflection ? reflectance : 1.0 - reflectance;
+    pdf = (transmission ? weight : 1.0) * GgxVisiblePdf(o, h, alpha) / (4.0 * oh);
+    float value = weight * GgxD(h, alpha) * GgxG2(o, i, alpha) / (4.0 * o.z * i.z);
+    return reflection ? vec3(value) : tint * value;
+}
+
+float ThinPassProbability(SurfaceMaterial material, float cosTheta)
+{
+    if (!material.thinWalled || material.transmission <= 0.0 || max(material.roughness * material.roughness, MIN_ALPHA) > NEE_MIN_ALPHA)
+        return 0.0;
+    float F = FresnelDielectric(cosTheta, max(material.ior, 1.01));
+    float coat = material.clearcoat * FresnelDielectric(cosTheta, COAT_IOR);
+    return (1.0 - coat) * (1.0 - material.metallic) * material.transmission * (1.0 - F) / (1.0 + F);
+}
+
 Bsdf CreateBsdf(SurfaceMaterial material, vec3 wo)
 {
     Bsdf b;
     b.baseColor = material.baseColor;
     b.sheen = material.sheen;
-    b.glassTint = sqrt(max(material.baseColor, vec3(0.0)));
+    b.thin = material.thinWalled;
+    b.glassTint = b.thin ? material.baseColor : sqrt(max(material.baseColor, vec3(0.0)));
     b.alpha = max(material.roughness * material.roughness, MIN_ALPHA);
+    b.thinTransmission = b.thin && b.alpha > NEE_MIN_ALPHA;
     b.coatAlpha = max(material.clearcoatRoughness * material.clearcoatRoughness, MIN_ALPHA);
     b.ior = max(material.ior, 1.01);
     b.clearcoat = wo.z > 0.0 ? material.clearcoat : 0.0;
@@ -221,7 +258,7 @@ Bsdf CreateBsdf(SurfaceMaterial material, vec3 wo)
     float specularFresnel = FresnelDielectric(cosO, b.ior);
     b.pCoat = coatFresnel;
     b.pMetal = b.wMetal;
-    b.pGlass = b.wGlass;
+    b.pGlass = b.thin && !b.thinTransmission ? b.wGlass * ThinSlabReflectance(specularFresnel) : b.wGlass;
     b.pSpecular = b.wOpaque * specularFresnel;
     b.pDiffuse = b.wOpaque * (1.0 - specularFresnel);
     float total = b.pCoat + b.pMetal + b.pGlass + b.pSpecular + b.pDiffuse;
@@ -283,7 +320,9 @@ vec3 EvalBsdf(Bsdf b, vec3 wo, vec3 wi, vec3 ng, out float pdf)
     if (b.wGlass > 0.0)
     {
         float glassPdf;
-        f += b.wGlass * EvalDielectric(wo, wi, b.alpha, b.ior, b.glassTint, glassPdf);
+        vec3 glass = b.thin ? EvalThinDielectric(wo, wi, b.alpha, b.ior, b.glassTint, b.thinTransmission, glassPdf)
+                            : EvalDielectric(wo, wi, b.alpha, b.ior, b.glassTint, glassPdf);
+        f += b.wGlass * glass;
         pdf += b.pGlass * glassPdf;
     }
     return f;
@@ -314,7 +353,16 @@ bool SampleBsdf(Bsdf b, vec3 wo, vec3 ng, inout uint rng, out vec3 wi, out vec3 
     }
     else if (lobe < b.pCoat + b.pMetal + b.pSpecular + b.pGlass)
     {
-        if (!SampleDielectric(wo, b.alpha, b.ior, vec3(u, Random(rng)), wi))
+        if (b.thin)
+        {
+            vec3 m = SampleGgxVisibleNormal(o, b.alpha, u);
+            vec3 i = reflect(-o, m);
+            if (i.z <= 0.0)
+                return false;
+            bool transmit = b.thinTransmission && Random(rng) >= ThinSlabReflectance(FresnelDielectric(dot(o, m), b.ior));
+            wi = vec3(i.xy, (transmit ? -i.z : i.z) * side);
+        }
+        else if (!SampleDielectric(wo, b.alpha, b.ior, vec3(u, Random(rng)), wi))
             return false;
     }
     else

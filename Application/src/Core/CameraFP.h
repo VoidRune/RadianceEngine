@@ -26,9 +26,7 @@ public:
 	float Sensitivity = 0.3f;
 	float MovementSpeed = 2.0f;
 	float AspectRatio = 1.0f;
-	double LastMouseX;
-	double LastMouseY;
-	uint32_t HasMoved;
+	bool HasMoved = false;
 
 	glm::mat4 Projection;
 	glm::mat4 View;
