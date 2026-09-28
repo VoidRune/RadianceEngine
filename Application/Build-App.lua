@@ -12,6 +12,7 @@ project "Application"
 	dependson 
 	{
 		"RadianceEngine",
+		"TimbreAudio",
 	}
 
    	files
@@ -34,12 +35,14 @@ project "Application"
 
 
 		"../RadianceEngine/src",		
+		"../TimbreAudio/src",
 		"dependencies/glm",
    	}
 
    	links
    	{
       		"RadianceEngine",
+      		"TimbreAudio",
    	}
 
 

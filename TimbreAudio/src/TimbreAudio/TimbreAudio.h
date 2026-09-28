@@ -1,0 +1,10 @@
+#pragma once
+#include "TimbreAudio/AudioEngine.h"
+#include "TimbreAudio/Bus.h"
+#include "TimbreAudio/Effects.h"
+#include "TimbreAudio/FileSystem.h"
+#include "TimbreAudio/Snapshot.h"
+#include "TimbreAudio/Sound.h"
+#include "TimbreAudio/SoundContainer.h"
+#include "TimbreAudio/Types.h"
+#include "TimbreAudio/Voice.h"

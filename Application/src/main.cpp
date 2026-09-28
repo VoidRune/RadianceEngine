@@ -7,8 +7,11 @@
 #include <RadianceEngine/Core/Log.h>
 #include <RadianceEngine/Core/Timer.h>
 #include "PathTracer/PathTracer.h"
+#include <TimbreAudio/TimbreAudio.h>
 #include <charconv>
+#include <cmath>
 #include <format>
+#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -111,6 +114,151 @@ namespace
 		}
 		return options;
 	}
+
+	class AudioCheck
+	{
+	public:
+		AudioCheck()
+			: m_Engine(CreateConfig())
+		{
+			m_Music = m_Engine.CreateBus("Music");
+			m_World = m_Engine.CreateBus("World");
+			m_Reverb = m_Engine.CreateBus("Reverb", m_World);
+			auto reverb = std::make_shared<Timbre::Reverb>(0.8f, 0.4f, 1.0f);
+			reverb->SetDry(0.0f);
+			m_Reverb.AddEffect(reverb);
+			m_Music.SetDucking({ .Trigger = m_World, .VolumeDb = -10.0f });
+
+			Timbre::SoundDesc music;
+			music.Mode = Timbre::LoadMode::Stream;
+			music.Looping = true;
+			music.Bus = m_Music;
+			m_Ogg = m_Engine.LoadSound("res/Audio/Music.ogg", music);
+
+			Timbre::SoundDesc emitter = music;
+			emitter.Bus = m_World;
+			emitter.Sends = { { m_Reverb, 0.35f } };
+			m_Mp3 = m_Engine.LoadSound("res/Audio/Music.mp3", emitter);
+
+			Timbre::SoundDesc blip;
+			blip.PitchVariation = 1.0f;
+			m_Blips = Timbre::SoundContainer({ m_Engine.CreateSound(MakeBlip(660.0f), 1, 48000, blip),
+				m_Engine.CreateSound(MakeBlip(880.0f), 1, 48000, blip), m_Engine.CreateSound(MakeBlip(990.0f), 1, 48000, blip) },
+				Timbre::ContainerMode::Shuffle);
+			m_Muffle.Buses = { { m_Music, -6.0f, 700.0f }, { m_World, -6.0f, 700.0f } };
+			RDN_LOG("Audio keys: 1 music (ogg), 2 orbiting 3D music (mp3), 3 headphones, 4 muffle, 5 blip, M mute");
+		}
+
+		void Update(float time)
+		{
+			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::Key1))
+				Toggle(m_OggVoice, m_Ogg, {}, "Music.ogg");
+			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::Key2))
+			{
+				Timbre::PlayParams params;
+				params.Position = Orbit(time);
+				Toggle(m_Mp3Voice, m_Mp3, params, "Music.mp3 orbiting the listener");
+			}
+			if (m_Mp3Voice.IsPlaying())
+			{
+				const Timbre::Vec3 position = Orbit(time);
+				m_Mp3Voice.SetPosition(position);
+				m_Mp3Voice.SetVelocity({ 0.8f * position.z, 0.0f, -0.8f * position.x });
+			}
+			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::Key3))
+			{
+				const bool binaural = m_Engine.GetSpatialMode() == Timbre::SpatialMode::Panning;
+				m_Engine.SetSpatialMode(binaural ? Timbre::SpatialMode::Binaural : Timbre::SpatialMode::Panning);
+				RDN_LOG("Audio: {} spatialization", binaural ? "binaural (headphones)" : "panning (speakers)");
+			}
+			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::Key4))
+			{
+				if (m_Muffled.IsActive())
+					m_Muffled.Stop(0.5f);
+				else
+					m_Muffled = m_Engine.StartSnapshot(m_Muffle, 0.5f);
+				RDN_LOG("Audio: muffle snapshot {}", m_Muffled.IsActive() ? "on" : "off");
+			}
+			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::Key5))
+				m_Blips.Play();
+			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::M))
+			{
+				const Timbre::Bus master = m_Engine.GetMasterBus();
+				master.SetMuted(!master.IsMuted());
+				RDN_LOG("Audio: {}", master.IsMuted() ? "muted" : "unmuted");
+			}
+			m_Engine.Update();
+		}
+
+		std::string GetStatus() const
+		{
+			const Timbre::AudioStats stats = m_Engine.GetStats();
+			return std::format("audio {} voices {:.1f}%", stats.PlayingVoices, 100.0f * stats.CpuLoad);
+		}
+
+	private:
+		static Timbre::AudioEngineConfig CreateConfig()
+		{
+			Timbre::AudioEngineConfig config;
+			config.Log = [](Timbre::LogLevel level, std::string_view message)
+			{
+				switch (level)
+				{
+				case Timbre::LogLevel::Info:
+					RDN_LOG("Audio: {}", message);
+					break;
+				case Timbre::LogLevel::Warning:
+					RDN_LOG_WARNING("Audio: {}", message);
+					break;
+				case Timbre::LogLevel::Error:
+					RDN_LOG_ERROR("Audio: {}", message);
+					break;
+				}
+			};
+			return config;
+		}
+
+		static std::vector<float> MakeBlip(float frequency)
+		{
+			std::vector<float> samples(6000);
+			for (size_t i = 0; i < samples.size(); i++)
+			{
+				const float time = float(i) / 48000.0f;
+				samples[i] = 0.3f * std::sin(6.2831853f * frequency * time) * std::exp(-30.0f * time);
+			}
+			return samples;
+		}
+
+		static Timbre::Vec3 Orbit(float time)
+		{
+			return { 4.0f * std::sin(0.8f * time), 0.0f, 4.0f * std::cos(0.8f * time) };
+		}
+
+		static void Toggle(Timbre::Voice& voice, const Timbre::Sound& sound, Timbre::PlayParams params, std::string_view name)
+		{
+			if (voice.IsPlaying())
+			{
+				voice.Stop(1.0f);
+				RDN_LOG("Audio: stopped {}", name);
+				return;
+			}
+			params.FadeIn = 1.0f;
+			voice = sound.Play(params);
+			RDN_LOG("Audio: playing {}", name);
+		}
+
+		Timbre::AudioEngine m_Engine;
+		Timbre::Bus m_Music;
+		Timbre::Bus m_World;
+		Timbre::Bus m_Reverb;
+		Timbre::Sound m_Ogg;
+		Timbre::Sound m_Mp3;
+		Timbre::Voice m_OggVoice;
+		Timbre::Voice m_Mp3Voice;
+		Timbre::SoundContainer m_Blips;
+		Timbre::SnapshotDesc m_Muffle;
+		Timbre::Snapshot m_Muffled;
+	};
 }
 
 int currentRendererId = -1;
@@ -137,7 +285,7 @@ void GetRenderer(int rendererId, std::unique_ptr<RendererBase>& renderer, const 
 int main(int argc, char** argv)
 {
 	Rdn::WindowDescription windowDesc;
-	windowDesc.Title = "Arcane Vulkan renderer";
+	windowDesc.Title = "Vulkan renderer";
 	windowDesc.Width = 1280;
 	windowDesc.Height = 720;
 	windowDesc.Fullscreen = false;
@@ -158,6 +306,7 @@ int main(int argc, char** argv)
 
 	std::unique_ptr<RendererBase> renderer;
 	GetRenderer(1, renderer, options, window.get(), device.get(), presentQueue.get(), resourceAllocator.get(), renderGraph.get());
+	AudioCheck audio;
 
 	Rdn::Timer timer;
 	double nextTitleTime = 0.0;
@@ -180,6 +329,7 @@ int main(int argc, char** argv)
 			presentQueue->SetPresentMode(presentQueue->GetPresentMode() == Rdn::PresentMode::Fifo ? Rdn::PresentMode::Mailbox : Rdn::PresentMode::Fifo);
 		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F5))
 			renderer->RecompileShaders();
+		audio.Update(float(timer.ElapsedSeconds()));
 
 		if (presentQueue->NeedsRecreate())
 		{
@@ -199,7 +349,7 @@ int main(int argc, char** argv)
 		renderedFrames++;
 		if (frameStart >= nextTitleTime)
 		{
-			window->SetTitle(std::format("{} | {} | {:.2f} ms", windowDesc.Title, renderer->GetStatus(), 1000.0 * renderSeconds / renderedFrames));
+			window->SetTitle(std::format("{} | {} | {:.2f} ms | {}", windowDesc.Title, renderer->GetStatus(), 1000.0 * renderSeconds / renderedFrames, audio.GetStatus()));
 			nextTitleTime = frameStart + 0.25;
 			renderSeconds = 0.0;
 			renderedFrames = 0;

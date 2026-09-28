@@ -6,4 +6,5 @@ workspace "RadianceEngine"
 	multiprocessorcompile "On"
 
 include "RadianceEngine/Build-Engine.lua"
+include "TimbreAudio/Build-TimbreAudio.lua"
 include "Application/Build-App.lua"

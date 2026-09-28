@@ -1,6 +1,7 @@
 # Folders
 build/
 bin/windows-x86_64/RadianceEngine/
+bin/windows-x86_64/Timbre/
 
 # Extensions
 **.raw
@@ -12,6 +13,7 @@ bin/windows-x86_64/RadianceEngine/
 .vs/
 .vscode/
 **.sln
+**.slnx
 **.vcxproj
 **.vcxproj.filters
 **.vcxproj.user
