@@ -117,7 +117,7 @@ namespace Rdn::ShaderCompiler
 		bool CompileSource(const std::string& source, const StageInfo& stage, const std::string& name, ShaderDesc& shaderDesc)
 		{
 			shaderc::CompileOptions options;
-			options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_4);
+			options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 			options.SetPreserveBindings(true);
 #if defined(DEBUG)
 			options.SetGenerateDebugInfo();

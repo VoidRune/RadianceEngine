@@ -39,6 +39,14 @@ namespace Rdn
     inline constexpr uint32_t RemainingMips = ~0U;
     inline constexpr uint32_t RemainingLayers = ~0U;
 
+    enum class DeviceCapability : uint32_t
+    {
+        None = 0,
+        RayTracing = 0x00000001,
+    };
+    DEFINE_ENUM_FLAGS_OR(DeviceCapability)
+    DEFINE_ENUM_FLAGS_AND(DeviceCapability)
+
     struct Extent2D
     {
         uint32_t Width = 0;

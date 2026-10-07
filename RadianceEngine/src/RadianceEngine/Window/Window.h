@@ -41,6 +41,8 @@ namespace Rdn
 		bool IsFullscreen() const { return m_IsFullscreen; }
 		bool IsMinimized() const;
 		void SetTitle(const std::string& title);
+		std::string GetClipboardText() const;
+		void SetClipboardText(const std::string& text);
 		void SetCursorMode(CursorMode mode);
 		CursorMode GetCursorMode() const { return m_CursorMode; }
 

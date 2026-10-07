@@ -9,13 +9,14 @@ namespace Rdn
 {
 	namespace
 	{
-		DeviceProperties QueryDeviceProperties(VkPhysicalDevice physicalDevice)
+		DeviceProperties QueryDeviceProperties(VkPhysicalDevice physicalDevice, DeviceCapability capabilities)
 		{
 			VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationStructureProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR };
 			VkPhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
 			rayTracingProperties.pNext = &accelerationStructureProperties;
 			VkPhysicalDeviceDriverProperties driverProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES };
-			driverProperties.pNext = &rayTracingProperties;
+			if (HasAny(capabilities & DeviceCapability::RayTracing))
+				driverProperties.pNext = &rayTracingProperties;
 			VkPhysicalDeviceProperties2 properties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 			properties.pNext = &driverProperties;
 			vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
@@ -50,7 +51,6 @@ namespace Rdn
 		InstanceCreateInfo instanceCreateInfo = {
 			.applicationName = "Application",
 			.engineName = "Radiance Renderer",
-			.apiVersion = ApiVersion(1, 4),
 			.instanceExtensions = config.InstanceExtensions,
 			.enableValidationLayers = config.EnableValidation
 		};
@@ -73,16 +73,19 @@ namespace Rdn
 		PhysicalDeviceSelectInfo physicalDeviceSelectInfo = {
 			.instance = m_Instance,
 			.surface = m_Surface,
+			.requiredCapabilities = config.RequiredCapabilities,
 		};
 		PhysicalDeviceSelection selection = SelectPhysicalDevice(physicalDeviceSelectInfo);
 		m_PhysicalDevice = selection.physicalDevice;
-		m_Properties = QueryDeviceProperties(toVk(m_PhysicalDevice));
+		m_Capabilities = selection.capabilities;
+		m_Properties = QueryDeviceProperties(toVk(m_PhysicalDevice), m_Capabilities);
 
 		m_FramesInFlight = std::max(config.FramesInFlight, 1u);
 
 		DeviceCreateInfo deviceCreateInfo = {
 			.physicalDevice = m_PhysicalDevice,
-			.queueFamilyIndices = selection.queueFamilyIndices
+			.queueFamilyIndices = selection.queueFamilyIndices,
+			.capabilities = m_Capabilities
 		};
 		DeviceOutput device = CreateLogicalDeviceHandle(deviceCreateInfo);
 		m_LogicalDevice = device.device;
@@ -120,9 +123,10 @@ namespace Rdn
 		FenceCreateInfo fenceInfo = { .logicalDevice = m_LogicalDevice };
 		m_ImmediateFence = CreateFenceHandle(fenceInfo);
 
-		RDN_LOG("GPU: {} ({}, Vulkan {}.{}.{}, {} MiB device local{})", m_Properties.Name, m_Properties.Driver,
+		const std::string capabilities = GetDeviceCapabilityNames(m_Capabilities);
+		RDN_LOG("GPU: {} ({}, Vulkan {}.{}.{}, {} MiB device local{}{})", m_Properties.Name, m_Properties.Driver,
 			VK_API_VERSION_MAJOR(m_Properties.ApiVersion), VK_API_VERSION_MINOR(m_Properties.ApiVersion), VK_API_VERSION_PATCH(m_Properties.ApiVersion),
-			m_Properties.DeviceLocalMemory >> 20, instance.validationEnabled ? ", validation on" : "");
+			m_Properties.DeviceLocalMemory >> 20, capabilities.empty() ? "" : ", " + capabilities, instance.validationEnabled ? ", validation on" : "");
 	}
 
 	Device::~Device()
@@ -156,6 +160,15 @@ namespace Rdn
 	bool Device::IsExtensionEnabled(std::string_view extension) const
 	{
 		return std::ranges::find(m_EnabledExtensions, extension) != m_EnabledExtensions.end();
+	}
+
+	void Device::Require(DeviceCapability capability, std::string_view user, std::source_location location) const
+	{
+		if (Supports(capability))
+			return;
+
+		Log(LogLevel::Fatal, location, "{} needs {}, which {} does not support", user, GetDeviceCapabilityNames(capability & ~m_Capabilities), m_Properties.Name);
+		std::abort();
 	}
 
 	void Device::ImmediateSubmit(std::function<void(CommandBuffer&)> fn)

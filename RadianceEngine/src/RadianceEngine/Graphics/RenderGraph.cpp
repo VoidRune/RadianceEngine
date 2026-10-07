@@ -500,6 +500,8 @@ namespace Rdn
             RDN_LOG_ERROR("RenderGraph: pass '{}' added after Execute(), call Reset() first", name);
             return;
         }
+        if (type == PassType::RayTracing)
+            m_Device->Require(DeviceCapability::RayTracing, std::format("RenderGraph pass '{}'", name));
 
         Pass& pass = m_Passes.emplace_back();
         pass.Name = std::move(name);

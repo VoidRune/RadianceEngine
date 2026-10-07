@@ -295,6 +295,7 @@ int main(int argc, char** argv)
 	Rdn::DeviceConfig deviceConfig;
 	deviceConfig.WindowHandle = window->GetHandle();
 	deviceConfig.InstanceExtensions = window->GetInstanceExtensions();
+	deviceConfig.RequiredCapabilities = Rdn::DeviceCapability::RayTracing;
 	deviceConfig.FramesInFlight = 2;
 	deviceConfig.EnableValidation = options.Validation;
 	auto device = std::make_unique<Rdn::Device>(deviceConfig);

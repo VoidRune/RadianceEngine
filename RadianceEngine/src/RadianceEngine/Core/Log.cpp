@@ -47,6 +47,13 @@ namespace Rdn
             return GetConsoleMode(console, &mode) && SetConsoleMode(console, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
         }
 
+        std::string FormatLocation(const std::source_location& location)
+        {
+            std::string_view file = location.file_name();
+            file.remove_prefix(file.find_last_of("/\\") + 1);
+            return std::format("{}:{}", file, location.line());
+        }
+
         std::string FormatLine(LogLevel level, const std::source_location& location, std::string_view message)
         {
             const auto now = std::chrono::system_clock::now();
@@ -59,12 +66,16 @@ namespace Rdn
                 local.tm_mday, local.tm_mon + 1, local.tm_year + 1900, local.tm_hour, local.tm_min, local.tm_sec, milliseconds,
                 LevelName(level), message);
             if (level == LogLevel::Fatal)
-            {
-                std::string_view file = location.file_name();
-                file.remove_prefix(file.find_last_of("/\\") + 1);
-                line += std::format(" ({}:{})", file, location.line());
-            }
+                line += std::format(" ({})", FormatLocation(location));
             return line;
+        }
+
+        void ShowFatalMessage(const std::source_location& location, std::string_view message)
+        {
+            const std::string text = std::format("{}\n\n({})", message, FormatLocation(location));
+            std::wstring wide(MultiByteToWideChar(CP_UTF8, 0, text.data(), int(text.size()), nullptr, 0), L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, text.data(), int(text.size()), wide.data(), int(wide.size()));
+            MessageBoxW(nullptr, wide.c_str(), L"Fatal error", MB_OK | MB_ICONERROR | MB_TOPMOST | MB_SETFOREGROUND);
         }
     }
 
@@ -104,5 +115,9 @@ namespace Rdn
 
         if (level == LogLevel::Fatal && debugger)
             __debugbreak();
+#if defined(DIST)
+        if (level == LogLevel::Fatal)
+            ShowFatalMessage(location, message);
+#endif
     }
 }

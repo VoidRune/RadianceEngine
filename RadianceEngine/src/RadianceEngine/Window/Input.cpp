@@ -1,5 +1,6 @@
 #include "Input.h"
 #include <bitset>
+#include <vector>
 
 namespace Rdn
 {
@@ -17,6 +18,7 @@ namespace Rdn
 		double s_MouseDeltaY = 0.0;
 		double s_ScrollX = 0.0;
 		double s_ScrollY = 0.0;
+		std::vector<uint32_t> s_Characters;
 
 		bool Test(const std::bitset<KeyCount>& keys, KeyCode keyCode)
 		{
@@ -33,6 +35,12 @@ namespace Rdn
 		s_MouseDeltaY = 0.0;
 		s_ScrollX = 0.0;
 		s_ScrollY = 0.0;
+		s_Characters.clear();
+	}
+
+	void Input::AddCharacter(uint32_t codepoint)
+	{
+		s_Characters.push_back(codepoint);
 	}
 
 	void Input::SetKey(int key, bool isDown)
@@ -78,4 +86,5 @@ namespace Rdn
 	float Input::GetMouseDeltaY() { return static_cast<float>(s_MouseDeltaY); }
 	float Input::GetScrollVertical() { return static_cast<float>(s_ScrollY); }
 	float Input::GetScrollHorizontal() { return static_cast<float>(s_ScrollX); }
+	std::span<const uint32_t> Input::GetTypedCharacters() { return s_Characters; }
 }

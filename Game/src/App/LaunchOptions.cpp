@@ -1,0 +1,244 @@
+#include "LaunchOptions.h"
+#include <GameShared/Net/Protocol.h>
+#include <RadianceEngine/Core/Log.h>
+#include <algorithm>
+#include <cctype>
+#include <charconv>
+#include <iterator>
+#include <string_view>
+
+namespace Game
+{
+	namespace
+	{
+		template<typename T>
+		bool ParseNumber(std::string_view text, T& value)
+		{
+			const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+			return error == std::errc() && end == text.data() + text.size();
+		}
+
+		bool SameText(std::string_view a, std::string_view b)
+		{
+			return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return std::tolower(uint8_t(x)) == std::tolower(uint8_t(y)); });
+		}
+
+		bool ParseMap(std::string_view text, MapKind& map)
+		{
+			for (const MapDef& def : Maps)
+				if (IsMissionMap(def.Id) && (SameText(def.Name, text) || (def.Id == MapKind::Town && SameText(text, "town"))))
+				{
+					map = def.Id;
+					return true;
+				}
+			return false;
+		}
+
+		bool ParseModifiers(std::string_view text, ModifierMask& mask)
+		{
+			mask = 0;
+			while (!text.empty())
+			{
+				const size_t comma = text.find(',');
+				const std::string_view name = text.substr(0, comma);
+				const auto it = std::find_if(std::begin(MissionModifiers), std::end(MissionModifiers), [&](const ModifierDef& def) { return SameText(def.Name, name); });
+				if (it == std::end(MissionModifiers))
+					return false;
+				mask |= ModifierMask(1u << uint32_t(it->Id));
+				text = comma == std::string_view::npos ? std::string_view() : text.substr(comma + 1);
+			}
+			return true;
+		}
+
+		bool ParseRoyaleMap(std::string_view text, MapKind& map)
+		{
+			if (SameText(text, "ashlands") || SameText(text, GetMapDef(MapKind::Ashlands).Name))
+			{
+				map = MapKind::Ashlands;
+				return true;
+			}
+			return ParseMap(text, map);
+		}
+
+		bool ParseKit(std::string_view text, StarterKit& kit)
+		{
+			for (const KitDef& def : Kits)
+			{
+				if (SameText(def.Name, text))
+				{
+					kit = def.Id;
+					return true;
+				}
+			}
+			return false;
+		}
+	}
+
+	LaunchOptions ParseLaunchOptions(int argc, char** argv)
+	{
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation]";
+		LaunchOptions options;
+		for (int i = 1; i < argc; i++)
+		{
+			const std::string_view argument = argv[i];
+			const bool hasValue = i + 1 < argc && std::string_view(argv[i + 1]).substr(0, 2) != "--";
+			const std::string_view value = hasValue ? std::string_view(argv[i + 1]) : std::string_view();
+			bool valid = true;
+			if (argument == "--host")
+			{
+				uint16_t port = DefaultPort;
+				if (hasValue && ParseNumber(value, port))
+					i++;
+				options.HostPort = port;
+			}
+			else if (argument == "--join" && hasValue)
+			{
+				options.JoinAddress = std::string(value);
+				i++;
+			}
+			else if (argument == "--name" && hasValue)
+			{
+				options.Name = std::string(value);
+				i++;
+			}
+			else if (argument == "--lag" && hasValue)
+			{
+				valid = ParseNumber(value, options.Simulation.LagMs);
+				i++;
+			}
+			else if (argument == "--loss" && hasValue)
+			{
+				valid = ParseNumber(value, options.Simulation.LossPercent);
+				i++;
+			}
+			else if ((argument == "--kit" || argument == "--class") && hasValue)
+			{
+				StarterKit kit = StarterKit::Arcanist;
+				valid = ParseKit(value, kit);
+				if (valid)
+					options.Kit = kit;
+				i++;
+			}
+			else if (argument == "--map" && hasValue)
+			{
+				MapKind map = MapKind::Town;
+				valid = ParseMap(value, map);
+				if (valid)
+					options.Map = map;
+				i++;
+			}
+			else if (argument == "--mission" || argument == "--horde")
+			{
+				options.StartMode = argument == "--mission" ? GameMode::Mission : GameMode::Horde;
+				MapKind map = MapKind::Town;
+				if (hasValue && ParseMap(value, map))
+				{
+					options.Map = map;
+					i++;
+				}
+			}
+			else if (argument == "--arena")
+			{
+				options.StartMode = GameMode::Arena;
+				options.Map = MapKind::Crucible;
+				if (hasValue && (value == "teams" || value == "ffa"))
+				{
+					options.Rules.Teams = value == "teams";
+					i++;
+				}
+			}
+			else if (argument == "--royale")
+			{
+				options.StartMode = GameMode::Royale;
+				MapKind map = MapKind::Ashlands;
+				if (hasValue && ParseRoyaleMap(value, map))
+					i++;
+				options.Map = map;
+			}
+			else if (argument == "--goal" && hasValue)
+			{
+				uint32_t goal = 0;
+				valid = ParseNumber(value, goal) && goal >= MinScoreGoal && goal <= MaxScoreGoal;
+				if (valid)
+					options.Rules.ScoreGoal = uint8_t(goal);
+				i++;
+			}
+			else if (argument == "--minutes" && hasValue)
+			{
+				uint32_t minutes = 0;
+				valid = ParseNumber(value, minutes) && minutes >= MinMatchMinutes && minutes <= MaxMatchMinutes;
+				if (valid)
+					options.Rules.Minutes = uint8_t(minutes);
+				i++;
+			}
+			else if (argument == "--tier" && hasValue)
+			{
+				uint32_t tier = 1;
+				valid = ParseNumber(value, tier) && tier >= 1 && tier <= MaxMissionTier;
+				if (valid)
+					options.Tier = uint8_t(tier);
+				i++;
+			}
+			else if ((argument == "--mods" || argument == "--modifiers") && hasValue)
+			{
+				valid = ParseModifiers(value, options.Modifiers);
+				i++;
+			}
+			else if (argument == "--unlimited-materials" || argument == "--unlimited")
+				options.UnlimitedMaterials = true;
+			else if (argument == "--volume" && hasValue)
+			{
+				float volume = 1.0f;
+				valid = ParseNumber(value, volume) && volume >= 0.0f && volume <= 1.0f;
+				if (valid)
+					options.Volume = volume;
+				i++;
+			}
+			else if (argument == "--start-wave" && hasValue)
+			{
+				valid = ParseNumber(value, options.FirstWave) && options.FirstWave >= 1 && options.FirstWave <= 99;
+				i++;
+			}
+			else if (argument == "--loot-rate" && hasValue)
+			{
+				float rate = 1.0f;
+				valid = ParseNumber(value, rate) && rate >= 0.0f && rate <= 100.0f;
+				if (valid)
+					options.LootRate = rate;
+				i++;
+			}
+			else if (argument == "--mute")
+				options.Muted = true;
+			else if (argument == "--peaceful")
+				options.Peaceful = true;
+			else if (argument == "--no-save")
+				options.SaveProfile = false;
+			else if (argument == "--new-character")
+				options.NewCharacter = true;
+			else if (argument == "--export-props")
+				options.ExportProps = true;
+			else if (argument == "--no-validation")
+				options.Validation = false;
+			else if (argument == "--screenshot" && hasValue)
+			{
+				options.ScreenshotPath = std::string(value);
+				i++;
+			}
+			else if (argument == "--frames" && hasValue)
+			{
+				valid = ParseNumber(value, options.ScreenshotFrames);
+				i++;
+			}
+			else if (argument == "--delay" && hasValue)
+			{
+				valid = ParseNumber(value, options.ScreenshotDelay) && options.ScreenshotDelay >= 0.0f;
+				i++;
+			}
+			else
+				valid = false;
+			if (!valid)
+				RDN_LOG_ERROR("Ignoring the invalid argument {} ({})", argument, usage);
+		}
+		return options;
+	}
+}

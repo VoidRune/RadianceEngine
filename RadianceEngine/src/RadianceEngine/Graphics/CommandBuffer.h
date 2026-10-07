@@ -89,6 +89,7 @@ namespace Rdn
         void EndRendering();
         void SetViewport(const Extent2D area);
         void SetScissors(const Extent2D area);
+        void SetScissor(int32_t x, int32_t y, uint32_t width, uint32_t height);
 
         void BindPipeline(PipelineHandle pipeline);
         void BindComputePipeline(PipelineHandle pipeline);

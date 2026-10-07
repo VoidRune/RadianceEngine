@@ -131,6 +131,12 @@ namespace Rdn
         vkCmdSetScissor(toVk(m_Handle), 0, 1, &scissor);
     }
 
+    void CommandBuffer::SetScissor(int32_t x, int32_t y, uint32_t width, uint32_t height)
+    {
+        const VkRect2D scissor = { { x, y }, { width, height } };
+        vkCmdSetScissor(toVk(m_Handle), 0, 1, &scissor);
+    }
+
     void CommandBuffer::BindPipeline(PipelineHandle pipeline)
     {
         vkCmdBindPipeline(toVk(m_Handle), VK_PIPELINE_BIND_POINT_GRAPHICS, toVk(pipeline));
@@ -163,7 +169,7 @@ namespace Rdn
     void CommandBuffer::PushDescriptorSets(PipelineBindPoint bindPoint, PipelineLayoutHandle layout, uint32_t set, const DescriptorWrite& descriptorWrite)
     {
         const VulkanDescriptorWrites writes(descriptorWrite, VK_NULL_HANDLE);
-        vkCmdPushDescriptorSet(toVk(m_Handle), toVk(bindPoint), toVk(layout), set, uint32_t(writes.Writes.size()), writes.Writes.data());
+        vkCmdPushDescriptorSetKHR(toVk(m_Handle), toVk(bindPoint), toVk(layout), set, uint32_t(writes.Writes.size()), writes.Writes.data());
     }
 
     void CommandBuffer::PushConstants(ShaderStage shaderStage, PipelineLayoutHandle layout, const void* data, uint32_t size, uint32_t offset)

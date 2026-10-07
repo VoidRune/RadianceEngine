@@ -20,8 +20,10 @@ project "Application"
 		"src/**.h",
 		"src/**.cpp",
 		"dependencies/**.hpp",
-		"dependencies/stb/**.h",
-		"dependencies/stb/**.cpp",
+		"../Dependencies/stb/stb_image.h",
+		"../Dependencies/stb/stb_image.cpp",
+		"../Dependencies/stb/stb_image_write.h",
+		"../Dependencies/stb/stb_image_write.cpp",
         "dependencies/tiny_obj_loader/**.h",
 		"dependencies/tiny_obj_loader/**.cpp",
     	--"dependencies/tinygltf/**.h",
@@ -34,9 +36,9 @@ project "Application"
 		"dependencies",
 
 
-		"../RadianceEngine/src",		
+		"../RadianceEngine/src",
 		"../TimbreAudio/src",
-		"dependencies/glm",
+		"../Dependencies",
    	}
 
    	links
@@ -45,6 +47,9 @@ project "Application"
       		"TimbreAudio",
    	}
 
+
+	filter "files:../Dependencies/**.cpp"
+		warnings "Off"
 
    	filter "system:windows"
        		systemversion "latest"

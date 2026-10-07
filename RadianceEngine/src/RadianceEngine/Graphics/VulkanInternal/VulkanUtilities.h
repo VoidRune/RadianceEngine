@@ -6,6 +6,7 @@
 #include <VulkanMemoryAllocator/vk_mem_alloc.h>
 #include <cstdlib>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace Rdn
@@ -143,18 +144,13 @@ namespace Rdn
 		uint32_t PresentIndex = uint32_t(-1);
 	};
 
-	struct ApiVersion
-	{
-		uint32_t Major = 0;
-		uint32_t Minor = 0;
-	};
+	inline constexpr uint32_t TargetVulkanVersion = VK_API_VERSION_1_3;
 
 	/* INSTANCE */
 	struct InstanceCreateInfo
 	{
 		const char* applicationName = "";
 		const char* engineName = "";
-		ApiVersion apiVersion = ApiVersion(1, 3);
 		std::span<const char* const> instanceExtensions = {};
 		bool enableValidationLayers = false;
 	};
@@ -188,20 +184,24 @@ namespace Rdn
 	{
 		InstanceHandle instance = {};
 		SurfaceHandle surface = {};
+		DeviceCapability requiredCapabilities = DeviceCapability::None;
 	};
 
 	struct PhysicalDeviceSelection
 	{
 		PhysicalDeviceHandle physicalDevice = {};
 		QueueFamilyIndices queueFamilyIndices = {};
+		DeviceCapability capabilities = DeviceCapability::None;
 	};
 	PhysicalDeviceSelection SelectPhysicalDevice(const PhysicalDeviceSelectInfo& info);
+	std::string GetDeviceCapabilityNames(DeviceCapability capabilities);
 
 	/* LOGICAL DEVICE */
 	struct DeviceCreateInfo
 	{
 		PhysicalDeviceHandle physicalDevice = {};
 		QueueFamilyIndices queueFamilyIndices = {};
+		DeviceCapability capabilities = DeviceCapability::None;
 	};
 
 	struct DeviceOutput

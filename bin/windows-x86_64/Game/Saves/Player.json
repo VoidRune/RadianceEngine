@@ -1,0 +1,1403 @@
+{
+	"backpack": [
+		{
+			"affixes": [
+				{
+					"stat": "Regeneration",
+					"tier": 5,
+					"value": 6.26673
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 5,
+					"value": 0.04593
+				},
+				{
+					"stat": "ColdDamage",
+					"tier": 5,
+					"value": 0.34501
+				},
+				{
+					"stat": "CritChance",
+					"tier": 5,
+					"value": 0.14644
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 5,
+					"value": 7.61142
+				}
+			],
+			"base": "Ring",
+			"level": 30,
+			"power": 7.97821,
+			"rarity": "Mythic"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "MaxHealth",
+					"tier": 1,
+					"value": 15.51746
+				},
+				{
+					"stat": "MoveSpeed",
+					"tier": 1,
+					"value": 0.05279
+				}
+			],
+			"base": "Boots",
+			"level": 30,
+			"power": 8.25257,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdResist",
+					"tier": 3,
+					"value": 0.15184
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 1,
+					"value": 10.41098
+				},
+				{
+					"stat": "CooldownRecovery",
+					"tier": 1,
+					"value": 0.08039
+				},
+				{
+					"stat": "Armor",
+					"tier": 3,
+					"value": 25.6824
+				}
+			],
+			"base": "Hood",
+			"level": 30,
+			"power": 8.5298,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CastSpeed",
+					"tier": 3,
+					"value": 0.11985
+				},
+				{
+					"stat": "ColdResist",
+					"tier": 2,
+					"value": 0.08853
+				},
+				{
+					"stat": "FireResist",
+					"tier": 3,
+					"value": 0.14081
+				}
+			],
+			"base": "WizardHat",
+			"level": 28,
+			"power": 7.24733,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdDamage",
+					"tier": 5,
+					"value": 0.30904
+				},
+				{
+					"stat": "CritChance",
+					"tier": 5,
+					"value": 0.13111
+				},
+				{
+					"stat": "ExtraProjectiles",
+					"tier": 5,
+					"value": 2.0
+				},
+				{
+					"stat": "LightningDamage",
+					"tier": 5,
+					"value": 0.34718
+				},
+				{
+					"stat": "FireDamage",
+					"tier": 5,
+					"value": 0.29662
+				}
+			],
+			"base": "Wand",
+			"level": 28,
+			"power": 6.78374,
+			"rarity": "Mythic"
+		},
+		{
+			"base": "Gem",
+			"corrupted": true,
+			"level": 20,
+			"quality": 20,
+			"skill": "Meteor"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "MoveSpeed",
+					"tier": 5,
+					"value": 0.15734
+				},
+				{
+					"stat": "FireResist",
+					"tier": 5,
+					"value": 0.29717
+				},
+				{
+					"stat": "LightningResist",
+					"tier": 5,
+					"value": 0.28856
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 5,
+					"value": 114.36385
+				},
+				{
+					"stat": "Armor",
+					"tier": 5,
+					"value": 111.10344
+				}
+			],
+			"base": "Sandals",
+			"level": 28,
+			"power": 7.18961,
+			"rarity": "Mythic"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "FireDamage",
+					"tier": 5,
+					"value": 0.38954
+				},
+				{
+					"stat": "Regeneration",
+					"tier": 5,
+					"value": 5.12242
+				},
+				{
+					"stat": "CritChance",
+					"tier": 5,
+					"value": 0.11437
+				},
+				{
+					"stat": "ColdDamage",
+					"tier": 5,
+					"value": 0.3761
+				},
+				{
+					"stat": "Damage",
+					"tier": 5,
+					"value": 0.22381
+				}
+			],
+			"base": "Amulet",
+			"level": 30,
+			"power": 7.78674,
+			"rarity": "Mythic"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "PoisonResist",
+					"tier": 5,
+					"value": 0.24533
+				},
+				{
+					"stat": "CooldownRecovery",
+					"tier": 5,
+					"value": 0.25339
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 5,
+					"value": 7.26643
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 5,
+					"value": 0.18745
+				},
+				{
+					"stat": "ColdResist",
+					"tier": 5,
+					"value": 0.27273
+				}
+			],
+			"base": "WizardHat",
+			"level": 28,
+			"power": 6.78689,
+			"rarity": "Mythic"
+		},
+		{
+			"base": "Gem",
+			"level": 20,
+			"quality": 20,
+			"skill": "ChainLightning"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "FireResist",
+					"tier": 1,
+					"value": 0.07393
+				}
+			],
+			"base": "Boots",
+			"level": 28,
+			"power": 7.27834,
+			"rarity": "Uncommon"
+		},
+		{
+			"base": "Gem",
+			"level": 4,
+			"skill": "Blink"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "AttackSpeed",
+					"tier": 5,
+					"value": 0.2179
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 5,
+					"value": 0.05332
+				},
+				{
+					"stat": "Damage",
+					"tier": 5,
+					"value": 0.24921
+				},
+				{
+					"stat": "AreaSize",
+					"tier": 5,
+					"value": 0.34902
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 5,
+					"value": 0.21875
+				}
+			],
+			"base": "Crossbow",
+			"level": 28,
+			"power": 7.0795,
+			"rarity": "Mythic"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "PhysicalDamage",
+					"tier": 1,
+					"value": 0.08519
+				},
+				{
+					"stat": "LightningDamage",
+					"tier": 2,
+					"value": 0.12907
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 3,
+					"value": 0.11199
+				}
+			],
+			"base": "Axe",
+			"level": 28,
+			"power": 6.93741,
+			"rarity": "Rare"
+		},
+		{
+			"base": "Gem",
+			"corrupted": true,
+			"level": 19,
+			"quality": 20,
+			"skill": "Fireball"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "LightningResist",
+					"tier": 5,
+					"value": 0.29889
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 5,
+					"value": 7.74418
+				},
+				{
+					"stat": "ColdResist",
+					"tier": 5,
+					"value": 0.30516
+				},
+				{
+					"stat": "Regeneration",
+					"tier": 5,
+					"value": 6.74244
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 5,
+					"value": 105.74982
+				}
+			],
+			"base": "Robe",
+			"level": 30,
+			"power": 8.52108,
+			"rarity": "Mythic"
+		}
+	],
+	"gear": {
+		"amulet": {
+			"affixes": [
+				{
+					"stat": "MaxHealth",
+					"tier": 3,
+					"value": 48.50858
+				},
+				{
+					"stat": "CritDamage",
+					"tier": 1,
+					"value": 0.15721
+				}
+			],
+			"base": "Amulet",
+			"level": 28,
+			"power": 7.08367,
+			"rarity": "Uncommon"
+		},
+		"body": null,
+		"feet": null,
+		"head": null,
+		"ring1": {
+			"affixes": [
+				{
+					"stat": "CritChance",
+					"tier": 5,
+					"value": 0.15312
+				},
+				{
+					"stat": "LightningDamage",
+					"tier": 5,
+					"value": 0.38484
+				},
+				{
+					"stat": "AttackSpeed",
+					"tier": 5,
+					"value": 0.19762
+				},
+				{
+					"stat": "FireDamage",
+					"tier": 5,
+					"value": 0.38598
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 5,
+					"value": 0.05175
+				}
+			],
+			"base": "Ring",
+			"level": 30,
+			"power": 8.36603,
+			"rarity": "Mythic"
+		},
+		"ring2": null,
+		"weapon": {
+			"affixes": [
+				{
+					"stat": "FireDamage",
+					"tier": 5,
+					"value": 0.34029
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 5,
+					"value": 0.20065
+				},
+				{
+					"stat": "ColdDamage",
+					"tier": 5,
+					"value": 0.36772
+				},
+				{
+					"stat": "LightningDamage",
+					"tier": 5,
+					"value": 0.2959
+				},
+				{
+					"stat": "CritChance",
+					"tier": 5,
+					"value": 0.15074
+				}
+			],
+			"base": "Staff",
+			"level": 30,
+			"power": 7.74243,
+			"rarity": "Mythic"
+		}
+	},
+	"gems": [
+		{
+			"base": "Gem",
+			"corrupted": true,
+			"level": 20,
+			"mod": "Ruthless",
+			"quality": 20,
+			"skill": "FrostNova"
+		},
+		{
+			"base": "Gem",
+			"level": 4,
+			"skill": "Rejuvenate"
+		},
+		{
+			"base": "Gem",
+			"level": 5,
+			"skill": "Rejuvenate"
+		}
+	],
+	"kit": "Arcanist",
+	"materials": {
+		"arcaneDust": 123,
+		"gold": 54790,
+		"shards": 175,
+		"starsteel": 33,
+		"voidShards": 7
+	},
+	"name": "Player",
+	"stash": [
+		{
+			"affixes": [
+				{
+					"stat": "CooldownRecovery",
+					"tier": 1,
+					"value": 0.07395
+				},
+				{
+					"stat": "FireDamage",
+					"tier": 1,
+					"value": 0.08313
+				}
+			],
+			"base": "Sword",
+			"level": 1,
+			"power": 0.95319,
+			"rarity": "Uncommon"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ManaRegen",
+					"tier": 4,
+					"value": 4.25824
+				},
+				{
+					"stat": "FireResist",
+					"tier": 2,
+					"value": 0.0986
+				}
+			],
+			"base": "Plate",
+			"level": 28,
+			"power": 6.99239,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CritDamage",
+					"tier": 5,
+					"value": 0.64729
+				},
+				{
+					"stat": "PhysicalDamage",
+					"tier": 2,
+					"value": 0.10787
+				}
+			],
+			"base": "Dagger",
+			"level": 28,
+			"power": 6.74983,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "AreaSize",
+					"tier": 2,
+					"value": 0.11487
+				},
+				{
+					"stat": "FireDamage",
+					"tier": 1,
+					"value": 0.10702
+				}
+			],
+			"base": "Crossbow",
+			"level": 30,
+			"power": 8.51651,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ManaRegen",
+					"tier": 2,
+					"value": 1.27096
+				},
+				{
+					"stat": "PoisonResist",
+					"tier": 2,
+					"value": 0.10844
+				},
+				{
+					"stat": "Armor",
+					"tier": 2,
+					"value": 21.84755
+				},
+				{
+					"stat": "ColdResist",
+					"tier": 2,
+					"value": 0.10937
+				}
+			],
+			"base": "Helm",
+			"level": 30,
+			"power": 8.09985,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CooldownRecovery",
+					"tier": 4,
+					"value": 0.16775
+				},
+				{
+					"stat": "ExtraProjectiles",
+					"tier": 1,
+					"value": 1.0
+				},
+				{
+					"stat": "PhysicalDamage",
+					"tier": 2,
+					"value": 0.11798
+				}
+			],
+			"base": "Bow",
+			"level": 30,
+			"power": 8.23888,
+			"rarity": "Rare"
+		},
+		{
+			"base": "Gem",
+			"level": 5,
+			"skill": "GroundSlam"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "PoisonResist",
+					"tier": 3,
+					"value": 0.12318
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 2,
+					"value": 0.07761
+				},
+				{
+					"stat": "Armor",
+					"tier": 1,
+					"value": 10.30789
+				},
+				{
+					"stat": "ColdResist",
+					"tier": 2,
+					"value": 0.09051
+				},
+				{
+					"stat": "FireResist",
+					"tier": 2,
+					"value": 0.09791
+				}
+			],
+			"base": "Hood",
+			"level": 30,
+			"power": 8.11795,
+			"rarity": "Mythic"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "PoisonResist",
+					"tier": 2,
+					"value": 0.11115
+				},
+				{
+					"stat": "Armor",
+					"tier": 2,
+					"value": 16.15912
+				}
+			],
+			"base": "Helm",
+			"level": 28,
+			"power": 7.01458,
+			"rarity": "Uncommon"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "FireResist",
+					"tier": 1,
+					"value": 0.06349
+				},
+				{
+					"stat": "MoveSpeed",
+					"tier": 2,
+					"value": 0.06157
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 2,
+					"value": 24.83858
+				}
+			],
+			"base": "Sandals",
+			"level": 28,
+			"power": 7.16738,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "AreaSize",
+					"tier": 1,
+					"value": 0.10196
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 1,
+					"value": 0.05981
+				},
+				{
+					"stat": "CritDamage",
+					"tier": 2,
+					"value": 0.18734
+				}
+			],
+			"base": "Sword",
+			"level": 30,
+			"power": 8.11754,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "LifeSteal",
+					"tier": 2,
+					"value": 0.0171
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 1,
+					"value": 0.05404
+				}
+			],
+			"base": "Bow",
+			"level": 30,
+			"power": 8.34505,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "LightningResist",
+					"tier": 5,
+					"value": 0.30703
+				},
+				{
+					"stat": "FireResist",
+					"tier": 2,
+					"value": 0.0959
+				}
+			],
+			"base": "Sandals",
+			"level": 30,
+			"power": 8.16849,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "FireResist",
+					"tier": 1,
+					"value": 0.06625
+				},
+				{
+					"stat": "ColdDamage",
+					"tier": 1,
+					"value": 0.09732
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 5,
+					"value": 5.41127
+				},
+				{
+					"stat": "AreaSize",
+					"tier": 4,
+					"value": 0.20487
+				},
+				{
+					"stat": "CritChance",
+					"tier": 2,
+					"value": 0.04429
+				}
+			],
+			"base": "Amulet",
+			"level": 30,
+			"power": 8.21649,
+			"rarity": "Mythic"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CastSpeed",
+					"tier": 3,
+					"value": 0.10884
+				},
+				{
+					"stat": "ColdDamage",
+					"tier": 3,
+					"value": 0.16229
+				},
+				{
+					"stat": "LightningDamage",
+					"tier": 3,
+					"value": 0.17719
+				}
+			],
+			"base": "Axe",
+			"level": 30,
+			"power": 8.18111,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "FireDamage",
+					"tier": 3,
+					"value": 0.15636
+				},
+				{
+					"stat": "AreaSize",
+					"tier": 4,
+					"value": 0.20403
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 2,
+					"value": 0.01723
+				}
+			],
+			"base": "Axe",
+			"level": 30,
+			"power": 8.43634,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "PoisonResist",
+					"tier": 2,
+					"value": 0.08355
+				},
+				{
+					"stat": "LightningDamage",
+					"tier": 3,
+					"value": 0.18923
+				},
+				{
+					"stat": "PhysicalDamage",
+					"tier": 1,
+					"value": 0.09628
+				}
+			],
+			"base": "Ring",
+			"level": 30,
+			"power": 7.86714,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "Regeneration",
+					"tier": 3,
+					"value": 1.24594
+				},
+				{
+					"stat": "MaxMana",
+					"tier": 2,
+					"value": 18.06352
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 2,
+					"value": 24.21232
+				}
+			],
+			"base": "Robe",
+			"level": 30,
+			"power": 8.09307,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "LightningDamage",
+					"tier": 3,
+					"value": 0.16578
+				}
+			],
+			"base": "Dagger",
+			"level": 28,
+			"power": 6.94533,
+			"rarity": "Uncommon"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "MoveSpeed",
+					"tier": 1,
+					"value": 0.04466
+				}
+			],
+			"base": "Sandals",
+			"level": 28,
+			"power": 7.14389,
+			"rarity": "Uncommon"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdDamage",
+					"tier": 1,
+					"value": 0.09698
+				},
+				{
+					"stat": "CritDamage",
+					"tier": 1,
+					"value": 0.16858
+				}
+			],
+			"base": "Sword",
+			"level": 28,
+			"power": 7.00887,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CritDamage",
+					"tier": 1,
+					"value": 0.15255
+				}
+			],
+			"base": "Staff",
+			"level": 28,
+			"power": 7.07383,
+			"rarity": "Uncommon"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "Regeneration",
+					"tier": 2,
+					"value": 1.07754
+				},
+				{
+					"stat": "Armor",
+					"tier": 1,
+					"value": 10.49331
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 1,
+					"value": 0.9621
+				}
+			],
+			"base": "Tunic",
+			"level": 28,
+			"power": 6.75623,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "MaxMana",
+					"tier": 3,
+					"value": 48.40319
+				},
+				{
+					"stat": "FireResist",
+					"tier": 2,
+					"value": 0.10804
+				},
+				{
+					"stat": "ColdResist",
+					"tier": 1,
+					"value": 0.06398
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 2,
+					"value": 1.46569
+				}
+			],
+			"base": "Tunic",
+			"level": 28,
+			"power": 6.79215,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "Regeneration",
+					"tier": 2,
+					"value": 0.92729
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 2,
+					"value": 17.28516
+				},
+				{
+					"stat": "FireResist",
+					"tier": 1,
+					"value": 0.06101
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 2,
+					"value": 1.70868
+				}
+			],
+			"base": "Plate",
+			"level": 28,
+			"power": 7.19002,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "PoisonResist",
+					"tier": 4,
+					"value": 0.21165
+				}
+			],
+			"base": "WizardHat",
+			"level": 28,
+			"power": 6.8712,
+			"rarity": "Uncommon"
+		},
+		{
+			"base": "Gem",
+			"level": 4,
+			"skill": "FrostNova"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdDamage",
+					"tier": 1,
+					"value": 0.10788
+				}
+			],
+			"base": "Axe",
+			"level": 28,
+			"power": 6.71669,
+			"rarity": "Uncommon"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "LightningResist",
+					"tier": 1,
+					"value": 0.07164
+				},
+				{
+					"stat": "FireResist",
+					"tier": 1,
+					"value": 0.07413
+				}
+			],
+			"base": "Greaves",
+			"level": 3,
+			"power": 1.14169,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdDamage",
+					"tier": 1,
+					"value": 0.09003
+				},
+				{
+					"stat": "PhysicalDamage",
+					"tier": 1,
+					"value": 0.08326
+				}
+			],
+			"base": "Axe",
+			"level": 3,
+			"power": 1.15627,
+			"rarity": "Rare"
+		},
+		{
+			"base": "Gem",
+			"level": 2,
+			"skill": "Fireball"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "AttackSpeed",
+					"tier": 1,
+					"value": 0.0643
+				},
+				{
+					"stat": "LightningResist",
+					"tier": 1,
+					"value": 0.06156
+				},
+				{
+					"stat": "FireResist",
+					"tier": 1,
+					"value": 0.07707
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 1,
+					"value": 13.65396
+				}
+			],
+			"base": "Ring",
+			"level": 3,
+			"power": 1.11264,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdResist",
+					"tier": 1,
+					"value": 0.06901
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 1,
+					"value": 14.67612
+				},
+				{
+					"stat": "FireResist",
+					"tier": 1,
+					"value": 0.07543
+				}
+			],
+			"base": "Sandals",
+			"level": 3,
+			"power": 1.16861,
+			"rarity": "Legendary"
+		},
+		{
+			"base": "Gem",
+			"level": 2,
+			"skill": "Blink"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "Pierce",
+					"tier": 1,
+					"value": 1.0
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 1,
+					"value": 0.01245
+				}
+			],
+			"base": "Crossbow",
+			"level": 1,
+			"power": 0.98974,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CritDamage",
+					"tier": 1,
+					"value": 0.14985
+				},
+				{
+					"stat": "ColdDamage",
+					"tier": 1,
+					"value": 0.08105
+				}
+			],
+			"base": "Crossbow",
+			"level": 3,
+			"power": 1.2016,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "GemLevel",
+					"tier": 1,
+					"value": 1.0
+				},
+				{
+					"stat": "PhysicalDamage",
+					"tier": 1,
+					"value": 0.08916
+				},
+				{
+					"stat": "ProjectileSpeed",
+					"tier": 1,
+					"value": 0.13127
+				}
+			],
+			"base": "Staff",
+			"level": 3,
+			"power": 1.16764,
+			"rarity": "Rare"
+		},
+		{
+			"base": "Gem",
+			"level": 3,
+			"skill": "PiercingShot"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdDamage",
+					"tier": 1,
+					"value": 0.09675
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 1,
+					"value": 0.01206
+				}
+			],
+			"base": "Axe",
+			"level": 3,
+			"power": 1.14479,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "Armor",
+					"tier": 1,
+					"value": 13.47763
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 1,
+					"value": 0.64725
+				},
+				{
+					"stat": "LightningResist",
+					"tier": 1,
+					"value": 0.0825
+				}
+			],
+			"base": "Plate",
+			"level": 3,
+			"power": 1.20835,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CooldownRecovery",
+					"tier": 1,
+					"value": 0.07154
+				},
+				{
+					"stat": "LightningResist",
+					"tier": 1,
+					"value": 0.07344
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 1,
+					"value": 15.83072
+				}
+			],
+			"base": "WizardHat",
+			"level": 3,
+			"power": 1.18378,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "FireDamage",
+					"tier": 1,
+					"value": 0.09513
+				},
+				{
+					"stat": "AreaSize",
+					"tier": 1,
+					"value": 0.08214
+				},
+				{
+					"stat": "PhysicalDamage",
+					"tier": 1,
+					"value": 0.09745
+				}
+			],
+			"base": "Axe",
+			"level": 3,
+			"power": 1.20552,
+			"rarity": "Rare"
+		},
+		{
+			"base": "Gem",
+			"level": 2,
+			"skill": "RainOfArrows"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CooldownRecovery",
+					"tier": 1,
+					"value": 0.07927
+				},
+				{
+					"stat": "Pierce",
+					"tier": 1,
+					"value": 1.0
+				}
+			],
+			"base": "Wand",
+			"level": 3,
+			"power": 1.18922,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdResist",
+					"tier": 1,
+					"value": 0.06536
+				},
+				{
+					"stat": "MaxMana",
+					"tier": 1,
+					"value": 11.63182
+				}
+			],
+			"base": "Ring",
+			"level": 3,
+			"power": 1.18501,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "Armor",
+					"tier": 1,
+					"value": 10.8488
+				},
+				{
+					"stat": "PoisonResist",
+					"tier": 1,
+					"value": 0.08065
+				},
+				{
+					"stat": "CooldownRecovery",
+					"tier": 1,
+					"value": 0.07444
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 1,
+					"value": 10.65798
+				}
+			],
+			"base": "Hood",
+			"level": 3,
+			"power": 1.11594,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdDamage",
+					"tier": 1,
+					"value": 0.09534
+				},
+				{
+					"stat": "AttackSpeed",
+					"tier": 1,
+					"value": 0.06679
+				},
+				{
+					"stat": "PhysicalDamage",
+					"tier": 1,
+					"value": 0.10554
+				}
+			],
+			"base": "Ring",
+			"level": 3,
+			"power": 1.16116,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "LifeSteal",
+					"tier": 1,
+					"value": 0.01289
+				},
+				{
+					"stat": "LightningDamage",
+					"tier": 1,
+					"value": 0.09822
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 1,
+					"value": 0.05762
+				}
+			],
+			"base": "Wand",
+			"level": 3,
+			"power": 1.11814,
+			"rarity": "Legendary"
+		}
+	],
+	"version": 2
+}

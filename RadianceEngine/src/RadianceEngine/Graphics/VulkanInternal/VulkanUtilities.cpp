@@ -86,12 +86,15 @@ namespace Rdn
             VkPhysicalDeviceAccelerationStructureFeaturesKHR AccelerationStructure{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
             VkPhysicalDeviceRayTracingPipelineFeaturesKHR RayTracingPipeline{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR };
 
-            DeviceFeatureChain()
+            explicit DeviceFeatureChain(DeviceCapability capabilities)
             {
                 Core.pNext = &Vulkan12;
                 Vulkan12.pNext = &Vulkan13;
-                Vulkan13.pNext = &AccelerationStructure;
-                AccelerationStructure.pNext = &RayTracingPipeline;
+                if (HasAny(capabilities & DeviceCapability::RayTracing))
+                {
+                    Vulkan13.pNext = &AccelerationStructure;
+                    AccelerationStructure.pNext = &RayTracingPipeline;
+                }
             }
             DeviceFeatureChain(const DeviceFeatureChain&) = delete;
             DeviceFeatureChain& operator=(const DeviceFeatureChain&) = delete;
@@ -117,8 +120,6 @@ namespace Rdn
             RDN_DEVICE_FEATURE(Vulkan12.shaderSampledImageArrayNonUniformIndexing),
             RDN_DEVICE_FEATURE(Vulkan13.dynamicRendering),
             RDN_DEVICE_FEATURE(Vulkan13.synchronization2),
-            RDN_DEVICE_FEATURE(AccelerationStructure.accelerationStructure),
-            RDN_DEVICE_FEATURE(RayTracingPipeline.rayTracingPipeline),
         };
 
         const DeviceFeature OptionalFeatures[] = {
@@ -127,18 +128,38 @@ namespace Rdn
             RDN_DEVICE_FEATURE(RayTracingPipeline.rayTraversalPrimitiveCulling),
         };
 
+        const DeviceFeature RayTracingFeatures[] = {
+            RDN_DEVICE_FEATURE(AccelerationStructure.accelerationStructure),
+            RDN_DEVICE_FEATURE(RayTracingPipeline.rayTracingPipeline),
+        };
+
 #undef RDN_DEVICE_FEATURE
 
         const char* const RequiredDeviceExtensions[] = {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
             VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        };
+
+        const char* const OptionalDeviceExtensions[] = {
+            VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+        };
+
+        const char* const RayTracingExtensions[] = {
             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
             VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         };
 
-        const char* const OptionalDeviceExtensions[] = {
-            VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+        struct CapabilityRequirements
+        {
+            DeviceCapability Capability;
+            const char* Name;
+            std::span<const char* const> Extensions;
+            std::span<const DeviceFeature> Features;
+        };
+
+        const CapabilityRequirements Capabilities[] = {
+            { DeviceCapability::RayTracing, "ray tracing", RayTracingExtensions, RayTracingFeatures },
         };
 
         QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface)
@@ -166,42 +187,78 @@ namespace Rdn
             return indices;
         }
 
-        std::vector<std::string> FindMissingRequirements(VkPhysicalDevice device, VkSurfaceKHR surface, QueueFamilyIndices& queueFamilies)
+        std::string Join(const std::vector<std::string>& items, std::string_view separator = ", ")
         {
-            std::vector<std::string> missing;
+            std::string joined;
+            for (const std::string& item : items)
+                joined += (joined.empty() ? "" : std::string(separator)) + item;
+            return joined;
+        }
 
-            VkPhysicalDeviceProperties properties;
-            vkGetPhysicalDeviceProperties(device, &properties);
-            if (properties.apiVersion < VK_API_VERSION_1_3)
-            {
-                missing.push_back(std::format("Vulkan 1.3 (it has {}.{})", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion)));
-                return missing;
-            }
-
-            const std::vector<VkExtensionProperties> extensions = EnumerateDeviceExtensions(device);
-            for (const char* extension : RequiredDeviceExtensions)
+        void AppendMissing(std::vector<std::string>& missing, const std::vector<VkExtensionProperties>& extensions, DeviceFeatureChain& supported,
+            std::span<const char* const> requiredExtensions, std::span<const DeviceFeature> requiredFeatures)
+        {
+            for (const char* extension : requiredExtensions)
             {
                 if (!HasExtension(extensions, extension))
                     missing.push_back(extension);
             }
-
-            if (missing.empty())
+            for (const DeviceFeature& feature : requiredFeatures)
             {
-                DeviceFeatureChain supported;
-                vkGetPhysicalDeviceFeatures2(device, &supported.Core);
-                for (const DeviceFeature& feature : RequiredFeatures)
-                {
-                    if (!feature.Get(supported))
-                        missing.push_back(feature.Name);
-                }
+                if (!feature.Get(supported))
+                    missing.push_back(feature.Name);
+            }
+        }
+
+        struct DeviceSupport
+        {
+            std::vector<std::string> Missing;
+            DeviceCapability Capabilities = DeviceCapability::None;
+            QueueFamilyIndices QueueFamilies;
+        };
+
+        DeviceSupport EvaluateDevice(VkPhysicalDevice device, VkSurfaceKHR surface, DeviceCapability requiredCapabilities)
+        {
+            DeviceSupport support;
+
+            VkPhysicalDeviceProperties properties;
+            vkGetPhysicalDeviceProperties(device, &properties);
+            if (properties.apiVersion < TargetVulkanVersion)
+            {
+                support.Missing.push_back(std::format("Vulkan {}.{} (it has {}.{}, a newer graphics driver may help)",
+                    VK_API_VERSION_MAJOR(TargetVulkanVersion), VK_API_VERSION_MINOR(TargetVulkanVersion),
+                    VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion)));
+                return support;
             }
 
-            queueFamilies = FindQueueFamilies(device, surface);
-            if (queueFamilies.GraphicsIndex == uint32_t(-1))
-                missing.push_back("a graphics + compute queue");
-            if (queueFamilies.PresentIndex == uint32_t(-1))
-                missing.push_back("presentation to the window surface");
-            return missing;
+            const std::vector<VkExtensionProperties> extensions = EnumerateDeviceExtensions(device);
+            DeviceCapability queryable = DeviceCapability::None;
+            for (const CapabilityRequirements& capability : Capabilities)
+            {
+                if (std::ranges::all_of(capability.Extensions, [&](const char* extension) { return HasExtension(extensions, extension); }))
+                    queryable |= capability.Capability;
+            }
+
+            DeviceFeatureChain supported(queryable);
+            vkGetPhysicalDeviceFeatures2(device, &supported.Core);
+            AppendMissing(support.Missing, extensions, supported, RequiredDeviceExtensions, RequiredFeatures);
+
+            for (const CapabilityRequirements& capability : Capabilities)
+            {
+                std::vector<std::string> missing;
+                AppendMissing(missing, extensions, supported, capability.Extensions, capability.Features);
+                if (missing.empty())
+                    support.Capabilities |= capability.Capability;
+                else if (HasAny(requiredCapabilities & capability.Capability))
+                    support.Missing.push_back(std::format("{} ({})", capability.Name, Join(missing)));
+            }
+
+            support.QueueFamilies = FindQueueFamilies(device, surface);
+            if (support.QueueFamilies.GraphicsIndex == uint32_t(-1))
+                support.Missing.push_back("a graphics + compute queue");
+            if (support.QueueFamilies.PresentIndex == uint32_t(-1))
+                support.Missing.push_back("presentation to the window surface");
+            return support;
         }
 
         uint64_t ScoreDevice(VkPhysicalDevice device)
@@ -228,14 +285,6 @@ namespace Rdn
             default:                                     break;
             }
             return (typeRank << 48) + (deviceLocalBytes >> 20) + 1;
-        }
-
-        std::string Join(const std::vector<std::string>& items)
-        {
-            std::string joined;
-            for (const std::string& item : items)
-                joined += (joined.empty() ? "" : ", ") + item;
-            return joined;
         }
 
         VkSurfaceFormatKHR FindSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkFormat preferredFormat)
@@ -284,8 +333,8 @@ namespace Rdn
 	{
         if (volkInitialize() != VK_SUCCESS)
         {
-            RDN_LOG_ERROR("Failed to initialize volk!");
-            abort();
+            RDN_LOG_FATAL("Vulkan isn't installed on this computer (vulkan-1.dll couldn't be loaded), installing the latest graphics driver should fix this");
+            std::abort();
         }
 
         VkApplicationInfo appInfo{ VK_STRUCTURE_TYPE_APPLICATION_INFO };
@@ -293,7 +342,7 @@ namespace Rdn
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.pEngineName = info.engineName;
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_MAKE_API_VERSION(0, info.apiVersion.Major, info.apiVersion.Minor, 0);
+        appInfo.apiVersion = TargetVulkanVersion;
 
         InstanceOutput output;
         std::vector<const char*> extensions(info.instanceExtensions.begin(), info.instanceExtensions.end());
@@ -329,7 +378,14 @@ namespace Rdn
         createInfo.ppEnabledExtensionNames = extensions.data();
 
         VkInstance instance;
-        VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance));
+        const VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
+        if (result != VK_SUCCESS)
+        {
+            RDN_LOG_FATAL("vkCreateInstance failed: {}{}", GetVulkanResultString(result), result == VK_ERROR_INCOMPATIBLE_DRIVER
+                ? std::format(" (no installed graphics driver supports Vulkan {}.{}, updating it may help)", VK_API_VERSION_MAJOR(TargetVulkanVersion), VK_API_VERSION_MINOR(TargetVulkanVersion))
+                : std::string());
+            std::abort();
+        }
         volkLoadInstance(instance);
         output.instance = fromVk(instance);
         return output;
@@ -362,16 +418,18 @@ namespace Rdn
 
         PhysicalDeviceSelection selection;
         uint64_t bestScore = 0;
+        std::vector<std::string> rejections;
         for (VkPhysicalDevice device : devices)
         {
             VkPhysicalDeviceProperties properties;
             vkGetPhysicalDeviceProperties(device, &properties);
 
-            QueueFamilyIndices queueFamilies;
-            const std::vector<std::string> missing = FindMissingRequirements(device, toVk(info.surface), queueFamilies);
-            if (!missing.empty())
+            const DeviceSupport support = EvaluateDevice(device, toVk(info.surface), info.requiredCapabilities);
+            if (!support.Missing.empty())
             {
-                RDN_LOG_WARNING("Skipping {}: it lacks {}", properties.deviceName, Join(missing));
+                const std::string missing = Join(support.Missing);
+                RDN_LOG_WARNING("Skipping {}: it lacks {}", properties.deviceName, missing);
+                rejections.push_back(std::format("{} lacks {}", properties.deviceName, missing));
                 continue;
             }
 
@@ -379,16 +437,27 @@ namespace Rdn
             if (score > bestScore)
             {
                 bestScore = score;
-                selection = { fromVk(device), queueFamilies };
+                selection = { fromVk(device), support.QueueFamilies, support.Capabilities };
             }
         }
 
         if (!selection.physicalDevice)
         {
-            RDN_LOG_FATAL("None of the {} Vulkan devices supports what the renderer needs", deviceCount);
+            RDN_LOG_FATAL("None of the {} Vulkan devices supports what the renderer needs{}", deviceCount, rejections.empty() ? "" : ": " + Join(rejections, "; "));
             abort();
         }
         return selection;
+    }
+
+    std::string GetDeviceCapabilityNames(DeviceCapability capabilities)
+    {
+        std::vector<std::string> names;
+        for (const CapabilityRequirements& capability : Capabilities)
+        {
+            if (HasAny(capabilities & capability.Capability))
+                names.push_back(capability.Name);
+        }
+        return Join(names);
     }
 
     DeviceOutput CreateLogicalDeviceHandle(const DeviceCreateInfo& info)
@@ -406,17 +475,26 @@ namespace Rdn
             queueCreateInfos.push_back(queueCreateInfo);
         }
 
-        DeviceFeatureChain supported;
+        DeviceFeatureChain supported(info.capabilities);
         vkGetPhysicalDeviceFeatures2(physicalDevice, &supported.Core);
-
-        DeviceFeatureChain enabled;
-        for (const DeviceFeature& feature : RequiredFeatures)
-            feature.Get(enabled) = VK_TRUE;
-        for (const DeviceFeature& feature : OptionalFeatures)
-            feature.Get(enabled) = feature.Get(supported);
 
         DeviceOutput output;
         output.enabledExtensions.assign(std::begin(RequiredDeviceExtensions), std::end(RequiredDeviceExtensions));
+
+        DeviceFeatureChain enabled(info.capabilities);
+        for (const DeviceFeature& feature : RequiredFeatures)
+            feature.Get(enabled) = VK_TRUE;
+        for (const CapabilityRequirements& capability : Capabilities)
+        {
+            if (!HasAny(info.capabilities & capability.Capability))
+                continue;
+            for (const DeviceFeature& feature : capability.Features)
+                feature.Get(enabled) = VK_TRUE;
+            output.enabledExtensions.insert(output.enabledExtensions.end(), capability.Extensions.begin(), capability.Extensions.end());
+        }
+        for (const DeviceFeature& feature : OptionalFeatures)
+            feature.Get(enabled) = feature.Get(supported);
+
         const std::vector<VkExtensionProperties> availableExtensions = EnumerateDeviceExtensions(physicalDevice);
         for (const char* extension : OptionalDeviceExtensions)
         {

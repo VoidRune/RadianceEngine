@@ -26,6 +26,7 @@ namespace Rdn
 		if (!device)
 		{
 			RDN_LOG_FATAL("Failed to create PresentQueue object: Device pointer is not valid!");
+			std::abort();
 		}
 
 		m_LogicalDevice = device->GetLogicalDevice();

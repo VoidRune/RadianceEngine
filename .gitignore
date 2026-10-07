@@ -2,6 +2,9 @@
 build/
 bin/windows-x86_64/RadianceEngine/
 bin/windows-x86_64/Timbre/
+bin/windows-x86_64/TimbreAudio/
+bin/windows-x86_64/GameShared/
+bin/windows-x86_64/UiAtlas/
 
 # Extensions
 **.raw

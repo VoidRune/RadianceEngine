@@ -194,7 +194,7 @@ namespace Rdn
         allocatorInfo.physicalDevice = toVk(m_PhysicalDevice);
         allocatorInfo.device = toVk(m_LogicalDevice);
         allocatorInfo.instance = toVk(device->GetInstance());
-        allocatorInfo.vulkanApiVersion = std::min(device->GetProperties().ApiVersion, VK_API_VERSION_1_4);
+        allocatorInfo.vulkanApiVersion = std::min(device->GetProperties().ApiVersion, TargetVulkanVersion);
         allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
         if (device->IsExtensionEnabled(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME))
             allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
@@ -204,21 +204,22 @@ namespace Rdn
         VK_CHECK(vmaCreateAllocator(&allocatorInfo, &allocator));
         m_Allocator = fromVk(allocator);
 
-        VkDescriptorPoolSize poolSizes[] = {
+        std::vector<VkDescriptorPoolSize> poolSizes = {
             { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 * MaxBindlessDescriptors },
             { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 2 * MaxBindlessDescriptors },
             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024 },
             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 256 },
             { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 256 },
             { VK_DESCRIPTOR_TYPE_SAMPLER, 256 },
-            { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 64 },
         };
+        if (device->Supports(DeviceCapability::RayTracing))
+            poolSizes.push_back({ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 64 });
 
         VkDescriptorPoolCreateInfo descriptorPoolCI{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         descriptorPoolCI.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         descriptorPoolCI.maxSets = 32;
-        descriptorPoolCI.poolSizeCount = uint32_t(sizeof(poolSizes) / sizeof(poolSizes[0]));
-        descriptorPoolCI.pPoolSizes = poolSizes;
+        descriptorPoolCI.poolSizeCount = uint32_t(poolSizes.size());
+        descriptorPoolCI.pPoolSizes = poolSizes.data();
 
         VkDescriptorPool descriptorPool;
         VK_CHECK(vkCreateDescriptorPool(toVk(m_LogicalDevice), &descriptorPoolCI, nullptr, &descriptorPool));
@@ -429,7 +430,7 @@ namespace Rdn
         const uint32_t texelSize = GetFormatByteSize(image->GetFormat());
         if (texelSize == 0)
         {
-            RDN_LOG_FATAL("GetImageData: image format is not a supported uncompressed color format (or is unhandled) -- cannot size the readback buffer");
+            RDN_LOG_ERROR("GetImageData: image format is not a supported uncompressed color format (or is unhandled) -- cannot size the readback buffer");
             return {};
         }
         const uint32_t size = extent.Width * extent.Height * extent.Depth * texelSize;
@@ -466,6 +467,9 @@ namespace Rdn
 
     void ResourceAllocator::CreateGpuBuffer(GpuBuffer* gpuBuffer, const GpuBufferDesc& desc)
     {
+        if (HasAny(desc.UsageFlags & (BufferUsage::AccelerationStructureBuildInputReadOnly | BufferUsage::AccelerationStructureStorage)))
+            m_Device->Require(DeviceCapability::RayTracing, "An acceleration structure buffer");
+
         VmaBuffer buffer = CreateVmaBuffer(toVk(m_Allocator), desc.Size, toVk(desc.UsageFlags),
             HostAccessFor(desc.MemoryProperty, desc.Mapped), 0, desc.Mapped);
 
@@ -487,7 +491,7 @@ namespace Rdn
     {
         if (!m_Buffers.contains(gpuBuffer))
         {
-            RDN_LOG_FATAL("Cannot find GpuBuffer resource to release!");
+            RDN_LOG_ERROR("Cannot find GpuBuffer resource to release!");
             return;
         }
         DestroyGpuBuffer(gpuBuffer);
@@ -525,7 +529,7 @@ namespace Rdn
     {
         if (!m_RingBuffers.contains(gpuRingBuffer))
         {
-            RDN_LOG_FATAL("Cannot find GpuRingBuffer resource to release!");
+            RDN_LOG_ERROR("Cannot find GpuRingBuffer resource to release!");
             return;
         }
         DestroyGpuRingBuffer(gpuRingBuffer);
@@ -610,7 +614,7 @@ namespace Rdn
     {
         if (!m_Images.contains(gpuImage))
         {
-            RDN_LOG_FATAL("Cannot find GpuImage resource to release!");
+            RDN_LOG_ERROR("Cannot find GpuImage resource to release!");
             return;
         }
         DestroyGpuImage(gpuImage);
@@ -653,7 +657,7 @@ namespace Rdn
     {
         if (!m_Samplers.contains(sampler))
         {
-            RDN_LOG_FATAL("Cannot find Sampler resource to release!");
+            RDN_LOG_ERROR("Cannot find Sampler resource to release!");
             return;
         }
         DestroySampler(sampler);
@@ -667,6 +671,8 @@ namespace Rdn
             RDN_LOG_ERROR("CreateShader: SpirV is empty");
             return;
         }
+        if (HasAny(desc.ShaderStage & (ShaderStage::RayGen | ShaderStage::RayAnyHit | ShaderStage::RayClosestHit | ShaderStage::RayMiss)))
+            m_Device->Require(DeviceCapability::RayTracing, "A ray tracing shader");
 
         VkShaderModuleCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -758,7 +764,7 @@ namespace Rdn
     {
         if (!m_Shaders.contains(shader))
         {
-            RDN_LOG_FATAL("Cannot find Shader resource to release!");
+            RDN_LOG_ERROR("Cannot find Shader resource to release!");
             return;
         }
         DestroyShader(shader);
@@ -767,6 +773,7 @@ namespace Rdn
 
     void ResourceAllocator::CreateBottomLevelAS(BottomLevelAS* bottomLevelAS, const BottomLevelASDesc& desc)
     {
+        m_Device->Require(DeviceCapability::RayTracing, "CreateBottomLevelAS");
         const VkDevice device = toVk(m_LogicalDevice);
         const VmaAllocator allocator = toVk(m_Allocator);
         if (desc.Geometries.empty())
@@ -877,7 +884,7 @@ namespace Rdn
     {
         if (!m_BottomLevelASs.contains(bottomLevelAS))
         {
-            RDN_LOG_FATAL("Cannot find BottomLevelAS resource to release!");
+            RDN_LOG_ERROR("Cannot find BottomLevelAS resource to release!");
             return;
         }
 
@@ -962,6 +969,7 @@ namespace Rdn
 
     void ResourceAllocator::CreateTopLevelAS(TopLevelAS* topLevelAS)
     {
+        m_Device->Require(DeviceCapability::RayTracing, "CreateTopLevelAS");
         m_TopLevelASs.insert(topLevelAS);
     }
 
@@ -978,7 +986,7 @@ namespace Rdn
     {
         if (!m_TopLevelASs.contains(topLevelAS))
         {
-            RDN_LOG_FATAL("Cannot find TopLevelAS resource to release!");
+            RDN_LOG_ERROR("Cannot find TopLevelAS resource to release!");
             return;
         }
         DestroyTopLevelAS(topLevelAS);
@@ -996,6 +1004,7 @@ namespace Rdn
         vkBindings.reserve(key.Bindings.size());
         bindingFlags.reserve(key.Bindings.size());
 
+        bool updateAfterBind = false;
         for (const auto& b : key.Bindings)
         {
             VkDescriptorSetLayoutBinding vkb{};
@@ -1005,18 +1014,14 @@ namespace Rdn
             vkb.stageFlags = toVk(b.Stages);
             vkBindings.push_back(vkb);
 
-            // Per-binding flags
-            VkDescriptorBindingFlags flags = 0;
-            if (b.IsBindless) {
-                flags |= VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
-                    | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-
-                if (&b == &key.Bindings.back())
-                    flags |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
-            }
-            else {
-                flags |= VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
-            }
+            const bool updateAfterBindEnabled = b.Type == DescriptorType::Sampler || b.Type == DescriptorType::CombinedImageSampler
+                || b.Type == DescriptorType::SampledImage || b.Type == DescriptorType::StorageBuffer;
+            VkDescriptorBindingFlags flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+            if (b.IsBindless && !key.UsePushDescriptors && updateAfterBindEnabled)
+                flags |= VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+            if (b.Count == 0 && !key.UsePushDescriptors && &b == &key.Bindings.back())
+                flags |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+            updateAfterBind |= (flags & VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT) != 0;
             bindingFlags.push_back(flags);
         }
 
@@ -1035,7 +1040,7 @@ namespace Rdn
 
         if (key.UsePushDescriptors)
             layoutCI.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-        else if (key.HasBindless)
+        else if (updateAfterBind)
             layoutCI.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
 
         VkDescriptorSetLayout vkLayout;
@@ -1167,7 +1172,7 @@ namespace Rdn
         {
             VkPipelineColorBlendAttachmentState att{};
             att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-            att.blendEnable = VK_FALSE;
+            att.blendEnable = desc.AlphaBlend ? VK_TRUE : VK_FALSE;
             att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
             att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
             att.colorBlendOp = VK_BLEND_OP_ADD;
@@ -1237,7 +1242,7 @@ namespace Rdn
     {
         if (!m_Pipelines.contains(pipeline))
         {
-            RDN_LOG_FATAL("Cannot find Pipeline resource to release!");
+            RDN_LOG_ERROR("Cannot find Pipeline resource to release!");
             return;
         }
         DestroyPipeline(pipeline);
@@ -1261,6 +1266,7 @@ namespace Rdn
 
     void ResourceAllocator::CreateRaytracingPipeline(RayTracingPipeline* raytracingPipeline, const RayTracingPipelineDesc& desc)
     {
+        m_Device->Require(DeviceCapability::RayTracing, "CreateRaytracingPipeline");
         const VkPipelineLayout pipelineLayout = toVk(CreatePipelineLayout(desc.ShaderStages, desc.PushDescriptorSets, raytracingPipeline->m_SetLayouts));
 
         std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
@@ -1393,7 +1399,7 @@ namespace Rdn
 
         if (handleSize == 0 || sbtSize == 0)
         {
-            RDN_LOG_FATAL("CreateRaytracingPipeline: shaderGroupHandleSize/alignment queried as 0 — physical device did not report valid ray tracing pipeline properties, cannot size the shader binding table!");
+            RDN_LOG_ERROR("CreateRaytracingPipeline: shaderGroupHandleSize/alignment queried as 0 — physical device did not report valid ray tracing pipeline properties, cannot size the shader binding table!");
             vkDestroyPipeline(toVk(m_LogicalDevice), rtPipeline, nullptr);
             vkDestroyPipelineLayout(toVk(m_LogicalDevice), pipelineLayout, nullptr);
             return;
@@ -1435,7 +1441,7 @@ namespace Rdn
     {
         if (!m_RaytracingPipelines.contains(raytracingPipeline))
         {
-            RDN_LOG_FATAL("Cannot find RaytracingPipeline resource to release!");
+            RDN_LOG_ERROR("Cannot find RaytracingPipeline resource to release!");
             return;
         }
         DestroyRaytracingPipeline(raytracingPipeline);
@@ -1486,7 +1492,7 @@ namespace Rdn
     {
         if (!m_ComputePipelines.contains(computePipeline))
         {
-            RDN_LOG_FATAL("Cannot find ComputePipeline resource to release!");
+            RDN_LOG_ERROR("Cannot find ComputePipeline resource to release!");
             return;
         }
         DestroyComputePipeline(computePipeline);
@@ -1545,7 +1551,7 @@ namespace Rdn
     {
         if (!m_DescriptorSets.contains(descriptorSet))
         {
-            RDN_LOG_FATAL("Cannot find DescriptorSet resource to release!");
+            RDN_LOG_ERROR("Cannot find DescriptorSet resource to release!");
             return;
         }
         DestroyDescriptorSet(descriptorSet);

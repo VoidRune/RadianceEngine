@@ -2,8 +2,10 @@
 #include <vector>
 #include "Handle.h"
 #include "CommandBuffer.h"
+#include "Common.h"
 #include <functional>
 #include <mutex>
+#include <source_location>
 #include <string>
 #include <string_view>
 
@@ -14,6 +16,7 @@ namespace Rdn
 	public:
 		void* WindowHandle = nullptr;
 		std::vector<const char*> InstanceExtensions;
+		DeviceCapability RequiredCapabilities = DeviceCapability::None;
 		uint32_t FramesInFlight = 2;
 		bool EnableValidation = true;
 	};
@@ -54,6 +57,8 @@ namespace Rdn
 		const DeviceProperties& GetProperties() const { return m_Properties; }
 		bool IsDebugUtilsEnabled() const { return m_DebugUtilsEnabled; }
 		bool IsExtensionEnabled(std::string_view extension) const;
+		bool Supports(DeviceCapability capability) const { return (m_Capabilities & capability) == capability; }
+		void Require(DeviceCapability capability, std::string_view user, std::source_location location = std::source_location::current()) const;
 
 		void ImmediateSubmit(std::function<void(CommandBuffer&)> fn);
 
@@ -67,6 +72,7 @@ namespace Rdn
 
 		DeviceProperties m_Properties;
 		std::vector<std::string> m_EnabledExtensions;
+		DeviceCapability m_Capabilities = DeviceCapability::None;
 		uint32_t m_FramesInFlight;
 		bool m_DebugUtilsEnabled = false;
 

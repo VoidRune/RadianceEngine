@@ -32,6 +32,7 @@ namespace Rdn
 		bool DepthTest = true;
 		bool DepthWrite = true;
 		CompareOperation DepthCompareOp = CompareOperation::Less;
+		bool AlphaBlend = false;
 		VertexAttributes VertexAttributes = {};
 		std::vector<Format> ColorAttachmentFormats = {};
 		Format DepthAttachmentFormat = Format::Undefined;

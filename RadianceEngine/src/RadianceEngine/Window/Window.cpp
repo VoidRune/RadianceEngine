@@ -73,8 +73,8 @@ namespace Rdn
 		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 		glfwWindowHint(GLFW_DECORATED, desc.Titlebar ? GLFW_TRUE : GLFW_FALSE);
 
-		const int width = static_cast<int>(desc.Width);
-		const int height = static_cast<int>(desc.Height);
+		int width = static_cast<int>(desc.Width);
+		int height = static_cast<int>(desc.Height);
 		m_Window = glfwCreateWindow(width, height, desc.Title.c_str(), nullptr, nullptr);
 		if (!m_Window)
 		{
@@ -89,9 +89,19 @@ namespace Rdn
 			glfwGetMonitorWorkarea(monitor, &workX, &workY, &workWidth, &workHeight);
 			int left, top, right, bottom;
 			glfwGetWindowFrameSize(m_Window, &left, &top, &right, &bottom);
+
+			const int availableWidth = workWidth - left - right;
+			const int availableHeight = workHeight - top - bottom;
+			const double scale = std::min({ 1.0, double(availableWidth) / width, double(availableHeight) / height });
+			if (scale > 0.0 && scale < 1.0)
+			{
+				width = std::max(1, int(width * scale));
+				height = std::max(1, int(height * scale));
+				glfwSetWindowSize(m_Window, width, height);
+			}
 			glfwSetWindowPos(m_Window,
-				workX + left + std::max(0, (workWidth - width - left - right) / 2),
-				workY + top + std::max(0, (workHeight - height - top - bottom) / 2));
+				workX + left + std::max(0, (availableWidth - width) / 2),
+				workY + top + std::max(0, (availableHeight - height) / 2));
 		}
 
 		if (glfwRawMouseMotionSupported())
@@ -135,6 +145,11 @@ namespace Rdn
 		glfwSetScrollCallback(m_Window, [](GLFWwindow*, double x, double y)
 			{
 				Input::AddScroll(x, y);
+			});
+
+		glfwSetCharCallback(m_Window, [](GLFWwindow*, unsigned int codepoint)
+			{
+				Input::AddCharacter(codepoint);
 			});
 	}
 
@@ -202,6 +217,17 @@ namespace Rdn
 	void Window::SetTitle(const std::string& title)
 	{
 		glfwSetWindowTitle(m_Window, title.c_str());
+	}
+
+	std::string Window::GetClipboardText() const
+	{
+		const char* text = glfwGetClipboardString(m_Window);
+		return text ? text : "";
+	}
+
+	void Window::SetClipboardText(const std::string& text)
+	{
+		glfwSetClipboardString(m_Window, text.c_str());
 	}
 
 	void Window::SetCursorMode(CursorMode mode)
