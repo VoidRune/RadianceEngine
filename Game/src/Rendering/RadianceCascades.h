@@ -53,8 +53,24 @@ namespace Game
 			glm::uvec4 Options;
 			std::array<glm::vec4, 4> SolidAngles;
 			std::array<glm::vec4, 3> LevelOffsets;
+			std::array<glm::ivec4, 3> LevelOrigins;
 			glm::vec4 Environment;
 			glm::vec4 SkyMaskTransform;
+			glm::vec4 Lattice;
+			glm::vec4 PastLattice;
+		};
+
+		struct PlaceConstants
+		{
+			glm::vec4 Lattice;
+			glm::uvec4 Grid;
+		};
+
+		struct DownsampleConstants
+		{
+			glm::ivec4 Parity;
+			glm::ivec4 Origins;
+			glm::ivec4 Sizes;
 		};
 
 		struct TraceConstants
@@ -94,6 +110,7 @@ namespace Game
 		std::vector<std::unique_ptr<Rdn::Shader>> m_Shaders;
 		std::unique_ptr<Rdn::ComputePipeline> m_Gather;
 		std::unique_ptr<Rdn::ComputePipeline> m_Downsample;
+		std::unique_ptr<Rdn::ComputePipeline> m_Place;
 		std::unique_ptr<Rdn::ComputePipeline> m_Trace;
 		std::unique_ptr<Rdn::ComputePipeline> m_TraceReconnect;
 		std::unique_ptr<Rdn::ComputePipeline> m_Resolve;
@@ -112,6 +129,7 @@ namespace Game
 		glm::uvec2 m_HistoryGrid{ 0u };
 		uint32_t m_HistorySpacing = 0;
 		glm::ivec2 m_HistoryCell{ 0 };
+		glm::vec4 m_PastLattice{ 0.0f };
 		uint32_t m_HistoryFrame = 0;
 		bool m_HistoryValid = false;
 		bool m_Rendered = false;

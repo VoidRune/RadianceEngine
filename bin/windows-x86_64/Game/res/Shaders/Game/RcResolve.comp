@@ -6,7 +6,7 @@
 layout(local_size_x = 8, local_size_y = 8) in;
 
 layout(set = 0, binding = 1) uniform sampler2D Merged;
-layout(set = 0, binding = 2) uniform sampler2D GiDepth;
+layout(set = 0, binding = 2) uniform usampler2D Probes;
 layout(set = 0, binding = 3, rgba32ui) uniform writeonly uimage2D ShPrimary;
 layout(set = 0, binding = 4, rg32ui) uniform writeonly uimage2D ShSecondary;
 layout(set = 0, binding = 5, r16f) uniform writeonly image2D ProbeDepth;
@@ -28,7 +28,8 @@ void main()
 	ivec2 size = imageSize(ShPrimary);
 	if (probe.x >= size.x || probe.y >= size.y)
 		return;
-	float depth = texelFetch(GiDepth, ProbeTexel(probe, pc.Probes.x, pc.Probes.yz), 0).x;
+	uvec4 placed = texelFetch(Probes, probe, 0);
+	float depth = ProbePosition(placed).z;
 	if (IsBackground(depth))
 	{
 		imageStore(ShPrimary, probe, uvec4(0u));
@@ -56,6 +57,11 @@ void main()
 	z *= 0.5 * InvPi;
 
 	ivec2 previous = probe + pc.History.xy;
+	if (ProbeLocked(placed))
+	{
+		int band = ProbeBand(placed);
+		previous += ivec2(round(LatticePhase(band, Rc.PastLattice) / pc.Probes.x) - round(LatticePhase(band, Rc.Lattice) / pc.Probes.x));
+	}
 	if (pc.History.z != 0 && all(greaterThanEqual(previous, ivec2(0))) && all(lessThan(previous, textureSize(HistoryDepth, 0))))
 	{
 		float past = texelFetch(HistoryDepth, previous, 0).x;

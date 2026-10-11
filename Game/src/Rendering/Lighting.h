@@ -48,13 +48,14 @@ namespace Game
 		float GuardBand = 0.0f;
 		uint32_t Reconnect = 0;
 		bool BackFaces = false;
+		uint32_t TraceBudget = 0;
 	};
 
 	inline constexpr const char* GiQualityNames[] = { "off", "low", "medium", "high" };
-	inline constexpr GiSettings GiPresets[] = { {}, { 8, 5, false, 0.0f, 0b00000, false }, { 4, 6, true, 0.05f, 0b01110, true }, { 1, 6, true, 0.05f, 0b11111, true } };
+	inline constexpr GiSettings GiPresets[] = { {}, { 8, 5, false, 0.0f, 0b00000, false, 3 }, { 4, 6, false, 0.05f, 0b01110, false, 3 }, { 2, 6, false, 0.05f, 0b11111, false, 4 } };
 	static_assert(std::size(GiQualityNames) == size_t(GiQuality::Count) && std::size(GiPresets) == size_t(GiQuality::Count));
 	inline constexpr Rdn::Format GiRadianceFormat = Rdn::Format::R16G16B16A16_Sfloat;
-	inline constexpr Rdn::Format GiDepthFormat = Rdn::Format::R16G16_Sfloat;
+	inline constexpr Rdn::Format GiHeightFormat = Rdn::Format::R32G32_Sfloat;
 
 	inline Rdn::Extent2D HalfExtent(Rdn::Extent2D extent)
 	{

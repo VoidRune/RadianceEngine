@@ -13,6 +13,7 @@ layout(set = 0, binding = 5, rgba16f) uniform writeonly image2D Radiance;
 layout(set = 0, binding = 6, rgba16f) uniform writeonly image2D Emitter;
 layout(set = 0, binding = 7, rgba16f) uniform writeonly image2D Depth;
 layout(set = 0, binding = 8) uniform sampler2D BackDepth;
+layout(set = 0, binding = 9, rg32f) uniform writeonly image2D Height;
 
 layout(push_constant) uniform PushConstants
 {
@@ -30,6 +31,7 @@ void main()
 	vec4 radiance = vec4(0.0, 0.0, 0.0, 1.0);
 	vec4 emitter = vec4(0.0);
 	vec4 depth = vec4(Rc.Projection.w, Rc.Projection.w, 0.5, 0.5);
+	vec2 height = vec2(-1e4);
 	vec3 ground = DomainGround(vec2(texel) - 0.5);
 	vec2 uv = ProjectUv(ground);
 	if (ground.z > Rc.Projection.z && all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0))))
@@ -55,17 +57,31 @@ void main()
 		for (int k = 1; k < 4; k++)
 			if (masked[k] < masked[chosen])
 				chosen = k;
+		ivec2 chosenPixel = clamp(base + GatherOffsets[chosen], ivec2(0), ivec2(Rc.Screen.xy) - 1);
+		vec2 normal = texelFetch(SurfaceBuffer, chosenPixel, 0).xy;
 		float surface = nearest;
+		bool planar = false;
 		if (dot(mask, vec4(1.0)) > 3.5 && farthest - nearest < 0.02 * nearest + 0.02 && !IsBackground(farthest))
-			surface = 1.0 / dot(weights, 1.0 / z);
+		{
+			vec4 inverse = 1.0 / z;
+			surface = 1.0 / dot(weights, inverse);
+			if (abs(inverse.x + inverse.z - inverse.y - inverse.w) < 2e-4 * inverse.w)
+			{
+				vec2 corner = (vec2(base) + 0.5) / Rc.Screen.xy;
+				vec2 step = 1.0 / Rc.Screen.xy;
+				vec3 origin = ViewPosition(corner, z.w);
+				vec3 geometric = normalize(cross(ViewPosition(corner + step, z.y) - origin, ViewPosition(corner + vec2(0.0, step.y), z.x) - ViewPosition(corner + vec2(step.x, 0.0), z.z)));
+				normal = EncodeNormal(mat3(Rc.InverseView) * (dot(geometric, origin) > 0.0 ? -geometric : geometric));
+				planar = true;
+			}
+		}
 		vec4 sampleWeights = weights * mask;
 		float total = max(dot(sampleWeights, vec4(1.0)), 1e-6);
 		radiance.rgb = vec3(dot(textureGather(Source, gatherUv, 0), sampleWeights), dot(textureGather(Source, gatherUv, 1), sampleWeights), dot(textureGather(Source, gatherUv, 2), sampleWeights)) / total;
-		ivec2 chosenPixel = clamp(base + GatherOffsets[chosen], ivec2(0), ivec2(Rc.Screen.xy) - 1);
-		vec2 normal = texelFetch(SurfaceBuffer, chosenPixel, 0).xy;
 		float rawBack = pc.Params.z > 0.5 ? texelFetch(BackDepth, chosenPixel, 0).r : 1.0;
 		float back = rawBack < 1.0 ? LinearDepth(rawBack) : 0.0;
-		depth = vec4(surface, back > surface + 0.02 ? back : surface + Rc.Trace.x, normal);
+		height = Rc.Lattice.z * (1.0 - vec2(surface, back > surface + 0.02 ? back : surface + Rc.Trace.x) / ground.z);
+		depth = vec4(surface, planar ? 1.0 : 0.0, normal);
 
 		vec2 border = min(uv, 1.0 - uv) * Rc.Screen.zw;
 		float edge = clamp(min(border.x, border.y) / pc.Params.y, 0.0, 1.0);
@@ -78,4 +94,5 @@ void main()
 	imageStore(Radiance, texel, radiance);
 	imageStore(Emitter, texel, emitter);
 	imageStore(Depth, texel, depth);
+	imageStore(Height, texel, vec4(height, 0.0, 0.0));
 }

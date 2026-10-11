@@ -14,8 +14,11 @@ layout(std140, set = 0, binding = 0) uniform CascadeFrame
 	uvec4 Options;
 	vec4 SolidAngles[4];
 	vec4 LevelOffsets[3];
+	ivec4 LevelOrigins[3];
 	vec4 Environment;
 	vec4 SkyMaskTransform;
+	vec4 Lattice;
+	vec4 PastLattice;
 } Rc;
 
 const int LevelCount = 6;
@@ -61,16 +64,16 @@ float DomainTexelWorld(vec3 p)
 	return Rc.Domain.z * max(DomainHomogeneous(p).z, 1e-3);
 }
 
-vec3 DomainView(ivec2 texel, float z)
-{
-	vec3 ground = DomainGround(vec2(texel) - 0.5);
-	return ground * (z / ground.z);
-}
-
 vec2 LevelOffset(int level)
 {
 	vec4 offsets = Rc.LevelOffsets[level >> 1];
 	return (level & 1) == 0 ? offsets.xy : offsets.zw;
+}
+
+ivec2 LevelOrigin(int level)
+{
+	ivec4 origins = Rc.LevelOrigins[level >> 1];
+	return (level & 1) == 0 ? origins.xy : origins.zw;
 }
 
 ivec2 LevelSize(int level)
@@ -120,6 +123,65 @@ float PlaneWeight(vec3 p, vec3 origin, vec3 normal, float tolerance)
 {
 	float d = dot(p - origin, normal) / tolerance;
 	return max(1.0 - d * d, 0.0);
+}
+
+vec3 PlaneNormal(vec3 worldNormal)
+{
+	return mat3(Rc.View) * (worldNormal.y > 0.75 ? vec3(0.0, 1.0, 0.0) : worldNormal);
+}
+
+float Facing(vec3 a, vec3 b)
+{
+	return smoothstep(0.4, 0.8, dot(a, b));
+}
+
+int HeightBand(float height)
+{
+	return int(round(height / Rc.Lattice.w));
+}
+
+vec2 LatticePhase(int band, vec4 lattice)
+{
+	float height = float(band) * Rc.Lattice.w;
+	return -lattice.xy * (height / (lattice.z - height));
+}
+
+vec2 LatticeShift(int band, float spacing, vec4 lattice)
+{
+	vec2 phase = LatticePhase(band, lattice);
+	return phase - spacing * round(phase / spacing);
+}
+
+uvec4 PackProbe(vec3 position, vec2 normal, int band, bool locked)
+{
+	uint packed = packUnorm4x8(vec4(normal, 0.0, 0.0)) & 0xFFFFu;
+	return uvec4(floatBitsToUint(position), packed | (uint(band & 0x7FFF) << 16) | (locked ? 0x80000000u : 0u));
+}
+
+vec3 ProbePosition(uvec4 probe)
+{
+	return uintBitsToFloat(probe.xyz);
+}
+
+vec3 ProbeNormal(uvec4 probe)
+{
+	return DecodeNormal(unpackUnorm4x8(probe.w).xy);
+}
+
+int ProbeBand(uvec4 probe)
+{
+	return int(probe.w << 1) >> 17;
+}
+
+bool ProbeLocked(uvec4 probe)
+{
+	return (probe.w & 0x80000000u) != 0u;
+}
+
+float ProbeTent(vec3 position, vec2 coordinate, float spacing)
+{
+	vec2 d = abs(DomainCoordinate(position) + 0.5 - coordinate) / spacing;
+	return max(1.0 - d.x, 0.0) * max(1.0 - d.y, 0.0);
 }
 
 vec3 EnvironmentRadiance(vec3 direction)

@@ -613,10 +613,10 @@
 	],
 	"kit": "Arcanist",
 	"materials": {
-		"arcaneDust": 189,
-		"gold": 196302,
-		"shards": 1262,
-		"starsteel": 144,
+		"arcaneDust": 229,
+		"gold": 215253,
+		"shards": 1421,
+		"starsteel": 157,
 		"voidShards": 27
 	},
 	"name": "Player",
@@ -892,24 +892,24 @@
 		{
 			"affixes": [
 				{
-					"stat": "Armor",
+					"stat": "GemLevel",
 					"tier": 1,
-					"value": 9.48482
+					"value": 1.0
 				},
 				{
-					"stat": "MaxHealth",
+					"stat": "AreaSize",
 					"tier": 1,
-					"value": 10.35735
+					"value": 0.09141
 				},
 				{
-					"stat": "MaxMana",
+					"stat": "LightningDamage",
 					"tier": 1,
-					"value": 12.47145
+					"value": 0.08212
 				}
 			],
-			"base": "Hood",
+			"base": "Axe",
 			"level": 3,
-			"power": 1.15222,
+			"power": 1.18626,
 			"rarity": "Rare"
 		},
 		{
@@ -1106,9 +1106,72 @@
 			"power": 8.20151,
 			"rarity": "Rare"
 		},
-		null,
-		null,
-		null,
+		{
+			"affixes": [
+				{
+					"stat": "MaxHealth",
+					"tier": 1,
+					"value": 13.05004
+				},
+				{
+					"stat": "PoisonResist",
+					"tier": 1,
+					"value": 0.07248
+				},
+				{
+					"stat": "LightningResist",
+					"tier": 1,
+					"value": 0.08322
+				},
+				{
+					"stat": "FireResist",
+					"tier": 3,
+					"value": 0.15212
+				}
+			],
+			"base": "Sandals",
+			"level": 30,
+			"power": 8.29293,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "Damage",
+					"tier": 2,
+					"value": 0.10149
+				},
+				{
+					"stat": "CooldownRecovery",
+					"tier": 2,
+					"value": 0.10457
+				},
+				{
+					"stat": "CritDamage",
+					"tier": 3,
+					"value": 0.28752
+				},
+				{
+					"stat": "FireDamage",
+					"tier": 1,
+					"value": 0.0967
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 2,
+					"value": 0.0144
+				}
+			],
+			"base": "Dagger",
+			"level": 30,
+			"power": 8.45849,
+			"rarity": "Mythic"
+		},
+		{
+			"base": "Gem",
+			"level": 2,
+			"skill": "Volley"
+		},
 		{
 			"affixes": [
 				{
@@ -1186,7 +1249,11 @@
 		null,
 		null,
 		null,
-		null,
+		{
+			"base": "Gem",
+			"level": 2,
+			"skill": "PiercingShot"
+		},
 		{
 			"affixes": [
 				{
@@ -1205,64 +1272,16 @@
 			"level": 4,
 			"skill": "Rejuvenate"
 		},
-		{
-			"affixes": [
-				{
-					"stat": "CritChance",
-					"tier": 3,
-					"value": 0.06175
-				},
-				{
-					"stat": "AreaSize",
-					"tier": 2,
-					"value": 0.12232
-				},
-				{
-					"stat": "CastSpeed",
-					"tier": 2,
-					"value": 0.08537
-				},
-				{
-					"stat": "LightningResist",
-					"tier": 3,
-					"value": 0.13827
-				}
-			],
-			"base": "Amulet",
-			"level": 30,
-			"power": 8.47834,
-			"rarity": "Legendary"
-		},
+		null,
+		null,
+		null,
+		null,
+		null,
 		{
 			"base": "Gem",
 			"level": 5,
-			"skill": "Rejuvenate"
+			"skill": "IceSpear"
 		},
-		{
-			"base": "Gem",
-			"level": 5,
-			"skill": "RainOfArrows"
-		},
-		{
-			"affixes": [
-				{
-					"stat": "MaxHealth",
-					"tier": 3,
-					"value": 38.76974
-				},
-				{
-					"stat": "Armor",
-					"tier": 2,
-					"value": 16.74729
-				}
-			],
-			"base": "Sandals",
-			"level": 30,
-			"power": 8.04204,
-			"rarity": "Rare"
-		},
-		null,
-		null,
 		null,
 		null,
 		null,

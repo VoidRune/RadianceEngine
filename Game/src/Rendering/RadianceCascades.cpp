@@ -22,6 +22,8 @@ namespace Game
 		constexpr float PlaneTolerance = 0.75f;
 		constexpr uint32_t MaxDomainSize = 2048;
 		constexpr float AnchorPeriod = 256.0f;
+		constexpr float BandHeight = 0.2f;
+		constexpr uint32_t LockedCascades = 0b1;
 
 		glm::ivec2 PositiveMod(const glm::ivec2& value, int32_t divisor)
 		{
@@ -67,10 +69,11 @@ namespace Game
 	{
 		m_Gather = CreatePipeline("res/Shaders/Game/RcGather.comp");
 		m_Downsample = CreatePipeline("res/Shaders/Game/RcDownsample.comp");
+		m_Place = CreatePipeline("res/Shaders/Game/RcPlace.comp");
 		m_Trace = CreatePipeline("res/Shaders/Game/RcTrace.comp");
 		m_Resolve = CreatePipeline("res/Shaders/Game/RcResolve.comp");
 		m_Apply = CreatePipeline("res/Shaders/Game/RcApply.comp");
-		if (!m_Gather || !m_Downsample || !m_Trace || !m_Resolve || !m_Apply)
+		if (!m_Gather || !m_Downsample || !m_Place || !m_Trace || !m_Resolve || !m_Apply)
 		{
 			RDN_LOG_ERROR("The radiance cascade shaders failed to compile, indirect light falls back to the sky ambient");
 			return;
@@ -97,7 +100,7 @@ namespace Game
 	{
 		m_Device.WaitIdle();
 		ReleaseHistory();
-		for (Rdn::ComputePipeline* pipeline : { m_Gather.get(), m_Downsample.get(), m_Trace.get(), m_TraceReconnect.get(), m_Resolve.get(), m_Apply.get() })
+		for (Rdn::ComputePipeline* pipeline : { m_Gather.get(), m_Downsample.get(), m_Place.get(), m_Trace.get(), m_TraceReconnect.get(), m_Resolve.get(), m_Apply.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
 		for (const std::unique_ptr<Rdn::Shader>& shader : m_Shaders)
@@ -258,17 +261,29 @@ namespace Game
 		const uint32_t cascades = std::clamp(settings.Cascades, 2u, MaxCascades);
 		const Rdn::Extent2D baseLevel = LevelExtent(0);
 		std::array<glm::vec4, 3> levelOffsets{};
+		std::array<glm::ivec4, 3> levelOrigins{};
+		glm::uvec2 atlasSize(baseLevel.Width, baseLevel.Height);
+		uint32_t column = 0;
 		for (uint32_t k = 0; k < LevelCount; k++)
 		{
 			const glm::vec2 offset(PositiveMod(-m_Domain.Origin, int32_t(1u << k)));
 			levelOffsets[k / 2][(k % 2) * 2] = offset.x;
 			levelOffsets[k / 2][(k % 2) * 2 + 1] = offset.y;
+			if (k == 0)
+				continue;
+			const Rdn::Extent2D size = LevelExtent(k);
+			levelOrigins[k / 2][(k % 2) * 2] = int32_t(baseLevel.Width);
+			levelOrigins[k / 2][(k % 2) * 2 + 1] = int32_t(column);
+			column += size.Height;
+			atlasSize = glm::max(atlasSize, glm::uvec2(baseLevel.Width + size.Width, column));
 		}
 		const float texelSize = m_Domain.Texel;
 		const glm::mat3 rotation(camera.View);
 		const glm::vec3 corner(float(m_Domain.Origin.x) * texelSize, m_Domain.Height, float(m_Domain.Origin.y) * texelSize);
 		const glm::mat3 basis(rotation * glm::vec3(texelSize, 0.0f, 0.0f), rotation * glm::vec3(0.0f, 0.0f, texelSize), rotation * (corner - camera.Eye));
 		const Rdn::Extent2D half = HalfExtent(extent);
+		const glm::vec4 lattice(camera.Eye.x / texelSize, camera.Eye.z / texelSize, camera.Eye.y - m_Domain.Height, BandHeight);
+		const bool continuous = m_HistoryValid && !m_DomainReset;
 		const FrameGpu frame{
 			.View = camera.View,
 			.InverseView = glm::inverse(camera.View),
@@ -276,7 +291,7 @@ namespace Game
 			.DomainInverse = glm::mat4(glm::inverse(basis)),
 			.Projection = glm::vec4(camera.Projection[0][0], camera.Projection[1][1], camera.Near, camera.Far),
 			.Screen = glm::vec4(float(extent.Width), float(extent.Height), float(half.Width), float(half.Height)),
-			.Domain = glm::vec4(float(m_Domain.Size.x), float(m_Domain.Size.y), texelSize, 0.0f),
+			.Domain = glm::vec4(float(m_Domain.Size.x), float(m_Domain.Size.y), texelSize, m_Domain.Height),
 			.Sky = glm::vec4(lighting.SkyColor, 0.0f),
 			.Ground = glm::vec4(lighting.GroundColor, 0.0f),
 			.Trace = glm::vec4(Thickness, NormalBias, EmitterRadius, HitBias),
@@ -284,10 +299,14 @@ namespace Game
 			.Options = glm::uvec4(uint32_t(view), 0u, 0u, 0u),
 			.SolidAngles = m_SolidAngles,
 			.LevelOffsets = levelOffsets,
+			.LevelOrigins = levelOrigins,
 			.Environment = environment.Params,
 			.SkyMaskTransform = environment.SkyMaskTransform,
+			.Lattice = lattice,
+			.PastLattice = continuous ? m_PastLattice : lattice,
 		};
 		m_Frame->Write(frameIndex, frame);
+		m_PastLattice = lattice;
 		const Rdn::ImageWrite environmentWrite(6, Rdn::DescriptorType::CombinedImageSampler, environment.Image->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, environment.Sampler->GetHandle());
 		const Rdn::ImageWrite skyMaskWrite(7, Rdn::DescriptorType::CombinedImageSampler, environment.SkyMask->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_Linear->GetHandle());
 		Rdn::ImageWrite applyEnvironmentWrite = environmentWrite;
@@ -302,11 +321,11 @@ namespace Game
 			return Rdn::ImageWrite(binding, Rdn::DescriptorType::StorageImage, context.GetImageView(image), Rdn::ImageLayout::General);
 		};
 
-		std::array<Rdn::RGImage, LevelCount> depths{};
 		std::array<Rdn::RGImage, LevelCount> radiances{};
 		std::array<Rdn::RGImage, LevelCount> emitters{};
 		const Rdn::Extent3D baseSize{ baseLevel.Width, baseLevel.Height, 1 };
-		depths[0] = graph.CreateImage("GI depth 0", Rdn::RGImageDesc{ .Size = baseSize, .Format = GiRadianceFormat });
+		const Rdn::RGImage depth = graph.CreateImage("GI depth 0", Rdn::RGImageDesc{ .Size = baseSize, .Format = GiRadianceFormat });
+		const Rdn::RGImage heights = graph.CreateImage("GI heights", Rdn::RGImageDesc{ .Size = { atlasSize.x, atlasSize.y, 1 }, .Format = GiHeightFormat });
 		radiances[0] = graph.CreateImage("GI radiance 0", Rdn::RGImageDesc{ .Size = baseSize, .Format = GiRadianceFormat });
 		emitters[0] = graph.CreateImage("GI emitters 0", Rdn::RGImageDesc{ .Size = baseSize, .Format = GiRadianceFormat });
 		const glm::vec4 gatherParams(lighting.ParticleGi, std::max(edgeBand, 1.0f), backDepth ? 1.0f : 0.0f, 0.0f);
@@ -318,7 +337,7 @@ namespace Game
 					builder.UseImage(image, Rdn::RGImageUsage::Sampled);
 				if (backDepth)
 					builder.UseImage(backDepth, Rdn::RGImageUsage::Sampled);
-				for (const Rdn::RGImage image : { depths[0], radiances[0], emitters[0] })
+				for (const Rdn::RGImage image : { depth, radiances[0], emitters[0], heights })
 					builder.UseImage(image, Rdn::RGImageUsage::StorageWrite);
 			},
 			[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
@@ -326,8 +345,8 @@ namespace Game
 				cmd.BindComputePipeline(m_Gather->GetHandle());
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Compute, m_Gather->GetLayout(), 0, Rdn::DescriptorWrite()
 					.AddWrite(frameWrite).AddWrite(sampled(context, 1, source, *m_Nearest)).AddWrite(sampled(context, 2, gbuffer.Depth, *m_Nearest)).AddWrite(sampled(context, 3, gbuffer.Surface, *m_Nearest))
-					.AddWrite(sampled(context, 4, particleLight, *m_Linear)).AddWrite(storage(context, 5, radiances[0])).AddWrite(storage(context, 6, emitters[0])).AddWrite(storage(context, 7, depths[0]))
-					.AddWrite(sampled(context, 8, back, *m_Nearest)));
+					.AddWrite(sampled(context, 4, particleLight, *m_Linear)).AddWrite(storage(context, 5, radiances[0])).AddWrite(storage(context, 6, emitters[0])).AddWrite(storage(context, 7, depth))
+					.AddWrite(sampled(context, 8, back, *m_Nearest)).AddWrite(storage(context, 9, heights)));
 				cmd.PushConstants(Rdn::ShaderStage::Compute, m_Gather->GetLayout(), &gatherParams, sizeof(gatherParams));
 				cmd.DispatchThreads(m_Gather.get(), baseLevel.Width, baseLevel.Height);
 			});
@@ -336,25 +355,31 @@ namespace Game
 		{
 			const Rdn::Extent2D size = LevelExtent(k);
 			const Rdn::Extent3D extent3{ size.Width, size.Height, 1 };
-			depths[k] = graph.CreateImage("GI depth " + std::to_string(k), Rdn::RGImageDesc{ .Size = extent3, .Format = GiDepthFormat });
 			radiances[k] = graph.CreateImage("GI radiance " + std::to_string(k), Rdn::RGImageDesc{ .Size = extent3, .Format = GiRadianceFormat });
 			emitters[k] = graph.CreateImage("GI emitters " + std::to_string(k), Rdn::RGImageDesc{ .Size = extent3, .Format = GiRadianceFormat });
+			const Rdn::Extent2D previous = LevelExtent(k - 1);
 			const glm::ivec2 parity = (PositiveMod(-m_Domain.Origin, int32_t(1u << k)) - PositiveMod(-m_Domain.Origin, int32_t(1u << (k - 1)))) >> int32_t(k - 1);
+			const DownsampleConstants constants{
+				.Parity = glm::ivec4(parity, 0, 0),
+				.Origins = glm::ivec4(levelOrigins[(k - 1) / 2][((k - 1) % 2) * 2], levelOrigins[(k - 1) / 2][((k - 1) % 2) * 2 + 1], levelOrigins[k / 2][(k % 2) * 2], levelOrigins[k / 2][(k % 2) * 2 + 1]),
+				.Sizes = glm::ivec4(int32_t(previous.Width), int32_t(previous.Height), int32_t(size.Width), int32_t(size.Height)),
+			};
 			graph.AddPass("GI pyramid " + std::to_string(k), Rdn::PassType::Compute,
 				[&](Rdn::PassBuilder& builder)
 				{
-					for (const Rdn::RGImage image : { depths[k - 1], radiances[k - 1], emitters[k - 1] })
+					for (const Rdn::RGImage image : { radiances[k - 1], emitters[k - 1] })
 						builder.UseImage(image, Rdn::RGImageUsage::Sampled);
-					for (const Rdn::RGImage image : { depths[k], radiances[k], emitters[k] })
+					for (const Rdn::RGImage image : { radiances[k], emitters[k] })
 						builder.UseImage(image, Rdn::RGImageUsage::StorageWrite);
+					builder.UseImage(heights, Rdn::RGImageUsage::StorageReadWrite);
 				},
 				[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
 				{
 					cmd.BindComputePipeline(m_Downsample->GetHandle());
 					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Compute, m_Downsample->GetLayout(), 0, Rdn::DescriptorWrite()
-						.AddWrite(sampled(context, 0, depths[k - 1], *m_Nearest)).AddWrite(sampled(context, 1, radiances[k - 1], *m_Nearest)).AddWrite(sampled(context, 2, emitters[k - 1], *m_Nearest))
-						.AddWrite(storage(context, 3, depths[k])).AddWrite(storage(context, 4, radiances[k])).AddWrite(storage(context, 5, emitters[k])));
-					cmd.PushConstants(Rdn::ShaderStage::Compute, m_Downsample->GetLayout(), &parity, sizeof(parity));
+						.AddWrite(storage(context, 0, heights)).AddWrite(sampled(context, 1, radiances[k - 1], *m_Nearest)).AddWrite(sampled(context, 2, emitters[k - 1], *m_Nearest))
+						.AddWrite(storage(context, 4, radiances[k])).AddWrite(storage(context, 5, emitters[k])));
+					cmd.PushConstants(Rdn::ShaderStage::Compute, m_Downsample->GetLayout(), &constants, sizeof(constants));
 					cmd.DispatchThreads(m_Downsample.get(), size.Width, size.Height);
 				});
 		}
@@ -378,6 +403,33 @@ namespace Game
 		}
 		const glm::vec2 texel = 1.0f / glm::vec2(textureSize);
 
+		std::vector<Rdn::RGImage> placed(cascades);
+		for (uint32_t i = 0; i < cascades; i++)
+		{
+			const Cascade& cascade = layout[i];
+			placed[i] = graph.CreateImage("GI probes " + std::to_string(i), Rdn::RGImageDesc{ .Size = { cascade.Grid.x, cascade.Grid.y, 1 }, .Format = Rdn::Format::R32G32B32A32_Uint });
+			const PlaceConstants constants{
+				.Lattice = glm::vec4(float(cascade.Spacing), cascade.Offset, (LockedCascades >> i & 1u) != 0 ? 1.0f : 0.0f),
+				.Grid = glm::uvec4(cascade.Grid, 0u, 0u),
+			};
+			const Rdn::RGImage target = placed[i];
+			graph.AddPass("GI place " + std::to_string(i), Rdn::PassType::Compute,
+				[&](Rdn::PassBuilder& builder)
+				{
+					builder.UseImage(depth, Rdn::RGImageUsage::Sampled);
+					builder.UseImage(heights, Rdn::RGImageUsage::Sampled);
+					builder.UseImage(target, Rdn::RGImageUsage::StorageWrite);
+				},
+				[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
+				{
+					cmd.BindComputePipeline(m_Place->GetHandle());
+					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Compute, m_Place->GetLayout(), 0, Rdn::DescriptorWrite()
+						.AddWrite(frameWrite).AddWrite(sampled(context, 1, depth, *m_Nearest)).AddWrite(sampled(context, 2, heights, *m_Nearest)).AddWrite(storage(context, 3, target)));
+					cmd.PushConstants(Rdn::ShaderStage::Compute, m_Place->GetLayout(), &constants, sizeof(constants));
+					cmd.DispatchThreads(m_Place.get(), constants.Grid.x, constants.Grid.y);
+				});
+		}
+
 		std::vector<Rdn::RGImage> merged(cascades);
 		for (uint32_t i = cascades; i-- > 0;)
 		{
@@ -386,7 +438,7 @@ namespace Game
 			const Cascade& cascade = layout[i];
 			const Cascade& upper = top ? cascade : layout[i + 1];
 			const TraceConstants constants{
-				.Cascade = glm::uvec4(cascade.Directions, i == 0 ? BaseSteps : Steps, top ? 1u : 0u, i == 0 ? 1u : 0u),
+				.Cascade = glm::uvec4(cascade.Directions, i == 0 ? BaseSteps : Steps, top ? 1u : 0u, (i == 0 ? 1u : 0u) | (!top && (LockedCascades >> (i + 1) & 1u) != 0 ? 2u : 0u) | std::max(settings.TraceBudget, 1u) << 8),
 				.Grid = glm::uvec4(cascade.Grid, upper.Grid),
 				.Interval = glm::vec4(BaseInterval * float((1u << i) - 1u), BaseInterval * float((2u << i) - 1u), float(cascade.Spacing), float(upper.Spacing)),
 				.UpperTexel = glm::vec4(texel, float(upper.Directions), std::sqrt(4.0f * Pi) / float(cascade.Directions)),
@@ -394,16 +446,21 @@ namespace Game
 			};
 			const Rdn::RGImage target = merged[i];
 			const Rdn::RGImage upperImage = top ? radiances[0] : merged[i + 1];
+			const Rdn::RGImage probes = placed[i];
+			const Rdn::RGImage upperProbes = top ? placed[i] : placed[i + 1];
 			const glm::uvec2 threads = cascade.Grid * cascade.Directions;
 			const Rdn::ComputePipeline* trace = !top && (settings.Reconnect >> i & 1u) != 0 && m_TraceReconnect ? m_TraceReconnect.get() : m_Trace.get();
 			graph.AddPass("GI cascade " + std::to_string(i), Rdn::PassType::Compute,
 				[&](Rdn::PassBuilder& builder)
 				{
 					for (uint32_t k = 0; k < LevelCount; k++)
-						for (const Rdn::RGImage image : { depths[k], radiances[k], emitters[k] })
+						for (const Rdn::RGImage image : { radiances[k], emitters[k] })
 							builder.UseImage(image, Rdn::RGImageUsage::Sampled);
+					builder.UseImage(heights, Rdn::RGImageUsage::Sampled);
 					if (!top)
-						builder.UseImage(upperImage, Rdn::RGImageUsage::Sampled);
+						for (const Rdn::RGImage image : { upperImage, upperProbes })
+							builder.UseImage(image, Rdn::RGImageUsage::Sampled);
+					builder.UseImage(probes, Rdn::RGImageUsage::Sampled);
 					builder.UseImage(target, Rdn::RGImageUsage::StorageWrite);
 				},
 				[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
@@ -411,8 +468,10 @@ namespace Game
 					Rdn::DescriptorWrite write;
 					write.AddWrite(frameWrite);
 					for (uint32_t k = 0; k < LevelCount; k++)
-						write.AddWrite(sampled(context, 1, depths[k], *m_Nearest, k)).AddWrite(sampled(context, 2, radiances[k], *m_Linear, k)).AddWrite(sampled(context, 3, emitters[k], *m_Linear, k));
-					write.AddWrite(sampled(context, 4, upperImage, *m_Linear)).AddWrite(storage(context, 5, target)).AddWrite(environmentWrite).AddWrite(skyMaskWrite);
+						write.AddWrite(sampled(context, 2, radiances[k], *m_Linear, k)).AddWrite(sampled(context, 3, emitters[k], *m_Linear, k));
+					write.AddWrite(sampled(context, 1, heights, *m_Nearest));
+					write.AddWrite(sampled(context, 4, upperImage, *m_Linear)).AddWrite(storage(context, 5, target)).AddWrite(environmentWrite).AddWrite(skyMaskWrite)
+						.AddWrite(sampled(context, 8, probes, *m_Nearest)).AddWrite(sampled(context, 9, upperProbes, *m_Nearest));
 					cmd.BindComputePipeline(trace->GetHandle());
 					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Compute, trace->GetLayout(), 0, write);
 					cmd.PushConstants(Rdn::ShaderStage::Compute, trace->GetLayout(), &constants, sizeof(constants));
@@ -442,12 +501,13 @@ namespace Game
 		const std::array<Rdn::RGImage, 3> past = import(written ^ 1u);
 		const Rdn::RGImage base = merged[0];
 		const Rdn::RGImage second = merged[1];
-		const Rdn::RGImage baseDepth = depths[0];
+		const Rdn::RGImage baseProbes = placed[0];
+		const Rdn::RGImage secondProbes = placed[1];
 		graph.AddPass("GI resolve", Rdn::PassType::Compute,
 			[&](Rdn::PassBuilder& builder)
 			{
 				builder.UseImage(base, Rdn::RGImageUsage::Sampled);
-				builder.UseImage(baseDepth, Rdn::RGImageUsage::Sampled);
+				builder.UseImage(baseProbes, Rdn::RGImageUsage::Sampled);
 				for (const Rdn::RGImage image : past)
 					builder.UseImage(image, Rdn::RGImageUsage::Sampled);
 				for (const Rdn::RGImage image : sh)
@@ -457,7 +517,7 @@ namespace Game
 			{
 				cmd.BindComputePipeline(m_Resolve->GetHandle());
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Compute, m_Resolve->GetLayout(), 0, Rdn::DescriptorWrite()
-					.AddWrite(frameWrite).AddWrite(sampled(context, 1, base, *m_Nearest)).AddWrite(sampled(context, 2, baseDepth, *m_Nearest))
+					.AddWrite(frameWrite).AddWrite(sampled(context, 1, base, *m_Nearest)).AddWrite(sampled(context, 2, baseProbes, *m_Nearest))
 					.AddWrite(storage(context, 3, sh[0])).AddWrite(storage(context, 4, sh[1])).AddWrite(storage(context, 5, sh[2]))
 					.AddWrite(sampled(context, 6, past[0], *m_Nearest)).AddWrite(sampled(context, 7, past[1], *m_Nearest)).AddWrite(sampled(context, 8, past[2], *m_Nearest)));
 				cmd.PushConstants(Rdn::ShaderStage::Compute, m_Resolve->GetLayout(), &resolveConstants, sizeof(resolveConstants));
@@ -466,14 +526,14 @@ namespace Game
 
 		const ApplyConstants constants{
 			.Grid = glm::uvec4(probes, layout[1].Grid),
-			.Spacing = glm::vec4(float(layout[0].Spacing), float(layout[1].Spacing), 0.0f, 0.0f),
+			.Spacing = glm::vec4(float(layout[0].Spacing), float(layout[1].Spacing), float(LockedCascades & 1u), float(LockedCascades >> 1 & 1u)),
 			.Texel = glm::vec4(texel, texel),
 			.Offsets = glm::vec4(layout[0].Offset, layout[1].Offset),
 		};
 		graph.AddPass("GI apply", Rdn::PassType::Compute,
 			[&](Rdn::PassBuilder& builder)
 			{
-				for (const Rdn::RGImage image : { sh[0], sh[1], sh[2], baseDepth, base, second, gbuffer.Albedo, gbuffer.Surface, gbuffer.Depth })
+				for (const Rdn::RGImage image : { sh[0], sh[1], baseProbes, secondProbes, base, second, gbuffer.Albedo, gbuffer.Surface, gbuffer.Depth })
 					builder.UseImage(image, Rdn::RGImageUsage::Sampled);
 				builder.UseImage(scene, Rdn::RGImageUsage::StorageReadWrite);
 			},
@@ -482,8 +542,8 @@ namespace Game
 				cmd.BindComputePipeline(m_Apply->GetHandle());
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Compute, m_Apply->GetLayout(), 0, Rdn::DescriptorWrite()
 					.AddWrite(frameWrite)
-					.AddWrite(sampled(context, 1, sh[0], *m_Nearest)).AddWrite(sampled(context, 2, sh[1], *m_Nearest)).AddWrite(sampled(context, 3, sh[2], *m_Nearest))
-					.AddWrite(sampled(context, 4, baseDepth, *m_Nearest)).AddWrite(sampled(context, 5, base, *m_Linear)).AddWrite(sampled(context, 6, second, *m_Linear))
+					.AddWrite(sampled(context, 1, sh[0], *m_Nearest)).AddWrite(sampled(context, 2, sh[1], *m_Nearest)).AddWrite(sampled(context, 3, baseProbes, *m_Nearest))
+					.AddWrite(sampled(context, 4, secondProbes, *m_Nearest)).AddWrite(sampled(context, 5, base, *m_Linear)).AddWrite(sampled(context, 6, second, *m_Linear))
 					.AddWrite(sampled(context, 7, gbuffer.Albedo, *m_Nearest)).AddWrite(sampled(context, 8, gbuffer.Surface, *m_Nearest)).AddWrite(sampled(context, 9, gbuffer.Depth, *m_Nearest))
 					.AddWrite(storage(context, 10, scene)).AddWrite(applyEnvironmentWrite));
 				cmd.PushConstants(Rdn::ShaderStage::Compute, m_Apply->GetLayout(), &constants, sizeof(constants));
