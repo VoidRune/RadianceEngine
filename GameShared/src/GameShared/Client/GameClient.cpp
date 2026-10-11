@@ -531,7 +531,7 @@ namespace Game
 					.Position = start,
 					.Previous = start,
 					.Velocity = heading * pattern.Speed,
-					.Lifetime = ability.ProjectileLifetime,
+					.Lifetime = GetProjectileLifetime(ability, pattern.Speed),
 					.Radius = ability.ProjectileRadius,
 					.Pierce = pattern.Pierce,
 					.Explodes = ability.ImpactRadius > 0.0f,
@@ -592,7 +592,7 @@ namespace Game
 				projectile.LastHit = entity.NetId;
 			}
 			if (projectile.Lifetime <= 0.0f && projectile.Explodes)
-				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Ability = projectile.Ability, .Position = projectile.Position, .Remaining = GetAbility(projectile.Ability).EffectDuration, .Scale = areaScale });
+				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = projectile.Index, .Ability = projectile.Ability, .Position = projectile.Position, .Remaining = GetAbility(projectile.Ability).EffectDuration, .Scale = areaScale });
 		}
 		std::erase_if(m_PredictedProjectiles, [](const PredictedProjectile& projectile) { return projectile.Lifetime <= 0.0f; });
 		for (PredictedEffect& effect : m_PredictedEffects)
@@ -785,6 +785,6 @@ namespace Game
 		for (const PredictedProjectile& projectile : m_PredictedProjectiles)
 			m_View.push_back({ .NetId = PredictedNetIdBase + (uint32_t(projectile.Tag) << 4) + projectile.Index, .Kind = EntityKind::Projectile, .Position = Lerp(projectile.Previous, projectile.Position, alpha), .Facing = AngleOf(projectile.Velocity), .Owner = playerId, .Tag = projectile.Tag, .Variant = uint8_t(projectile.Ability) });
 		for (const PredictedEffect& effect : m_PredictedEffects)
-			m_View.push_back({ .NetId = (effect.Pending ? PredictedEffectNetIdBase : PredictedImpactNetIdBase) + (uint32_t(effect.Tag) << 4) + uint32_t(effect.Ability) % 16, .Kind = EntityKind::Effect, .Position = effect.Position, .Facing = effect.Facing, .Owner = playerId, .Tag = effect.Tag, .Variant = uint8_t(effect.Ability), .Scale = effect.Scale, .Flags = uint8_t(effect.Pending ? uint8_t(EntityFlags::Pending) : 0) });
+			m_View.push_back({ .NetId = (effect.Pending ? PredictedEffectNetIdBase : PredictedImpactNetIdBase) + (uint32_t(effect.Tag) << 4) + effect.Index, .Kind = EntityKind::Effect, .Position = effect.Position, .Facing = effect.Facing, .Owner = playerId, .Tag = effect.Tag, .Variant = uint8_t(effect.Ability), .Scale = effect.Scale, .Flags = uint8_t(effect.Pending ? uint8_t(EntityFlags::Pending) : 0) });
 	}
 }

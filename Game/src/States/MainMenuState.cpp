@@ -1,5 +1,7 @@
 #include "MainMenuState.h"
 #include "App/GameApp.h"
+#include "Audio/GameAudio.h"
+#include "Rendering/WorldRenderer.h"
 #include "States/SessionState.h"
 #include "UI/Ui.h"
 #include <GameShared/Content/Items.h>
@@ -7,13 +9,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 
 namespace Game
 {
 	namespace
 	{
 		constexpr float PanelWidth = 480.0f;
-		constexpr float PanelHeight = 566.0f;
+		constexpr float PanelHeight = 598.0f;
 		constexpr float PanelGap = 28.0f;
 		constexpr float PanelTop = 196.0f;
 		constexpr uint32_t Embers = 48;
@@ -92,9 +95,12 @@ namespace Game
 		m_Kit = int(settings.Kit);
 		m_Unlimited = settings.UnlimitedMaterials;
 		m_Volume = settings.Volume;
+		m_MusicVolume = settings.MusicVolume;
+		m_EffectsVolume = settings.EffectsVolume;
 		m_Muted = settings.Muted;
 		m_LagMs = float(settings.Simulation.LagMs);
 		m_LossPercent = settings.Simulation.LossPercent;
+		app.GetGameAudio().EnterMenu();
 	}
 
 	void MainMenuState::RefreshCharacter()
@@ -210,7 +216,8 @@ namespace Game
 			draw.TextWrapped({ content.X, content.Y + 8.0f, content.W, 80.0f }, "Your saved gear, gems and backpack come with you into the game.", Theme::Body(15.0f, Theme::Faint));
 			return;
 		}
-		const float cardHeight = std::min(86.0f, (content.H - 20.0f) / 3.0f);
+		const float kits = float(std::size(Kits));
+		const float cardHeight = std::min(86.0f, (content.H - 10.0f * kits) / kits);
 		for (const KitDef& kit : Kits)
 		{
 			const UiRect card = content.CutTop(cardHeight);
@@ -265,18 +272,55 @@ namespace Game
 		};
 		std::snprintf(text, sizeof(text), "%.0f%%", double(m_Volume) * 100.0);
 		bool audioChanged = ui.Slider(Ui::MakeId("volume"), sliderRow("Volume"), m_Volume, 0.0f, 1.0f, text);
-		audioChanged |= ui.Checkbox(Ui::MakeId("mute"), content.CutTop(30.0f), "Mute all sound", m_Muted);
+		UiRect mixRow = content.CutTop(32.0f);
+		UiRect musicRow = mixRow.CutLeft((mixRow.W - 16.0f) * 0.5f);
+		mixRow.CutLeft(16.0f);
+		draw.TextAligned(musicRow.CutLeft(58.0f), "Music", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
+		std::snprintf(text, sizeof(text), "%.0f%%", double(m_MusicVolume) * 100.0);
+		audioChanged |= ui.Slider(Ui::MakeId("music"), musicRow, m_MusicVolume, 0.0f, 1.0f, text);
+		draw.TextAligned(mixRow.CutLeft(64.0f), "Effects", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
+		std::snprintf(text, sizeof(text), "%.0f%%", double(m_EffectsVolume) * 100.0);
+		audioChanged |= ui.Slider(Ui::MakeId("effects"), mixRow, m_EffectsVolume, 0.0f, 1.0f, text);
+		UiRect muteRow = content.CutTop(30.0f);
+		UiRect shadowRow = muteRow.CutRight(muteRow.W * 0.55f);
+		audioChanged |= ui.Checkbox(Ui::MakeId("mute"), muteRow, "Mute all sound", m_Muted);
+		draw.TextAligned(shadowRow.CutLeft(70.0f), "Shadows", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
+		constexpr const char* shadowLabels[] = { "Off", "Low", "High" };
+		static_assert(std::size(shadowLabels) == size_t(ShadowQuality::Count));
+		Settings& graphics = m_App.GetSettings();
+		float shadows = float(graphics.Shadows);
+		if (ui.Slider(Ui::MakeId("shadows"), shadowRow, shadows, 0.0f, float(uint32_t(ShadowQuality::Count) - 1), shadowLabels[size_t(graphics.Shadows)]))
+		{
+			graphics.Shadows = ShadowQuality(std::lround(shadows));
+			m_App.GetWorldRenderer().SetShadowQuality(graphics.Shadows);
+		}
 		if (audioChanged)
 		{
-			m_App.GetSettings().Volume = m_Volume;
-			m_App.GetSettings().Muted = m_Muted;
+			Settings& settings = m_App.GetSettings();
+			settings.Volume = m_Volume;
+			settings.MusicVolume = m_MusicVolume;
+			settings.EffectsVolume = m_EffectsVolume;
+			settings.Muted = m_Muted;
 			m_App.ApplyAudioSettings();
 		}
+		constexpr const char* giLabels[] = { "Off", "Low", "Medium", "High" };
+		static_assert(std::size(giLabels) == size_t(GiQuality::Count));
+		float gi = float(graphics.Gi);
+		if (ui.Slider(Ui::MakeId("gi"), sliderRow("Indirect light"), gi, 0.0f, float(uint32_t(GiQuality::Count) - 1), giLabels[size_t(graphics.Gi)]))
+		{
+			graphics.Gi = GiQuality(std::lround(gi));
+			m_App.GetWorldRenderer().SetGiQuality(graphics.Gi);
+		}
+		UiRect networkRow = content.CutTop(32.0f);
+		UiRect lagRow = networkRow.CutLeft((networkRow.W - 16.0f) * 0.5f);
+		networkRow.CutLeft(16.0f);
+		draw.TextAligned(lagRow.CutLeft(58.0f), "Lag", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
 		std::snprintf(text, sizeof(text), "%.0f ms", double(m_LagMs));
-		if (ui.Slider(Ui::MakeId("lag"), sliderRow("Simulated lag"), m_LagMs, 0.0f, 500.0f, text))
+		if (ui.Slider(Ui::MakeId("lag"), lagRow, m_LagMs, 0.0f, 500.0f, text))
 			m_LagMs = std::round(m_LagMs / 5.0f) * 5.0f;
+		draw.TextAligned(networkRow.CutLeft(64.0f), "Loss", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
 		std::snprintf(text, sizeof(text), "%.1f%%", double(m_LossPercent));
-		if (ui.Slider(Ui::MakeId("loss"), sliderRow("Simulated loss"), m_LossPercent, 0.0f, 25.0f, text))
+		if (ui.Slider(Ui::MakeId("loss"), networkRow, m_LossPercent, 0.0f, 25.0f, text))
 			m_LossPercent = std::round(m_LossPercent * 2.0f) * 0.5f;
 	}
 

@@ -42,6 +42,10 @@ namespace Rdn
 			result.ShaderGroupHandleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
 			result.ShaderGroupBaseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
 			result.TextureCompressionBC = features.textureCompressionBC == VK_TRUE;
+			result.SamplerAnisotropy = features.samplerAnisotropy == VK_TRUE;
+			result.MaxSamplerAnisotropy = properties.properties.limits.maxSamplerAnisotropy;
+			result.Timestamps = properties.properties.limits.timestampComputeAndGraphics == VK_TRUE;
+			result.TimestampPeriod = properties.properties.limits.timestampPeriod;
 			return result;
 		}
 	}

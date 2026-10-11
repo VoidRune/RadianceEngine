@@ -32,9 +32,10 @@ namespace Rdn
 		bool DepthTest = true;
 		bool DepthWrite = true;
 		CompareOperation DepthCompareOp = CompareOperation::Less;
-		bool AlphaBlend = false;
+		BlendMode Blend = BlendMode::Opaque;
 		VertexAttributes VertexAttributes = {};
 		std::vector<Format> ColorAttachmentFormats = {};
+		std::vector<ColorComponent> ColorWriteMasks = {};
 		Format DepthAttachmentFormat = Format::Undefined;
 		std::vector<uint32_t> PushDescriptorSets = {};
 	};

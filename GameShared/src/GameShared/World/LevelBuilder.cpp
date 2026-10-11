@@ -241,6 +241,11 @@ namespace Game
 		Reserve(position, 1.2f);
 	}
 
+	void LevelBuilder::Roof(const TileRect& area, float height)
+	{
+		m_Level.Roofs.push_back({ .Min = { float(area.X), float(area.Y) }, .Max = { float(area.Right()), float(area.Top()) }, .Height = height });
+	}
+
 	Level LevelBuilder::Finish()
 	{
 		m_Level.Finalize();

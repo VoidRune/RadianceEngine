@@ -1,4 +1,6 @@
 #include "LaunchOptions.h"
+#include "Rendering/Lighting.h"
+#include "Rendering/PostProcess.h"
 #include <GameShared/Net/Protocol.h>
 #include <RadianceEngine/Core/Log.h>
 #include <algorithm>
@@ -25,6 +27,11 @@ namespace Game
 
 		bool ParseMap(std::string_view text, MapKind& map)
 		{
+			if (SameText(text, "abbey") || SameText(text, GetMapDef(MapKind::Abbey).Name))
+			{
+				map = MapKind::Abbey;
+				return true;
+			}
 			for (const MapDef& def : Maps)
 				if (IsMissionMap(def.Id) && (SameText(def.Name, text) || (def.Id == MapKind::Town && SameText(text, "town"))))
 				{
@@ -76,7 +83,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -194,6 +201,14 @@ namespace Game
 					options.Volume = volume;
 				i++;
 			}
+			else if ((argument == "--music-volume" || argument == "--effects-volume") && hasValue)
+			{
+				float volume = 1.0f;
+				valid = ParseNumber(value, volume) && volume >= 0.0f && volume <= 1.0f;
+				if (valid)
+					(argument == "--music-volume" ? options.MusicVolume : options.EffectsVolume) = volume;
+				i++;
+			}
 			else if (argument == "--start-wave" && hasValue)
 			{
 				valid = ParseNumber(value, options.FirstWave) && options.FirstWave >= 1 && options.FirstWave <= 99;
@@ -224,9 +239,28 @@ namespace Game
 				options.ScreenshotPath = std::string(value);
 				i++;
 			}
+			else if (argument == "--capture-audio" && hasValue)
+			{
+				options.AudioCapturePath = std::string(value);
+				i++;
+			}
+			else if (argument == "--log-audio")
+				options.LogAudio = true;
 			else if (argument == "--frames" && hasValue)
 			{
 				valid = ParseNumber(value, options.ScreenshotFrames);
+				i++;
+			}
+			else if (argument == "--burst" && hasValue)
+			{
+				valid = ParseNumber(value, options.ScreenshotBurst) && options.ScreenshotBurst > 0;
+				i++;
+			}
+			else if (argument == "--burst-interval" && hasValue)
+			{
+				float milliseconds = 0.0f;
+				valid = ParseNumber(value, milliseconds) && milliseconds >= 0.0f;
+				options.BurstInterval = double(milliseconds) / 1000.0;
 				i++;
 			}
 			else if (argument == "--delay" && hasValue)
@@ -234,6 +268,57 @@ namespace Game
 				valid = ParseNumber(value, options.ScreenshotDelay) && options.ScreenshotDelay >= 0.0f;
 				i++;
 			}
+			else if (argument == "--debug-view" && hasValue)
+			{
+				const auto it = std::find_if(std::begin(DebugViewNames), std::end(DebugViewNames), [&](const char* name) { return SameText(name, value); });
+				valid = it != std::end(DebugViewNames);
+				if (valid)
+					options.DebugView = uint8_t(it - std::begin(DebugViewNames));
+				i++;
+			}
+			else if (argument == "--tonemap" && hasValue)
+			{
+				const auto it = std::find_if(std::begin(TonemapperNames), std::end(TonemapperNames), [&](const char* name) { return SameText(name, value); });
+				valid = it != std::end(TonemapperNames);
+				if (valid)
+					options.Tonemap = uint8_t(it - std::begin(TonemapperNames));
+				i++;
+			}
+			else if (argument == "--shadows" && hasValue)
+			{
+				const auto it = std::find_if(std::begin(ShadowQualityNames), std::end(ShadowQualityNames), [&](const char* name) { return SameText(name, value); });
+				valid = it != std::end(ShadowQualityNames);
+				if (valid)
+					options.Shadows = uint8_t(it - std::begin(ShadowQualityNames));
+				i++;
+			}
+			else if (argument == "--gi" && hasValue)
+			{
+				const auto it = std::find_if(std::begin(GiQualityNames), std::end(GiQualityNames), [&](const char* name) { return SameText(name, value); });
+				valid = it != std::end(GiQualityNames);
+				if (valid)
+					options.Gi = uint8_t(it - std::begin(GiQualityNames));
+				i++;
+			}
+			else if (argument == "--exposure" && hasValue)
+			{
+				float exposure = 1.0f;
+				valid = ParseNumber(value, exposure) && exposure > 0.0f;
+				if (valid)
+					options.Exposure = exposure;
+				i++;
+			}
+			else if (argument == "--no-grading")
+				options.Grading = false;
+			else if (argument == "--lighting-test")
+				options.LightingTest = true;
+			else if (argument == "--pbr-test" && hasValue)
+			{
+				options.PbrTest = std::string(value);
+				i++;
+			}
+			else if (argument == "--profile-gpu")
+				options.ProfileGpu = true;
 			else
 				valid = false;
 			if (!valid)

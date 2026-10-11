@@ -14,8 +14,11 @@
     <BuildDependency Project="TimbreAudio\TimbreAudio.vcxproj" />
     <BuildDependency Project="GameShared\GameShared.vcxproj" />
     <BuildDependency Project="Game\UiAtlas.vcxproj" />
+    <BuildDependency Project="Game\ModelBaker.vcxproj" />
   </Project>
   <Project Path="GameShared\GameShared.vcxproj" Id="76D0B137-6288-F384-CB8F-CCE0B7668E75">
+  </Project>
+  <Project Path="Game\ModelBaker.vcxproj" Id="3B201098-27D8-51E5-90DF-2A417CB6ECD5">
   </Project>
   <Project Path="RadianceEngine\RadianceEngine.vcxproj" Id="F274AFE6-DE42-A3EC-C7D6-1313B3437F51">
   </Project>

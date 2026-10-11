@@ -387,7 +387,7 @@ namespace Game
 		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = context.Owner, .Tag = context.Tag, .Variant = uint8_t(ability.Id) });
 		m_Entities.Add<Projectile>(entity, Projectile{
 			.Velocity = direction * pattern.Speed,
-			.Lifetime = ability.ProjectileLifetime,
+			.Lifetime = GetProjectileLifetime(ability, pattern.Speed),
 			.Radius = ability.ProjectileRadius,
 			.Damage = damage,
 			.Side = context.Side,

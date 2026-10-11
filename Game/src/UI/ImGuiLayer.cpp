@@ -163,7 +163,7 @@ void main()
 			.CullMode = Rdn::CullMode::None,
 			.DepthTest = false,
 			.DepthWrite = false,
-			.AlphaBlend = true,
+			.Blend = Rdn::BlendMode::Alpha,
 			.VertexAttributes = Rdn::VertexAttributes({
 				{ Rdn::Format::R32G32_Sfloat, offsetof(ImDrawVert, pos) },
 				{ Rdn::Format::R32G32_Sfloat, offsetof(ImDrawVert, uv) },

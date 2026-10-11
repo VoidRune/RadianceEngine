@@ -1,0 +1,112 @@
+Audio credits
+
+Every sound here was trimmed, loudness normalized and re-encoded to Ogg Vorbis for the game. Most
+sound effects were folded to mono. Music loops had the frozen samples at their end removed and a
+short crossfade into the loop start added (LOOPSTART/LOOPLENGTH tags); ambience loops were
+crossfaded into themselves.
+
+MUSIC
+
+Music/Menu, HubPavane, HubFlow, HubAdventure, OldTown, OldTownDark, Caves, BattleHurry,
+BattleStorm, BattleClash, Victory
+    "Epic Departure", "Pavane", "Flow", "Adventure Begins", "Zwischenwelt", "Obscurium",
+    "In Darkness", "Hurry!", "Ship In A Storm", "Clash" and "Victory Stats"
+    from "Essentials Pack for Fantasy Games - LOOP BOX #3" by Of Far Different Nature
+    (https://fardifferent.carrd.co/)
+    License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+    https://opengameart.org/content/essentials-pack-for-fantasy-games-loop-box-3-orchestral-soundtracks-for-rpgs-and-adventures
+
+Music/Boss
+    "Blackmoor Colossus" (Colossal Boss Battle Theme, loop version) by Matthew Pablo
+    (http://www.matthewpablo.com)
+    License: CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)
+    https://opengameart.org/content/colossal-boss-battle-theme
+
+Music/Battle
+    "Determined Pursuit (Epic Orchestra Loop)" by Emma_MA
+    License: CC0 (https://creativecommons.org/publicdomain/zero/1.0/)
+    https://opengameart.org/content/determined-pursuit-epic-orchestra-loop
+
+Music/Defeat
+    "Bittersweet" by Emma_MA (excerpt with a fade out)
+    License: CC0
+    https://opengameart.org/content/bittersweet
+
+AMBIENCE
+
+Ambience/Hub, Town, Crucible, Ashlands, Storm, Menu, Campfire
+    "Summer Evening", "Autumn Forest", "Desert Wind", "Winter Wind", "Fog", "Campfire Crackling"
+    and "Large Bonfire" from "JC Sounds - Nature Ambient Pack Vol 1" by JC Sounds
+    License: CC BY 4.0 - Credit: JC Sounds
+    https://opengameart.org/content/jc-sounds-nature-ambient-pack-vol-1
+
+Ambience/Caves
+    "Loopable Dungeon Ambience" by JaggedStone
+    License: CC0
+    https://opengameart.org/content/loopable-dungeon-ambience
+
+Ambience/Heartbeat
+    "Heart Beat #5" by Joseph Sardin, BigSoundBank (#1930)
+    License: CC0
+    https://bigsoundbank.com
+
+Ambience/Gateway, FireLoop, ShockLoop, IceLoop, Chant
+    Loops from "JC Sounds - Fantasy SFX Pack Vol 1" by JC Sounds
+    License: CC BY 4.0 - Credit: JC Sounds
+    https://opengameart.org/content/jc-sounds-fantasy-sfx-pack-vol-1
+
+SOUND EFFECTS
+
+Sfx/Weapon (swings, bow, arrow and metal hits), Sfx/Spell
+    "JC Sounds - Fantasy SFX Pack Vol 1" by JC Sounds
+    License: CC BY 4.0 - Credit: JC Sounds
+    https://opengameart.org/content/jc-sounds-fantasy-sfx-pack-vol-1
+
+Sfx/UI
+    "JC Sounds - UI Utility Pack Vol 1" by JC Sounds
+    License: CC BY 4.0 - Credit: JC Sounds
+    https://opengameart.org/content/jc-sounds-ui-utility-pack-vol-1
+
+Sfx/Impact (Rock, Wood, Plank, Glass, GlassLight, Body, BodyLight, Soft, Plate, PlateLight, Bell),
+Sfx/Player (Step_Stone, Step_Grass, Step_Wood, Step_Carpet, Step_Sand)
+    "Impact Sounds" by Kenney (https://kenney.nl/assets/impact-sounds)
+    License: CC0
+
+Sfx/Item, Sfx/Weapon/Latch, Sfx/Weapon/Click, Sfx/Player (Step_Dirt, Cloth)
+    "RPG Audio" by Kenney (https://kenney.nl/assets/rpg-audio)
+    License: CC0
+
+Sfx/Impact (Explosion, Thunder, Rumble), Sfx/Whoosh, Sfx/Craft/Anvil, Sfx/World (Crow, Gong, Horn, Drum)
+    Recordings by Joseph Sardin, BigSoundBank (https://bigsoundbank.com), sounds #0956, #1483,
+    #1795-#1802, #1807, #1808, #2338, #2524, #3113, #3114, #3115, #3461-#3465 and #3589
+    License: CC0
+
+Sfx/Monster (GhoulGrowl, GhoulSnarl, Skeleton, Rattle, Wraith)
+    "Undead Sound Effects" by Ramblez (collaborator: Cheb Gonaz)
+    License: CC BY 4.0
+    https://opengameart.org/content/undead-sound-effects
+
+Sfx/Monster (OgreRoar, Spit, DemonCall, DemonGrowl, BeastDeath, SpiritShout)
+    "Monster or Beast Sounds" by pauliuw
+    License: CC0
+    https://opengameart.org/content/monster-or-beast-sounds
+
+Sfx/Monster (Grunt, Growl)
+    "Monster Sound Effects 2" by Ogrebane
+    License: CC0
+    https://opengameart.org/content/monster-sound-effects-2
+
+Sfx/Monster/WyrmRoar
+    "CC0 Deep Monster Roar" by trazzz123
+    License: CC0
+    https://opengameart.org/content/cc0-deep-monster-roar
+
+Sfx/Monster/Collapse
+    "Falling Bones" by spookymodem
+    License: CC BY 3.0
+    https://opengameart.org/content/falling-bones
+
+Sfx/Impact/Bone
+    "Bones rattle" by congusbongus
+    License: CC0
+    https://opengameart.org/content/bones-rattle

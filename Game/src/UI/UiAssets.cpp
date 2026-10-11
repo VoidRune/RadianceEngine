@@ -146,6 +146,7 @@ namespace Game
 		case ItemBase::Sword: return UiIcon::Broadsword;
 		case ItemBase::Axe: return UiIcon::BattleAxe;
 		case ItemBase::Dagger: return UiIcon::PlainDagger;
+		case ItemBase::Spear: return UiIcon::SpearHook;
 		case ItemBase::Bow: return UiIcon::PocketBow;
 		case ItemBase::Crossbow: return UiIcon::Crossbow;
 		case ItemBase::WizardHat: return UiIcon::PointyHat;
@@ -172,6 +173,7 @@ namespace Game
 		case AbilityId::Slash: return UiIcon::SwordSlice;
 		case AbilityId::Chop: return UiIcon::AxeSwing;
 		case AbilityId::Stab: return UiIcon::CurvyKnife;
+		case AbilityId::Thrust: return UiIcon::Fencer;
 		case AbilityId::Arrow: return UiIcon::HighShot;
 		case AbilityId::Quarrel: return UiIcon::ArrowFlights;
 		case AbilityId::Fireball: return UiIcon::Fireball;
@@ -248,6 +250,7 @@ namespace Game
 		{
 		case StarterKit::Knight: return UiIcon::VisoredHelm;
 		case StarterKit::Ranger: return UiIcon::PocketBow;
+		case StarterKit::Lancer: return UiIcon::SpearHook;
 		default: return UiIcon::PointyHat;
 		}
 	}

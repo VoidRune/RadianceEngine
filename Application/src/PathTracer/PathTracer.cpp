@@ -21,6 +21,12 @@ PathTracer::PathTracer(Rdn::Window* window, Rdn::Device* device, Rdn::PresentQue
 	globalFrameData.Exposure = options.Exposure;
 	globalFrameData.IndirectClamp = options.IndirectClamp;
 	globalFrameData.FilterSigma = options.FilterSigma;
+	globalFrameData.MaxBounces = options.MaxBounces;
+	if (options.Sun)
+	{
+		globalFrameData.SunDirection = glm::vec4(-glm::normalize(glm::vec3(*options.Sun)), 1.0f);
+		globalFrameData.SunRadiance = glm::vec4(glm::vec3(options.Sun->w), options.SunShadows ? 1.0f : 0.0f);
+	}
 
 	m_Camera = std::make_unique<CameraFP>(m_Window);
 	m_Camera->Position = glm::vec3(0.0f, 0.55f, -2.1f);

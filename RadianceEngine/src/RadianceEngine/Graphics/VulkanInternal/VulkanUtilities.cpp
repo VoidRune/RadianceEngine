@@ -109,6 +109,8 @@ namespace Rdn
 #define RDN_DEVICE_FEATURE(member) DeviceFeature{ #member, [](DeviceFeatureChain& chain) -> VkBool32& { return chain.member; } }
 
         const DeviceFeature RequiredFeatures[] = {
+            RDN_DEVICE_FEATURE(Core.features.independentBlend),
+            RDN_DEVICE_FEATURE(Core.features.shaderStorageImageExtendedFormats),
             RDN_DEVICE_FEATURE(Vulkan12.bufferDeviceAddress),
             RDN_DEVICE_FEATURE(Vulkan12.descriptorIndexing),
             RDN_DEVICE_FEATURE(Vulkan12.scalarBlockLayout),
@@ -120,10 +122,12 @@ namespace Rdn
             RDN_DEVICE_FEATURE(Vulkan12.shaderSampledImageArrayNonUniformIndexing),
             RDN_DEVICE_FEATURE(Vulkan13.dynamicRendering),
             RDN_DEVICE_FEATURE(Vulkan13.synchronization2),
+            RDN_DEVICE_FEATURE(Vulkan13.shaderDemoteToHelperInvocation),
         };
 
         const DeviceFeature OptionalFeatures[] = {
             RDN_DEVICE_FEATURE(Core.features.textureCompressionBC),
+            RDN_DEVICE_FEATURE(Core.features.samplerAnisotropy),
             RDN_DEVICE_FEATURE(Vulkan12.hostQueryReset),
             RDN_DEVICE_FEATURE(RayTracingPipeline.rayTraversalPrimitiveCulling),
         };

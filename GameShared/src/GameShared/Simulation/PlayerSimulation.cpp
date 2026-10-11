@@ -8,6 +8,7 @@ namespace Game
 	namespace
 	{
 		constexpr float ReadyEpsilon = 1e-4f;
+		constexpr float LungeStandoff = 0.75f;
 		constexpr uint32_t CastPriority[] = { 1, 2, 3, 0 };
 
 		void Cool(float& timer, float dt)
@@ -21,6 +22,15 @@ namespace Game
 			state.DashDistance = distance;
 			state.DashSpeed = ability.DashDuration > 0.0f ? ability.DashDistance / ability.DashDuration : 0.0f;
 			state.Invulnerable = std::max(state.Invulnerable, ability.Invulnerability);
+		}
+
+		Vec2 LungeStep(const SkillTraits& skill, Vec2 aim, float aimDistance, float before, float after)
+		{
+			const float lunge = GetAbility(skill.Ability).Lunge;
+			if (lunge <= 0.0f || skill.CastTime <= ReadyEpsilon)
+				return {};
+			const float elapsed = std::clamp(before, 0.0f, skill.CastTime) - std::clamp(after, 0.0f, skill.CastTime);
+			return aim * std::min(lunge * elapsed / skill.CastTime, std::max(aimDistance - LungeStandoff, 0.0f));
 		}
 
 		void Release(PlayerState& state, PlayerActions& actions, const PlayerTraits& traits, uint32_t slot, Vec2 aim, float aimDistance)
@@ -120,12 +130,15 @@ namespace Game
 		}
 
 		int32_t castingSlot = -1;
+		Vec2 lunge;
 		if (state.DashDistance <= 0.0f)
 		{
 			if (state.CastSlot >= 0)
 			{
 				castingSlot = state.CastSlot;
+				const float before = state.CastTimer;
 				state.CastTimer -= dt;
+				lunge = LungeStep(traits.Skills[size_t(castingSlot)], aim, input.AimDistance, before, state.CastTimer);
 				if (state.CastTimer <= ReadyEpsilon)
 					Release(state, actions, traits, uint32_t(state.CastSlot), aim, input.AimDistance);
 			}
@@ -149,7 +162,7 @@ namespace Game
 		}
 
 		const float speed = traits.MoveSpeed * (castingSlot >= 0 ? traits.Skills[size_t(castingSlot)].MoveScale : 1.0f) * (state.Chill > 0.0f ? ChilledMoveScale : 1.0f);
-		Vec2 delta = move * (speed * dt);
+		Vec2 delta = move * (speed * dt) + lunge;
 		const bool dashing = state.DashDistance > 0.0f;
 		if (dashing)
 		{

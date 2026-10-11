@@ -44,6 +44,7 @@ namespace Game
 		Sword,
 		Axe,
 		Dagger,
+		Spear,
 		Bow,
 		Crossbow,
 		WizardHat,
@@ -86,6 +87,7 @@ namespace Game
 		{ ItemBase::Sword, "Sword", EquipSlot::Weapon, AbilityId::Slash, Affinity::Melee },
 		{ ItemBase::Axe, "Axe", EquipSlot::Weapon, AbilityId::Chop, Affinity::Melee, { { { Stat::PhysicalDamage, 0.1f } } }, 1 },
 		{ ItemBase::Dagger, "Dagger", EquipSlot::Weapon, AbilityId::Stab, Affinity::Melee | Affinity::Caster, { { { Stat::CritChance, 0.04f } } }, 1 },
+		{ ItemBase::Spear, "Spear", EquipSlot::Weapon, AbilityId::Thrust, Affinity::Melee },
 		{ ItemBase::Bow, "Bow", EquipSlot::Weapon, AbilityId::Arrow, Affinity::Bow },
 		{ ItemBase::Crossbow, "Crossbow", EquipSlot::Weapon, AbilityId::Quarrel, Affinity::Bow },
 		{ ItemBase::WizardHat, "Wizard Hat", EquipSlot::Head, AbilityId::Count, 0, { { { Stat::MaxMana, 25.0f }, { Stat::CastSpeed, 0.04f } } }, 2 },
@@ -203,6 +205,7 @@ namespace Game
 		Arcanist,
 		Knight,
 		Ranger,
+		Lancer,
 		Count,
 	};
 
@@ -220,6 +223,7 @@ namespace Game
 		{ StarterKit::Arcanist, "Arcanist", "Wand, wizard hat, robe and sandals, with Fireball and Frost Nova gems.", ItemBase::Wand, { AbilityId::Fireball, AbilityId::FrostNova }, { ItemBase::WizardHat, ItemBase::Robe, ItemBase::Sandals } },
 		{ StarterKit::Knight, "Knight", "Sword, helm, plate armor and greaves, with Ground Slam and Cyclone gems.", ItemBase::Sword, { AbilityId::GroundSlam, AbilityId::Cyclone }, { ItemBase::Helm, ItemBase::Plate, ItemBase::Greaves } },
 		{ StarterKit::Ranger, "Ranger", "Bow, hood, tunic and boots, with Volley and Rain of Arrows gems.", ItemBase::Bow, { AbilityId::Volley, AbilityId::RainOfArrows }, { ItemBase::Hood, ItemBase::Tunic, ItemBase::Boots } },
+		{ StarterKit::Lancer, "Lancer", "Spear, helm, tunic and boots, with Cyclone and Blink gems.", ItemBase::Spear, { AbilityId::Cyclone, AbilityId::Blink }, { ItemBase::Helm, ItemBase::Tunic, ItemBase::Boots } },
 	};
 	static_assert(std::size(Kits) == size_t(StarterKit::Count));
 

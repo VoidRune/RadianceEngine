@@ -1,0 +1,124 @@
+#version 450
+#extension GL_EXT_nonuniform_qualifier : require
+#include "GBuffer.glsl"
+#include "Brdf.glsl"
+#include "Rc.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 1) uniform sampler2D DepthLevels[LevelCount];
+layout(set = 0, binding = 2) uniform sampler2D RadianceLevels[LevelCount];
+layout(set = 0, binding = 3) uniform sampler2D EmitterLevels[LevelCount];
+layout(set = 0, binding = 4) uniform sampler2D Upper;
+layout(set = 0, binding = 5, rgba16f) uniform writeonly image2D Merged;
+
+layout(push_constant) uniform PushConstants
+{
+	uvec4 Cascade;
+	uvec4 Grid;
+	vec4 Interval;
+	vec4 UpperTexel;
+	vec4 Offsets;
+} pc;
+
+const vec3 Luma = vec3(0.2126, 0.7152, 0.0722);
+
+vec4 March(vec3 origin, vec3 start, vec3 end, uint steps)
+{
+	float near = Rc.Projection.z;
+	if (start.z < near && end.z < near)
+		return vec4(0.0, 0.0, 0.0, 1.0);
+	if (start.z < near)
+		start = mix(start, end, (near - start.z) / (end.z - start.z));
+	else if (end.z < near)
+		end = mix(start, end, (start.z - near) / (start.z - end.z));
+	vec2 a = ProjectUv(start) * Rc.Screen.xy * 0.5;
+	vec2 b = ProjectUv(end) * Rc.Screen.xy * 0.5;
+	float stride = length(b - a) / float(steps);
+	int level = clamp(int(floor(log2(max(stride, 1.0)) + 0.5)), 0, LevelCount - 1);
+	float footprint = 0.35 * float(1 << level);
+	float stepLength = length(end - start) / float(steps);
+	float stepDepth = (end.z - start.z) / float(steps);
+	float radius = Rc.Trace.z;
+	vec3 radiance = vec3(0.0);
+	for (uint i = 0u; i < steps; i++)
+	{
+		vec3 p = mix(start, end, (float(i) + 0.5) / float(steps));
+		vec2 uv = ProjectUv(p);
+		if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
+			break;
+		float cone = length(p - origin) * pc.UpperTexel.w / HalfTexelWorld(p.z);
+		int filtered = clamp(int(ceil(log2(max(cone, 1.0)))), level, LevelCount - 1);
+		vec4 emitter = textureLod(EmitterLevels[nonuniformEXT(filtered)], LevelUv(uv, filtered), 0.0);
+		float luminance = dot(emitter.rgb, Luma);
+		if (luminance > 1e-5)
+		{
+			float z = emitter.a / luminance;
+			float low = p.z - 0.5 * abs(stepDepth);
+			float high = p.z + 0.5 * abs(stepDepth);
+			float inside = abs(stepDepth) > 1e-4 ? clamp((min(high, z + radius) - max(low, z - radius)) / abs(stepDepth), 0.0, 1.0) : float(abs(p.z - z) < radius);
+			radiance += emitter.rgb * (inside * stepLength / (2.0 * radius));
+		}
+		float behind = p.z - texelFetch(DepthLevels[nonuniformEXT(level)], LevelTexel(uv, level), 0).x;
+		if (behind > Rc.Trace.w + footprint * HalfTexelWorld(p.z) && behind < Rc.Trace.x)
+		{
+			float exact = p.z - texelFetch(DepthLevels[0], LevelTexel(uv, 0), 0).x;
+			if (level == 0 || (exact > Rc.Trace.w && exact < Rc.Trace.x))
+				return vec4(radiance + textureLod(RadianceLevels[nonuniformEXT(filtered)], LevelUv(uv, filtered), 0.0).rgb, 0.0);
+		}
+	}
+	return vec4(radiance, 1.0);
+}
+
+vec3 MergeUpper(ivec2 probeTexel, vec3 origin, vec3 normal, ivec2 direction)
+{
+	float spacing = pc.Interval.w;
+	vec2 grid = ProbeGrid(vec2(probeTexel), spacing, pc.Offsets.zw);
+	ivec2 base = ivec2(floor(grid));
+	vec2 f = grid - vec2(base);
+	float tolerance = 0.5 * spacing * HalfTexelWorld(origin.z) + 0.1;
+	vec3 sum = vec3(0.0);
+	float total = 0.0;
+	vec3 fallback = vec3(0.0);
+	for (int j = 0; j < 2; j++)
+		for (int i = 0; i < 2; i++)
+		{
+			ivec2 probe = clamp(base + ivec2(i, j), ivec2(0), ivec2(pc.Grid.zw) - 1);
+			float bilinear = (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
+			ivec2 texel = ProbeTexel(probe, spacing, pc.Offsets.zw);
+			float z = texelFetch(DepthLevels[0], texel, 0).x;
+			float weight = IsBackground(z) ? 0.0 : bilinear * PlaneWeight(ViewPosition(TexelUv(texel), z), origin, normal, tolerance);
+			vec3 value = textureLod(Upper, (vec2(probe * int(pc.UpperTexel.z) + direction * 2) + 1.0) * pc.UpperTexel.xy, 0.0).rgb;
+			sum += value * weight;
+			total += weight;
+			fallback += value * bilinear;
+		}
+	return (sum + fallback * 1e-3) / (total + 1e-3);
+}
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	int directions = int(pc.Cascade.x);
+	ivec2 probe = texel / directions;
+	if (probe.x >= int(pc.Grid.x) || probe.y >= int(pc.Grid.y))
+		return;
+	ivec2 direction = texel - probe * directions;
+	vec3 worldDirection = TileDirection(direction, directions);
+	ivec2 probeTexel = ProbeTexel(probe, pc.Interval.z, pc.Offsets.xy);
+	vec4 surface = texelFetch(DepthLevels[0], probeTexel, 0);
+	if (IsBackground(surface.x))
+	{
+		imageStore(Merged, texel, vec4(EnvironmentRadiance(worldDirection), 1.0));
+		return;
+	}
+	vec3 origin = ViewPosition(TexelUv(probeTexel), surface.x);
+	vec3 normal = mat3(Rc.View) * DecodeNormal(surface.zw);
+	vec3 rayDirection = mat3(Rc.View) * worldDirection;
+	vec3 base = origin + normal * Rc.Trace.y;
+	vec4 traced = March(origin, base + rayDirection * pc.Interval.x, base + rayDirection * pc.Interval.y, pc.Cascade.y);
+	vec3 radiance = traced.rgb;
+	if (traced.a > 0.0)
+		radiance += traced.a * (pc.Cascade.z != 0u ? EnvironmentRadiance(worldDirection) : MergeUpper(probeTexel, origin, normal, direction));
+	imageStore(Merged, texel, vec4(radiance, 1.0));
+}

@@ -15,15 +15,15 @@ namespace Game
 		constexpr uint32_t ProfileVersion = 2;
 		constexpr const char* GearKeys[] = { "weapon", "head", "body", "feet", "amulet", "ring1", "ring2" };
 		static_assert(std::size(GearKeys) == GearSlotCount);
-		constexpr const char* BaseKeys[] = { "Wand", "Staff", "Sword", "Axe", "Dagger", "Bow", "Crossbow", "WizardHat", "Hood", "Helm", "Robe", "Tunic", "Plate", "Sandals", "Boots", "Greaves", "Amulet", "Ring", "Gem" };
+		constexpr const char* BaseKeys[] = { "Wand", "Staff", "Sword", "Axe", "Dagger", "Spear", "Bow", "Crossbow", "WizardHat", "Hood", "Helm", "Robe", "Tunic", "Plate", "Sandals", "Boots", "Greaves", "Amulet", "Ring", "Gem" };
 		static_assert(std::size(BaseKeys) == size_t(ItemBase::Count));
 		constexpr const char* StatKeys[] = { "Damage", "PhysicalDamage", "FireDamage", "ColdDamage", "LightningDamage", "AttackSpeed", "CastSpeed", "CritChance", "CritDamage", "LifeSteal", "AreaSize", "ExtraProjectiles", "Pierce", "ProjectileSpeed", "CooldownRecovery", "GemLevel", "MaxHealth", "MaxMana", "ManaRegen", "Regeneration", "Armor", "FireResist", "ColdResist", "LightningResist", "PoisonResist", "MoveSpeed" };
 		static_assert(std::size(StatKeys) == size_t(Stat::Count));
-		constexpr const char* AbilityKeys[] = { "Bolt", "Orb", "Slash", "Chop", "Stab", "Arrow", "Quarrel", "Fireball", "Meteor", "FrostNova", "IceSpear", "ChainLightning", "Blink", "Cyclone", "GroundSlam", "Volley", "RainOfArrows", "PiercingShot", "Rejuvenate", "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain" };
+		constexpr const char* AbilityKeys[] = { "Bolt", "Orb", "Slash", "Chop", "Stab", "Thrust", "Arrow", "Quarrel", "Fireball", "Meteor", "FrostNova", "IceSpear", "ChainLightning", "Blink", "Cyclone", "GroundSlam", "Volley", "RainOfArrows", "PiercingShot", "Rejuvenate", "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain" };
 		static_assert(std::size(AbilityKeys) == size_t(AbilityId::Count));
 		constexpr const char* RarityKeys[] = { "Common", "Uncommon", "Rare", "Legendary", "Mythic" };
 		static_assert(std::size(RarityKeys) == size_t(Rarity::Count));
-		constexpr const char* KitKeys[] = { "Arcanist", "Knight", "Ranger" };
+		constexpr const char* KitKeys[] = { "Arcanist", "Knight", "Ranger", "Lancer" };
 		constexpr const char* GemModKeys[] = { "None", "Ruthless", "Frugal", "Quickened", "Restless", "Vast", "Split" };
 		static_assert(std::size(GemModKeys) == size_t(GemMod::Count));
 		constexpr const char* MaterialKeys[] = { "gold", "shards", "starsteel", "arcaneDust", "voidShards" };

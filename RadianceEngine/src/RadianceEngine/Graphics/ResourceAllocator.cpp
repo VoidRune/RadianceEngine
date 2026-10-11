@@ -117,6 +117,7 @@ namespace Rdn
                 return 3;
             case Format::R8G8B8A8_Unorm: case Format::R8G8B8A8_Snorm: case Format::R8G8B8A8_Uint: case Format::R8G8B8A8_Sint: case Format::R8G8B8A8_Srgb:
             case Format::B8G8R8A8_Unorm: case Format::B8G8R8A8_Snorm: case Format::B8G8R8A8_Uint: case Format::B8G8R8A8_Sint: case Format::B8G8R8A8_Srgb:
+            case Format::A2B10G10R10_Unorm:
                 return 4;
             case Format::R16_Unorm: case Format::R16_Snorm: case Format::R16_Uint: case Format::R16_Sint: case Format::R16_Sfloat:
                 return 2;
@@ -628,14 +629,16 @@ namespace Rdn
         samplerInfo.magFilter = toVk(desc.MagFilter);
         samplerInfo.minFilter = toVk(desc.MinFilter);
         samplerInfo.addressModeU = toVk(desc.AddressMode);
-        samplerInfo.addressModeV = samplerInfo.addressModeU;
+        samplerInfo.addressModeV = toVk(desc.AddressModeV.value_or(desc.AddressMode));
         samplerInfo.addressModeW = samplerInfo.addressModeU;
         samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         samplerInfo.mipLodBias = 0.0f;
         samplerInfo.minLod = 0.0f;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
-        samplerInfo.anisotropyEnable = VK_FALSE;
-        samplerInfo.maxAnisotropy = 1.0f;
+        const DeviceProperties& properties = m_Device->GetProperties();
+        const float anisotropy = std::min(desc.MaxAnisotropy, properties.MaxSamplerAnisotropy);
+        samplerInfo.anisotropyEnable = properties.SamplerAnisotropy && anisotropy > 1.0f ? VK_TRUE : VK_FALSE;
+        samplerInfo.maxAnisotropy = samplerInfo.anisotropyEnable ? anisotropy : 1.0f;
         samplerInfo.unnormalizedCoordinates = VK_FALSE;
         samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
         samplerInfo.compareEnable = VK_FALSE;
@@ -1171,13 +1174,13 @@ namespace Rdn
         for (size_t i = 0; i < desc.ColorAttachmentFormats.size(); i++)
         {
             VkPipelineColorBlendAttachmentState att{};
-            att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-            att.blendEnable = desc.AlphaBlend ? VK_TRUE : VK_FALSE;
-            att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-            att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            att.colorWriteMask = static_cast<VkColorComponentFlags>(i < desc.ColorWriteMasks.size() ? desc.ColorWriteMasks[i] : ColorComponent::All);
+            att.blendEnable = desc.Blend != BlendMode::Opaque ? VK_TRUE : VK_FALSE;
+            att.srcColorBlendFactor = desc.Blend == BlendMode::Alpha ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
+            att.dstColorBlendFactor = desc.Blend == BlendMode::Additive ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
             att.colorBlendOp = VK_BLEND_OP_ADD;
             att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-            att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            att.dstAlphaBlendFactor = desc.Blend == BlendMode::Additive ? VK_BLEND_FACTOR_ONE : desc.Blend == BlendMode::Alpha ? VK_BLEND_FACTOR_ZERO : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
             att.alphaBlendOp = VK_BLEND_OP_ADD;
             blendAttachments.push_back(att);
         }

@@ -41,7 +41,7 @@ namespace Game
 		"sprint", "run", "padlock", "cog", "crossed-swords", "exit-door", "magic-portal", "crown", "cross-mark", "check-mark",
 		"anvil-impact", "hand", "magic-swirl", "droplets", "waves", "heart-drop", "crosshair", "skull-crack", "split-arrows",
 		"thorned-arrow", "aura", "life-in-the-balance", "stopwatch", "checked-shield", "laurels", "scroll-unfurled", "heart-organ",
-		"coins", "shard", "ingot", "dust", "void-shard", "chest",
+		"coins", "shard", "ingot", "dust", "void-shard", "chest", "spear-hook", "fencer",
 	};
 
 	inline VectorAtlasDesc MakeUiAtlasDesc()

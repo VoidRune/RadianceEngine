@@ -18,6 +18,8 @@ namespace Game
 		std::optional<StarterKit> Kit;
 		std::optional<MapKind> Map;
 		std::optional<float> Volume;
+		std::optional<float> MusicVolume;
+		std::optional<float> EffectsVolume;
 		GameMode StartMode = GameMode::Hub;
 		uint8_t Tier = 1;
 		ModifierMask Modifiers = 0;
@@ -33,8 +35,21 @@ namespace Game
 		NetworkSimulation Simulation;
 		bool Validation = true;
 		std::string ScreenshotPath;
+		std::string AudioCapturePath;
+		bool LogAudio = false;
 		uint32_t ScreenshotFrames = 0;
+		uint32_t ScreenshotBurst = 1;
+		double BurstInterval = 0.0;
 		float ScreenshotDelay = 0.0f;
+		uint8_t DebugView = 0;
+		std::optional<uint8_t> Tonemap;
+		std::optional<uint8_t> Shadows;
+		std::optional<uint8_t> Gi;
+		std::optional<float> Exposure;
+		bool Grading = true;
+		bool LightingTest = false;
+		std::string PbrTest;
+		bool ProfileGpu = false;
 	};
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv);

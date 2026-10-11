@@ -25,6 +25,8 @@ layout(set = 0, binding = 4) uniform GlobalData
     uint samplesPerPixel;
     float indirectClamp;
     float filterSigma;
+    vec4 sunDirection;
+    vec4 sunRadiance;
 } globalData;
 
 layout(location = 0) rayPayloadEXT HitPayload payload;
@@ -407,6 +409,35 @@ vec3 DirectLightingMedium(vec3 position, vec3 wo, float g, MediumStack stack, in
     return phase * light.radiance * transmittance * (PowerHeuristic(light.pdf, phase) / light.pdf);
 }
 
+vec3 SunLightingSurface(vec3 position, vec3 ng, vec3 wo, mat3 frame, Bsdf bsdf, SurfaceMaterial material, MediumStack stack)
+{
+    if (globalData.sunDirection.w <= 0.0)
+        return vec3(0.0);
+    vec3 wi = globalData.sunDirection.xyz;
+    float bsdfPdf;
+    vec3 f = EvalBsdf(bsdf, ToLocal(frame, wo), ToLocal(frame, wi), ToLocal(frame, ng), bsdfPdf);
+    if (MaxComponent(f) <= 0.0)
+        return vec3(0.0);
+    vec3 transmittance = vec3(1.0);
+    if (globalData.sunRadiance.w > 0.0)
+    {
+        bool outside = dot(wi, ng) > 0.0;
+        if (!material.thinWalled && outside != (dot(wo, ng) > 0.0))
+            CrossBoundary(stack, !outside, material.medium);
+        transmittance = Transmittance(OffsetRay(position, outside ? ng : -ng), wi, INF, stack);
+    }
+    return f * abs(dot(wi, frame[2])) * globalData.sunRadiance.rgb * transmittance;
+}
+
+vec3 SunLightingMedium(vec3 position, vec3 wo, float g, MediumStack stack)
+{
+    if (globalData.sunDirection.w <= 0.0)
+        return vec3(0.0);
+    vec3 wi = globalData.sunDirection.xyz;
+    vec3 transmittance = globalData.sunRadiance.w > 0.0 ? Transmittance(position, wi, INF, stack) : vec3(1.0);
+    return HenyeyGreenstein(dot(wo, wi), g) * globalData.sunRadiance.rgb * transmittance;
+}
+
 vec3 ClampIndirect(vec3 contribution, uint vertices)
 {
     float luminance = Luminance(contribution);
@@ -456,7 +487,7 @@ vec3 TracePath(vec3 origin, vec3 direction, inout uint rng)
 
                 vec3 position = origin + direction * t;
                 vec3 wo = -direction;
-                radiance += ClampIndirect(beta * DirectLightingMedium(position, wo, medium.g, stack, rng), depth);
+                radiance += ClampIndirect(beta * (DirectLightingMedium(position, wo, medium.g, stack, rng) + SunLightingMedium(position, wo, medium.g, stack)), depth);
 
                 float phasePdf;
                 direction = SampleHenyeyGreenstein(wo, medium.g, Random2(rng), phasePdf);
@@ -535,7 +566,8 @@ vec3 TracePath(vec3 origin, vec3 direction, inout uint rng)
 
         bool nee = BsdfHasSmoothLobes(bsdf);
         if (nee)
-            radiance += ClampIndirect(beta * DirectLightingSurface(surface.position, ng, wo, frame, bsdf, material, stack, rng), depth);
+            radiance += ClampIndirect(beta * (DirectLightingSurface(surface.position, ng, wo, frame, bsdf, material, stack, rng)
+                + SunLightingSurface(surface.position, ng, wo, frame, bsdf, material, stack)), depth);
 
         vec3 wiLocal;
         vec3 f;

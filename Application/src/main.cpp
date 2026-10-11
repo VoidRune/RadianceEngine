@@ -48,14 +48,15 @@ namespace
 	PathTracerOptions ParseOptions(int argc, char** argv, Rdn::WindowDescription& windowDesc)
 	{
 		constexpr std::string_view usage = "usage: Application [scene.gltf|scene.glb|model.obj] [--env sky.hdr] [--env-intensity x] [--env-rotation degrees] "
-			"[--exposure x] [--clamp x] [--filter sigma] [--camera x,y,z,yaw,pitch[,fov]] [--screenshot file.png --frames n] [--size WxH] [--fullscreen] [--no-validation]";
+			"[--exposure x] [--clamp x] [--filter sigma] [--camera x,y,z,yaw,pitch[,fov]] [--sun x,y,z,irradiance] [--no-sun-shadows] [--bounces n] "
+			"[--screenshot file.png --frames n] [--size WxH] [--fullscreen] [--no-validation]";
 		PathTracerOptions options;
 		for (int i = 1; i < argc; i++)
 		{
 			const std::string_view argument = argv[i];
 			const bool takesValue = argument == "--env" || argument == "--env-intensity" || argument == "--env-rotation" || argument == "--exposure"
 				|| argument == "--clamp" || argument == "--filter" || argument == "--camera" || argument == "--screenshot" || argument == "--frames"
-				|| argument == "--size";
+				|| argument == "--size" || argument == "--sun" || argument == "--bounces";
 			if (takesValue && i + 1 >= argc)
 			{
 				RDN_LOG_ERROR("{} needs a value ({})", argument, usage);
@@ -83,6 +84,16 @@ namespace
 				if (valid)
 					options.Camera = CameraPose{ { values[0], values[1], values[2] }, values[3], values[4], values.size() == 6 ? values[5] : 50.0f };
 			}
+			else if (argument == "--sun")
+			{
+				valid = ParseFloats(value, values) && values.size() == 4 && values[3] >= 0.0f && (values[0] != 0.0f || values[1] != 0.0f || values[2] != 0.0f);
+				if (valid)
+					options.Sun = glm::vec4(values[0], values[1], values[2], values[3]);
+			}
+			else if (argument == "--no-sun-shadows")
+				options.SunShadows = false;
+			else if (argument == "--bounces")
+				valid = ParseUint(value, options.MaxBounces) && options.MaxBounces > 0;
 			else if (argument == "--screenshot")
 				options.ScreenshotPath = value;
 			else if (argument == "--frames")

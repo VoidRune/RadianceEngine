@@ -382,7 +382,9 @@ namespace Game
 		if (icon)
 			draw.Icon(*icon, UiRect::Centered({ start + iconSize * 0.5f, body.Center().y }, glm::vec2(iconSize)), { .Color = text, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.5f) });
 		draw.TextAligned({ start + iconSize + gap, body.Y, textWidth + 2.0f, body.H }, label, { .Font = style.Font, .Size = style.Size, .Color = text, .ShadowOffset = { 0.0f, 1.0f }, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f), .ShadowBlur = 1.5f }, { 0.0f, 0.5f });
-		return enabled && interaction.Clicked;
+		const bool clicked = enabled && interaction.Clicked;
+		m_Clicks += clicked ? 1u : 0u;
+		return clicked;
 	}
 
 	bool Ui::Checkbox(UiId id, const UiRect& rect, std::string_view label, bool& value)
@@ -398,6 +400,7 @@ namespace Game
 		if (interaction.Clicked)
 		{
 			value = !value;
+			m_Clicks++;
 			return true;
 		}
 		return false;

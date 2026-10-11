@@ -40,6 +40,7 @@ namespace Game
 		Slash,
 		Chop,
 		Stab,
+		Thrust,
 		Arrow,
 		Quarrel,
 		Fireball,
@@ -90,7 +91,7 @@ namespace Game
 		int32_t Damage = 0;
 		float ProjectileSpeed = 0.0f;
 		float ProjectileRadius = 0.0f;
-		float ProjectileLifetime = 0.0f;
+		float ProjectileRange = 0.0f;
 		uint8_t ProjectileCount = 1;
 		float ProjectileSpread = 0.0f;
 		uint8_t Pierce = 0;
@@ -98,6 +99,7 @@ namespace Game
 		float SpawnOffset = 0.45f;
 		float Reach = 0.0f;
 		float HalfArc = 0.0f;
+		float Lunge = 0.0f;
 		float DashDistance = 0.0f;
 		float DashDuration = 0.0f;
 		float Invulnerability = 0.0f;
@@ -115,40 +117,41 @@ namespace Game
 	};
 
 	inline constexpr AbilityDef Abilities[] = {
-		{ .Id = AbilityId::Bolt, .Name = "Spark Bolt", .Description = "Fires a crackling bolt.", .Damages = Element::Lightning, .CastTime = 0.2f, .CastMove = 0.65f, .Cooldown = 0.28f, .Damage = 22, .ProjectileSpeed = 17.0f, .ProjectileRadius = 0.14f, .ProjectileLifetime = 1.0f },
-		{ .Id = AbilityId::Orb, .Name = "Frost Orb", .Description = "Lobs a slow orb of frost that passes through one enemy and chills.", .Damages = Element::Cold, .CastTime = 0.35f, .CastMove = 0.5f, .Cooldown = 0.35f, .Damage = 40, .ProjectileSpeed = 11.0f, .ProjectileRadius = 0.24f, .ProjectileLifetime = 1.5f, .Pierce = 1, .Chill = 0.8f },
-		{ .Id = AbilityId::Slash, .Name = "Slash", .Description = "Sweeps the blade in a wide arc.", .Kind = AbilityKind::Melee, .CastTime = 0.18f, .CastMove = 0.55f, .Cooldown = 0.3f, .Damage = 30, .Reach = 2.6f, .HalfArc = 1.1f },
-		{ .Id = AbilityId::Chop, .Name = "Chop", .Description = "A heavy overhead chop that staggers.", .Kind = AbilityKind::Melee, .CastTime = 0.35f, .CastMove = 0.4f, .Cooldown = 0.4f, .Damage = 50, .Reach = 2.6f, .HalfArc = 0.9f, .EffectDuration = 0.18f, .Stun = 0.3f, .PvpScale = 0.9f },
-		{ .Id = AbilityId::Stab, .Name = "Stab", .Description = "A quick thrust.", .Kind = AbilityKind::Melee, .CastTime = 0.08f, .CastMove = 0.75f, .Cooldown = 0.22f, .Damage = 15, .Reach = 2.1f, .HalfArc = 0.5f, .EffectDuration = 0.1f },
-		{ .Id = AbilityId::Arrow, .Name = "Arrow", .Description = "Looses an arrow that pierces one enemy.", .CastTime = 0.3f, .CastMove = 0.5f, .Cooldown = 0.15f, .Damage = 26, .ProjectileSpeed = 22.0f, .ProjectileRadius = 0.12f, .ProjectileLifetime = 0.95f, .Pierce = 1 },
-		{ .Id = AbilityId::Quarrel, .Name = "Quarrel", .Description = "Fires a heavy bolt that pierces two enemies.", .CastTime = 0.5f, .CastMove = 0.35f, .Cooldown = 0.25f, .Damage = 55, .ProjectileSpeed = 28.0f, .ProjectileRadius = 0.1f, .ProjectileLifetime = 0.8f, .Pierce = 2, .PvpScale = 0.85f },
-		{ .Id = AbilityId::Fireball, .Name = "Fireball", .Description = "Hurls a fireball that explodes on impact. Roots you while casting.", .Damages = Element::Fire, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.5f, .CastMove = 0.0f, .ManaCost = 16.0f, .Cooldown = 0.3f, .Damage = 55, .ProjectileSpeed = 13.0f, .ProjectileRadius = 0.22f, .ProjectileLifetime = 1.4f, .EffectDuration = 0.3f, .ImpactRadius = 1.8f, .PvpScale = 0.8f },
-		{ .Id = AbilityId::Meteor, .Name = "Meteor", .Description = "Calls a meteor down on the target area after a short delay. Stuns. Roots you while casting.", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.8f, .CastMove = 0.0f, .ManaCost = 35.0f, .Cooldown = 5.0f, .Damage = 150, .EffectDuration = 0.4f, .ImpactRadius = 2.4f, .ImpactDelay = 0.7f, .Range = 10.0f, .Stun = 0.5f, .PvpScale = 0.5f },
+		{ .Id = AbilityId::Bolt, .Name = "Spark Bolt", .Description = "Fires a crackling bolt.", .Damages = Element::Lightning, .CastTime = 0.2f, .CastMove = 0.65f, .Cooldown = 0.28f, .Damage = 22, .ProjectileSpeed = 17.0f, .ProjectileRadius = 0.14f, .ProjectileRange = 9.0f },
+		{ .Id = AbilityId::Orb, .Name = "Frost Orb", .Description = "Lobs a slow orb of frost that passes through one enemy and chills.", .Damages = Element::Cold, .CastTime = 0.35f, .CastMove = 0.5f, .Cooldown = 0.35f, .Damage = 40, .ProjectileSpeed = 11.0f, .ProjectileRadius = 0.24f, .ProjectileRange = 8.5f, .Pierce = 1, .Chill = 0.8f },
+		{ .Id = AbilityId::Slash, .Name = "Slash", .Description = "Steps into a sweep of the blade in a wide arc.", .Kind = AbilityKind::Melee, .CastTime = 0.18f, .CastMove = 0.55f, .Cooldown = 0.3f, .Damage = 30, .Reach = 2.8f, .HalfArc = 1.1f, .Lunge = 0.7f },
+		{ .Id = AbilityId::Chop, .Name = "Chop", .Description = "A heavy overhead chop that staggers.", .Kind = AbilityKind::Melee, .CastTime = 0.35f, .CastMove = 0.4f, .Cooldown = 0.4f, .Damage = 50, .Reach = 2.8f, .HalfArc = 0.9f, .Lunge = 0.6f, .EffectDuration = 0.18f, .Stun = 0.3f, .PvpScale = 0.9f },
+		{ .Id = AbilityId::Stab, .Name = "Stab", .Description = "A quick thrust.", .Kind = AbilityKind::Melee, .CastTime = 0.08f, .CastMove = 0.75f, .Cooldown = 0.22f, .Damage = 15, .Reach = 2.4f, .HalfArc = 0.5f, .Lunge = 0.5f, .EffectDuration = 0.1f },
+		{ .Id = AbilityId::Thrust, .Name = "Thrust", .Description = "Lunges forward and drives the spear through everything in a long line.", .Kind = AbilityKind::Melee, .CastTime = 0.22f, .CastMove = 0.5f, .Cooldown = 0.32f, .Damage = 30, .Reach = 3.6f, .Lunge = 1.0f, .EffectDuration = 0.14f, .Shape = StrikeShape::Line, .Width = 0.9f },
+		{ .Id = AbilityId::Arrow, .Name = "Arrow", .Description = "Looses an arrow that pierces one enemy.", .CastTime = 0.3f, .CastMove = 0.5f, .Cooldown = 0.15f, .Damage = 26, .ProjectileSpeed = 22.0f, .ProjectileRadius = 0.12f, .ProjectileRange = 10.0f, .Pierce = 1 },
+		{ .Id = AbilityId::Quarrel, .Name = "Quarrel", .Description = "Fires a heavy bolt that pierces two enemies.", .CastTime = 0.5f, .CastMove = 0.35f, .Cooldown = 0.25f, .Damage = 55, .ProjectileSpeed = 28.0f, .ProjectileRadius = 0.1f, .ProjectileRange = 11.0f, .Pierce = 2, .PvpScale = 0.85f },
+		{ .Id = AbilityId::Fireball, .Name = "Fireball", .Description = "Hurls a fireball that explodes on impact. Roots you while casting.", .Damages = Element::Fire, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.5f, .CastMove = 0.0f, .ManaCost = 16.0f, .Cooldown = 0.3f, .Damage = 55, .ProjectileSpeed = 13.0f, .ProjectileRadius = 0.22f, .ProjectileRange = 9.0f, .EffectDuration = 0.3f, .ImpactRadius = 1.8f, .PvpScale = 0.8f },
+		{ .Id = AbilityId::Meteor, .Name = "Meteor", .Description = "Calls a meteor down on the target area after a short delay. Stuns. Roots you while casting.", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.8f, .CastMove = 0.0f, .ManaCost = 35.0f, .Cooldown = 5.0f, .Damage = 150, .EffectDuration = 0.4f, .ImpactRadius = 2.4f, .ImpactDelay = 0.7f, .Range = 9.0f, .Stun = 0.5f, .PvpScale = 0.5f },
 		{ .Id = AbilityId::FrostNova, .Name = "Frost Nova", .Description = "Blasts frost around you, chilling enemies. Works with any weapon.", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Spell = true, .Gem = true, .CastTime = 0.25f, .CastMove = 0.3f, .ManaCost = 22.0f, .Cooldown = 5.0f, .Damage = 30, .Reach = 4.2f, .EffectDuration = 0.35f, .Chill = 2.5f },
-		{ .Id = AbilityId::IceSpear, .Name = "Ice Spear", .Description = "A fast shard of ice that pierces three enemies and chills them.", .Damages = Element::Cold, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.35f, .CastMove = 0.4f, .ManaCost = 10.0f, .Cooldown = 0.0f, .Damage = 38, .ProjectileSpeed = 20.0f, .ProjectileRadius = 0.15f, .ProjectileLifetime = 1.0f, .Pierce = 3, .Chill = 1.2f },
-		{ .Id = AbilityId::ChainLightning, .Name = "Chain Lightning", .Description = "A bolt of lightning that jumps to 3 more enemies.", .Damages = Element::Lightning, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.4f, .CastMove = 0.5f, .ManaCost = 14.0f, .Cooldown = 0.5f, .Damage = 30, .ProjectileSpeed = 24.0f, .ProjectileRadius = 0.15f, .ProjectileLifetime = 0.9f, .Chain = 3, .PvpScale = 0.85f },
+		{ .Id = AbilityId::IceSpear, .Name = "Ice Spear", .Description = "A fast shard of ice that pierces three enemies and chills them.", .Damages = Element::Cold, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.35f, .CastMove = 0.4f, .ManaCost = 10.0f, .Cooldown = 0.0f, .Damage = 38, .ProjectileSpeed = 20.0f, .ProjectileRadius = 0.15f, .ProjectileRange = 10.0f, .Pierce = 3, .Chill = 1.2f },
+		{ .Id = AbilityId::ChainLightning, .Name = "Chain Lightning", .Description = "A bolt of lightning that jumps to 3 more enemies.", .Damages = Element::Lightning, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.4f, .CastMove = 0.5f, .ManaCost = 14.0f, .Cooldown = 0.5f, .Damage = 30, .ProjectileSpeed = 24.0f, .ProjectileRadius = 0.15f, .ProjectileRange = 9.0f, .Chain = 3, .PvpScale = 0.85f },
 		{ .Id = AbilityId::Blink, .Name = "Blink", .Description = "Teleports you up to 6 units toward the cursor. Works with any weapon.", .Kind = AbilityKind::Dash, .Spell = true, .Gem = true, .CastTime = 0.1f, .CastMove = 0.0f, .ManaCost = 15.0f, .Cooldown = 2.5f, .DashDistance = 6.0f, .Invulnerability = 0.2f, .Range = 6.0f },
-		{ .Id = AbilityId::Cyclone, .Name = "Cyclone", .Description = "Spins with your weapon, hitting everything around you. You keep most of your speed.", .Kind = AbilityKind::Nova, .Needs = Requirement::Melee, .Gem = true, .CastTime = 0.2f, .CastMove = 0.8f, .ManaCost = 10.0f, .Cooldown = 0.9f, .Damage = 34, .Reach = 2.6f, .EffectDuration = 0.25f },
+		{ .Id = AbilityId::Cyclone, .Name = "Cyclone", .Description = "Spins with your weapon, hitting everything around you. You keep most of your speed.", .Kind = AbilityKind::Nova, .Needs = Requirement::Melee, .Gem = true, .CastTime = 0.2f, .CastMove = 0.8f, .ManaCost = 10.0f, .Cooldown = 0.9f, .Damage = 34, .Reach = 2.8f, .EffectDuration = 0.25f },
 		{ .Id = AbilityId::GroundSlam, .Name = "Ground Slam", .Description = "Slams the ground in a long cone after a heavy windup. Stuns. Roots you while casting.", .Kind = AbilityKind::Melee, .Needs = Requirement::Melee, .Gem = true, .CastTime = 0.6f, .CastMove = 0.0f, .ManaCost = 20.0f, .Cooldown = 3.0f, .Damage = 110, .Reach = 4.0f, .HalfArc = 0.7f, .EffectDuration = 0.3f, .Stun = 1.2f, .PvpScale = 0.55f },
-		{ .Id = AbilityId::Volley, .Name = "Volley", .Description = "Fires five arrows in a spread.", .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.35f, .CastMove = 0.5f, .ManaCost = 12.0f, .Cooldown = 1.0f, .Damage = 24, .ProjectileSpeed = 21.0f, .ProjectileRadius = 0.12f, .ProjectileLifetime = 0.7f, .ProjectileCount = 5, .ProjectileSpread = 0.6f, .PvpScale = 0.75f },
-		{ .Id = AbilityId::RainOfArrows, .Name = "Rain of Arrows", .Description = "Arrows rain on the target area after a short delay.", .Kind = AbilityKind::Ground, .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.45f, .CastMove = 0.3f, .ManaCost = 20.0f, .Cooldown = 4.0f, .Damage = 70, .EffectDuration = 0.35f, .ImpactRadius = 2.3f, .ImpactDelay = 0.45f, .Range = 11.0f, .PvpScale = 0.75f },
-		{ .Id = AbilityId::PiercingShot, .Name = "Piercing Shot", .Description = "A fully drawn shot that pierces six enemies and staggers them. Roots you while drawing.", .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.75f, .CastMove = 0.0f, .ManaCost = 16.0f, .Cooldown = 2.0f, .Damage = 130, .ProjectileSpeed = 32.0f, .ProjectileRadius = 0.14f, .ProjectileLifetime = 0.9f, .Pierce = 6, .Stun = 0.4f, .PvpScale = 0.6f },
+		{ .Id = AbilityId::Volley, .Name = "Volley", .Description = "Fires five arrows in a spread.", .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.35f, .CastMove = 0.5f, .ManaCost = 12.0f, .Cooldown = 1.0f, .Damage = 24, .ProjectileSpeed = 21.0f, .ProjectileRadius = 0.12f, .ProjectileRange = 8.0f, .ProjectileCount = 5, .ProjectileSpread = 0.6f, .PvpScale = 0.75f },
+		{ .Id = AbilityId::RainOfArrows, .Name = "Rain of Arrows", .Description = "Arrows rain on the target area after a short delay.", .Kind = AbilityKind::Ground, .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.45f, .CastMove = 0.3f, .ManaCost = 20.0f, .Cooldown = 4.0f, .Damage = 70, .EffectDuration = 0.35f, .ImpactRadius = 2.3f, .ImpactDelay = 0.45f, .Range = 9.5f, .PvpScale = 0.75f },
+		{ .Id = AbilityId::PiercingShot, .Name = "Piercing Shot", .Description = "A fully drawn shot that pierces six enemies and staggers them. Roots you while drawing.", .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.75f, .CastMove = 0.0f, .ManaCost = 16.0f, .Cooldown = 2.0f, .Damage = 130, .ProjectileSpeed = 32.0f, .ProjectileRadius = 0.14f, .ProjectileRange = 11.5f, .Pierce = 6, .Stun = 0.4f, .PvpScale = 0.6f },
 		{ .Id = AbilityId::Rejuvenate, .Name = "Rejuvenate", .Description = "Restores 35% of your health. Works with any weapon. Roots you while casting.", .Kind = AbilityKind::Heal, .Spell = true, .Gem = true, .CastTime = 0.6f, .CastMove = 0.0f, .ManaCost = 30.0f, .Cooldown = 12.0f, .EffectDuration = 0.5f, .Heal = 0.35f },
 		{ .Id = AbilityId::Roll, .Name = "Dodge", .Description = "Dodge roll, briefly invulnerable.", .Kind = AbilityKind::Dash, .Cooldown = 1.1f, .DashDistance = 3.2f, .DashDuration = 0.22f, .Invulnerability = 0.28f },
 		{ .Id = AbilityId::Bite, .Name = "Bite", .Kind = AbilityKind::Melee, .Cooldown = 1.4f, .Damage = 14, .Reach = 2.0f, .HalfArc = 0.9f, .EffectDuration = 0.15f },
-		{ .Id = AbilityId::Spit, .Name = "Spit", .Damages = Element::Poison, .Cooldown = 2.2f, .Damage = 13, .ProjectileSpeed = 8.0f, .ProjectileRadius = 0.2f, .ProjectileLifetime = 2.2f, .SpawnOffset = 0.4f },
+		{ .Id = AbilityId::Spit, .Name = "Spit", .Damages = Element::Poison, .Cooldown = 2.2f, .Damage = 13, .ProjectileSpeed = 8.0f, .ProjectileRadius = 0.2f, .ProjectileRange = 8.5f, .SpawnOffset = 0.4f },
 		{ .Id = AbilityId::Slam, .Name = "Slam", .Kind = AbilityKind::Nova, .Cooldown = 2.8f, .Damage = 34, .Reach = 2.3f, .EffectDuration = 0.3f },
-		{ .Id = AbilityId::Firestrike, .Name = "Firestrike", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Cooldown = 3.2f, .Damage = 26, .EffectDuration = 0.35f, .ImpactRadius = 1.7f, .ImpactDelay = 0.85f, .Range = 12.0f },
-		{ .Id = AbilityId::TomeVolley, .Name = "Tome Volley", .Damages = Element::Lightning, .Cooldown = 0.0f, .Damage = 24, .ProjectileSpeed = 9.0f, .ProjectileRadius = 0.32f, .ProjectileLifetime = 2.4f, .SpawnOffset = 1.0f },
+		{ .Id = AbilityId::Firestrike, .Name = "Firestrike", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Cooldown = 3.2f, .Damage = 26, .EffectDuration = 0.35f, .ImpactRadius = 1.7f, .ImpactDelay = 0.85f, .Range = 9.0f },
+		{ .Id = AbilityId::TomeVolley, .Name = "Tome Volley", .Damages = Element::Lightning, .Cooldown = 0.0f, .Damage = 24, .ProjectileSpeed = 9.0f, .ProjectileRadius = 0.32f, .ProjectileRange = 12.5f, .SpawnOffset = 1.0f },
 		{ .Id = AbilityId::PageStorm, .Name = "Page Storm", .Kind = AbilityKind::Ground, .Damages = Element::Lightning, .Cooldown = 0.0f, .Damage = 40, .EffectDuration = 0.35f, .ImpactRadius = 2.0f, .ImpactDelay = 1.25f },
-		{ .Id = AbilityId::ShelfCrush, .Name = "Shelf Crush", .Kind = AbilityKind::Ground, .Cooldown = 0.0f, .Damage = 55, .Reach = 15.0f, .EffectDuration = 0.4f, .ImpactDelay = 1.1f, .Shape = StrikeShape::Line, .Width = 2.4f },
+		{ .Id = AbilityId::ShelfCrush, .Name = "Shelf Crush", .Kind = AbilityKind::Ground, .Cooldown = 0.0f, .Damage = 55, .Reach = 12.0f, .EffectDuration = 0.4f, .ImpactDelay = 1.1f, .Shape = StrikeShape::Line, .Width = 2.4f },
 		{ .Id = AbilityId::ArcaneRing, .Name = "Arcane Ring", .Kind = AbilityKind::Ground, .Damages = Element::Lightning, .Cooldown = 0.0f, .Damage = 50, .EffectDuration = 0.45f, .ImpactRadius = 10.0f, .ImpactDelay = 1.5f, .Shape = StrikeShape::Ring, .InnerRadius = 3.5f },
 		{ .Id = AbilityId::ArcaneBurst, .Name = "Arcane Burst", .Kind = AbilityKind::Ground, .Damages = Element::Lightning, .Cooldown = 0.0f, .Damage = 55, .EffectDuration = 0.45f, .ImpactRadius = 4.5f, .ImpactDelay = 1.5f },
-		{ .Id = AbilityId::InkSpiral, .Name = "Ink Spiral", .Damages = Element::Poison, .Cooldown = 0.0f, .Damage = 20, .ProjectileSpeed = 7.0f, .ProjectileRadius = 0.28f, .ProjectileLifetime = 3.0f, .SpawnOffset = 1.0f },
-		{ .Id = AbilityId::CrystalSpike, .Name = "Crystal Spike", .Kind = AbilityKind::Ground, .Damages = Element::Cold, .Cooldown = 0.0f, .Damage = 45, .Reach = 13.0f, .EffectDuration = 0.4f, .ImpactDelay = 0.95f, .Shape = StrikeShape::Line, .Width = 1.7f },
+		{ .Id = AbilityId::InkSpiral, .Name = "Ink Spiral", .Damages = Element::Poison, .Cooldown = 0.0f, .Damage = 20, .ProjectileSpeed = 7.0f, .ProjectileRadius = 0.28f, .ProjectileRange = 13.0f, .SpawnOffset = 1.0f },
+		{ .Id = AbilityId::CrystalSpike, .Name = "Crystal Spike", .Kind = AbilityKind::Ground, .Damages = Element::Cold, .Cooldown = 0.0f, .Damage = 45, .Reach = 11.0f, .EffectDuration = 0.4f, .ImpactDelay = 0.95f, .Shape = StrikeShape::Line, .Width = 1.7f },
 		{ .Id = AbilityId::TailSweep, .Name = "Tail Sweep", .Kind = AbilityKind::Ground, .Cooldown = 0.0f, .Damage = 60, .Reach = 5.5f, .HalfArc = 1.2f, .EffectDuration = 0.35f, .ImpactDelay = 0.8f, .Shape = StrikeShape::Cone },
 		{ .Id = AbilityId::Eruption, .Name = "Eruption", .Kind = AbilityKind::Ground, .Cooldown = 0.0f, .Damage = 70, .EffectDuration = 0.45f, .ImpactRadius = 3.2f, .ImpactDelay = 1.0f },
-		{ .Id = AbilityId::ShardBurst, .Name = "Shard Burst", .Damages = Element::Cold, .Cooldown = 0.0f, .Damage = 22, .ProjectileSpeed = 10.0f, .ProjectileRadius = 0.25f, .ProjectileLifetime = 2.0f, .SpawnOffset = 1.1f },
+		{ .Id = AbilityId::ShardBurst, .Name = "Shard Burst", .Damages = Element::Cold, .Cooldown = 0.0f, .Damage = 22, .ProjectileSpeed = 10.0f, .ProjectileRadius = 0.25f, .ProjectileRange = 13.0f, .SpawnOffset = 1.1f },
 		{ .Id = AbilityId::CrystalRain, .Name = "Crystal Rain", .Kind = AbilityKind::Ground, .Damages = Element::Cold, .Cooldown = 0.0f, .Damage = 40, .EffectDuration = 0.35f, .ImpactRadius = 1.9f, .ImpactDelay = 1.35f },
 	};
 
@@ -164,6 +167,11 @@ namespace Game
 	inline const AbilityDef& GetAbility(AbilityId id)
 	{
 		return Abilities[size_t(id) < std::size(Abilities) ? size_t(id) : 0];
+	}
+
+	inline float GetProjectileLifetime(const AbilityDef& ability, float speed)
+	{
+		return speed > 0.0f ? ability.ProjectileRange / speed : 0.0f;
 	}
 
 	inline bool MeetsRequirement(Requirement needs, uint8_t affinity)
@@ -188,7 +196,7 @@ namespace Game
 		case Requirement::Caster:
 			return "a wand, staff or dagger";
 		case Requirement::Melee:
-			return "a sword, axe or dagger";
+			return "a sword, axe, spear or dagger";
 		case Requirement::Bow:
 			return "a bow or crossbow";
 		default:
@@ -221,11 +229,11 @@ namespace Game
 
 	inline constexpr EnemyDef EnemyDefs[] = {
 		{ .Kind = EntityKind::Chaser, .Name = "Ghoul" },
-		{ .Kind = EntityKind::Shooter, .Name = "Spitter", .Health = 45, .Radius = 0.34f, .Speed = 2.7f, .Attack = AbilityId::Spit, .AttackRange = 8.0f, .Windup = 0.65f, .LootWeight = 1.2f },
+		{ .Kind = EntityKind::Shooter, .Name = "Spitter", .Health = 45, .Radius = 0.34f, .Speed = 2.7f, .Attack = AbilityId::Spit, .AttackRange = 6.5f, .Windup = 0.65f, .LootWeight = 1.2f },
 		{ .Kind = EntityKind::Brute, .Name = "Ogre", .Health = 220, .Radius = 0.6f, .Speed = 2.2f, .Attack = AbilityId::Slam, .AttackRange = 1.6f, .Windup = 1.0f, .LootWeight = 3.0f, .OrbChance = 0.45f, .BuffChance = 0.12f },
-		{ .Kind = EntityKind::Caster, .Name = "Pyromancer", .Health = 55, .Radius = 0.36f, .Speed = 2.5f, .Attack = AbilityId::Firestrike, .AttackRange = 10.0f, .Windup = 0.8f, .LootWeight = 1.5f, .OrbChance = 0.2f },
-		{ .Kind = EntityKind::Archivist, .Name = "The Archivist", .Health = 6000, .Radius = 0.85f, .Speed = 2.6f, .Attack = AbilityId::TomeVolley, .AttackRange = 14.0f, .Windup = 0.7f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Boss = true, .Title = "Keeper of the Burned Library" },
-		{ .Kind = EntityKind::Wyrm, .Name = "Crystal Wyrm", .Health = 7500, .Radius = 1.0f, .Speed = 3.0f, .Attack = AbilityId::CrystalSpike, .AttackRange = 12.0f, .Windup = 0.8f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Boss = true, .Title = "Devourer of the Deep Veins" },
+		{ .Kind = EntityKind::Caster, .Name = "Pyromancer", .Health = 55, .Radius = 0.36f, .Speed = 2.5f, .Attack = AbilityId::Firestrike, .AttackRange = 7.0f, .Windup = 0.8f, .LootWeight = 1.5f, .OrbChance = 0.2f },
+		{ .Kind = EntityKind::Archivist, .Name = "The Archivist", .Health = 6000, .Radius = 0.85f, .Speed = 2.6f, .Attack = AbilityId::TomeVolley, .AttackRange = 10.0f, .Windup = 0.7f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Boss = true, .Title = "Keeper of the Burned Library" },
+		{ .Kind = EntityKind::Wyrm, .Name = "Crystal Wyrm", .Health = 7500, .Radius = 1.0f, .Speed = 3.0f, .Attack = AbilityId::CrystalSpike, .AttackRange = 9.0f, .Windup = 0.8f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Boss = true, .Title = "Devourer of the Deep Veins" },
 	};
 
 	inline const EnemyDef* FindEnemyDef(EntityKind kind)

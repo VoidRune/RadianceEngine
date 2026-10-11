@@ -88,7 +88,7 @@ namespace Game
 			m_Feed.push_back({ kill });
 			if (kill.Killer == self && kill.Victim != self)
 			{
-				audio.Play(Sfx::Kill);
+				audio.PlayEvent(AudioEvent::Kill);
 				m_Notices.push_back({ "You slew " + PlayerName(kill.Victim), Theme::GoldLight });
 			}
 		}
@@ -102,7 +102,7 @@ namespace Game
 		{
 			const int32_t second = int32_t(std::ceil(status.MatchTime));
 			if (second != m_SeenCountdown && second > 0 && second <= 3)
-				audio.Play(Sfx::Pickup, std::nullopt, 0.9f, 0.6f);
+				audio.PlayEvent(AudioEvent::Countdown);
 			m_SeenCountdown = second;
 		}
 		if (status.Match != m_SeenMatch)
@@ -113,7 +113,7 @@ namespace Game
 				m_BannerText = status.Mode == GameMode::Royale ? "The ash storm is awake. Loot, hunt, survive" : "Kill your rivals, hold the shrines";
 				m_BannerColor = Hex(0xFF7A5A);
 				m_BannerTime = 3.0f;
-				audio.Play(Sfx::WaveStart, std::nullopt, 1.0f, 1.1f);
+				audio.PlayEvent(AudioEvent::FightStart);
 			}
 			else if (status.Match == MatchPhase::Ended)
 			{
@@ -124,7 +124,7 @@ namespace Game
 				m_BannerText = text;
 				m_BannerColor = won ? Hex(0xFFD36A) : Hex(0xC8C0B4);
 				m_BannerTime = 4.0f;
-				audio.Play(won ? Sfx::WaveClear : Sfx::Defeat);
+				audio.PlayEvent(won ? AudioEvent::MatchWon : AudioEvent::MatchLost);
 			}
 			m_SeenMatch = status.Match;
 		}
@@ -133,7 +133,7 @@ namespace Game
 			if (status.Storm.Shrinking && !m_SeenStormShrinking)
 			{
 				m_Notices.push_back({ "The ash storm closes in", Hex(0xD9A6FF) });
-				audio.Play(Sfx::Storm);
+				audio.PlayEvent(AudioEvent::StormClosing);
 			}
 			m_SeenStormShrinking = status.Storm.Shrinking;
 			m_SeenStormStage = status.Storm.Stage;

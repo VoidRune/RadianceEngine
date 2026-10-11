@@ -1,4 +1,5 @@
 #pragma once
+#include "Rendering/LevelArt.h"
 #include <GameShared/World/Level.h>
 #include <glm/glm.hpp>
 #include <cstdint>
@@ -8,10 +9,17 @@ namespace Game
 {
 	class WorldRenderer;
 
+	inline constexpr float CameraFov = 40.0f;
+	inline constexpr float CameraHeight = 15.3f;
+	inline constexpr float CameraBack = 9.9f;
+	inline constexpr float CameraFocusOffset = 1.2f;
+
 	struct LevelView
 	{
 		Vec2 Min;
 		Vec2 Max;
+		Vec2 CameraMin{ -1e9f, -1e9f };
+		Vec2 CameraMax{ 1e9f, 1e9f };
 		Vec2 Focus;
 		float FocusHeight = 0.0f;
 		bool Cutaway = true;
@@ -24,14 +32,29 @@ namespace Game
 	{
 	public:
 		void Draw(WorldRenderer& renderer, const Level& level, const LevelView& view);
+		const std::vector<LevelFire>& GetFires() const { return m_Scene.Fires; }
 
 	private:
+		struct SceneKey
+		{
+			const Level* Source = nullptr;
+			MapKind Kind = MapKind::Count;
+			uint32_t Seed = 0;
+			size_t Props = 0;
+			size_t Walls = 0;
+
+			bool operator==(const SceneKey&) const = default;
+		};
+
+		void Prepare(WorldRenderer& renderer, const Level& level);
 		void DrawTerrain(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
 		void DrawWalls(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
-		void DrawProps(WorldRenderer& renderer, const Level& level, const LevelView& view);
+		void DrawProps(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
+		void DrawScene(WorldRenderer& renderer, const LevelView& view) const;
 		void DrawPortals(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
 
-		const Level* m_Level = nullptr;
+		SceneKey m_Key;
+		LevelScene m_Scene;
 		std::vector<float> m_PropReach;
 		std::vector<float> m_PropTop;
 	};

@@ -1,6 +1,8 @@
 #include "GameApp.h"
 #include "Audio/GameAudio.h"
+#include "Rendering/ModelSources.h"
 #include "Rendering/WorldRenderer.h"
+#include "States/LightingTestState.h"
 #include "States/MainMenuState.h"
 #include "States/SessionState.h"
 #include "UI/ImGuiLayer.h"
@@ -14,6 +16,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
+#include <fstream>
 #include <thread>
 
 #pragma warning(push, 0)
@@ -24,6 +28,11 @@
 
 namespace Game
 {
+	namespace
+	{
+		constexpr uint32_t AudioCaptureRate = 48000;
+	}
+
 	GameApp::GameApp(const LaunchOptions& options)
 	{
 		if (!options.Name.empty())
@@ -40,6 +49,10 @@ namespace Game
 			m_Settings.Map = *options.Map;
 		if (options.Volume)
 			m_Settings.Volume = *options.Volume;
+		if (options.MusicVolume)
+			m_Settings.MusicVolume = *options.MusicVolume;
+		if (options.EffectsVolume)
+			m_Settings.EffectsVolume = *options.EffectsVolume;
 		m_Settings.Muted = options.Muted;
 		m_Settings.FirstWave = options.FirstWave;
 		m_Settings.Peaceful = options.Peaceful;
@@ -50,7 +63,10 @@ namespace Game
 		m_Settings.Rules = options.Rules;
 		m_ScreenshotPath = options.ScreenshotPath;
 		m_ScreenshotFrames = std::max(options.ScreenshotFrames, 1u);
+		m_ScreenshotBurst = std::max(options.ScreenshotBurst, 1u);
+		m_BurstInterval = options.BurstInterval;
 		m_ScreenshotDelay = options.ScreenshotDelay;
+		m_AudioCapturePath = options.AudioCapturePath;
 		m_Settings.UnlimitedMaterials = options.UnlimitedMaterials;
 		NetLibrary::Initialize();
 		NetLibrary::SetSimulation(m_Settings.Simulation);
@@ -86,9 +102,16 @@ namespace Game
 		m_PresentQueue = std::make_unique<Rdn::PresentQueue>(m_Device.get(), Rdn::PresentMode::Mailbox);
 		m_Allocator = std::make_unique<Rdn::ResourceAllocator>(m_Device.get());
 		m_Graph = std::make_unique<Rdn::RenderGraph>(m_Device.get(), m_Allocator.get());
+		m_ProfileGpu = options.ProfileGpu;
+		m_Graph->SetTimingEnabled(m_ProfileGpu);
 
 		Timbre::AudioEngineConfig audioConfig;
-		audioConfig.Log = [](Timbre::LogLevel level, std::string_view message)
+		if (!m_AudioCapturePath.empty())
+		{
+			audioConfig.NoOutput = true;
+			audioConfig.SampleRate = AudioCaptureRate;
+		}
+		audioConfig.Log =[](Timbre::LogLevel level, std::string_view message)
 		{
 			switch (level)
 			{
@@ -105,6 +128,7 @@ namespace Game
 		};
 		m_Audio = std::make_unique<Timbre::AudioEngine>(audioConfig);
 		m_GameAudio = std::make_unique<GameAudio>(*m_Audio);
+		m_GameAudio->SetTrace(options.LogAudio);
 		ApplyAudioSettings();
 
 		m_DebugUi = std::make_unique<ImGuiLayer>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
@@ -117,8 +141,35 @@ namespace Game
 		}
 		m_Ui = std::make_unique<Ui>(*m_UiAssets, *m_Window);
 		m_WorldRenderer = std::make_unique<WorldRenderer>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
+		if (std::string modelError; !m_WorldRenderer->LoadModels(ModelPacks, modelError))
+		{
+			RDN_LOG_FATAL("Can't load the models: {}", modelError);
+			std::exit(1);
+		}
+		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
+		if (options.Shadows)
+			m_Settings.Shadows = ShadowQuality(*options.Shadows);
+		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);
+		if (options.Gi)
+			m_Settings.Gi = GiQuality(*options.Gi);
+		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
+		PostProcess& post = m_WorldRenderer->GetPost();
+		if (options.Tonemap)
+			post.Tonemap = Tonemapper(*options.Tonemap);
+		if (options.Exposure)
+			post.Exposure = *options.Exposure;
+		post.Grading = options.Grading;
+		if (std::filesystem::exists(GradingLutPath))
+		{
+			if (std::string lutError; post.LoadGradingLut(GradingLutPath, lutError))
+				RDN_LOG("Loaded the grading LUT {}", GradingLutPath);
+			else
+				RDN_LOG_ERROR("Using the built-in grade because {}", lutError);
+		}
 
-		if (options.HostPort || options.JoinAddress)
+		if (options.LightingTest || !options.PbrTest.empty())
+			m_State = std::make_unique<LightingTestState>(*this, options.PbrTest);
+		else if (options.HostPort || options.JoinAddress)
 		{
 			SessionConfig config;
 			config.Host = options.HostPort.has_value();
@@ -178,6 +229,7 @@ namespace Game
 	void GameApp::ApplyAudioSettings()
 	{
 		m_Audio->GetMasterBus().SetVolume(m_Settings.Muted ? 0.0f : m_Settings.Volume);
+		m_GameAudio->SetMix(m_Settings.MusicVolume, m_Settings.EffectsVolume);
 	}
 
 	void GameApp::ChangeState(std::unique_ptr<AppState> state)
@@ -205,7 +257,75 @@ namespace Game
 			if (minimized)
 				std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		}
+		if (!m_AudioCapturePath.empty())
+			SaveAudioCapture();
 		return 0;
+	}
+
+	void GameApp::CaptureAudio(float dt)
+	{
+		m_AudioClock += dt;
+		const uint64_t due = uint64_t(m_AudioClock * double(AudioCaptureRate));
+		if (due < m_AudioCaptured + 512)
+			return;
+		const uint32_t frames = uint32_t(due - m_AudioCaptured);
+		const size_t offset = m_AudioCapture.size();
+		m_AudioCapture.resize(offset + size_t(frames) * 2);
+		m_Audio->Render(m_AudioCapture.data() + offset, frames);
+		m_AudioCaptured = due;
+	}
+
+	void GameApp::SaveAudioCapture() const
+	{
+		std::ofstream file(m_AudioCapturePath, std::ios::binary);
+		const auto write = [&](const auto& value) { file.write(reinterpret_cast<const char*>(&value), sizeof(value)); };
+		const uint32_t bytes = uint32_t(m_AudioCapture.size() * sizeof(float));
+		file.write("RIFF", 4);
+		write(uint32_t(36 + bytes));
+		file.write("WAVEfmt ", 8);
+		write(uint32_t(16));
+		write(uint16_t(3));
+		write(uint16_t(2));
+		write(AudioCaptureRate);
+		write(uint32_t(AudioCaptureRate * 2 * sizeof(float)));
+		write(uint16_t(2 * sizeof(float)));
+		write(uint16_t(32));
+		file.write("data", 4);
+		write(bytes);
+		file.write(reinterpret_cast<const char*>(m_AudioCapture.data()), bytes);
+		if (file)
+			RDN_LOG("Audio capture saved to {} ({:.1f} s)", m_AudioCapturePath, double(m_AudioCapture.size() / 2) / double(AudioCaptureRate));
+		else
+			RDN_LOG_ERROR("Can't save the audio capture to {}", m_AudioCapturePath);
+	}
+
+	void GameApp::ProfileGpu()
+	{
+		const std::vector<Rdn::PassTiming>& timings = m_Graph->GetPassTimings();
+		if (timings.empty())
+			return;
+		for (const Rdn::PassTiming& timing : timings)
+		{
+			const auto it = std::find_if(m_ProfileTotals.begin(), m_ProfileTotals.end(), [&](const auto& entry) { return entry.first == timing.Name; });
+			if (it == m_ProfileTotals.end())
+				m_ProfileTotals.emplace_back(timing.Name, timing.Milliseconds);
+			else
+				it->second += timing.Milliseconds;
+		}
+		m_ProfileFrames++;
+		if (m_Uptime - m_ProfileStart < 2.0)
+			return;
+		std::string line;
+		double total = 0.0;
+		for (const auto& [name, sum] : m_ProfileTotals)
+		{
+			total += sum / m_ProfileFrames;
+			line += std::format("{} {:.3f}, ", name, sum / m_ProfileFrames);
+		}
+		RDN_LOG("GPU ms over {} frames: {}total {:.3f}", m_ProfileFrames, line, total);
+		m_ProfileTotals.clear();
+		m_ProfileFrames = 0;
+		m_ProfileStart = m_Uptime;
 	}
 
 	bool GameApp::UiWantsMouse() const
@@ -227,7 +347,12 @@ namespace Game
 		m_State->DrawUi();
 		m_Ui->EndFrame();
 		m_DebugUi->EndFrame();
+		if (m_Ui->TakeClicks() > 0)
+			m_GameAudio->PlayUi(Cue::UiClick);
+		m_GameAudio->Update(dt);
 		m_Audio->Update();
+		if (!m_AudioCapturePath.empty())
+			CaptureAudio(dt);
 		if (!minimized)
 			RenderFrame();
 	}
@@ -246,25 +371,27 @@ namespace Game
 		m_Ui->Collect(m_UiPrimitives);
 		m_UiRenderer->Render(*m_Graph, backbuffer, frame->FrameIndex, m_UiPrimitives, m_Ui->GetSize(), m_Ui->GetScale(), m_Ui->GetTime(), !drewScene);
 		m_DebugUi->Render(*m_Graph, backbuffer, frame->FrameIndex, false);
-		const bool capture = !m_ScreenshotPath.empty() && ++m_RenderedFrames >= m_ScreenshotFrames && m_Uptime >= m_ScreenshotDelay && !m_Captured;
-		m_Captured = m_Captured || capture;
+		const double due = m_ScreenshotDelay + double(m_Captures.size()) * m_BurstInterval;
+		const bool capture = !m_ScreenshotPath.empty() && ++m_RenderedFrames >= m_ScreenshotFrames && m_Uptime >= due && m_Captures.size() < m_ScreenshotBurst;
 		if (capture)
 			CaptureFrame(backbuffer, frame->PresentExtent);
 		m_Graph->Execute(frame->Cmd, frame->FrameIndex);
 		m_PresentQueue->Submit();
-		if (capture)
+		if (m_ProfileGpu)
+			ProfileGpu();
+		if (capture && m_Captures.size() == m_ScreenshotBurst)
 			SaveCapture();
 	}
 
 	void GameApp::CaptureFrame(Rdn::RGImage backbuffer, Rdn::Extent2D extent)
 	{
-		m_Capture = std::make_unique<Rdn::GpuImage>();
-		m_Allocator->CreateGpuImage(m_Capture.get(), Rdn::GpuImageDesc{
+		auto& image = m_Captures.emplace_back(std::make_unique<Rdn::GpuImage>());
+		m_Allocator->CreateGpuImage(image.get(), Rdn::GpuImageDesc{
 			.ImageSize = { extent.Width, extent.Height, 1 },
 			.Format = m_PresentQueue->GetSurfaceFormat(),
 			.UsageFlags = Rdn::ImageUsage::TransferDst | Rdn::ImageUsage::TransferSrc,
 		});
-		const Rdn::RGImage target = m_Graph->ImportImage("Screenshot", m_Capture.get());
+		const Rdn::RGImage target = m_Graph->ImportImage("Screenshot", image.get());
 		m_Graph->AddPass("Screenshot", Rdn::PassType::Transfer,
 			[=](Rdn::PassBuilder& builder)
 			{
@@ -281,22 +408,29 @@ namespace Game
 	void GameApp::SaveCapture()
 	{
 		m_Device->WaitIdle();
-		std::vector<uint8_t> pixels = m_Allocator->GetImageData(m_Capture.get());
-		const Rdn::Extent3D size = m_Capture->GetImageSize();
-		const Rdn::Format format = m_Capture->GetFormat();
-		const bool swizzle = format == Rdn::Format::B8G8R8A8_Unorm || format == Rdn::Format::B8G8R8A8_Srgb;
-		for (size_t i = 0; i + 3 < pixels.size(); i += 4)
+		const std::filesystem::path base(m_ScreenshotPath);
+		for (size_t index = 0; index < m_Captures.size(); index++)
 		{
-			if (swizzle)
-				std::swap(pixels[i], pixels[i + 2]);
-			pixels[i + 3] = 255;
+			Rdn::GpuImage& image = *m_Captures[index];
+			std::vector<uint8_t> pixels = m_Allocator->GetImageData(&image);
+			const Rdn::Extent3D size = image.GetImageSize();
+			const Rdn::Format format = image.GetFormat();
+			const bool swizzle = format == Rdn::Format::B8G8R8A8_Unorm || format == Rdn::Format::B8G8R8A8_Srgb;
+			for (size_t i = 0; i + 3 < pixels.size(); i += 4)
+			{
+				if (swizzle)
+					std::swap(pixels[i], pixels[i + 2]);
+				pixels[i + 3] = 255;
+			}
+			const std::string path = m_Captures.size() == 1 ? m_ScreenshotPath
+				: (base.parent_path() / (base.stem().string() + "_" + std::to_string(index) + base.extension().string())).string();
+			if (!pixels.empty() && stbi_write_png(path.c_str(), int(size.Width), int(size.Height), 4, pixels.data(), int(size.Width) * 4))
+				RDN_LOG("Screenshot saved to {} after {} frames", path, m_RenderedFrames - uint32_t(m_Captures.size() - 1 - index));
+			else
+				RDN_LOG_ERROR("Can't save the screenshot to {}", path);
+			m_Allocator->ReleaseResource(&image);
 		}
-		if (!pixels.empty() && stbi_write_png(m_ScreenshotPath.c_str(), int(size.Width), int(size.Height), 4, pixels.data(), int(size.Width) * 4))
-			RDN_LOG("Screenshot saved to {} after {} frames", m_ScreenshotPath, m_RenderedFrames);
-		else
-			RDN_LOG_ERROR("Can't save the screenshot to {}", m_ScreenshotPath);
-		m_Allocator->ReleaseResource(m_Capture.get());
-		m_Capture.reset();
+		m_Captures.clear();
 		m_Running = false;
 	}
 }

@@ -93,6 +93,34 @@ namespace Game
 		Forge,
 		GemAltar,
 		MissionBoard,
+		WineBarrel,
+		OldBarrel,
+		LowCrate,
+		LongCrate,
+		Bucket,
+		TreasureChest,
+		LanternPost,
+		OilLamp,
+		CandleStand,
+		FirePit,
+		BronzeStatue,
+		PlankTable,
+		Stool,
+		MossRock,
+		MossBoulder,
+		TreeStump,
+		DeadLog,
+		Fern,
+		Weeds,
+		GrassTuft,
+		DryBranches,
+		IronGate,
+		CryptDoor,
+		Sarcophagus,
+		Altar,
+		CryptPillar,
+		MarbleBust,
+		FireBowl,
 		Count,
 	};
 
@@ -625,6 +653,89 @@ namespace Game
 			Box({ 0.0f, -0.1f }, 1.75f, { 0.05f, 0.02f }, 0.05f, ClothRed),
 			Roof({}, 2.3f, { 1.35f, 0.42f }, 0.38f, RoofRed),
 		};
+
+		inline constexpr PropCollider WineBarrelColliders[] = { Circle(0.37f) };
+		inline constexpr PropPart WineBarrelParts[] = { Cylinder({}, 0.0f, { 0.36f, 0.36f }, 0.87f, WoodMid) };
+		inline constexpr PropCollider OldBarrelColliders[] = { Circle(0.32f) };
+		inline constexpr PropPart OldBarrelParts[] = { Cylinder({}, 0.0f, { 0.31f, 0.31f }, 0.93f, WoodDark) };
+		inline constexpr PropCollider LowCrateColliders[] = { Rect({ 0.42f, 0.21f }) };
+		inline constexpr PropPart LowCrateParts[] = { Box({}, 0.0f, { 0.41f, 0.2f }, 0.35f, WoodLight) };
+		inline constexpr PropCollider LongCrateColliders[] = { Rect({ 0.27f, 0.58f }) };
+		inline constexpr PropPart LongCrateParts[] = { Box({}, 0.0f, { 0.26f, 0.58f }, 0.46f, WoodLight) };
+		inline constexpr PropCollider BucketColliders[] = { Circle(0.3f, Block::Movement) };
+		inline constexpr PropPart BucketParts[] = { Cylinder({}, 0.0f, { 0.3f, 0.3f }, 0.35f, WoodMid) };
+		inline constexpr PropCollider TreasureChestColliders[] = { Rect({ 0.48f, 0.26f }) };
+		inline constexpr PropPart TreasureChestParts[] = { Box({}, 0.0f, { 0.48f, 0.26f }, 0.62f, WoodMid) };
+		inline constexpr PropCollider LanternPostColliders[] = { Circle(0.13f) };
+		inline constexpr PropPart LanternPostParts[] = {
+			Box({}, 0.0f, { 0.07f, 0.07f }, 2.15f, WoodDark),
+			Box({}, 2.15f, { 0.11f, 0.11f }, 0.45f, LampGlow, 0.0f, 0.8f),
+		};
+		inline constexpr PropPart OilLampParts[] = { Cylinder({}, 0.0f, { 0.1f, 0.1f }, 0.47f, Gold) };
+		inline constexpr PropCollider CandleStandColliders[] = { Circle(0.18f) };
+		inline constexpr PropPart CandleStandParts[] = {
+			Cylinder({}, 0.0f, { 0.12f, 0.12f }, 0.75f, Gold),
+			Sphere({}, 0.78f, { 0.03f, 0.03f }, 0.06f, Flame, 0.0f, 1.0f),
+		};
+		inline constexpr PropCollider FirePitColliders[] = { Circle(0.72f, Block::Movement) };
+		inline constexpr PropPart FirePitParts[] = {
+			Cylinder({}, 0.0f, { 0.72f, 0.72f }, 0.39f, Stone),
+			Cone({}, 0.2f, { 0.35f, 0.35f }, 0.6f, Flame, 0.0f, 1.0f),
+		};
+		inline constexpr PropCollider BronzeStatueColliders[] = { Circle(0.82f) };
+		inline constexpr PropPart BronzeStatueParts[] = {
+			Box({}, 0.0f, { 0.85f, 0.85f }, 0.4f, StoneDark),
+			Cylinder({}, 0.4f, { 0.5f, 0.5f }, 1.7f, 0x6E5A38),
+		};
+		inline constexpr PropCollider PlankTableColliders[] = { Rect({ 0.9f, 0.33f }) };
+		inline constexpr PropPart PlankTableParts[] = { Box({}, 0.0f, { 0.9f, 0.33f }, 0.55f, WoodMid) };
+		inline constexpr PropCollider StoolColliders[] = { Circle(0.24f, Block::Movement) };
+		inline constexpr PropPart StoolParts[] = { Cylinder({}, 0.0f, { 0.24f, 0.24f }, 0.44f, WoodLight) };
+		inline constexpr PropCollider MossRockColliders[] = { Circle(0.6f) };
+		inline constexpr PropPart MossRockParts[] = { Sphere({}, 0.0f, { 0.65f, 0.65f }, 0.7f, Stone) };
+		inline constexpr PropCollider MossBoulderColliders[] = { Circle(0.95f) };
+		inline constexpr PropPart MossBoulderParts[] = { Sphere({}, 0.0f, { 1.0f, 1.0f }, 1.2f, StoneDark) };
+		inline constexpr PropCollider TreeStumpColliders[] = { Circle(0.62f) };
+		inline constexpr PropPart TreeStumpParts[] = { Cylinder({}, 0.0f, { 0.6f, 0.6f }, 0.57f, Trunk) };
+		inline constexpr PropCollider DeadLogColliders[] = { Rect({ 1.45f, 0.15f }, Block::Movement) };
+		inline constexpr PropPart DeadLogParts[] = { CylinderX({}, 0.0f, { 1.5f, 0.15f }, 0.3f, Trunk) };
+		inline constexpr PropPart FernParts[] = { Cone({}, 0.0f, { 0.45f, 0.45f }, 0.4f, LeavesDark) };
+		inline constexpr PropPart WeedsParts[] = { Cone({}, 0.0f, { 0.12f, 0.12f }, 0.25f, Leaves) };
+		inline constexpr PropPart GrassTuftParts[] = { Cone({}, 0.0f, { 0.12f, 0.12f }, 0.25f, LeavesLight) };
+		inline constexpr PropPart DryBranchesParts[] = { CylinderX({}, 0.0f, { 0.6f, 0.04f }, 0.08f, Trunk) };
+		inline constexpr PropCollider IronGateColliders[] = {
+			Rect({ 0.04f, 0.72f }, Block::Movement, { -1.42f, -0.72f }),
+			Rect({ 0.04f, 0.72f }, Block::Movement, { 1.42f, -0.72f }),
+		};
+		inline constexpr PropPart IronGateParts[] = {
+			Box({ -1.42f, -0.72f }, 0.0f, { 0.03f, 0.72f }, 2.9f, Iron),
+			Box({ 1.42f, -0.72f }, 0.0f, { 0.03f, 0.72f }, 2.9f, Iron),
+		};
+		inline constexpr PropCollider CryptDoorColliders[] = {
+			Rect({ 0.08f, 0.48f }, Block::Movement, { -0.92f, 0.5f }),
+			Rect({ 0.08f, 0.48f }, Block::Movement, { 0.92f, 0.5f }),
+		};
+		inline constexpr PropPart CryptDoorParts[] = {
+			Box({ -0.92f, 0.5f }, 0.0f, { 0.06f, 0.48f }, 2.8f, WoodDark),
+			Box({ 0.92f, 0.5f }, 0.0f, { 0.06f, 0.48f }, 2.8f, WoodDark),
+		};
+		inline constexpr PropCollider SarcophagusColliders[] = { Rect({ 1.05f, 0.48f }) };
+		inline constexpr PropPart SarcophagusParts[] = { Box({}, 0.0f, { 1.05f, 0.48f }, 0.9f, Stone) };
+		inline constexpr PropCollider AltarColliders[] = { Rect({ 1.0f, 0.45f }) };
+		inline constexpr PropPart AltarParts[] = { Box({}, 0.0f, { 1.0f, 0.45f }, 1.0f, StoneDark) };
+		inline constexpr PropCollider CryptPillarColliders[] = { Circle(0.36f) };
+		inline constexpr PropPart CryptPillarParts[] = { Box({}, 0.0f, { 0.34f, 0.34f }, 3.6f, Stone) };
+		inline constexpr PropCollider MarbleBustColliders[] = { Circle(0.3f) };
+		inline constexpr PropPart MarbleBustParts[] = {
+			Box({}, 0.0f, { 0.25f, 0.25f }, 1.05f, StoneDark),
+			Sphere({}, 1.05f, { 0.15f, 0.15f }, 0.5f, Marble),
+		};
+		inline constexpr PropCollider FireBowlColliders[] = { Circle(0.34f) };
+		inline constexpr PropPart FireBowlParts[] = {
+			Box({}, 0.0f, { 0.24f, 0.24f }, 0.86f, StoneDark),
+			Cylinder({}, 0.86f, { 0.34f, 0.34f }, 0.16f, Stone),
+			Cone({}, 0.98f, { 0.2f, 0.2f }, 0.4f, Flame, 0.0f, 1.0f),
+		};
 	}
 
 	inline constexpr PropDef Props[] = {
@@ -679,6 +790,34 @@ namespace Game
 		{ PropId::Forge, "Forge", PropData::ForgeColliders, PropData::ForgeParts, true },
 		{ PropId::GemAltar, "Gem altar", PropData::GemAltarColliders, PropData::GemAltarParts },
 		{ PropId::MissionBoard, "Mission board", PropData::MissionBoardColliders, PropData::MissionBoardParts, true },
+		{ PropId::WineBarrel, "Wine barrel", PropData::WineBarrelColliders, PropData::WineBarrelParts },
+		{ PropId::OldBarrel, "Old barrel", PropData::OldBarrelColliders, PropData::OldBarrelParts },
+		{ PropId::LowCrate, "Low crate", PropData::LowCrateColliders, PropData::LowCrateParts },
+		{ PropId::LongCrate, "Long crate", PropData::LongCrateColliders, PropData::LongCrateParts },
+		{ PropId::Bucket, "Bucket", PropData::BucketColliders, PropData::BucketParts },
+		{ PropId::TreasureChest, "Treasure chest", PropData::TreasureChestColliders, PropData::TreasureChestParts },
+		{ PropId::LanternPost, "Lantern post", PropData::LanternPostColliders, PropData::LanternPostParts, true },
+		{ PropId::OilLamp, "Oil lamp", {}, PropData::OilLampParts },
+		{ PropId::CandleStand, "Candle stand", PropData::CandleStandColliders, PropData::CandleStandParts },
+		{ PropId::FirePit, "Fire pit", PropData::FirePitColliders, PropData::FirePitParts },
+		{ PropId::BronzeStatue, "Bronze statue", PropData::BronzeStatueColliders, PropData::BronzeStatueParts, true },
+		{ PropId::PlankTable, "Plank table", PropData::PlankTableColliders, PropData::PlankTableParts },
+		{ PropId::Stool, "Stool", PropData::StoolColliders, PropData::StoolParts },
+		{ PropId::MossRock, "Moss rock", PropData::MossRockColliders, PropData::MossRockParts },
+		{ PropId::MossBoulder, "Moss boulder", PropData::MossBoulderColliders, PropData::MossBoulderParts },
+		{ PropId::TreeStump, "Tree stump", PropData::TreeStumpColliders, PropData::TreeStumpParts },
+		{ PropId::DeadLog, "Dead log", PropData::DeadLogColliders, PropData::DeadLogParts },
+		{ PropId::Fern, "Fern", {}, PropData::FernParts },
+		{ PropId::Weeds, "Weeds", {}, PropData::WeedsParts },
+		{ PropId::GrassTuft, "Grass tuft", {}, PropData::GrassTuftParts },
+		{ PropId::DryBranches, "Dry branches", {}, PropData::DryBranchesParts },
+		{ PropId::IronGate, "Iron gate", PropData::IronGateColliders, PropData::IronGateParts, true },
+		{ PropId::CryptDoor, "Crypt door", PropData::CryptDoorColliders, PropData::CryptDoorParts, true },
+		{ PropId::Sarcophagus, "Sarcophagus", PropData::SarcophagusColliders, PropData::SarcophagusParts },
+		{ PropId::Altar, "Altar", PropData::AltarColliders, PropData::AltarParts },
+		{ PropId::CryptPillar, "Crypt pillar", PropData::CryptPillarColliders, PropData::CryptPillarParts, true },
+		{ PropId::MarbleBust, "Marble bust", PropData::MarbleBustColliders, PropData::MarbleBustParts },
+		{ PropId::FireBowl, "Fire bowl", PropData::FireBowlColliders, PropData::FireBowlParts },
 	};
 
 	constexpr bool PropsMatchIds()

@@ -18,6 +18,7 @@ namespace Game
 		Hub,
 		Crucible,
 		Ashlands,
+		Abbey,
 		Count,
 	};
 
@@ -34,6 +35,7 @@ namespace Game
 		{ MapKind::Hub, "Emberhold", "The camp between expeditions, with a stash, a forge, a lapidary, the mission board and the proving grounds." },
 		{ MapKind::Crucible, "The Crucible", "A walled fighting pit around a low dais, with broken colonnades, cover walls and pools of black water. Shrines hand out healing and power." },
 		{ MapKind::Ashlands, "The Ashlands", "A burned island: a ruined village, a drowned chapel, a walled graveyard, crystal hollows, a sunken library, farmland and the watchtower hill. Chests everywhere, and the ash storm closes in." },
+		{ MapKind::Abbey, "Vesper Abbey", "A rain-soaked abbey courtyard at dusk, with a walled garden, a storage yard and a candlelit crypt." },
 	};
 	static_assert(std::size(Maps) == size_t(MapKind::Count));
 
@@ -153,6 +155,13 @@ namespace Game
 		bool Vault = false;
 	};
 
+	struct Roof
+	{
+		Vec2 Min;
+		Vec2 Max;
+		float Height = 3.0f;
+	};
+
 	struct Level
 	{
 		MapKind Kind = MapKind::Caves;
@@ -166,6 +175,7 @@ namespace Game
 		std::vector<Vec2> SpawnPoints;
 		std::vector<LootSpot> LootSpots;
 		std::vector<PickupPad> Pads;
+		std::vector<Roof> Roofs;
 		Vec2 PlayerSpawn;
 		Vec2 MissionStart;
 		Vec2 BossArena;
@@ -216,4 +226,5 @@ namespace Game
 	Level BuildHubLevel(uint32_t seed);
 	Level BuildCrucibleLevel(uint32_t seed);
 	Level BuildAshlandsLevel(uint32_t seed);
+	Level BuildAbbeyLevel(uint32_t seed);
 }

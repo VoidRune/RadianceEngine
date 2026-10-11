@@ -48,16 +48,16 @@ namespace Game
 		};
 
 		constexpr MoveDef ArchivistMoves[] = {
-			{ Move::Volley, 3.0f, 0, 30, 20.0f },
-			{ Move::PageStorm, 7.0f, 0, 22, 20.0f },
-			{ Move::ShelfCrush, 6.0f, 0, 22, 15.0f },
+			{ Move::Volley, 3.0f, 0, 30, 13.0f },
+			{ Move::PageStorm, 7.0f, 0, 22, 14.0f },
+			{ Move::ShelfCrush, 6.0f, 0, 22, 12.0f },
 			{ Move::ArcaneRing, 11.0f, 1, 20, 12.0f },
 			{ Move::Summon, 20.0f, 1, 12 },
 			{ Move::InkSpiral, 14.0f, 2, 18 },
 		};
 
 		constexpr MoveDef WyrmMoves[] = {
-			{ Move::Spikes, 3.5f, 0, 30, 14.0f },
+			{ Move::Spikes, 3.5f, 0, 30, 11.0f },
 			{ Move::TailSweep, 4.0f, 0, 26, 6.5f },
 			{ Move::Burrow, 9.0f, 0, 18 },
 			{ Move::ShardBurst, 7.0f, 1, 20 },

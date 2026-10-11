@@ -107,6 +107,8 @@ namespace Game
 		Dust,
 		VoidShard,
 		Chest,
+		SpearHook,
+		Fencer,
 		Count,
 	};
 

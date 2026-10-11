@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Rdn
@@ -142,6 +143,7 @@ namespace Game
 		void Block(const UiRect& rect);
 		bool WantsMouse() const;
 		bool WantsKeyboard() const { return m_FocusId != 0; }
+		uint32_t TakeClicks() { return std::exchange(m_Clicks, 0u); }
 		float Animate(UiId id, bool target, float speed = 10.0f);
 
 		void OfferDrag(UiId id, int type, int value);
@@ -198,6 +200,7 @@ namespace Game
 		bool m_InputAllowed = true;
 		bool m_LeftPressed = false;
 		bool m_LeftReleased = false;
+		uint32_t m_Clicks = 0;
 		bool m_LeftDown = false;
 		bool m_RightPressed = false;
 		std::vector<Region> m_Regions;

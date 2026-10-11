@@ -2,6 +2,7 @@
 #include "App/GameApp.h"
 #include "Audio/GameAudio.h"
 #include "Rendering/Models.h"
+#include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
 #include "States/MainMenuState.h"
 #include "UI/ItemUi.h"
@@ -9,6 +10,7 @@
 #include "UI/Ui.h"
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/World/Collision.h>
+#include <RadianceEngine/Core/Log.h>
 #include <RadianceEngine/Window/Input.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
@@ -37,6 +39,11 @@ namespace Game
 		constexpr glm::vec3 EnemyFire{ 1.0f, 0.35f, 0.15f };
 		constexpr float PortalHoverRadius = 1.9f;
 		constexpr float ProjectileSink = 3.0f;
+		constexpr float CameraNear = 0.5f;
+		constexpr float CorpseSeconds = 3.0f;
+		constexpr float CorpseSinkSeconds = 1.0f;
+		constexpr size_t MaxCorpses = 24;
+		constexpr float KillWindow = 0.5f;
 		constexpr int PackPayload = 1;
 		constexpr int GearPayload = 2;
 		constexpr int GemPayload = 3;
@@ -73,11 +80,47 @@ namespace Game
 		{
 			return std::all_of(inventory.Pack.begin(), inventory.Pack.end(), [](const Item& item) { return item.IsValid(); });
 		}
+
+		SceneLighting MapLighting(MapKind map, const WorldRenderer& renderer)
+		{
+			SceneLighting lighting;
+			if (map == MapKind::Caves)
+			{
+				lighting.SunColor = { 0.55f, 0.66f, 0.95f };
+				lighting.SunIntensity = 0.3f;
+				lighting.SkyColor = { 0.035f, 0.042f, 0.06f };
+				lighting.GroundColor = { 0.025f, 0.021f, 0.018f };
+				lighting.EmissionGi = 6.0f;
+			}
+			else if (map == MapKind::Abbey)
+			{
+				constexpr float SunAzimuth = -0.65f;
+				constexpr float SunElevation = 0.42f;
+				if (const std::optional<int32_t> environment = renderer.FindEnvironment("kiara_8_sunset"))
+				{
+					const ModelEnvironment& source = renderer.GetModels().GetData().Environments[size_t(*environment)];
+					const glm::vec3 toSun = -source.SunDirection;
+					lighting.Environment = *environment;
+					lighting.EnvironmentRotation = SunAzimuth - std::atan2(toSun.x, toSun.z);
+					lighting.EnvironmentIntensity = 1.4f;
+					const float luminance = glm::dot(source.SunIrradiance, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+					if (luminance > 0.0f)
+						lighting.SunColor = glm::mix(source.SunIrradiance / luminance, glm::vec3(1.0f), 0.45f);
+				}
+				lighting.SunDirection = -glm::vec3(std::cos(SunElevation) * std::sin(SunAzimuth), std::sin(SunElevation), std::cos(SunElevation) * std::cos(SunAzimuth));
+				lighting.SunIntensity = 5.5f;
+				lighting.EmissionGi = 4.0f;
+			}
+			return lighting;
+		}
 	}
 
 	SessionState::SessionState(GameApp& app, SessionConfig config)
 		: m_App(app), m_Config(std::move(config)), m_Extent{ app.GetWindow().Width(), app.GetWindow().Height() }
 	{
+		m_Characters = std::make_unique<CharacterLibrary>(app.GetWorldRenderer().GetModels());
+		m_Effects = std::make_unique<EffectSystem>(app.GetWorldRenderer().GetParticles());
+		m_MeteorMesh = app.GetWorldRenderer().GetModels().FindMesh("Rock_3_F_Color1");
 		NetLibrary::SetSimulation(app.GetSettings().Simulation);
 		app.GetGameAudio().Reset();
 		if (m_Config.Host)
@@ -145,6 +188,9 @@ namespace Game
 		m_Station.reset();
 		m_ShowInventory = false;
 		m_Fx.clear();
+		m_Corpses.clear();
+		m_Effects->Clear();
+		m_App.GetWorldRenderer().GetParticles().Clear();
 		m_DamageNumbers.clear();
 		m_ProjectileHeights.clear();
 		m_LevelRenderer = LevelRenderer{};
@@ -157,7 +203,7 @@ namespace Game
 		{
 			m_Fade = 1.0f;
 			m_App.GetGameAudio().Reset();
-			m_App.GetGameAudio().Play(Sfx::Door, std::nullopt, 1.0f, 0.6f);
+			m_App.GetGameAudio().PlayEvent(AudioEvent::Travel);
 		}
 		m_SeenMode = session.Mode;
 		m_SeenMission = MissionPhase::Explore;
@@ -195,7 +241,7 @@ namespace Game
 		m_Station = kind;
 		m_ShowInventory = false;
 		m_SourceTab = 0;
-		m_App.GetGameAudio().Play(Sfx::Equip, std::nullopt, 0.8f, 0.8f);
+		m_App.GetGameAudio().PlayStation(kind);
 	}
 
 	void SessionState::UpdateInteractions()
@@ -302,10 +348,13 @@ namespace Game
 		m_AimPoint = MouseAimPoint();
 		UpdateInteractions();
 		UpdatePortals(dt);
+		m_App.GetWorldRenderer().GetParticles().Advance(dt);
 		UpdateEffects(dt);
 		UpdateFeedback(dt);
 		UpdateMatchFeedback(dt);
-		m_App.GetGameAudio().Observe(m_Client);
+		GameAudio& audio = m_App.GetGameAudio();
+		audio.Observe(m_Client, dt, m_CameraTarget, m_Camera.Eye);
+		audio.SetOverlay(m_ShowInventory, m_Station.has_value(), m_Paused);
 	}
 
 	float SessionState::GroundHeight(Vec2 position) const
@@ -337,7 +386,7 @@ namespace Game
 		{
 			m_SeenTeleports = m_Client.GetTeleportCount();
 			m_Fade = 1.0f;
-			m_App.GetGameAudio().Play(Sfx::Door);
+			m_App.GetGameAudio().PlayEvent(AudioEvent::Teleport);
 		}
 
 		m_HoveredPortal = -1;
@@ -380,6 +429,32 @@ namespace Game
 			m_ShowNetStats = !m_ShowNetStats;
 		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F4))
 			m_Overview = !m_Overview;
+		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F6))
+		{
+			WorldRenderer& renderer = m_App.GetWorldRenderer();
+			renderer.SetDebugView(DebugView((uint32_t(renderer.GetDebugView()) + 1) % uint32_t(DebugView::Count)));
+			RDN_LOG("Debug view: {}", DebugViewNames[size_t(renderer.GetDebugView())]);
+		}
+		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F7))
+		{
+			PostProcess& post = m_App.GetWorldRenderer().GetPost();
+			post.Tonemap = Tonemapper((uint32_t(post.Tonemap) + 1) % uint32_t(Tonemapper::Count));
+			RDN_LOG("Tonemapper: {}", TonemapperNames[size_t(post.Tonemap)]);
+		}
+		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F8))
+		{
+			Settings& settings = m_App.GetSettings();
+			settings.Shadows = ShadowQuality((uint32_t(settings.Shadows) + 1) % uint32_t(ShadowQuality::Count));
+			m_App.GetWorldRenderer().SetShadowQuality(settings.Shadows);
+			RDN_LOG("Shadows: {}", ShadowQualityNames[size_t(settings.Shadows)]);
+		}
+		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F9))
+		{
+			Settings& settings = m_App.GetSettings();
+			settings.Gi = GiQuality((uint32_t(settings.Gi) + 1) % uint32_t(GiQuality::Count));
+			m_App.GetWorldRenderer().SetGiQuality(settings.Gi);
+			RDN_LOG("Global illumination: {}", GiQualityNames[size_t(settings.Gi)]);
+		}
 		if (!m_Paused && !m_App.UiWantsMouse() && m_Client.GetSession().Mode == GameMode::Royale && !m_Client.GetPredictedState().Alive && m_Client.GetLocalPlayer().Watching != NoPlayer)
 		{
 			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::MouseLeft))
@@ -589,17 +664,20 @@ namespace Game
 		m_CameraPlaced = true;
 
 		const float aspect = float(std::max(m_Extent.Width, 1u)) / float(std::max(m_Extent.Height, 1u));
-		glm::vec3 focus = m_CameraTarget;
-		glm::vec3 eye = m_CameraTarget + glm::vec3(0.0f, 17.0f, -11.0f);
+		glm::vec3 focus = m_CameraTarget - glm::vec3(0.0f, 0.0f, CameraFocusOffset);
+		glm::vec3 eye = focus + glm::vec3(0.0f, CameraHeight, -CameraBack);
 		if (m_Overview && level)
 		{
 			const float extent = float(std::max(level->Map.GetWidth(), level->Map.GetHeight()));
 			focus = { float(level->Map.GetWidth()) * 0.5f, 0.0f, float(level->Map.GetHeight()) * 0.5f };
 			eye = focus + glm::vec3(0.0f, extent * 1.25f, -extent * 0.45f);
 		}
-		glm::mat4 projection = glm::perspectiveLH_ZO(glm::radians(40.0f), aspect, 0.5f, m_Overview ? 600.0f : 200.0f);
+		const float far = m_Overview ? 600.0f : 200.0f;
+		glm::mat4 projection = glm::perspectiveLH_ZO(glm::radians(CameraFov), aspect, CameraNear, far);
 		projection[1][1] *= -1.0f;
-		m_ViewProjection = projection * glm::lookAtLH(eye, focus, glm::vec3(0.0f, 1.0f, 0.0f));
+		const glm::mat4 view = glm::lookAtLH(eye, focus, glm::vec3(0.0f, 1.0f, 0.0f));
+		m_ViewProjection = projection * view;
+		m_Camera = WorldCamera{ .View = view, .Projection = projection, .ViewProjection = m_ViewProjection, .Eye = eye, .Near = CameraNear, .Far = far };
 	}
 
 	LevelView SessionState::ComputeView() const
@@ -621,11 +699,12 @@ namespace Game
 		Vec2 min = { 1e9f, 1e9f };
 		Vec2 max = { -1e9f, -1e9f };
 		const glm::mat4 inverse = glm::inverse(m_ViewProjection);
+		const float overscan = 1.0f + 2.0f * m_App.GetWorldRenderer().GetGuardBand();
 		for (const glm::vec2 corner : { glm::vec2(-1.0f, -1.0f), glm::vec2(1.0f, -1.0f), glm::vec2(-1.0f, 1.0f), glm::vec2(1.0f, 1.0f) })
 			for (const float plane : { m_CameraTarget.y - 4.0f, m_CameraTarget.y + 3.5f })
 			{
-				glm::vec4 nearPoint = inverse * glm::vec4(corner, 0.0f, 1.0f);
-				glm::vec4 farPoint = inverse * glm::vec4(corner, 1.0f, 1.0f);
+				glm::vec4 nearPoint = inverse * glm::vec4(corner * overscan, 0.0f, 1.0f);
+				glm::vec4 farPoint = inverse * glm::vec4(corner * overscan, 1.0f, 1.0f);
 				nearPoint /= nearPoint.w;
 				farPoint /= farPoint.w;
 				const glm::vec3 direction = glm::vec3(farPoint - nearPoint);
@@ -637,27 +716,78 @@ namespace Game
 			}
 		view.Min = min - Vec2(1.5f, 1.5f);
 		view.Max = max + Vec2(1.5f, 1.5f);
+		view.CameraMin = view.Min;
+		view.CameraMax = view.Max;
+		if (m_App.GetWorldRenderer().GetShadowQuality() != ShadowQuality::Off)
+		{
+			const glm::vec3 sun = glm::normalize(m_Lighting.SunDirection);
+			const float reach = ShadowCasterHeight / std::max(-sun.y, 0.2f);
+			view.Min -= Vec2(std::max(sun.x, 0.0f), std::max(sun.z, 0.0f)) * reach;
+			view.Max += Vec2(std::max(-sun.x, 0.0f), std::max(-sun.z, 0.0f)) * reach;
+		}
 		return view;
 	}
 
 	void SessionState::UpdateEffects(float dt)
 	{
+		m_Effects->Update(dt);
 		for (auto& [netId, fx] : m_Fx)
 		{
 			fx.Seen = false;
+			fx.Hurt = false;
+			fx.SinceHit += dt;
 			fx.Flash = std::max(fx.Flash - dt, 0.0f);
 			fx.Age += dt;
 		}
 		for (const EntityState& entity : m_Client.GetEntities())
 		{
-			const auto [it, inserted] = m_Fx.try_emplace(entity.NetId, EntityFx{ .LastHealth = entity.Health });
+			const auto [it, inserted] = m_Fx.try_emplace(entity.NetId, EntityFx{ .LastHealth = entity.Health, .Last = entity });
 			EntityFx& fx = it->second;
+			if (inserted)
+				OnEntityAppeared(entity);
+			else if (entity.Kind == EntityKind::Player && entity.Has(EntityFlags::Dashing) && !fx.Last.Has(EntityFlags::Dashing) && !entity.Has(EntityFlags::Dead))
+				m_Effects->Burst(Fx::Dodge, Ground(entity.Position, 0.1f));
 			if (!inserted && entity.Health < fx.LastHealth)
+			{
 				fx.Flash = HurtFlashSeconds;
+				fx.Hurt = true;
+			}
 			fx.LastHealth = entity.Health;
+			fx.Last = entity;
 			fx.Seen = true;
 		}
-		std::erase_if(m_Fx, [](const auto& item) { return !item.second.Seen; });
+		for (const HitEvent& hit : m_Client.GetNewHits())
+		{
+			const auto it = m_Fx.find(hit.Target);
+			if (it != m_Fx.end())
+				it->second.SinceHit = 0.0f;
+			const glm::vec3 point = Ground(hit.Position, it != m_Fx.end() ? BarHeight(it->second.Last) * 0.5f : 0.8f);
+			m_Effects->Burst(HitFor(hit.Damages), point, glm::vec3(0.0f, 1.0f, 0.0f), hit.Critical ? 1.4f : 1.0f);
+			if (hit.Critical)
+				m_Effects->Burst(Fx::Critical, point);
+		}
+		for (auto it = m_Fx.begin(); it != m_Fx.end();)
+		{
+			const EntityFx& fx = it->second;
+			if (fx.Seen)
+			{
+				++it;
+				continue;
+			}
+			if (fx.SinceHit < KillWindow && m_Characters->ForEnemy(fx.Last.Kind))
+			{
+				m_Corpses.push_back({ fx.Last, fx.Animator });
+				m_Corpses.back().Entity.Flags |= uint8_t(EntityFlags::Dead);
+				m_Effects->Burst(Fx::Death, Ground(fx.Last.Position, 0.6f), glm::vec3(0.0f, 1.0f, 0.0f), fx.Last.GetScale());
+			}
+			else if (fx.Last.Kind == EntityKind::Projectile)
+			{
+				if (const std::optional<Fx> impact = ProjectileImpactFor(AbilityOf(fx.Last)))
+					m_Effects->Burst(*impact, ProjectilePoint(fx.Last));
+			}
+			it = m_Fx.erase(it);
+		}
+		UpdateAnimators(dt);
 
 		for (auto& [netId, flight] : m_ProjectileHeights)
 			flight.Seen = false;
@@ -672,6 +802,8 @@ namespace Game
 			flight.Seen = true;
 		}
 		std::erase_if(m_ProjectileHeights, [](const auto& item) { return !item.second.Seen; });
+		EmitContinuous(dt);
+		m_Effects->EndFrame();
 
 		for (DamageNumber& number : m_DamageNumbers)
 			number.Age += dt;
@@ -686,6 +818,146 @@ namespace Game
 			m_DamageNumbers.erase(m_DamageNumbers.begin(), m_DamageNumbers.end() - MaxDamageNumbers);
 	}
 
+	AbilityId SessionState::AbilityOf(const EntityState& entity) const
+	{
+		return AbilityId(std::min<uint32_t>(entity.Variant, uint32_t(AbilityId::Count) - 1));
+	}
+
+	glm::vec3 SessionState::ProjectilePoint(const EntityState& entity) const
+	{
+		const auto it = m_ProjectileHeights.find(entity.NetId);
+		return { entity.Position.x, it != m_ProjectileHeights.end() ? it->second.Height : GroundHeight(entity.Position) + ProjectileHeight, entity.Position.y };
+	}
+
+	glm::vec3 SessionState::EffectColor(const EntityState& entity) const
+	{
+		const AbilityDef& def = GetAbility(AbilityOf(entity));
+		return entity.Owner == NoPlayer && def.Damages == Element::Physical ? EnemyFire : SkillColor(def.Id);
+	}
+
+	glm::vec3 SessionState::MeteorPoint(const EntityState& entity, float progress) const
+	{
+		const float fall = 1.0f - progress * progress;
+		return Ground(entity.Position, 0.45f) + glm::vec3(2.4f, 12.5f, 5.0f) * fall;
+	}
+
+	void SessionState::DrawMeteor(WorldRenderer& renderer, const EntityState& entity, float progress) const
+	{
+		const glm::vec3 target = Ground(entity.Position);
+		const glm::vec3 position = MeteorPoint(entity, progress);
+		const glm::vec3 direction = glm::normalize(target - MeteorPoint(entity, 0.0f));
+		if (m_MeteorMesh)
+		{
+			const glm::mat4 transform = glm::translate(glm::mat4(1.0f), position)
+				* glm::rotate(glm::mat4(1.0f), m_Time * 3.0f + float(entity.NetId % 31u), glm::normalize(glm::vec3(0.6f, 0.3f, 0.75f)))
+				* glm::scale(glm::mat4(1.0f), glm::vec3(0.75f));
+			renderer.DrawModel(*m_MeteorMesh, transform, NoPalette, glm::vec4(1.9f, 0.75f, 0.42f, 0.0f), 0.5f, target.y);
+		}
+		else
+			renderer.Draw(MeshKind::Sphere, position, glm::vec3(0.4f), { 0.45f, 0.22f, 0.12f }, m_Time * 3.0f, 0.5f, target.y);
+		DrawGlow(renderer, position, 1.4f, { 1.7f, 0.55f, 0.12f });
+		DrawStreak(renderer, position - direction * 2.4f, position, 0.42f, { 2.8f, 1.1f, 0.25f });
+		DrawGlow(renderer, position, 0.5f, { 3.0f, 1.6f, 0.5f });
+		const AbilityDef& def = GetAbility(AbilityId::Meteor);
+		DrawGroundGlow(renderer, target, def.ImpactRadius * entity.GetScale() * (0.6f + 0.4f * progress), { 1.5f, 0.45f, 0.1f }, 0.25f + 0.9f * progress * progress);
+	}
+
+	void SessionState::OnEntityAppeared(const EntityState& entity)
+	{
+		if (entity.Kind != EntityKind::Effect || entity.Has(EntityFlags::Pending))
+			return;
+		const AbilityId ability = AbilityOf(entity);
+		const AbilityDef& def = GetAbility(ability);
+		const float scale = entity.GetScale();
+		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, EffectColor(entity), entity.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+		const std::optional<Fx> fx = EffectBurstFor(ability);
+		if (!fx)
+			return;
+		const glm::vec3 center = Ground(entity.Position, 0.5f);
+		const glm::vec3 forward = Heading(entity.Facing);
+		switch (def.Shape)
+		{
+		case StrikeShape::Line:
+		{
+			const float length = def.Reach * scale;
+			const int points = std::max(2, int(length / 1.5f));
+			for (int i = 0; i < points; i++)
+				m_Effects->Burst(*fx, center + forward * (length * (float(i) + 0.5f) / float(points)), forward, 0.6f);
+			return;
+		}
+		case StrikeShape::Ring:
+		{
+			const float radius = def.ImpactRadius * scale;
+			for (int i = 0; i < 12; i++)
+				m_Effects->Burst(*fx, center + Heading(float(i) * Pi / 6.0f) * radius, glm::vec3(0.0f, 1.0f, 0.0f), 0.6f);
+			return;
+		}
+		case StrikeShape::Cone:
+		{
+			const float reach = def.Reach * scale;
+			for (int i = 0; i < 5; i++)
+			{
+				const float angle = entity.Facing + def.HalfArc * (float(i) * 0.5f - 1.0f);
+				m_Effects->Burst(*fx, center + Heading(angle) * (reach * 0.6f), Heading(angle), 0.7f);
+			}
+			return;
+		}
+		default:
+			break;
+		}
+		if (def.Kind == AbilityKind::Melee)
+			m_Effects->Burst(*fx, center + forward * (def.Reach * scale * 0.4f), forward, scale);
+		else
+			m_Effects->Burst(*fx, center, forward, scale);
+	}
+
+	void SessionState::EmitContinuous(float dt)
+	{
+		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
+		for (size_t i = 0; i < fires.size(); i++)
+		{
+			const LevelFire& fire = fires[i];
+			if (LengthSquared(Vec2(fire.Position.x, fire.Position.z) - Vec2(m_CameraTarget.x, m_CameraTarget.z)) > 26.0f * 26.0f)
+				continue;
+			const Fx fx = fire.Kind == FireKind::Campfire ? Fx::Campfire : fire.Kind == FireKind::Lantern ? Fx::LanternFlame : Fx::CandleFlame;
+			m_Effects->Trail(fx, (2ull << 40) | uint64_t(i), fire.Position, dt, fire.Scale);
+		}
+		for (const EntityState& entity : m_Client.GetEntities())
+		{
+			switch (entity.Kind)
+			{
+			case EntityKind::Projectile:
+				if (const std::optional<Fx> trail = TrailFor(AbilityOf(entity)))
+					m_Effects->Trail(*trail, entity.NetId, ProjectilePoint(entity), dt, 1.0f, AbilityOf(entity) == AbilityId::PiercingShot ? glm::vec3(0.5f, 1.8f, 0.5f) : glm::vec3(1.0f));
+				break;
+			case EntityKind::Loot:
+				if (IsItemLoot(entity) && ItemTagRarity(entity.Tag) >= Rarity::Legendary)
+					m_Effects->Trail(Fx::LootSparkle, entity.NetId, Ground(entity.Position, 0.35f), dt, 1.0f, glm::vec3(RarityColor(ItemTagRarity(entity.Tag))));
+				break;
+			case EntityKind::Gateway:
+				m_Effects->Trail(Fx::GatewaySwirl, entity.NetId, Ground(entity.Position, 0.15f), dt);
+				break;
+			case EntityKind::Effect:
+				if (entity.Has(EntityFlags::Pending) && AbilityOf(entity) == AbilityId::Meteor)
+				{
+					const float delay = GetAbility(AbilityId::Meteor).ImpactDelay;
+					m_Effects->Trail(Fx::MeteorTrail, entity.NetId, MeteorPoint(entity, delay > 0.0f ? std::clamp(AgeOf(entity.NetId) / delay, 0.0f, 1.0f) : 1.0f), dt);
+				}
+				break;
+			case EntityKind::Player:
+				if (entity.Has(EntityFlags::Attacking) && !entity.Has(EntityFlags::Dead) && entity.Variant < uint8_t(AbilityId::Count))
+					if (const std::optional<Fx> cast = CastFor(AbilityId(entity.Variant)))
+					{
+						const glm::vec3 hand = Ground(entity.Position, 1.0f) + Heading(entity.Facing) * 0.35f + Heading(entity.Facing - HalfPi) * 0.3f;
+						m_Effects->Trail(*cast, uint64_t(entity.NetId) | (1ull << 40), hand, dt);
+					}
+				break;
+			default:
+				break;
+			}
+		}
+	}
+
 	void SessionState::UpdateFeedback(float dt)
 	{
 		if (!m_Client.GetLocalPlayer().OfferPending)
@@ -697,7 +969,7 @@ namespace Game
 		for (const ServerNotice& notice : m_Client.TakeNotices())
 		{
 			m_Notices.push_back({ notice.Text, notice.Success ? Theme::GoldLight : Theme::Danger });
-			m_App.GetGameAudio().Play(notice.Success ? Sfx::Upgrade : Sfx::Hurt, std::nullopt, notice.Success ? 0.7f : 0.4f, notice.Success ? 1.2f : 1.6f);
+			m_App.GetGameAudio().PlayNotice(notice.Success, m_Station);
 		}
 		const MaterialStock& materials = m_Client.GetMaterials();
 		if (m_SeenAnyMaterials && m_Client.GetLocalPlayer().Valid)
@@ -743,6 +1015,99 @@ namespace Game
 		return it != m_Fx.end() ? it->second.Age : 0.0f;
 	}
 
+	float SessionState::BarHeight(const EntityState& entity) const
+	{
+		if (entity.Kind == EntityKind::Player)
+			return m_Characters->ForPlayer(LookOf(entity)).Height + 0.1f;
+		if (const CharacterLook* look = m_Characters->ForEnemy(entity.Kind))
+			return look->Height * entity.GetScale() + 0.1f;
+		return HealthBarHeight(entity.Kind) * (IsEnemyKind(entity.Kind) ? entity.GetScale() : 1.0f);
+	}
+
+	const CharacterAnimator* SessionState::AnimatorOf(uint32_t netId) const
+	{
+		const auto it = m_Fx.find(netId);
+		return it != m_Fx.end() ? &it->second.Animator : nullptr;
+	}
+
+	CharacterAnimator::Input SessionState::AnimationInput(const EntityState& entity) const
+	{
+		CharacterAnimator::Input input;
+		input.Position = entity.Position;
+		input.Facing = entity.Facing;
+		input.Dead = entity.Has(EntityFlags::Dead);
+		input.Dashing = entity.Has(EntityFlags::Dashing);
+		input.Stunned = entity.Has(EntityFlags::Stunned);
+		input.Attacking = entity.Has(EntityFlags::Attacking);
+		if (entity.Kind == EntityKind::Player)
+		{
+			const CharacterLook& look = m_Characters->ForPlayer(LookOf(entity));
+			input.Scale = look.Scale;
+			input.Pose = look.Pose;
+			if (input.Attacking && entity.Variant < uint8_t(AbilityId::Count))
+			{
+				const AbilityId ability = AbilityId(entity.Variant);
+				input.Attack = PlayerAttackAnim(ability);
+				input.Windup = GetAbility(ability).CastTime;
+				const int8_t slot = m_Client.GetPredictedState().CastSlot;
+				if (entity.NetId == m_Client.GetPlayerNetId() && slot >= 0)
+					input.Windup = m_Client.GetTraits().Skills[size_t(slot)].CastTime;
+			}
+			return input;
+		}
+		const CharacterLook* look = m_Characters->ForEnemy(entity.Kind);
+		const EnemyDef* def = FindEnemyDef(entity.Kind);
+		input.Scale = (look ? look->Scale : 1.0f) * entity.GetScale();
+		input.Pose = look ? look->Pose : Stance::Skeleton;
+		input.Undead = true;
+		input.Attack = EnemyAttackAnim(entity.Kind);
+		input.Windup = def ? def->Windup : 0.5f;
+		return input;
+	}
+
+	void SessionState::UpdateAnimators(float dt)
+	{
+		for (auto& [netId, fx] : m_Fx)
+		{
+			if (fx.Last.Kind != EntityKind::Player && !m_Characters->ForEnemy(fx.Last.Kind))
+				continue;
+			CharacterAnimator::Input input = AnimationInput(fx.Last);
+			input.Hurt = fx.Hurt;
+			fx.Animator.Update(*m_Characters, input, dt);
+		}
+		for (Corpse& corpse : m_Corpses)
+		{
+			corpse.Age += dt;
+			corpse.Animator.Update(*m_Characters, AnimationInput(corpse.Entity), dt);
+		}
+		std::erase_if(m_Corpses, [](const Corpse& corpse) { return corpse.Age > CorpseSeconds; });
+		if (m_Corpses.size() > MaxCorpses)
+			m_Corpses.erase(m_Corpses.begin(), m_Corpses.end() - MaxCorpses);
+	}
+
+	glm::vec4 SessionState::CharacterTint(const EntityState& entity) const
+	{
+		glm::vec3 color(1.0f);
+		if (entity.Has(EntityFlags::Elite))
+			color = glm::mix(color, glm::vec3(1.0f, 0.82f, 0.45f), 0.4f);
+		if (entity.Has(EntityFlags::Chilled))
+			color = glm::mix(color, glm::vec3(0.6f, 0.85f, 1.0f), 0.5f);
+		return glm::vec4(color, FlashOf(entity.NetId) * 0.45f);
+	}
+
+	void SessionState::DrawCorpses(WorldRenderer& renderer) const
+	{
+		for (const Corpse& corpse : m_Corpses)
+		{
+			const CharacterLook* look = m_Characters->ForEnemy(corpse.Entity.Kind);
+			if (!look)
+				continue;
+			const float sink = std::max(corpse.Age - CorpseSeconds + CorpseSinkSeconds, 0.0f) / CorpseSinkSeconds;
+			const glm::vec3 base = Ground(corpse.Entity.Position) - glm::vec3(0.0f, sink * 0.6f, 0.0f);
+			DrawCharacterModel(renderer, *m_Characters, *look, corpse.Animator, base, corpse.Entity.Facing, look->Scale * corpse.Entity.GetScale(), glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.0f);
+		}
+	}
+
 	PlayerLook SessionState::LookOf(const EntityState& player) const
 	{
 		if (player.Owner == m_Client.GetPlayerId() && m_Client.HasInventory())
@@ -769,23 +1134,37 @@ namespace Game
 			UpdateCamera(0.0f);
 		}
 
-		renderer.Begin(m_ViewProjection, glm::vec3(0.45f, -1.0f, 0.3f), m_Overview ? -100.0f : m_CameraTarget.y);
+		m_Lighting = MapLighting(level->Kind, renderer);
+		renderer.Begin(m_Camera, m_Lighting, m_Overview ? 0.0f : m_CameraTarget.y, !m_Overview);
 		m_LevelRenderer.Draw(renderer, *level, ComputeView());
+		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
+		for (size_t i = 0; i < fires.size(); i++)
+		{
+			const LevelFire& fire = fires[i];
+			if (LengthSquared(Vec2(fire.Position.x, fire.Position.z) - Vec2(m_CameraTarget.x, m_CameraTarget.z)) > 26.0f * 26.0f)
+				continue;
+			const float phase = float(i) * 1.7f;
+			const float flicker = 0.85f + 0.1f * std::sin(m_Time * 13.0f + phase) + 0.05f * std::sin(m_Time * 29.0f + phase * 2.3f);
+			const float size = fire.Kind == FireKind::Campfire ? 0.9f : fire.Kind == FireKind::Lantern ? 0.32f : 0.16f;
+			renderer.DrawSprite({ .Position = fire.Position + glm::vec3(0.0f, fire.Kind == FireKind::Campfire ? 0.25f : 0.02f, 0.0f), .Size = size * fire.Scale, .Color = glm::vec4(glm::vec3(1.0f, 0.55f, 0.22f) * flicker, 0.35f), .Shape = ParticleShape::Glow, .Softness = 1.0f });
+		}
+		m_Effects->Draw(renderer);
 		for (const EntityState& entity : m_Client.GetEntities())
 			DrawEntity(renderer, entity);
+		DrawCorpses(renderer);
 		DrawStorm(renderer);
 		const PlayerState& state = m_Client.GetPredictedState();
 		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
 		if (m_AimPoint && self && !m_Paused && !m_Overview && m_HoveredPortal < 0)
 		{
-			renderer.DrawBox(*m_AimPoint, { 0.08f, 0.02f, 0.08f }, { 1.0f, 0.95f, 0.8f }, 0.785f, 0.8f, m_AimPoint->y - ProjectileHeight);
+			DrawReticle(renderer, *m_AimPoint, 0.2f, { 1.0f, 0.92f, 0.75f });
 			if (state.CastSlot >= 0)
 			{
 				const AbilityDef& ability = GetAbility(m_Client.GetTraits().Skills[size_t(state.CastSlot)].Ability);
 				if (ability.Kind == AbilityKind::Ground)
 				{
 					const Vec2 point = GetGroundTarget(*level, self->Position, FromAngle(m_Aim), m_AimDistance, ability.Range);
-					DrawRing(renderer, Ground(point, 0.06f), ability.ImpactRadius * m_Client.GetTraits().AreaScale, 28, SkillColor(ability.Id), 0.6f, 0.035f);
+					DrawRuneCircle(renderer, { .Center = Ground(point), .Radius = ability.ImpactRadius * m_Client.GetTraits().AreaScale, .Color = SkillColor(ability.Id), .Intensity = 0.6f, .Spin = 0.6f, .Seed = 7u });
 				}
 			}
 		}
@@ -828,14 +1207,15 @@ namespace Game
 			const float phase = float(entity.NetId % 97);
 			if (IsItemLoot(entity))
 			{
-				DrawItemDrop(renderer, ItemTagBase(entity.Tag), ItemTagRarity(entity.Tag), ItemTagSkill(entity.Tag), base, m_Time, phase);
+				DrawItemDrop(renderer, *m_Characters, ItemTagBase(entity.Tag), ItemTagRarity(entity.Tag), ItemTagSkill(entity.Tag), base, m_Time, phase);
 				break;
 			}
 			const glm::vec3 color = LootColors[std::min<size_t>(entity.Variant, std::size(LootColors) - 1)];
 			const float bob = 0.38f + 0.08f * std::sin(m_Time * 3.0f + phase);
 			const MeshKind mesh = LootKind(entity.Variant) == LootKind::Health || LootKind(entity.Variant) == LootKind::Mana ? MeshKind::Sphere : MeshKind::Box;
 			renderer.Draw(mesh, base + glm::vec3(0.0f, bob, 0.0f), { 0.14f, 0.14f, 0.14f }, color, m_Time * 2.0f + phase, 0.75f, base.y);
-			renderer.DrawBox(base + glm::vec3(0.0f, 0.01f, 0.0f), { 0.16f, 0.01f, 0.16f }, color * 0.4f, m_Time * 2.0f + phase, 0.3f);
+			DrawGlow(renderer, base + glm::vec3(0.0f, bob, 0.0f), 0.32f, color * 0.55f);
+			DrawGroundGlow(renderer, base, 0.4f, color, 0.6f);
 			break;
 		}
 		default:
@@ -845,25 +1225,20 @@ namespace Game
 
 	void SessionState::DrawPlayer(WorldRenderer& renderer, const EntityState& entity) const
 	{
-		const glm::vec3 base = Ground(entity.Position);
-		const glm::vec3 color = ColorOf(entity.Owner);
-		if (entity.Has(EntityFlags::Dead))
-		{
-			renderer.DrawBox(base + glm::vec3(0.0f, 0.08f, 0.0f), { 0.36f, 0.08f, 0.36f }, color * 0.3f, entity.Facing);
+		const CharacterAnimator* animator = AnimatorOf(entity.NetId);
+		if (!animator)
 			return;
-		}
-		const float flash = FlashOf(entity.NetId);
-		const float emission = entity.Has(EntityFlags::Dashing) ? 0.4f : 0.0f;
-		const bool chilled = entity.Has(EntityFlags::Chilled);
-		DrawCharacter(renderer, LookOf(entity), base, entity.Facing, chilled ? glm::mix(color, glm::vec3(0.55f, 0.85f, 1.0f), 0.55f) : color, chilled ? std::max(flash, 0.25f) : flash, emission, m_Time);
+		const glm::vec3 base = Ground(entity.Position);
+		const CharacterLook& look = m_Characters->ForPlayer(LookOf(entity));
+		const bool dead = entity.Has(EntityFlags::Dead);
+		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, look, *animator, base, entity.Facing, look.Scale, CharacterTint(entity), 0.0f);
+		if (dead)
+			return;
+		DrawGroundRing(renderer, base, 0.42f, ColorOf(entity.Owner), 1.2f, 0.022f);
 		if (m_Client.IsHostile(entity))
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.03f, 0.0f), 0.55f, 18, { 1.0f, 0.25f, 0.18f }, 0.55f, 0.03f);
+			DrawGroundRing(renderer, base, 0.56f, { 1.0f, 0.25f, 0.18f }, 1.6f, 0.03f, 12.0f, 0.15f);
 		if (entity.Has(EntityFlags::Stunned))
-			for (uint32_t i = 0; i < 3; i++)
-			{
-				const float angle = m_Time * 5.0f + float(i) * 2.094f;
-				renderer.DrawBox(base + glm::vec3(0.0f, 2.05f, 0.0f) + Heading(angle) * 0.3f, { 0.05f, 0.05f, 0.05f }, { 1.0f, 0.95f, 0.4f }, angle, 1.0f);
-			}
+			DrawStunStars(renderer, pose.JointPosition(m_Characters->GetHead()) + glm::vec3(0.0f, 0.75f * look.Scale, 0.0f));
 		if (!entity.Has(EntityFlags::Attacking) || entity.Variant >= uint8_t(AbilityId::Count))
 			return;
 		const AbilityId casting = AbilityId(entity.Variant);
@@ -871,149 +1246,94 @@ namespace Game
 		const float pulse = 0.6f + 0.4f * std::sin(m_Time * 14.0f);
 		if (GetAbility(casting).Gem)
 		{
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.05f, 0.0f), 0.55f + 0.06f * pulse, 16, glow, 0.6f + 0.4f * pulse, 0.035f);
-			renderer.Draw(MeshKind::Sphere, base + Heading(entity.Facing) * 0.32f - Heading(entity.Facing + HalfPi) * 0.42f + glm::vec3(0.0f, 0.95f, 0.0f), glm::vec3(0.09f + 0.03f * pulse), glow, m_Time * 6.0f, 1.0f, base.y);
+			DrawRuneCircle(renderer, { .Center = base, .Radius = 0.8f, .Color = glow, .Intensity = 0.8f + 0.35f * pulse, .Spin = 1.4f, .Seed = entity.NetId });
+			const glm::vec3 hand = pose.JointPosition(m_Characters->GetRightHand());
+			DrawGlow(renderer, hand, 0.3f + 0.08f * pulse, glow * 1.4f);
+			DrawGlow(renderer, hand, 0.09f, glm::mix(glow, glm::vec3(1.0f), 0.5f) * 3.0f);
+		}
+	}
+
+	void SessionState::DrawStunStars(WorldRenderer& renderer, const glm::vec3& center) const
+	{
+		for (uint32_t i = 0; i < 3; i++)
+		{
+			const float angle = m_Time * 5.0f + float(i) * 2.094f;
+			DrawStar(renderer, center + Heading(angle) * 0.3f, 0.14f, { 2.4f, 2.1f, 0.6f }, angle);
 		}
 	}
 
 	void SessionState::DrawEnemy(WorldRenderer& renderer, const EntityState& entity) const
 	{
+		const CharacterLook* look = m_Characters->ForEnemy(entity.Kind);
+		const CharacterAnimator* animator = AnimatorOf(entity.NetId);
+		if (!look || !animator)
+			return;
 		const float size = entity.GetScale();
 		const bool elite = entity.Has(EntityFlags::Elite);
-		const bool chilled = entity.Has(EntityFlags::Chilled);
 		const glm::vec3 base = Ground(entity.Position);
-		const glm::vec3 forward = Heading(entity.Facing) * size;
-		const glm::vec3 side = Heading(entity.Facing + HalfPi) * size;
-		const glm::vec3 up(0.0f, size, 0.0f);
-		const float flash = FlashOf(entity.NetId);
-		const float aura = elite ? 0.2f : 0.0f;
-		const auto shade = [&](const glm::vec3& color)
-		{
-			glm::vec3 tone = elite ? glm::mix(color, EliteGold, 0.3f) : color;
-			if (chilled)
-				tone = glm::mix(tone, glm::vec3(0.55f, 0.85f, 1.0f), 0.45f);
-			return glm::mix(tone, glm::vec3(1.0f), flash * 0.8f);
-		};
 		const bool attacking = entity.Has(EntityFlags::Attacking);
 		const float pulse = 0.55f + 0.45f * std::sin(m_Time * 16.0f);
 		const EnemyDef* def = FindEnemyDef(entity.Kind);
 		const AbilityDef& attack = GetAbility(def ? def->Attack : AbilityId::Bite);
 		const float reach = attack.Reach * (elite ? EliteAreaScale : 1.0f);
+		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, *look, *animator, base, entity.Facing, look->Scale * size, CharacterTint(entity), elite ? 0.12f : 0.0f);
 		switch (entity.Kind)
 		{
 		case EntityKind::Chaser:
-		{
-			const float swell = attacking ? 1.12f : 1.0f;
-			const glm::vec3 color = attacking ? glm::vec3(0.95f, 0.25f, 0.2f) : glm::vec3(0.55f, 0.28f, 0.68f);
-			renderer.DrawBox(base + up * (0.4f * swell), glm::vec3(0.36f, 0.4f, 0.36f) * (size * swell), shade(color), entity.Facing, std::max({ flash, attacking ? 0.35f : 0.0f, aura }));
-			renderer.DrawBox(base + forward * (0.36f * swell) + up * (0.55f * swell), glm::vec3(0.06f, 0.07f, 0.18f) * size, { 1.0f, 0.85f, 0.3f }, entity.Facing, 0.9f);
 			if (attacking)
-				for (const float fraction : { 0.45f, 0.75f, 1.0f })
-					DrawArc(renderer, base + glm::vec3(0.0f, 0.05f, 0.0f), entity.Facing, attack.HalfArc, reach * fraction, 9, { 0.95f, 0.2f, 0.1f }, 0.4f + 0.5f * pulse, 0.05f);
+				DrawSectorTelegraph(renderer, base, entity.Facing, reach, attack.HalfArc, { 1.0f, 0.22f, 0.12f }, 0.8f + 0.4f * pulse, -1.0f);
 			break;
-		}
 		case EntityKind::Shooter:
-			renderer.DrawBox(base + up * 0.6f, glm::vec3(0.28f, 0.6f, 0.28f) * size, shade({ 0.2f, 0.62f, 0.52f }), entity.Facing, std::max(flash, aura));
-			renderer.DrawBox(base + forward * 0.34f + up * 0.85f, glm::vec3(0.16f, 0.07f, 0.07f) * size, attacking ? glm::vec3(0.6f, 1.0f, 0.3f) : glm::vec3(0.1f, 0.3f, 0.26f), entity.Facing, attacking ? 1.0f : 0.0f);
 			if (attacking)
-			{
-				constexpr float Length = 7.0f;
-				renderer.DrawBox(base + Heading(entity.Facing) * (0.5f + Length * 0.5f) + glm::vec3(0.0f, 0.06f, 0.0f), { Length * 0.5f, 0.01f, 0.03f }, { 0.55f, 1.0f, 0.3f }, entity.Facing, 0.3f + 0.6f * pulse);
-			}
+				DrawLaneTelegraph(renderer, base + Heading(entity.Facing) * attack.SpawnOffset, entity.Facing, attack.ProjectileRange, 0.24f, { 0.55f, 1.0f, 0.3f }, 0.7f + 0.35f * pulse, -1.0f);
 			break;
 		case EntityKind::Brute:
-		{
-			const float swell = attacking ? 1.06f : 1.0f;
-			const glm::vec3 color = attacking ? glm::vec3(0.9f, 0.3f, 0.15f) : glm::vec3(0.45f, 0.25f, 0.2f);
-			renderer.DrawBox(base + up * (0.7f * swell), glm::vec3(0.6f, 0.7f, 0.6f) * (size * swell), shade(color), entity.Facing, std::max({ flash, attacking ? 0.3f : 0.0f, aura }));
-			renderer.DrawBox(base + side * 0.68f + forward * 0.2f + up * 0.5f, glm::vec3(0.18f) * size, color * 0.6f, entity.Facing);
-			renderer.DrawBox(base - side * 0.68f + forward * 0.2f + up * 0.5f, glm::vec3(0.18f) * size, color * 0.6f, entity.Facing);
-			renderer.DrawBox(base + forward * 0.6f + up * 1.05f, glm::vec3(0.06f, 0.08f, 0.3f) * size, { 1.0f, 0.5f, 0.1f }, entity.Facing, 0.9f);
 			if (attacking)
-			{
-				DrawRing(renderer, base + glm::vec3(0.0f, 0.04f, 0.0f), reach, 28, { 1.0f, 0.25f, 0.1f }, 0.5f + 0.5f * pulse, 0.06f);
-				DrawRing(renderer, base + glm::vec3(0.0f, 0.04f, 0.0f), reach * 0.6f, 20, { 1.0f, 0.25f, 0.1f }, 0.3f + 0.4f * pulse, 0.04f);
-			}
+				DrawRuneCircle(renderer, { .Center = base, .Radius = reach, .Color = { 1.0f, 0.25f, 0.1f }, .Intensity = 0.8f + 0.4f * pulse, .Spin = 1.5f, .Seed = entity.NetId });
 			break;
-		}
 		case EntityKind::Caster:
 		{
-			const glm::vec3 robe = shade({ 0.55f, 0.18f, 0.12f });
-			renderer.Draw(MeshKind::Cone, base + up * 0.55f, glm::vec3(0.34f, 0.55f, 0.34f) * size, robe, entity.Facing, std::max(flash, aura), base.y);
-			renderer.Draw(MeshKind::Sphere, base + up * 1.2f, glm::vec3(0.19f) * size, shade({ 0.3f, 0.1f, 0.08f }), entity.Facing, 0.0f, base.y);
-			renderer.DrawBox(base + forward * 0.12f + up * 1.2f, glm::vec3(0.1f, 0.03f, 0.05f) * size, { 1.0f, 0.6f, 0.2f }, entity.Facing, 0.9f);
-			const glm::vec3 hand = base + forward * 0.3f + side * 0.3f + up * 0.9f;
-			renderer.DrawBox(hand - up * 0.35f, glm::vec3(0.025f, 0.55f, 0.025f) * size, { 0.35f, 0.25f, 0.15f }, entity.Facing);
-			renderer.Draw(MeshKind::Sphere, hand + up * 0.25f, glm::vec3(attacking ? 0.16f + 0.05f * pulse : 0.09f) * size, EnemyFire, m_Time * 5.0f, attacking ? 1.0f : 0.6f, base.y);
+			const glm::vec3 tip = pose.JointPosition(m_Characters->GetRightHand()) + glm::vec3(0.0f, 0.95f * look->Scale * size, 0.0f);
+			DrawGlow(renderer, tip, (attacking ? 0.45f + 0.12f * pulse : 0.25f) * size, EnemyFire * (attacking ? 2.2f : 1.2f));
+			DrawGlow(renderer, tip, 0.1f * size, { 2.5f, 1.8f, 1.0f });
 			if (attacking)
-				DrawRing(renderer, base + glm::vec3(0.0f, 0.05f, 0.0f), 0.7f * size, 14, EnemyFire, 0.5f + 0.5f * pulse, 0.04f);
+				DrawRuneCircle(renderer, { .Center = base, .Radius = 0.8f * size, .Color = EnemyFire, .Intensity = 0.9f + 0.4f * pulse, .Spin = 2.0f, .Seed = entity.NetId });
 			break;
 		}
 		default:
 			break;
 		}
+		const float top = BarHeight(entity);
 		if (entity.Has(EntityFlags::Stunned))
-			for (uint32_t i = 0; i < 3; i++)
-			{
-				const float angle = m_Time * 5.0f + float(i) * 2.094f;
-				renderer.DrawBox(base + up * (HealthBarHeight(entity.Kind) + 0.15f) + Heading(angle) * 0.3f, { 0.05f, 0.05f, 0.05f }, { 1.0f, 0.95f, 0.4f }, angle, 1.0f);
-			}
+			DrawStunStars(renderer, base + glm::vec3(0.0f, top + 0.15f, 0.0f));
 		if (!elite)
 			return;
 		const float shimmer = 0.6f + 0.3f * std::sin(m_Time * 5.0f + float(entity.NetId));
-		DrawRing(renderer, base + glm::vec3(0.0f, 0.03f, 0.0f), (def ? def->Radius : 0.4f) * size + 0.22f, 20, EliteGold, shimmer, 0.04f);
-		renderer.DrawBox(base + up * (HealthBarHeight(entity.Kind) - 0.12f), glm::vec3(0.13f, 0.05f, 0.13f) * size, EliteGold, m_Time * 1.5f, 0.9f);
+		DrawGroundRing(renderer, base, (def ? def->Radius : 0.4f) * size + 0.22f, EliteGold, 1.0f + 0.5f * shimmer, 0.035f, 10.0f, 0.08f);
+		DrawStar(renderer, base + glm::vec3(0.0f, top - 0.12f, 0.0f), 0.2f * size, EliteGold * 2.2f, m_Time * 1.5f);
 	}
 
 	void SessionState::DrawTelegraph(WorldRenderer& renderer, const EntityState& entity, float progress) const
 	{
 		const glm::vec3 base = Ground(entity.Position);
-		const AbilityDef& def = GetAbility(AbilityId(std::min<uint32_t>(entity.Variant, uint32_t(AbilityId::Count) - 1)));
-		const bool enemy = entity.Owner == NoPlayer;
-		const glm::vec3 color = enemy ? (def.Damages == Element::Physical ? EnemyFire : SkillColor(def.Id)) : SkillColor(def.Id);
+		const AbilityDef& def = GetAbility(AbilityOf(entity));
+		const glm::vec3 color = EffectColor(entity);
 		const float scale = entity.GetScale();
-		const float pulse = 0.55f + 0.45f * std::sin(m_Time * 12.0f);
-		const glm::vec3 lift(0.0f, 0.04f, 0.0f);
+		const float appear = std::clamp(AgeOf(entity.NetId) / 0.3f, 0.0f, 1.0f);
+		const float intensity = 0.75f + 0.35f * progress;
 		switch (def.Shape)
 		{
 		case StrikeShape::Line:
-		{
-			const float length = def.Reach * scale;
-			const float half = def.Width * scale * 0.5f;
-			const glm::vec3 direction = Heading(entity.Facing);
-			const glm::vec3 side = Heading(entity.Facing + HalfPi);
-			renderer.DrawBox(base + direction * (length * 0.5f) + lift, { length * 0.5f, 0.01f, half }, color * 0.3f, entity.Facing, 0.15f);
-			renderer.DrawBox(base + direction * (length * progress * 0.5f) + lift + glm::vec3(0.0f, 0.005f, 0.0f), { length * progress * 0.5f, 0.012f, half }, color, entity.Facing, 0.55f);
-			for (const float sign : { -1.0f, 1.0f })
-				renderer.DrawBox(base + direction * (length * 0.5f) + side * (half * sign) + lift, { length * 0.5f, 0.02f, 0.045f }, color, entity.Facing, 0.5f + 0.4f * pulse);
-			renderer.DrawBox(base + direction * length + lift, { 0.045f, 0.02f, half }, color, entity.Facing, 0.5f + 0.4f * pulse);
+			DrawLaneTelegraph(renderer, base, entity.Facing, def.Reach * scale, def.Width * scale, color, intensity, progress, appear);
 			break;
-		}
-		case StrikeShape::Ring:
-		{
-			const float outer = def.ImpactRadius * scale;
-			const float inner = def.InnerRadius * scale;
-			DrawRing(renderer, base + lift, outer, 56, color, 0.5f + 0.4f * pulse, 0.07f);
-			DrawRing(renderer, base + lift, inner, 28, color, 0.5f + 0.4f * pulse, 0.07f);
-			for (const float fraction : { 0.33f, 0.66f })
-				DrawRing(renderer, base + lift, inner + (outer - inner) * fraction, 44, color * 0.5f, 0.25f, 0.03f);
-			DrawRing(renderer, base + lift, inner + (outer - inner) * progress, 48, color, 0.85f, 0.1f);
-			break;
-		}
 		case StrikeShape::Cone:
-		{
-			const float reach = def.Reach * scale;
-			for (const float fraction : { 0.35f, 0.7f, 1.0f })
-				DrawArc(renderer, base + lift, entity.Facing, def.HalfArc, reach * fraction, 13, color, fraction >= 1.0f ? 0.5f + 0.4f * pulse : 0.3f, fraction >= 1.0f ? 0.06f : 0.035f);
-			for (const float sign : { -1.0f, 1.0f })
-			{
-				const float angle = entity.Facing + def.HalfArc * sign;
-				renderer.DrawBox(base + Heading(angle) * (reach * 0.5f) + lift, { reach * 0.5f, 0.02f, 0.045f }, color, angle, 0.5f + 0.4f * pulse);
-			}
-			DrawArc(renderer, base + lift, entity.Facing, def.HalfArc, std::max(reach * progress, 0.2f), 13, color, 0.9f, 0.09f);
+			DrawSectorTelegraph(renderer, base, entity.Facing, def.Reach * scale, def.HalfArc, color, intensity, progress, appear);
 			break;
-		}
+		case StrikeShape::Ring:
+			DrawRuneCircle(renderer, { .Center = base, .Radius = def.ImpactRadius * scale, .Color = color, .Intensity = intensity, .Spin = 0.25f, .Progress = progress, .Appear = appear, .Inner = def.InnerRadius / std::max(def.ImpactRadius, 0.01f), .Seed = entity.NetId });
+			break;
 		default:
+			DrawRuneCircle(renderer, { .Center = base, .Radius = def.ImpactRadius * scale, .Color = color, .Intensity = intensity, .Spin = 0.5f, .Progress = progress, .Appear = appear, .Seed = entity.NetId });
 			break;
 		}
 	}
@@ -1034,16 +1354,11 @@ namespace Game
 		};
 		if (entity.Kind == EntityKind::Archivist)
 		{
-			const float hover = 0.25f + 0.08f * std::sin(m_Time * 2.0f);
-			const glm::vec3 body = base + glm::vec3(0.0f, hover, 0.0f);
-			const glm::vec3 robe(0.32f, 0.12f, 0.42f);
+			const glm::vec3 body = base;
 			const glm::vec3 arcane(0.75f, 0.55f, 1.0f);
-			renderer.Draw(MeshKind::Cone, body + glm::vec3(0.0f, 0.95f, 0.0f), { 0.75f, 0.95f, 0.75f }, shade(robe), entity.Facing, flash, base.y);
-			renderer.DrawBox(body + glm::vec3(0.0f, 1.55f, 0.0f), { 0.42f, 0.22f, 0.36f }, shade(robe * 0.8f), entity.Facing, flash);
-			renderer.Draw(MeshKind::Sphere, body + glm::vec3(0.0f, 2.05f, 0.0f), { 0.3f, 0.3f, 0.3f }, shade({ 0.18f, 0.08f, 0.22f }), entity.Facing, flash, base.y);
-			renderer.Draw(MeshKind::Cone, body + glm::vec3(0.0f, 2.45f, 0.0f) - forward * 0.05f, { 0.34f, 0.32f, 0.34f }, shade(robe * 0.9f), entity.Facing, flash, base.y);
-			for (const float sign : { -1.0f, 1.0f })
-				renderer.DrawBox(body + glm::vec3(0.0f, 2.08f, 0.0f) + forward * 0.26f + side * (0.1f * sign), { 0.05f, 0.035f, 0.035f }, arcane, entity.Facing, 1.0f);
+			const CharacterLook* look = m_Characters->ForEnemy(entity.Kind);
+			if (const CharacterAnimator* animator = AnimatorOf(entity.NetId); look && animator)
+				DrawCharacterModel(renderer, *m_Characters, *look, *animator, base, entity.Facing, look->Scale, CharacterTint(entity), 0.0f);
 			const uint32_t books = 6;
 			for (uint32_t i = 0; i < books; i++)
 			{
@@ -1052,10 +1367,7 @@ namespace Game
 				renderer.DrawBox(position, { 0.2f, 0.06f, 0.15f }, i % 2 ? glm::vec3(0.5f, 0.2f, 0.15f) : glm::vec3(0.2f, 0.25f, 0.45f), angle + HalfPi, attacking ? 0.6f + 0.4f * pulse : 0.15f);
 				renderer.DrawBox(position + glm::vec3(0.0f, 0.065f, 0.0f), { 0.17f, 0.01f, 0.13f }, glm::vec3(0.95f, 0.9f, 0.75f), angle + HalfPi, 0.4f);
 			}
-			const glm::vec3 tome = body + forward * 0.7f + glm::vec3(0.0f, 1.25f, 0.0f);
-			renderer.DrawBox(tome, { 0.28f, 0.05f, 0.2f }, { 0.55f, 0.18f, 0.12f }, entity.Facing, 0.2f);
-			renderer.DrawBox(tome + glm::vec3(0.0f, 0.06f, 0.0f), { 0.25f, 0.015f, 0.18f }, arcane, entity.Facing, attacking ? 1.0f : 0.5f);
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.04f, 0.0f), 1.1f + (attacking ? 0.15f * pulse : 0.0f), 28, arcane, attacking ? 0.9f : 0.4f, 0.05f);
+			DrawRuneCircle(renderer, { .Center = base, .Radius = 1.25f + (attacking ? 0.15f * pulse : 0.0f), .Color = arcane, .Intensity = attacking ? 1.2f : 0.6f, .Spin = attacking ? 1.2f : 0.3f, .Seed = entity.NetId });
 			return;
 		}
 
@@ -1069,7 +1381,7 @@ namespace Game
 				const float angle = float(i) * 1.257f + m_Time * 0.5f;
 				renderer.Draw(MeshKind::Cone, base + Heading(angle) * 0.55f + glm::vec3(0.0f, 0.35f, 0.0f), { 0.12f, 0.35f, 0.12f }, crystal, angle, 0.7f, base.y);
 			}
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 1.3f + 0.15f * pulse, 24, glm::vec3(0.55f, 0.45f, 0.35f), 0.3f, 0.06f);
+			DrawGroundRing(renderer, base, 1.3f + 0.15f * pulse, glm::vec3(0.55f, 0.45f, 0.35f), 0.6f, 0.05f);
 			return;
 		}
 		const uint32_t segments = 6;
@@ -1091,7 +1403,7 @@ namespace Game
 			renderer.Draw(MeshKind::Cone, head - forward * 0.15f + side * (0.22f * sign) + glm::vec3(0.0f, 0.42f, 0.0f), { 0.08f, 0.3f, 0.08f }, crystal, entity.Facing, 0.7f, base.y);
 		}
 		if (attacking)
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.05f, 0.0f), 1.4f + 0.2f * pulse, 28, crystal, 0.8f, 0.05f);
+			DrawRuneCircle(renderer, { .Center = base, .Radius = 1.6f + 0.2f * pulse, .Color = crystal, .Intensity = 1.0f, .Spin = 1.0f, .Seed = entity.NetId });
 	}
 
 	void SessionState::DrawChest(WorldRenderer& renderer, const EntityState& entity) const
@@ -1112,7 +1424,7 @@ namespace Game
 			else
 			{
 				renderer.DrawBox(base + glm::vec3(0.0f, 0.5f, 0.0f), { 0.41f, 0.07f, 0.29f }, wood * 1.15f, entity.Facing);
-				DrawRing(renderer, base + glm::vec3(0.0f, 0.03f, 0.0f), 0.7f, 18, { 0.95f, 0.85f, 0.6f }, 0.25f + 0.25f * pulse, 0.025f);
+				DrawGroundRing(renderer, base, 0.7f, { 0.95f, 0.85f, 0.6f }, 0.5f + 0.4f * pulse, 0.025f);
 			}
 			return;
 		}
@@ -1128,11 +1440,11 @@ namespace Game
 			}
 			if (opened)
 				return;
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.04f, 0.0f), 1.3f + 0.15f * pulse, 28, ember, 0.8f, 0.06f);
+			DrawRuneCircle(renderer, { .Center = base, .Radius = 1.4f + 0.15f * pulse, .Color = ember, .Intensity = 0.8f, .Spin = 0.4f, .Seed = entity.NetId });
 			for (uint32_t i = 0; i < 6; i++)
 			{
 				const float t = std::fmod(m_Time * 0.5f + float(i) / 6.0f, 1.0f);
-				renderer.DrawBox(base + Heading(float(i) * 1.05f + m_Time * 0.7f) * (0.5f + 0.4f * t) + glm::vec3(0.0f, 0.8f + 3.5f * t, 0.0f), glm::vec3(0.06f * (1.0f - t)), ember, m_Time, 1.0f);
+				DrawGlow(renderer, base + Heading(float(i) * 1.05f + m_Time * 0.7f) * (0.5f + 0.4f * t) + glm::vec3(0.0f, 0.8f + 3.5f * t, 0.0f), 0.14f * (1.0f - t) + 0.03f, ember * 2.5f);
 			}
 			return;
 		}
@@ -1147,11 +1459,11 @@ namespace Game
 		{
 			renderer.DrawBox(base + glm::vec3(0.0f, 0.7f, 0.0f), { 0.56f, 0.1f, 0.39f }, wood * 1.1f, entity.Facing);
 			renderer.DrawBox(base + glm::vec3(0.0f, 0.5f, 0.0f) + Heading(entity.Facing + HalfPi) * 0.4f, { 0.08f, 0.1f, 0.03f }, gold, entity.Facing, 0.8f);
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.04f, 0.0f), 0.95f + 0.1f * pulse, 24, gold, 0.5f + 0.4f * pulse, 0.04f);
+			DrawGroundRing(renderer, base, 0.95f + 0.1f * pulse, gold, 0.9f + 0.6f * pulse, 0.035f);
 			for (uint32_t i = 0; i < 4; i++)
 			{
 				const float t = std::fmod(m_Time * 0.6f + float(i) * 0.25f, 1.0f);
-				renderer.DrawBox(base + Heading(float(i) * 1.6f + m_Time) * 0.35f + glm::vec3(0.0f, 0.8f + 1.2f * t, 0.0f), glm::vec3(0.04f * (1.0f - t)), gold, m_Time * 3.0f, 1.0f);
+				DrawStar(renderer, base + Heading(float(i) * 1.6f + m_Time) * 0.35f + glm::vec3(0.0f, 0.8f + 1.2f * t, 0.0f), 0.13f * (1.0f - t) + 0.03f, gold * 2.2f, m_Time * 3.0f);
 			}
 		}
 	}
@@ -1161,211 +1473,140 @@ namespace Game
 		const glm::vec3 base = Ground(entity.Position);
 		const glm::vec3 inner(0.75f, 0.55f, 1.0f);
 		const glm::vec3 outer(1.0f, 0.8f, 0.4f);
-		DrawRing(renderer, base + glm::vec3(0.0f, 0.04f, 0.0f), 1.6f, 36, outer, 0.8f, 0.07f);
-		DrawRing(renderer, base + glm::vec3(0.0f, 0.04f, 0.0f), 1.15f, 28, inner, 0.6f, 0.05f);
+		DrawRuneCircle(renderer, { .Center = base, .Radius = 1.7f, .Color = outer, .Intensity = 0.9f, .Spin = 0.3f, .Seed = entity.NetId });
+		DrawGroundRing(renderer, base, 1.15f, inner, 1.0f, 0.04f, 16.0f, -0.1f);
 		for (uint32_t level = 0; level < 3; level++)
 		{
 			const float t = std::fmod(m_Time * 0.45f + float(level) / 3.0f, 1.0f);
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.2f + 2.6f * t, 0.0f), 1.3f * (1.0f - 0.5f * t), 24, glm::mix(inner, outer, t), 1.0f - t, 0.04f);
+			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.2f + 2.6f * t, 0.0f), 1.3f * (1.0f - 0.5f * t), glm::mix(inner, outer, t) * (1.6f * (1.0f - t)), 0.035f);
 		}
 		for (uint32_t i = 0; i < 8; i++)
 		{
 			const float angle = float(i) * 0.785f + m_Time * 0.8f;
 			const float t = std::fmod(m_Time * 0.7f + float(i) * 0.125f, 1.0f);
-			renderer.DrawBox(base + Heading(angle) * (1.35f - 0.6f * t) + glm::vec3(0.0f, 0.2f + 2.2f * t, 0.0f), { 0.03f, 0.18f, 0.03f }, inner, angle, 1.0f - 0.5f * t);
+			const glm::vec3 point = base + Heading(angle) * (1.35f - 0.6f * t) + glm::vec3(0.0f, 0.2f + 2.2f * t, 0.0f);
+			DrawStreak(renderer, point - glm::vec3(0.0f, 0.18f, 0.0f), point + glm::vec3(0.0f, 0.18f, 0.0f), 0.04f, inner * (1.8f * (1.0f - 0.5f * t)));
 		}
-		renderer.Draw(MeshKind::Sphere, base + glm::vec3(0.0f, 1.3f, 0.0f), glm::vec3(0.3f + 0.05f * std::sin(m_Time * 4.0f)), inner, m_Time, 1.0f, base.y);
+		DrawGlow(renderer, base + glm::vec3(0.0f, 1.3f, 0.0f), 0.8f, inner * 0.9f);
+		DrawGlow(renderer, base + glm::vec3(0.0f, 1.3f, 0.0f), 0.26f + 0.05f * std::sin(m_Time * 4.0f), { 2.2f, 1.8f, 3.0f });
 	}
 
 	void SessionState::DrawProjectile(WorldRenderer& renderer, const EntityState& entity) const
 	{
 		const glm::vec3 base = Ground(entity.Position);
-		const auto lifted = m_ProjectileHeights.find(entity.NetId);
-		const glm::vec3 center = { entity.Position.x, lifted != m_ProjectileHeights.end() ? lifted->second.Height : base.y + ProjectileHeight, entity.Position.y };
-		const glm::vec3 owner = PlayerColor(entity.Owner);
-		const AbilityId ability = AbilityId(std::min<uint32_t>(entity.Variant, uint32_t(AbilityId::Count) - 1));
-		const glm::vec3 skill = SkillColor(ability);
+		const glm::vec3 center = ProjectilePoint(entity);
+		const AbilityId ability = AbilityOf(entity);
 		switch (ability)
 		{
-		case AbilityId::Spit:
-			renderer.Draw(MeshKind::Sphere, center, { 0.2f, 0.2f, 0.2f }, { 0.5f, 1.0f, 0.25f }, entity.Facing + m_Time * 6.0f, 1.0f, base.y);
-			renderer.DrawBox(center - Heading(entity.Facing) * 0.25f, { 0.14f, 0.06f, 0.06f }, { 0.3f, 0.7f, 0.15f }, entity.Facing, 0.8f);
-			break;
 		case AbilityId::Arrow:
 		case AbilityId::Volley:
-			renderer.DrawBox(center, { 0.3f, 0.035f, 0.035f }, glm::mix(owner, glm::vec3(0.95f, 0.85f, 0.6f), 0.55f), entity.Facing, 0.6f);
-			break;
 		case AbilityId::PiercingShot:
-			renderer.DrawBox(center, { 0.45f, 0.045f, 0.045f }, glm::mix(skill, glm::vec3(1.0f), 0.4f), entity.Facing, 1.0f);
-			renderer.DrawBox(center - Heading(entity.Facing) * 0.5f, { 0.35f, 0.02f, 0.02f }, skill, entity.Facing, 0.7f);
-			break;
 		case AbilityId::Quarrel:
-			renderer.DrawBox(center, { 0.26f, 0.05f, 0.05f }, glm::mix(owner, glm::vec3(0.8f, 0.82f, 0.88f), 0.65f), entity.Facing, 0.5f);
-			renderer.DrawBox(center - Heading(entity.Facing) * 0.24f, { 0.05f, 0.03f, 0.09f }, owner, entity.Facing, 0.8f);
-			break;
-		case AbilityId::Orb:
-			renderer.Draw(MeshKind::Sphere, center, { 0.22f, 0.22f, 0.22f }, glm::mix(owner, skill, 0.7f), m_Time * 4.0f, 1.0f, base.y);
-			renderer.DrawBox(center, { 0.28f, 0.04f, 0.28f }, glm::mix(skill, glm::vec3(1.0f), 0.5f), -m_Time * 6.0f, 0.8f);
-			break;
-		case AbilityId::Fireball:
-			renderer.Draw(MeshKind::Sphere, center, { 0.24f, 0.24f, 0.24f }, skill, m_Time * 5.0f, 1.0f, base.y);
-			renderer.Draw(MeshKind::Sphere, center - Heading(entity.Facing) * 0.28f, { 0.15f, 0.15f, 0.15f }, { 1.0f, 0.3f, 0.1f }, m_Time * 3.0f, 0.9f, base.y);
-			break;
-		case AbilityId::IceSpear:
-			renderer.DrawBox(center, { 0.38f, 0.06f, 0.06f }, skill, entity.Facing, 0.9f);
-			renderer.DrawBox(center + Heading(entity.Facing) * 0.32f, { 0.08f, 0.09f, 0.09f }, glm::vec3(0.9f, 0.97f, 1.0f), entity.Facing + 0.785f, 1.0f);
-			break;
-		case AbilityId::ChainLightning:
-			renderer.DrawBox(center, { 0.22f, 0.04f, 0.04f }, skill, entity.Facing + 0.5f * std::sin(m_Time * 40.0f), 1.0f);
-			renderer.DrawBox(center, { 0.16f, 0.04f, 0.04f }, glm::vec3(1.0f), entity.Facing - 0.6f, 1.0f);
-			break;
-		case AbilityId::TomeVolley:
-			renderer.DrawBox(center, { 0.24f, 0.07f, 0.18f }, { 0.35f, 0.3f, 0.75f }, m_Time * 9.0f + float(entity.NetId), 0.5f);
-			renderer.DrawBox(center + glm::vec3(0.0f, 0.075f, 0.0f), { 0.21f, 0.015f, 0.15f }, glm::mix(skill, glm::vec3(1.0f), 0.4f), m_Time * 9.0f + float(entity.NetId), 1.0f);
-			break;
-		case AbilityId::InkSpiral:
-			renderer.Draw(MeshKind::Sphere, center, { 0.24f, 0.24f, 0.24f }, { 0.25f, 0.05f, 0.35f }, m_Time * 4.0f, 0.6f, base.y);
-			renderer.Draw(MeshKind::Sphere, center - Heading(entity.Facing) * 0.22f, { 0.14f, 0.14f, 0.14f }, { 0.55f, 0.25f, 0.85f }, 0.0f, 1.0f, base.y);
-			break;
-		case AbilityId::ShardBurst:
-			renderer.DrawBox(center, { 0.28f, 0.07f, 0.07f }, { 0.55f, 0.95f, 1.0f }, entity.Facing, 1.0f);
-			renderer.DrawBox(center + Heading(entity.Facing) * 0.22f, { 0.08f, 0.08f, 0.08f }, glm::vec3(0.9f, 1.0f, 1.0f), entity.Facing + 0.785f, 1.0f);
+			if (const std::optional<uint32_t> mesh = m_Characters->ArrowMesh(ability))
+				renderer.DrawModel(*mesh, ModelTransform(center, entity.Facing, ability == AbilityId::PiercingShot ? 0.75f : 0.55f), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.25f, base.y);
 			break;
 		default:
-			renderer.DrawBox(center, { 0.22f, 0.08f, 0.08f }, glm::mix(owner, skill, 0.6f), entity.Facing, 1.0f);
 			break;
 		}
+		const glm::vec3 color = entity.Owner == NoPlayer ? SkillColor(ability) : glm::mix(PlayerColor(entity.Owner), SkillColor(ability), 0.6f);
+		DrawProjectileVisual(renderer, ability, center, entity.Facing, color, m_Time, entity.NetId);
 	}
 
 	void SessionState::DrawEffect(WorldRenderer& renderer, const EntityState& entity) const
 	{
 		const glm::vec3 base = Ground(entity.Position);
-		const AbilityId ability = AbilityId(std::min<uint32_t>(entity.Variant, uint32_t(AbilityId::Count) - 1));
+		const AbilityId ability = AbilityOf(entity);
 		const AbilityDef& def = GetAbility(ability);
-		const bool enemy = entity.Owner == NoPlayer;
-		const glm::vec3 owner = enemy ? EnemyFire : PlayerColor(entity.Owner);
-		const glm::vec3 skill = enemy && def.Damages == Element::Physical ? EnemyFire : SkillColor(ability);
+		const glm::vec3 owner = entity.Owner == NoPlayer ? EnemyFire : PlayerColor(entity.Owner);
+		const glm::vec3 color = EffectColor(entity);
 		const glm::vec3 bright = glm::mix(owner, glm::vec3(1.0f), 0.6f);
 		const float age = AgeOf(entity.NetId);
 		const float scale = entity.GetScale();
-		const float pulse = 0.55f + 0.45f * std::sin(m_Time * 12.0f);
-
-		if (entity.Has(EntityFlags::Pending) && def.Shape != StrikeShape::Circle)
-		{
-			DrawTelegraph(renderer, entity, def.ImpactDelay > 0.0f ? std::clamp(age / def.ImpactDelay, 0.0f, 1.0f) : 1.0f);
-			return;
-		}
 		if (entity.Has(EntityFlags::Pending))
 		{
-			const float radius = def.ImpactRadius * scale;
 			const float progress = def.ImpactDelay > 0.0f ? std::clamp(age / def.ImpactDelay, 0.0f, 1.0f) : 1.0f;
-			const glm::vec3 color = enemy ? EnemyFire : skill;
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.05f, 0.0f), radius, 32, color, 0.5f + 0.4f * pulse, 0.05f);
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.04f, 0.0f), std::max(radius * progress, 0.1f), 24, color, 0.8f, 0.08f);
-			renderer.DrawBox(base + glm::vec3(0.0f, 0.03f, 0.0f), { radius * 0.12f, 0.01f, radius * 0.12f }, color, m_Time * 2.0f, 0.6f);
+			DrawTelegraph(renderer, entity, progress);
 			if (ability == AbilityId::Meteor)
-				renderer.Draw(MeshKind::Sphere, base + glm::vec3(0.0f, 0.6f + 9.0f * (1.0f - progress), 0.0f), { 0.55f, 0.55f, 0.55f }, { 1.0f, 0.45f, 0.15f }, m_Time * 3.0f, 1.0f, base.y);
+				DrawMeteor(renderer, entity, progress);
 			return;
 		}
 
-		const float duration = std::max(def.EffectDuration, 0.05f);
-		const float t = std::clamp(age / duration, 0.0f, 1.0f);
+		const float t = std::clamp(age / std::max(def.EffectDuration, 0.05f), 0.0f, 1.0f);
+		const float swing = 1.0f - (1.0f - t) * (1.0f - t);
+		const glm::vec3 forward = Heading(entity.Facing);
+		const glm::vec3 chest = base + glm::vec3(0.0f, 0.45f, 0.0f);
+		const bool mirrored = (entity.NetId & 1u) != 0;
 		switch (def.Kind)
 		{
 		case AbilityKind::Nova:
-		{
-			const float reach = def.Reach * scale;
 			if (ability == AbilityId::Cyclone)
-			{
 				for (uint32_t i = 0; i < 3; i++)
-					DrawArc(renderer, base + glm::vec3(0.0f, 0.4f + 0.15f * float(i), 0.0f), m_Time * 18.0f + float(i) * 2.1f, 0.9f, reach * (0.6f + 0.15f * float(i)), 6, glm::mix(bright, skill, 0.4f), 1.0f, 0.06f);
-				break;
-			}
-			const glm::vec3 color = ability == AbilityId::Slam ? glm::vec3(1.0f, 0.45f, 0.15f) : ability == AbilityId::FrostNova ? skill : glm::mix(owner, skill, 0.5f);
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.2f, 0.0f), reach * (0.4f + 0.6f * t), 28, color, 1.0f, 0.09f);
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.12f, 0.0f), reach * (0.25f + 0.4f * t), 18, color, 0.8f, 0.05f);
-			if (ability == AbilityId::FrostNova)
-				for (uint32_t i = 0; i < 10; i++)
-				{
-					const float angle = float(i) * 0.628f;
-					renderer.Draw(MeshKind::Cone, base + Heading(angle) * (reach * (0.4f + 0.55f * t)) + glm::vec3(0.0f, 0.25f, 0.0f), { 0.08f, 0.25f, 0.08f }, glm::vec3(0.85f, 0.95f, 1.0f), angle, 0.8f, base.y);
-				}
+					DrawSlash(renderer, base + glm::vec3(0.0f, 0.35f + 0.15f * float(i), 0.0f), m_Time * 17.0f + float(i) * 2.094f, def.Reach * scale * (0.7f + 0.12f * float(i)), 1.3f, 1.0f, glm::mix(bright, color, 0.4f) * 0.7f, false, 0.55f);
 			break;
-		}
 		case AbilityKind::Melee:
 		{
 			const float reach = def.Reach * scale;
-			const glm::vec3 center = base + glm::vec3(0.0f, 0.45f, 0.0f);
 			switch (ability)
 			{
 			case AbilityId::Bite:
-				DrawArc(renderer, center, entity.Facing, def.HalfArc, reach * 0.7f, 7, { 0.85f, 0.15f, 0.1f }, 1.0f);
-				break;
-			case AbilityId::Chop:
-				DrawArc(renderer, center, entity.Facing, def.HalfArc, reach * 0.75f, 7, glm::mix(owner, glm::vec3(1.0f, 0.75f, 0.4f), 0.6f), 1.0f, 0.09f);
-				DrawArc(renderer, center - glm::vec3(0.0f, 0.1f, 0.0f), entity.Facing, def.HalfArc * 0.8f, reach * 0.5f, 5, bright, 0.7f);
+				for (const bool jaw : { false, true })
+					DrawSlash(renderer, chest, entity.Facing, reach * 0.75f, def.HalfArc, swing, { 1.5f, 0.22f, 0.12f }, jaw);
 				break;
 			case AbilityId::Stab:
-				renderer.DrawBox(center + Heading(entity.Facing) * (reach * 0.55f), { reach * 0.35f, 0.04f, 0.05f }, bright, entity.Facing, 1.0f);
-				DrawArc(renderer, center, entity.Facing, def.HalfArc, reach * 0.85f, 3, bright, 0.8f);
+			{
+				const glm::vec3 tip = chest + forward * (reach * (0.55f + 0.35f * swing));
+				DrawStreak(renderer, chest + forward * 0.3f, tip, 0.07f, bright * 1.3f);
+				DrawStar(renderer, tip, 0.22f * (1.0f - t) + 0.05f, bright * 1.4f);
 				break;
+			}
+			case AbilityId::Thrust:
+			{
+				const float extent = reach * (0.55f + 0.45f * std::min(t * 2.5f, 1.0f));
+				const float halfWidth = def.Width * scale * 0.5f;
+				const float fade = 1.0f - t;
+				const glm::vec3 tip = chest + forward * extent;
+				DrawStreak(renderer, chest, tip, 0.1f, bright * (1.5f * fade + 0.3f));
+				DrawStar(renderer, tip, 0.32f * fade + 0.08f, glm::mix(bright, glm::vec3(1.0f), 0.4f) * 1.6f);
+				for (const float across : { -1.0f, 1.0f })
+				{
+					const glm::vec3 side = Heading(entity.Facing + HalfPi) * (halfWidth * across);
+					DrawStreak(renderer, chest + side + forward * (extent * 0.2f), chest + side * 0.6f + forward * (extent * 0.85f), 0.035f, owner * (1.0f * fade));
+				}
+				break;
+			}
 			case AbilityId::GroundSlam:
-				for (const float fraction : { 0.35f, 0.6f, 0.85f, 1.0f })
-					DrawArc(renderer, base + glm::vec3(0.0f, 0.08f, 0.0f), entity.Facing, def.HalfArc, reach * fraction * (0.5f + 0.5f * t), 9, glm::mix(skill, glm::vec3(1.0f, 0.8f, 0.5f), fraction), 1.0f, 0.08f);
+				DrawSlash(renderer, base + glm::vec3(0.0f, 0.12f, 0.0f), entity.Facing, reach, def.HalfArc, swing, glm::mix(color, glm::vec3(1.0f, 0.8f, 0.5f), 0.5f) * 1.1f, mirrored, 0.2f);
 				break;
 			default:
-				DrawArc(renderer, center, entity.Facing, def.HalfArc, reach * 0.7f, 7, bright, 1.0f);
+				DrawSlash(renderer, chest, entity.Facing, reach * 0.85f, def.HalfArc, swing, glm::mix(owner, glm::vec3(1.0f, 0.9f, 0.75f), ability == AbilityId::Chop ? 0.6f : 0.45f) * 1.25f, mirrored);
 				break;
 			}
 			break;
 		}
 		case AbilityKind::Projectile:
 		case AbilityKind::Ground:
-		{
-			const float radius = def.ImpactRadius * scale;
-			const glm::vec3 color = enemy ? EnemyFire : skill;
-			if (def.Shape == StrikeShape::Line)
-			{
-				const float length = def.Reach * scale;
-				const glm::vec3 direction = Heading(entity.Facing);
-				for (uint32_t i = 0; i < 6; i++)
-				{
-					const float along = length * (float(i) + 0.5f) / 6.0f;
-					renderer.DrawBox(base + direction * along + glm::vec3(0.0f, 0.25f + 0.9f * (1.0f - t) * float(i % 2), 0.0f), { length / 12.0f, 0.18f * (1.0f - t) + 0.04f, def.Width * scale * 0.4f }, glm::mix(color, glm::vec3(1.0f), 0.3f), entity.Facing + 0.3f * float(i % 3), 1.0f);
-				}
-				break;
-			}
-			if (def.Shape == StrikeShape::Cone)
-			{
-				for (const float fraction : { 0.4f, 0.7f, 1.0f })
-					DrawArc(renderer, base + glm::vec3(0.0f, 0.3f, 0.0f), entity.Facing, def.HalfArc, def.Reach * scale * fraction * (0.6f + 0.4f * t), 11, glm::mix(color, glm::vec3(1.0f), 0.3f), 1.0f, 0.1f);
-				break;
-			}
-			if (def.Shape == StrikeShape::Ring)
-			{
-				DrawRing(renderer, base + glm::vec3(0.0f, 0.3f, 0.0f), radius * (0.9f + 0.1f * t), 48, color, 1.0f, 0.14f);
-				DrawRing(renderer, base + glm::vec3(0.0f, 0.3f, 0.0f), def.InnerRadius * scale * (1.0f + 0.2f * t), 24, color, 1.0f, 0.1f);
-				DrawRing(renderer, base + glm::vec3(0.0f, 0.5f + 0.6f * t, 0.0f), (radius + def.InnerRadius * scale) * 0.5f, 36, glm::mix(color, glm::vec3(1.0f), 0.4f), 1.0f - t, 0.08f);
-				break;
-			}
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.15f, 0.0f), radius * (0.3f + 0.7f * t), 28, color, 1.0f, 0.1f);
 			if (ability == AbilityId::RainOfArrows)
-				for (uint32_t i = 0; i < 9; i++)
+				if (const std::optional<uint32_t> arrow = m_Characters->ArrowMesh(AbilityId::Arrow))
 				{
-					const float angle = float(i) * 2.4f;
-					const float distance = radius * std::sqrt(float(i) / 9.0f);
-					renderer.DrawBox(base + Heading(angle) * distance + glm::vec3(0.0f, 0.3f + 1.6f * (1.0f - t), 0.0f), { 0.02f, 0.3f, 0.02f }, { 0.9f, 0.85f, 0.6f }, angle, 0.5f);
+					const float radius = def.ImpactRadius * scale;
+					for (uint32_t i = 0; i < 9; i++)
+					{
+						const float angle = float(i) * 2.4f;
+						const glm::vec3 tip = base + Heading(angle) * (radius * std::sqrt(float(i) / 9.0f)) + glm::vec3(0.0f, 0.15f + 1.6f * (1.0f - swing), 0.0f);
+						const glm::mat4 transform = glm::translate(glm::mat4(1.0f), tip) * glm::rotate(glm::mat4(1.0f), -angle, glm::vec3(0.0f, 1.0f, 0.0f)) * glm::rotate(glm::mat4(1.0f), HalfPi, glm::vec3(1.0f, 0.0f, 0.0f)) * glm::scale(glm::mat4(1.0f), glm::vec3(0.55f));
+						renderer.DrawModel(*arrow, transform, NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.25f, base.y);
+					}
 				}
-			else
-				renderer.Draw(MeshKind::Sphere, base + glm::vec3(0.0f, 0.3f, 0.0f), glm::vec3(radius * 0.45f * (1.0f - 0.6f * t)), glm::mix(color, glm::vec3(1.0f, 0.9f, 0.6f), 0.3f), 0.0f, 1.0f, base.y);
 			break;
-		}
 		case AbilityKind::Heal:
 			for (uint32_t i = 0; i < 3; i++)
-				DrawRing(renderer, base + glm::vec3(0.0f, 0.2f + 1.2f * std::fmod(t + float(i) * 0.33f, 1.0f), 0.0f), 0.5f, 14, skill, 0.9f, 0.04f);
+			{
+				const float rise = std::fmod(t + float(i) * 0.33f, 1.0f);
+				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.2f + 1.3f * rise, 0.0f), 0.55f - 0.15f * rise, color * (2.2f * (1.0f - rise)), 0.035f);
+			}
 			break;
 		case AbilityKind::Dash:
-			DrawRing(renderer, base + glm::vec3(0.0f, 0.5f, 0.0f), 0.3f + 0.6f * t, 16, skill, 1.0f, 0.05f);
+			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.5f, 0.0f), 0.3f + 0.6f * t, color * (2.0f * (1.0f - t)), 0.04f);
 			break;
 		}
 	}
@@ -1523,7 +1764,7 @@ namespace Game
 			const bool teammate = entity.Kind == EntityKind::Player && entity.NetId != m_Client.GetPlayerNetId() && !entity.Has(EntityFlags::Dead);
 			if (!(enemy && (entity.Health < 255 || elite)) && !teammate)
 				continue;
-			const std::optional<glm::vec2> point = screen(Ground(entity.Position, HealthBarHeight(entity.Kind) * (enemy ? entity.GetScale() : 1.0f)));
+			const std::optional<glm::vec2> point = screen(Ground(entity.Position, BarHeight(entity)));
 			if (!point || !onScreen(*point))
 				continue;
 			const bool rival = m_Client.IsHostile(entity);
@@ -1708,6 +1949,9 @@ namespace Game
 		ImGui::Text("Interpolation target %.2f ticks, %u starved frames", m_Client.GetInterpolationDelay(), m_Client.GetStarvedFrames());
 		ImGui::Text("%u unacknowledged inputs, %u corrections (last %.3f)", m_Client.GetPendingInputCount(), m_Client.GetCorrectionCount(), double(m_Client.GetLastCorrection()));
 		ImGui::Text("%u sounds played, %u UI primitives", m_App.GetGameAudio().GetPlayedCount(), m_App.GetUiPrimitiveCount());
+		const Timbre::AudioStats audio = m_App.GetAudio().GetStats();
+		ImGui::Text("Audio: %u voices (%u audible, %u virtual), %u streams, %.1f%% CPU, %llu underruns, %.1f MB", audio.PlayingVoices, audio.AudibleVoices, audio.VirtualVoices, audio.Streams, double(audio.CpuLoad) * 100.0,
+			static_cast<unsigned long long>(audio.StreamUnderruns), double(audio.SoundMemory) / (1024.0 * 1024.0));
 		if (m_Server)
 		{
 			ImGui::Separator();

@@ -34,6 +34,10 @@ namespace Rdn
 		uint32_t ShaderGroupHandleAlignment = 1;
 		uint32_t ShaderGroupBaseAlignment = 1;
 		bool TextureCompressionBC = false;
+		bool SamplerAnisotropy = false;
+		float MaxSamplerAnisotropy = 1.0f;
+		bool Timestamps = false;
+		float TimestampPeriod = 0.0f;
 	};
 
 	class Device

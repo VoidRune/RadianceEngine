@@ -50,7 +50,7 @@ namespace Game
 			.CullMode = Rdn::CullMode::None,
 			.DepthTest = false,
 			.DepthWrite = false,
-			.AlphaBlend = true,
+			.Blend = Rdn::BlendMode::Alpha,
 			.ColorAttachmentFormats = { targetFormat },
 			.PushDescriptorSets = { 0 },
 		});

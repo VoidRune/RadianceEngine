@@ -5,6 +5,7 @@ struct BoxInstance
 	vec4 CenterYaw;
 	vec4 HalfExtentsGround;
 	vec4 ColorEmission;
+	vec4 Surface;
 };
 
 struct MeshVertex
@@ -19,17 +20,23 @@ layout(std430, set = 0, binding = 1) readonly buffer Vertices { MeshVertex verti
 layout(push_constant) uniform PushConstants
 {
 	mat4 ViewProjection;
-	vec4 LightDirection;
+	vec4 Focus;
 } pc;
 
 layout(location = 0) out vec3 outNormal;
 layout(location = 1) out vec4 outColor;
 layout(location = 2) out float outHeight;
 layout(location = 3) out float outWorldHeight;
+layout(location = 4) flat out vec2 outSurface;
 
 void main()
 {
 	BoxInstance box = instances[gl_InstanceIndex];
+	if (pc.Focus.y > 0.5 && box.ColorEmission.a >= 0.9)
+	{
+		gl_Position = vec4(0.0, 0.0, -1.0, 1.0);
+		return;
+	}
 	MeshVertex vertex = vertices[gl_VertexIndex];
 	vec3 extent = box.HalfExtentsGround.xyz;
 	vec3 local = vertex.Position.xyz * extent;
@@ -43,5 +50,6 @@ void main()
 	outColor = box.ColorEmission;
 	outHeight = world.y - box.HalfExtentsGround.w;
 	outWorldHeight = world.y;
+	outSurface = box.Surface.xy;
 	gl_Position = pc.ViewProjection * vec4(world, 1.0);
 }

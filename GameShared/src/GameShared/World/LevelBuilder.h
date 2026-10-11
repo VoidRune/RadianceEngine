@@ -50,6 +50,7 @@ namespace Game
 		void SpawnPoint(Vec2 position);
 		void LootSpot(Vec2 position, bool vault = false);
 		void Pad(Vec2 position, PadKind kind);
+		void Roof(const TileRect& area, float height);
 		const Level& GetLevel() const { return m_Level; }
 		Level Finish();
 

@@ -1,6 +1,7 @@
 #pragma once
 #include "RadianceEngine/Graphics/Handle.h"
 #include "RadianceEngine/Graphics/Common.h"
+#include <optional>
 
 namespace Rdn
 {
@@ -9,6 +10,8 @@ namespace Rdn
 		Filter MinFilter = Filter::Linear;
 		Filter MagFilter = Filter::Linear;
 		SamplerAddressMode AddressMode = SamplerAddressMode::MirroredRepeat;
+		std::optional<SamplerAddressMode> AddressModeV;
+		float MaxAnisotropy = 1.0f;
 	};
 
 	class Sampler : NonCopyable

@@ -1,5 +1,6 @@
 #include "LevelRenderer.h"
 #include "Rendering/Models.h"
+#include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
 #include <algorithm>
 #include <cmath>
@@ -14,7 +15,7 @@ namespace Game
 		constexpr float StepHeight = 0.125f;
 		constexpr float WallPiece = 1.0f;
 		constexpr glm::vec3 PortalGold = { 1.0f, 0.78f, 0.3f };
-		constexpr float SightSlope = 17.0f / 11.0f;
+		constexpr float SightSlope = CameraHeight / (CameraBack + CameraFocusOffset);
 
 		float Hash(int32_t x, int32_t y, int32_t salt = 0)
 		{
@@ -99,10 +100,111 @@ namespace Game
 
 	void LevelRenderer::Draw(WorldRenderer& renderer, const Level& level, const LevelView& view)
 	{
+		Prepare(renderer, level);
 		DrawTerrain(renderer, level, view);
 		DrawWalls(renderer, level, view);
 		DrawProps(renderer, level, view);
+		DrawScene(renderer, view);
 		DrawPortals(renderer, level, view);
+	}
+
+	void LevelRenderer::Prepare(WorldRenderer& renderer, const Level& level)
+	{
+		const SceneKey key{ &level, level.Kind, level.Seed, level.Props.size(), level.Walls.size() };
+		if (key == m_Key)
+			return;
+		m_Key = key;
+		const bool hadGeometry = m_Scene.LevelGeometry;
+		if (level.Kind != MapKind::Abbey || !BuildAbbeyScene(level, renderer, m_Scene))
+		{
+			m_Scene = BuildLevelScene(level, renderer);
+			if (hadGeometry)
+			{
+				renderer.SetLevelGeometry({}, {}, {});
+				renderer.SetSkyMask(0, 0, {}, {}, {});
+			}
+		}
+		m_PropReach.clear();
+		m_PropTop.clear();
+		for (const PlacedProp& prop : level.Props)
+		{
+			float reach = 0.0f;
+			float top = 0.0f;
+			for (const PropPart& part : GetProp(prop.Id).Parts)
+			{
+				reach = std::max(reach, Length(part.Offset) + std::max(part.Half.x, part.Half.y));
+				top = std::max(top, part.Base + part.Height);
+			}
+			m_PropReach.push_back(reach);
+			m_PropTop.push_back(top);
+		}
+	}
+
+	void LevelRenderer::DrawScene(WorldRenderer& renderer, const LevelView& view) const
+	{
+		for (const SceneChunk& chunk : m_Scene.Chunks)
+		{
+			if ((chunk.Items.empty() && chunk.Boxes.empty()) || chunk.Max.x < view.Min.x || chunk.Min.x > view.Max.x || chunk.Max.y < view.Min.y || chunk.Min.y > view.Max.y)
+				continue;
+			for (const SceneItem& item : chunk.Items)
+			{
+				if (item.Center.x + item.Reach < view.Min.x || item.Center.x - item.Reach > view.Max.x || item.Center.y + item.Reach < view.Min.y || item.Center.y - item.Reach > view.Max.y)
+					continue;
+				if (item.Center.x + item.Reach < view.CameraMin.x || item.Center.x - item.Reach > view.CameraMax.x || item.Center.y + item.Reach < view.CameraMin.y || item.Center.y - item.Reach > view.CameraMax.y)
+				{
+					renderer.SubmitModel(item.Mesh, item.Instance, true);
+					continue;
+				}
+				float cut = 0.0f;
+				if (item.Cut)
+				{
+					const Vec2 toFocus = view.Focus - item.Center;
+					const float distance = Length(toFocus);
+					const Vec2 closest = distance > 1e-4f ? item.Center + toFocus * (std::min(distance, item.Reach) / distance) : item.Center;
+					cut = CutFactor(view, closest, item.Top);
+				}
+				if (cut <= 0.0f)
+				{
+					renderer.SubmitModel(item.Mesh, item.Instance);
+					continue;
+				}
+				ModelInstance instance = item.Instance;
+				instance.Shading.z = item.Base + CutHeight;
+				instance.Shading.w = 0.85f * cut;
+				renderer.SubmitModel(item.Mesh, instance);
+			}
+			for (const SceneBox& box : chunk.Boxes)
+			{
+				if (box.Center.x + box.Reach < view.Min.x || box.Center.x - box.Reach > view.Max.x || box.Center.z + box.Reach < view.Min.y || box.Center.z - box.Reach > view.Max.y)
+					continue;
+				const bool outside = box.Center.x + box.Reach < view.CameraMin.x || box.Center.x - box.Reach > view.CameraMax.x || box.Center.z + box.Reach < view.CameraMin.y || box.Center.z - box.Reach > view.CameraMax.y;
+				if (box.ShadowOnly || (outside && box.Emission < 0.9f))
+				{
+					renderer.DrawShadowCaster(box.Mesh, box.Center, box.Half, box.Yaw);
+					continue;
+				}
+				if (outside)
+					continue;
+				const float bottom = box.Center.y - box.Half.y;
+				const float fullTop = box.Center.y + box.Half.y;
+				float top = fullTop;
+				if (box.Cut)
+				{
+					const Vec2 center = { box.Center.x, box.Center.z };
+					const Vec2 toFocus = view.Focus - center;
+					const float distance = Length(toFocus);
+					const Vec2 closest = distance > 1e-4f ? center + toFocus * (std::min(distance, box.Reach) / distance) : center;
+					const float cut = CutFactor(view, closest, top);
+					if (cut > 0.0f)
+						top = std::min(top, box.Base + glm::mix(top - box.Base, CutHeight + 0.05f, cut));
+				}
+				if (top < fullTop && box.Emission < 0.9f)
+					renderer.DrawShadowCaster(box.Mesh, box.Center, box.Half, box.Yaw);
+				if (top - bottom < 0.005f)
+					continue;
+				renderer.Draw(box.Mesh, { box.Center.x, (top + bottom) * 0.5f, box.Center.z }, { box.Half.x, (top - bottom) * 0.5f, box.Half.z }, box.Color, box.Yaw, box.Emission, box.Base);
+			}
+		}
 	}
 
 	void LevelRenderer::DrawTerrain(WorldRenderer& renderer, const Level& level, const LevelView& view) const
@@ -118,6 +220,10 @@ namespace Game
 			{
 				const Cell& cell = map.Get(x, y);
 				const TerrainDef& def = GetTerrain(cell.Terrain);
+				const size_t index = size_t(y) * size_t(map.GetWidth()) + size_t(x);
+				const uint8_t art = index < m_Scene.Cells.size() ? m_Scene.Cells[index] : 0;
+				if ((art & CellTop) && (art & CellSides))
+					continue;
 				const float height = float(cell.Level) * HeightUnit;
 				const float shade = Hash(x, y);
 				const float cx = float(x) + 0.5f;
@@ -136,12 +242,14 @@ namespace Game
 							deep = !map.IsWalkable(x + dx, y + dy) && map.GetTerrain(x + dx, y + dy) != TerrainId::Water;
 					const float top = height + glm::mix(RockHeight, CutHeight, CutFactor(view, { cx, cz }, height + RockHeight));
 					Column(renderer, cx, cz, height - 0.1f, top, { 0.5f, 0.5f }, (deep ? base : accent) * (0.85f + 0.3f * shade), height);
+					if (top < height + RockHeight)
+						renderer.DrawShadowCaster(MeshKind::Box, { cx, height + (RockHeight - 0.1f) * 0.5f, cz }, { 0.5f, (RockHeight + 0.1f) * 0.5f, 0.5f });
 					break;
 				}
 				case TerrainStyle::Liquid:
 				{
 					const float ripple = 0.5f + 0.5f * std::sin(view.Time * 1.7f + shade * 6.28f);
-					renderer.DrawBox({ cx, height - 0.17f, cz }, { 0.5f, 0.03f, 0.5f }, glm::mix(base, accent, ripple * 0.6f), 0.0f, 0.12f, height - 0.2f);
+					renderer.DrawBox({ cx, height - 0.17f, cz }, { 0.5f, 0.03f, 0.5f }, glm::mix(base, accent, ripple * 0.6f), 0.0f, 0.12f, height - 0.2f, { .Roughness = 0.08f });
 					Column(renderer, cx, cz, height - 0.6f, height - 0.2f, { 0.5f, 0.5f }, base * 0.35f, height - 0.6f);
 					break;
 				}
@@ -155,7 +263,14 @@ namespace Game
 						TileMap::Step(side, nx, ny);
 						bottom = std::min(bottom, SurfaceHeight(map, nx, ny, height) - 0.02f);
 					}
+					if (art & CellSides)
+						bottom = height - 0.1f;
 					const glm::vec3 color = glm::mix(base, accent, shade * 0.5f);
+					if (art & CellTop)
+					{
+						Column(renderer, cx, cz, bottom, height - FloorBottom, { 0.5f, 0.5f }, color * 0.8f, height);
+						break;
+					}
 					if (cell.Slope != Direction::None && cell.Climb > 0)
 					{
 						const float rise = float(cell.Climb) * HeightUnit;
@@ -223,8 +338,11 @@ namespace Game
 
 	void LevelRenderer::DrawWalls(WorldRenderer& renderer, const Level& level, const LevelView& view) const
 	{
-		for (const WallSegment& wall : level.Walls)
+		for (size_t index = 0; index < level.Walls.size(); index++)
 		{
+			const WallSegment& wall = level.Walls[index];
+			if (index < m_Scene.WallDrawn.size() && m_Scene.WallDrawn[index])
+				continue;
 			if (std::max(wall.From.x, wall.To.x) < view.Min.x - 1.0f || std::min(wall.From.x, wall.To.x) > view.Max.x + 1.0f || std::max(wall.From.y, wall.To.y) < view.Min.y - 1.0f || std::min(wall.From.y, wall.To.y) > view.Max.y + 1.0f)
 				continue;
 			const WallDef& def = GetWall(wall.Style);
@@ -249,34 +367,22 @@ namespace Game
 				const float top = wall.Base + glm::mix(def.Height, CutHeight, cut);
 				const float bottom = wall.Bottom - 0.05f;
 				renderer.DrawBox({ center.x, (top + bottom) * 0.5f, center.y }, { halfLength, (top - bottom) * 0.5f, def.Thickness * 0.5f }, ToColor(def.Color), yaw, 0.0f, wall.Base);
+				if (cut > 0.0f)
+				{
+					const float fullTop = wall.Base + def.Height + 0.06f;
+					renderer.DrawShadowCaster(MeshKind::Box, { center.x, (fullTop + bottom) * 0.5f, center.y }, { halfLength, (fullTop - bottom) * 0.5f, def.Thickness * 0.5f }, yaw);
+				}
 				renderer.DrawBox({ center.x, top + 0.03f, center.y }, { halfLength + 0.005f, 0.03f, def.Thickness * 0.5f + 0.03f }, ToColor(def.Top), yaw, 0.0f, wall.Base);
 			}
 		}
 	}
 
-	void LevelRenderer::DrawProps(WorldRenderer& renderer, const Level& level, const LevelView& view)
+	void LevelRenderer::DrawProps(WorldRenderer& renderer, const Level& level, const LevelView& view) const
 	{
-		if (m_Level != &level || m_PropReach.size() != level.Props.size())
+		for (size_t i = 0; i < level.Props.size() && i < m_PropReach.size(); i++)
 		{
-			m_Level = &level;
-			m_PropReach.clear();
-			m_PropTop.clear();
-			for (const PlacedProp& prop : level.Props)
-			{
-				float reach = 0.0f;
-				float top = 0.0f;
-				for (const PropPart& part : GetProp(prop.Id).Parts)
-				{
-					reach = std::max(reach, Length(part.Offset) + std::max(part.Half.x, part.Half.y));
-					top = std::max(top, part.Base + part.Height);
-				}
-				m_PropReach.push_back(reach);
-				m_PropTop.push_back(top);
-			}
-		}
-
-		for (size_t i = 0; i < level.Props.size(); i++)
-		{
+			if (i < m_Scene.PropDrawn.size() && m_Scene.PropDrawn[i])
+				continue;
 			const PlacedProp& prop = level.Props[i];
 			const float reach = m_PropReach[i];
 			if (prop.Position.x + reach < view.Min.x || prop.Position.x - reach > view.Max.x || prop.Position.y + reach < view.Min.y || prop.Position.y - reach > view.Max.y)
@@ -296,10 +402,13 @@ namespace Game
 			for (const PropPart& part : def.Parts)
 			{
 				const float bottom = part.Base;
-				const float top = std::min(part.Base + part.Height, cutTop);
+				const float fullTop = part.Base + part.Height;
+				const float top = std::min(fullTop, cutTop);
+				const Vec2 center = prop.Position + Rotate(part.Offset, axis);
+				if (top < fullTop && part.Emission < 0.9f)
+					renderer.DrawShadowCaster(part.Mesh, { center.x, prop.Base + (bottom + fullTop) * 0.5f, center.y }, { part.Half.x, part.Height * 0.5f, part.Half.y }, prop.Yaw + part.Yaw);
 				if (top - bottom < 0.005f)
 					continue;
-				const Vec2 center = prop.Position + Rotate(part.Offset, axis);
 				renderer.Draw(part.Mesh, { center.x, prop.Base + (bottom + top) * 0.5f, center.y }, { part.Half.x, (top - bottom) * 0.5f, part.Half.y }, ToColor(part.Color), prop.Yaw + part.Yaw, part.Emission, prop.Base);
 			}
 		}
@@ -317,14 +426,14 @@ namespace Game
 				continue;
 			const float ground = level.Map.GetHeight(portal.Position);
 			const float pulse = 0.65f + 0.35f * std::sin(view.Time * 4.0f + float(i));
-			const glm::vec3 center = { portal.Position.x, ground + 0.03f, portal.Position.y };
+			const glm::vec3 center = { portal.Position.x, ground, portal.Position.y };
 			if (hovered)
 			{
-				DrawRing(renderer, center, 0.75f, 24, PortalGold, pulse, 0.06f);
-				DrawRing(renderer, center + glm::vec3(0.0f, 0.02f, 0.0f), 0.45f, 16, PortalGold, pulse * 0.8f, 0.04f);
+				DrawGroundRing(renderer, center, 0.75f, PortalGold, 1.5f * pulse, 0.05f);
+				DrawGroundRing(renderer, center, 0.45f, PortalGold, 1.2f * pulse, 0.035f, 8.0f, 0.2f);
 			}
 			else
-				DrawRing(renderer, center, 0.6f, 20, PortalGold * (reachable ? 0.9f : 0.5f), reachable ? 0.7f * pulse : 0.3f, 0.04f);
+				DrawGroundRing(renderer, center, 0.6f, PortalGold * (reachable ? 0.9f : 0.5f), reachable ? 1.2f * pulse : 0.6f, 0.035f);
 		}
 	}
 }

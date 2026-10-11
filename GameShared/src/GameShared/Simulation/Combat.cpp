@@ -263,8 +263,11 @@ namespace Game
 	void StrikeArea(World& world, const AbilityDef& ability, int32_t damage, const AbilityContext& context)
 	{
 		const bool nova = ability.Kind == AbilityKind::Nova;
+		const bool line = !nova && ability.Shape == StrikeShape::Line;
 		const float facing = AngleOf(context.Direction);
+		const Vec2 axis = FromAngle(facing);
 		const float reach = ability.Reach * context.AreaScale;
+		const float halfWidth = ability.Width * context.AreaScale * 0.5f;
 		const HitInfo hit = MakeHit(damage, ability, context);
 		for (const Target& target : CollectTargets(world.GetEntities()))
 		{
@@ -275,7 +278,13 @@ namespace Game
 			const float distance = Length(offset);
 			if (distance > reach + target.Radius)
 				continue;
-			if (!nova && distance > target.Radius + 0.2f && std::abs(AngleBetween(facing, AngleOf(offset))) > ability.HalfArc)
+			if (line)
+			{
+				const float along = Dot(offset, axis);
+				if (along < -target.Radius || std::abs(Dot(offset, Perpendicular(axis))) > halfWidth + target.Radius)
+					continue;
+			}
+			else if (!nova && distance > target.Radius + 0.2f && std::abs(AngleBetween(facing, AngleOf(offset))) > ability.HalfArc)
 				continue;
 			if (HasLineOfFire(world.GetLevel(), context.Origin, position))
 				DealDamage(world, target.Handle, hit);

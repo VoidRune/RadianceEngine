@@ -1,0 +1,47 @@
+Every asset in this folder comes from Poly Haven (https://polyhaven.com) and is released under
+CC0 1.0 Universal (public domain): https://creativecommons.org/publicdomain/zero/1.0/
+
+Models (1k glTF):
+  WoodenTable_01  https://polyhaven.com/a/WoodenTable_01
+  antique_ceramic_vase_01  https://polyhaven.com/a/antique_ceramic_vase_01
+  antique_estoc  https://polyhaven.com/a/antique_estoc
+  barrel_03  https://polyhaven.com/a/barrel_03
+  brass_candleholders  https://polyhaven.com/a/brass_candleholders
+  brass_goblets  https://polyhaven.com/a/brass_goblets
+  brass_pot_01  https://polyhaven.com/a/brass_pot_01
+  brass_vase_01  https://polyhaven.com/a/brass_vase_01
+  dead_tree_trunk  https://polyhaven.com/a/dead_tree_trunk
+  dry_branches_medium_01  https://polyhaven.com/a/dry_branches_medium_01
+  fern_02  https://polyhaven.com/a/fern_02
+  folding_wooden_stool  https://polyhaven.com/a/folding_wooden_stool
+  gothic_statue  https://polyhaven.com/a/gothic_statue
+  grass_medium_01  https://polyhaven.com/a/grass_medium_01
+  kite_shield  https://polyhaven.com/a/kite_shield
+  large_castle_door  https://polyhaven.com/a/large_castle_door
+  large_iron_gate  https://polyhaven.com/a/large_iron_gate
+  marble_bust_01  https://polyhaven.com/a/marble_bust_01
+  metal_jug  https://polyhaven.com/a/metal_jug
+  ornate_war_hammer  https://polyhaven.com/a/ornate_war_hammer
+  rock_moss_set_02  https://polyhaven.com/a/rock_moss_set_02
+  stone_fire_pit  https://polyhaven.com/a/stone_fire_pit
+  treasure_chest  https://polyhaven.com/a/treasure_chest
+  tree_stump_01  https://polyhaven.com/a/tree_stump_01
+  vintage_oil_lamp  https://polyhaven.com/a/vintage_oil_lamp
+  weed_plant_02  https://polyhaven.com/a/weed_plant_02
+  wine_barrel_01  https://polyhaven.com/a/wine_barrel_01
+  wooden_bucket_02  https://polyhaven.com/a/wooden_bucket_02
+  wooden_crate_01  https://polyhaven.com/a/wooden_crate_01
+  wooden_crate_02  https://polyhaven.com/a/wooden_crate_02
+  wooden_lantern_01  https://polyhaven.com/a/wooden_lantern_01
+
+Textures (1k):
+  castle_wall_varriation  https://polyhaven.com/a/castle_wall_varriation
+  cobblestone_floor_08  https://polyhaven.com/a/cobblestone_floor_08
+  forest_leaves_02  https://polyhaven.com/a/forest_leaves_02
+  large_floor_tiles_02  https://polyhaven.com/a/large_floor_tiles_02
+  mud_forest  https://polyhaven.com/a/mud_forest
+  old_stone_wall  https://polyhaven.com/a/old_stone_wall
+  weathered_planks  https://polyhaven.com/a/weathered_planks
+
+HDRIs (2k):
+  kiara_8_sunset  https://polyhaven.com/a/kiara_8_sunset

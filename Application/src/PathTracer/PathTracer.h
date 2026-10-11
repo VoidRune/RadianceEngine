@@ -31,6 +31,9 @@ struct PathTracerOptions
 	float IndirectClamp = 0.0f;
 	float FilterSigma = 0.5f;
 	std::optional<CameraPose> Camera;
+	std::optional<glm::vec4> Sun;
+	bool SunShadows = true;
+	uint32_t MaxBounces = 64;
 	std::filesystem::path ScreenshotPath;
 	uint32_t ScreenshotFrames = 0;
 	bool Validation = true;
@@ -82,6 +85,9 @@ private:
 		uint32_t SamplesPerPixel = 1;
 		float IndirectClamp = 0.0f;
 		float FilterSigma = 0.5f;
+		float Padding[2] = {};
+		glm::vec4 SunDirection{ 0.0f };
+		glm::vec4 SunRadiance{ 0.0f };
 	} globalFrameData;
 	
 	PathTracerOptions m_Options;

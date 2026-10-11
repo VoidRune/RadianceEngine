@@ -337,6 +337,14 @@ namespace Game
 		}
 		if (skill.ManaCost > 0.0f)
 			tooltip.Pair("Mana", Format("%.0f", double(skill.ManaCost)), Theme::Muted, Lighten(Theme::Mana, 0.3f));
+		if (ability.Kind == AbilityKind::Projectile)
+			tooltip.Pair("Range", Format("%.1f", double(ability.ProjectileRange)));
+		else if (ability.Kind == AbilityKind::Ground && ability.Range > 0.0f)
+			tooltip.Pair("Range", Format("%.1f", double(ability.Range)));
+		else if ((ability.Kind == AbilityKind::Melee || ability.Kind == AbilityKind::Nova) && ability.Reach > 0.0f)
+			tooltip.Pair("Reach", Format("%.1f", double(ability.Reach * traits.AreaScale * skill.AreaScale)));
+		if (ability.Lunge > 0.0f)
+			tooltip.Pair("Lunge", Format("%.1f", double(ability.Lunge)));
 		tooltip.Pair("Cast time", Format("%.2f s", double(skill.CastTime)));
 		tooltip.Pair("Cooldown", Format("%.1f s", double(skill.Cooldown)));
 		tooltip.Space(2.0f).Muted(DescribeMovement(skill.MoveScale));

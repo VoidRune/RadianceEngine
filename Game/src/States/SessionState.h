@@ -1,6 +1,9 @@
 #pragma once
 #include "App/AppState.h"
 #include "Rendering/LevelRenderer.h"
+#include "Rendering/Characters.h"
+#include "Rendering/Effects.h"
+#include "Rendering/Lighting.h"
 #include "UI/UiTypes.h"
 #include <GameShared/Client/GameClient.h>
 #include <GameShared/Save/CharacterProfile.h>
@@ -46,6 +49,17 @@ namespace Game
 			float Flash = 0.0f;
 			float Age = 0.0f;
 			bool Seen = false;
+			bool Hurt = false;
+			float SinceHit = 1e9f;
+			EntityState Last;
+			CharacterAnimator Animator;
+		};
+
+		struct Corpse
+		{
+			EntityState Entity;
+			CharacterAnimator Animator;
+			float Age = 0.0f;
 		};
 
 		struct DamageNumber
@@ -98,6 +112,20 @@ namespace Game
 		void UpdateFeedback(float dt);
 		float FlashOf(uint32_t netId) const;
 		float AgeOf(uint32_t netId) const;
+		const CharacterAnimator* AnimatorOf(uint32_t netId) const;
+		float BarHeight(const EntityState& entity) const;
+		void DrawStunStars(WorldRenderer& renderer, const glm::vec3& center) const;
+		void UpdateAnimators(float dt);
+		void OnEntityAppeared(const EntityState& entity);
+		void EmitContinuous(float dt);
+		AbilityId AbilityOf(const EntityState& entity) const;
+		glm::vec3 ProjectilePoint(const EntityState& entity) const;
+		glm::vec3 EffectColor(const EntityState& entity) const;
+		glm::vec3 MeteorPoint(const EntityState& entity, float progress) const;
+		void DrawMeteor(WorldRenderer& renderer, const EntityState& entity, float progress) const;
+		CharacterAnimator::Input AnimationInput(const EntityState& entity) const;
+		void DrawCorpses(WorldRenderer& renderer) const;
+		glm::vec4 CharacterTint(const EntityState& entity) const;
 		PlayerLook LookOf(const EntityState& player) const;
 		LevelView ComputeView() const;
 		void DrawEntity(WorldRenderer& renderer, const EntityState& entity) const;
@@ -162,6 +190,12 @@ namespace Game
 		std::optional<glm::vec3> m_AimPoint;
 		std::optional<uint32_t> m_ChosenUpgrade;
 		std::unordered_map<uint32_t, EntityFx> m_Fx;
+		std::vector<Corpse> m_Corpses;
+		std::unique_ptr<CharacterLibrary> m_Characters;
+		std::unique_ptr<EffectSystem> m_Effects;
+		std::optional<uint32_t> m_MeteorMesh;
+		WorldCamera m_Camera;
+		SceneLighting m_Lighting;
 		std::vector<DamageNumber> m_DamageNumbers;
 		uint32_t m_HitCounter = 0;
 		std::vector<Notice> m_Notices;

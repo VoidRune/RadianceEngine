@@ -83,6 +83,8 @@ namespace Game
 		WoodFence,
 		IronFence,
 		Hedge,
+		AbbeyWall,
+		CryptWall,
 		Count,
 	};
 
@@ -105,6 +107,8 @@ namespace Game
 		{ WallId::WoodFence, "Wooden fence", 0.12f, 0.85f, Block::Movement, 0x8A6A44, 0x9C7B52 },
 		{ WallId::IronFence, "Iron fence", 0.08f, 1.2f, Block::Movement, 0x2A2A2E, 0x3A3A40 },
 		{ WallId::Hedge, "Hedge", 0.7f, 1.3f, Block::All, 0x2F5A26, 0x3E7032 },
+		{ WallId::AbbeyWall, "Abbey wall", 0.6f, 2.4f, Block::All, 0x6A645B, 0x7E776C },
+		{ WallId::CryptWall, "Crypt wall", 0.8f, 3.0f, Block::All, 0x5E5850, 0x726B61 },
 	};
 
 	constexpr bool WallsMatchIds()

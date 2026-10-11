@@ -8,6 +8,7 @@ check-mark.svg by Delapouite
 crosshair.svg by Delapouite
 door.svg by Delapouite
 exit-door.svg by Delapouite
+fencer.svg by Delapouite
 greaves.svg by Delapouite
 healing.svg by Delapouite
 ring.svg by Delapouite
@@ -66,6 +67,7 @@ scroll-unfurled.svg by Lorc
 skull-crack.svg by Lorc
 skull-crossed-bones.svg by Lorc
 snowflake-2.svg by Lorc
+spear-hook.svg by Lorc
 sprint.svg by Lorc
 stopwatch.svg by Lorc
 striking-arrows.svg by Lorc

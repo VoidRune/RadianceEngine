@@ -1,6 +1,7 @@
 #pragma once
 #include "App/AppState.h"
 #include "App/LaunchOptions.h"
+#include "Rendering/Lighting.h"
 #include "UI/UiTypes.h"
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/Net/Protocol.h>
@@ -32,7 +33,11 @@ namespace Game
 		StarterKit Kit = StarterKit::Arcanist;
 		bool SaveProfiles = true;
 		float Volume = 0.8f;
+		float MusicVolume = 0.8f;
+		float EffectsVolume = 1.0f;
 		bool Muted = false;
+		ShadowQuality Shadows = ShadowQuality::High;
+		GiQuality Gi = GiQuality::Medium;
 		MapKind Map = MapKind::Town;
 		GameMode StartMode = GameMode::Hub;
 		uint8_t Tier = 1;
@@ -76,6 +81,9 @@ namespace Game
 		void RenderFrame();
 		void CaptureFrame(Rdn::RGImage backbuffer, Rdn::Extent2D extent);
 		void SaveCapture();
+		void CaptureAudio(float dt);
+		void SaveAudioCapture() const;
+		void ProfileGpu();
 
 		Settings m_Settings;
 		std::unique_ptr<Rdn::Window> m_Window;
@@ -96,10 +104,19 @@ namespace Game
 		bool m_Running = true;
 		std::string m_ScreenshotPath;
 		uint32_t m_ScreenshotFrames = 0;
+		uint32_t m_ScreenshotBurst = 1;
+		double m_BurstInterval = 0.0;
 		float m_ScreenshotDelay = 0.0f;
 		uint32_t m_RenderedFrames = 0;
 		double m_Uptime = 0.0;
-		bool m_Captured = false;
-		std::unique_ptr<Rdn::GpuImage> m_Capture;
+		std::vector<std::unique_ptr<Rdn::GpuImage>> m_Captures;
+		std::string m_AudioCapturePath;
+		std::vector<float> m_AudioCapture;
+		double m_AudioClock = 0.0;
+		uint64_t m_AudioCaptured = 0;
+		bool m_ProfileGpu = false;
+		double m_ProfileStart = 0.0;
+		uint32_t m_ProfileFrames = 0;
+		std::vector<std::pair<std::string, double>> m_ProfileTotals;
 	};
 }

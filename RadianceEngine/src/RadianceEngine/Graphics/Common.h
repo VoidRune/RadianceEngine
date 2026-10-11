@@ -110,6 +110,7 @@ namespace Rdn
         B8G8R8A8_Uint = 48,
         B8G8R8A8_Sint = 49,
         B8G8R8A8_Srgb = 50,
+        A2B10G10R10_Unorm = 64,
         R16_Unorm = 70,
         R16_Snorm = 71,
         R16_Uint = 74,
@@ -373,6 +374,26 @@ namespace Rdn
         Uint16 = 0,
         Uint32 = 1,
     };
+
+    enum class BlendMode
+    {
+        Opaque,
+        Alpha,
+        Premultiplied,
+        Additive,
+    };
+
+    enum class ColorComponent : uint8_t
+    {
+        None = 0,
+        R = 0x01,
+        G = 0x02,
+        B = 0x04,
+        A = 0x08,
+        All = 0x0F,
+    };
+    DEFINE_ENUM_FLAGS_OR(ColorComponent)
+    DEFINE_ENUM_FLAGS_AND(ColorComponent)
 
     enum class CullMode
     {

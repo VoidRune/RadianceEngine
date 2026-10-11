@@ -8,6 +8,7 @@
 namespace Game
 {
 	class WorldRenderer;
+	class CharacterLibrary;
 
 	inline constexpr float HalfPi = 1.5707963f;
 
@@ -20,8 +21,5 @@ namespace Game
 	glm::vec3 ElementColor(Element element);
 	glm::vec3 SkillColor(AbilityId ability);
 	void DrawRing(WorldRenderer& renderer, const glm::vec3& center, float radius, uint32_t segments, const glm::vec3& color, float emission, float thickness);
-	void DrawArc(WorldRenderer& renderer, const glm::vec3& center, float facing, float halfArc, float radius, uint32_t segments, const glm::vec3& color, float emission, float thickness = 0.05f);
-	void DrawWeapon(WorldRenderer& renderer, ItemBase type, Rarity rarity, const glm::vec3& grip, float facing, float time);
-	void DrawCharacter(WorldRenderer& renderer, const PlayerLook& look, const glm::vec3& base, float facing, const glm::vec3& teamColor, float flash, float emission, float time);
-	void DrawItemDrop(WorldRenderer& renderer, ItemBase base, Rarity rarity, AbilityId skill, const glm::vec3& position, float time, float phase);
+	void DrawItemDrop(WorldRenderer& renderer, const CharacterLibrary& characters, ItemBase base, Rarity rarity, AbilityId skill, const glm::vec3& position, float time, float phase);
 }

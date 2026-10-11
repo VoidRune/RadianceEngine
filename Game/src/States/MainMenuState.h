@@ -34,6 +34,8 @@ namespace Game
 		std::string m_SaveSummary;
 		bool m_Unlimited = false;
 		float m_Volume = 0.8f;
+		float m_MusicVolume = 0.8f;
+		float m_EffectsVolume = 1.0f;
 		bool m_Muted = false;
 		float m_LagMs = 0.0f;
 		float m_LossPercent = 0.0f;

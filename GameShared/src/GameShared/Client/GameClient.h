@@ -124,6 +124,7 @@ namespace Game
 		struct PredictedEffect
 		{
 			uint16_t Tag = 0;
+			uint8_t Index = 0;
 			AbilityId Ability = AbilityId::Bolt;
 			Vec2 Position;
 			float Facing = 0.0f;

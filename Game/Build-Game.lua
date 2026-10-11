@@ -59,6 +59,66 @@ project "UiAtlas"
 
 	filter {}
 
+project "ModelBaker"
+	kind "ConsoleApp"
+	language "C++"
+	cppdialect "C++20"
+	staticruntime "off"
+
+	targetdir ("../bin/%{cfg.system}-%{cfg.architecture}/%{prj.name}")
+	objdir ("../build/%{cfg.system}-%{cfg.architecture}/%{prj.name}")
+	debugdir ("../bin/%{cfg.system}-%{cfg.architecture}/Game")
+
+	files
+	{
+		"tools/ModelBaker/**.h",
+		"tools/ModelBaker/**.cpp",
+		"src/Rendering/ModelSources.h",
+		"src/Rendering/ModelSurfaces.h",
+		"src/Rendering/ModelData.h",
+		"src/Rendering/ModelData.cpp",
+		"dependencies/bc7enc/bc7enc.h",
+		"dependencies/bc7enc/bc7enc.c",
+		"dependencies/bc7enc/rgbcx.h",
+		"dependencies/mikktspace/mikktspace.h",
+		"dependencies/mikktspace/mikktspace.c",
+	}
+
+	includedirs
+	{
+		"src",
+	}
+
+	externalincludedirs
+	{
+		"dependencies",
+		"../Dependencies",
+	}
+
+	defines { "_CRT_SECURE_NO_WARNINGS" }
+	runtime "Release"
+	optimize "Speed"
+	symbols "On"
+	editandcontinue "Off"
+	runtimechecks "Off"
+
+	filter "files:dependencies/**.c"
+		warnings "Off"
+
+	filter "system:windows"
+		systemversion "latest"
+
+	filter "configurations:Debug"
+		targetname "ModelBakerDebug"
+
+	filter "configurations:Release"
+		targetname "ModelBakerRelease"
+
+	filter "configurations:Dist"
+		targetname "ModelBaker"
+
+	filter {}
+
 project "Game"
 	kind "ConsoleApp"
 	language "C++"
@@ -75,6 +135,7 @@ project "Game"
 		"TimbreAudio",
 		"GameShared",
 		"UiAtlas",
+		"ModelBaker",
 	}
 
 	files
@@ -121,7 +182,7 @@ project "Game"
 		defines { "DEBUG" }
 		runtime "Debug"
 		symbols "On"
-		prebuildcommands { '%[../bin/%{cfg.system}-%{cfg.architecture}/UiAtlas/UiAtlasDebug.exe] %[%{cfg.targetdir}]' }
+		prebuildcommands { '%[../bin/%{cfg.system}-%{cfg.architecture}/UiAtlas/UiAtlasDebug.exe] %[%{cfg.targetdir}]', '%[../bin/%{cfg.system}-%{cfg.architecture}/ModelBaker/ModelBakerDebug.exe] %[assets] %[%{cfg.targetdir}]' }
 
 	filter "configurations:Release"
 		targetname "GameRelease"
@@ -129,7 +190,7 @@ project "Game"
 		runtime "Release"
 		optimize "On"
 		symbols "On"
-		prebuildcommands { '%[../bin/%{cfg.system}-%{cfg.architecture}/UiAtlas/UiAtlasRelease.exe] %[%{cfg.targetdir}]' }
+		prebuildcommands { '%[../bin/%{cfg.system}-%{cfg.architecture}/UiAtlas/UiAtlasRelease.exe] %[%{cfg.targetdir}]', '%[../bin/%{cfg.system}-%{cfg.architecture}/ModelBaker/ModelBakerRelease.exe] %[assets] %[%{cfg.targetdir}]' }
 
 	filter "configurations:Dist"
 		targetname "Game"
@@ -137,6 +198,6 @@ project "Game"
 		runtime "Release"
 		optimize "On"
 		symbols "Off"
-		prebuildcommands { '%[../bin/%{cfg.system}-%{cfg.architecture}/UiAtlas/UiAtlas.exe] %[%{cfg.targetdir}]' }
+		prebuildcommands { '%[../bin/%{cfg.system}-%{cfg.architecture}/UiAtlas/UiAtlas.exe] %[%{cfg.targetdir}]', '%[../bin/%{cfg.system}-%{cfg.architecture}/ModelBaker/ModelBaker.exe] %[assets] %[%{cfg.targetdir}]' }
 
 	filter {}

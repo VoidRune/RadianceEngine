@@ -11,6 +11,8 @@ namespace Rdn
 {
     namespace
     {
+        constexpr uint32_t MaxTimedPasses = 128;
+
         constexpr AccessMask WriteAccessMask =
             AccessMask::ShaderWrite | AccessMask::ShaderStorageWrite |
             AccessMask::ColorAttachmentWrite | AccessMask::DepthStencilAttachmentWrite |
@@ -390,11 +392,45 @@ namespace Rdn
 
     RenderGraph::~RenderGraph()
     {
-        if (!m_TransientPool.empty())
-        {
+        if (!m_TransientPool.empty() || !m_TimingFrames.empty())
             m_Device->WaitIdle();
-            ReleaseTransientResources();
+        ReleaseTransientResources();
+        for (const TimingFrame& frame : m_TimingFrames)
+            if (frame.Pool)
+                vkDestroyQueryPool(toVk(m_Device->GetLogicalDevice()), toVk(frame.Pool), nullptr);
+    }
+
+    void RenderGraph::CollectTimings(uint32_t frameIndex)
+    {
+        m_RecordingTimings = nullptr;
+        if (!m_TimingEnabled || !m_Device->GetProperties().Timestamps)
+            return;
+        if (m_TimingFrames.size() <= frameIndex)
+            m_TimingFrames.resize(frameIndex + 1);
+        TimingFrame& frame = m_TimingFrames[frameIndex];
+        const VkDevice device = toVk(m_Device->GetLogicalDevice());
+        if (!frame.Pool)
+        {
+            VkQueryPoolCreateInfo info{ VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+            info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            info.queryCount = MaxTimedPasses * 2;
+            VkQueryPool pool;
+            VK_CHECK(vkCreateQueryPool(device, &info, nullptr, &pool));
+            frame.Pool = fromVk(pool);
         }
+        else if (!frame.Passes.empty())
+        {
+            std::vector<uint64_t> ticks(frame.Passes.size() * 2);
+            if (vkGetQueryPoolResults(device, toVk(frame.Pool), 0, uint32_t(ticks.size()), ticks.size() * sizeof(uint64_t), ticks.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+            {
+                const double scale = double(m_Device->GetProperties().TimestampPeriod) * 1e-6;
+                m_PassTimings.resize(frame.Passes.size());
+                for (size_t i = 0; i < frame.Passes.size(); i++)
+                    m_PassTimings[i] = { std::move(frame.Passes[i]), float(double(ticks[i * 2 + 1] - ticks[i * 2]) * scale) };
+            }
+        }
+        frame.Passes.clear();
+        m_RecordingTimings = &frame;
     }
 
     void RenderGraph::Reset()
@@ -628,6 +664,7 @@ namespace Rdn
         CullPasses();
         AllocateTransients();
         PlanBarriers();
+        CollectTimings(frameIndex);
         RecordPasses(cmd, frameIndex);
     }
 
@@ -862,6 +899,10 @@ namespace Rdn
         context.m_Graph = this;
         context.FrameIndex = frameIndex;
 
+        const VkCommandBuffer vkCmd = toVk(cmd.GetHandle());
+        if (m_RecordingTimings)
+            vkCmdResetQueryPool(vkCmd, toVk(m_RecordingTimings->Pool), 0, MaxTimedPasses * 2);
+
         std::vector<ColorAttachment> colorAttachments;
         for (Pass& pass : m_Passes)
         {
@@ -870,6 +911,12 @@ namespace Rdn
 
             cmd.BeginDebugLabel(pass.Name.c_str());
             cmd.Barrier(pass.ImageBarriers, pass.BufferBarriers);
+            const bool timed = m_RecordingTimings && m_RecordingTimings->Passes.size() < MaxTimedPasses;
+            if (timed)
+            {
+                vkCmdWriteTimestamp2(vkCmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, toVk(m_RecordingTimings->Pool), uint32_t(m_RecordingTimings->Passes.size() * 2));
+                m_RecordingTimings->Passes.push_back(pass.Name);
+            }
 
             const bool rendering = !pass.ColorAttachments.empty() || pass.DepthAttachment.has_value();
             if (rendering)
@@ -910,6 +957,8 @@ namespace Rdn
             if (rendering)
                 cmd.EndRendering();
 
+            if (timed)
+                vkCmdWriteTimestamp2(vkCmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, toVk(m_RecordingTimings->Pool), uint32_t(m_RecordingTimings->Passes.size() * 2 - 1));
             cmd.EndDebugLabel();
         }
 

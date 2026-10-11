@@ -137,6 +137,12 @@ namespace Rdn
 	using PassSetupFn = std::function<void(PassBuilder&)>;
 	using PassExecuteFn = std::function<void(CommandBuffer&, const PassContext&)>;
 
+	struct PassTiming
+	{
+		std::string Name;
+		float Milliseconds = 0.0f;
+	};
+
 	// Per frame: Reset(), register resources, AddPass() in execution order, Execute().
 	class RenderGraph
 	{
@@ -168,6 +174,9 @@ namespace Rdn
 		std::string DescribeCompiledFrame() const;
 
 		void SetCullingEnabled(bool enabled) { m_CullingEnabled = enabled; }
+
+		void SetTimingEnabled(bool enabled) { m_TimingEnabled = enabled; }
+		const std::vector<PassTiming>& GetPassTimings() const { return m_PassTimings; }
 
 	private:
 		friend class PassBuilder;
@@ -257,6 +266,13 @@ namespace Rdn
 
 		ResourceSyncState& SyncStateOf(ImageResource& image);
 		void WarnOnce(const std::string& message);
+		void CollectTimings(uint32_t frameIndex);
+
+		struct TimingFrame
+		{
+			QueryPoolHandle Pool{};
+			std::vector<std::string> Passes;
+		};
 
 		Device* m_Device;
 		ResourceAllocator* m_Allocator;
@@ -274,5 +290,10 @@ namespace Rdn
 		bool     m_Executed = false;
 		bool     m_CullingEnabled = true;
 		std::unordered_set<std::string> m_Warnings;
+
+		bool m_TimingEnabled = false;
+		std::vector<TimingFrame> m_TimingFrames;
+		std::vector<PassTiming> m_PassTimings;
+		TimingFrame* m_RecordingTimings = nullptr;
 	};
 }

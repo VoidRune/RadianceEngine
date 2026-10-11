@@ -1,0 +1,142 @@
+#version 450
+#include "GBuffer.glsl"
+#include "Brdf.glsl"
+#include "Rc.glsl"
+#include "Environment.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 1) uniform usampler2D ShPrimary;
+layout(set = 0, binding = 2) uniform usampler2D ShSecondary;
+layout(set = 0, binding = 3) uniform sampler2D ProbeDepth;
+layout(set = 0, binding = 4) uniform sampler2D GiDepth;
+layout(set = 0, binding = 5) uniform sampler2D Merged0;
+layout(set = 0, binding = 6) uniform sampler2D Merged1;
+layout(set = 0, binding = 7) uniform sampler2D AlbedoBuffer;
+layout(set = 0, binding = 8) uniform sampler2D SurfaceBuffer;
+layout(set = 0, binding = 9) uniform sampler2D DepthBuffer;
+layout(set = 0, binding = 10, rgba16f) uniform image2D SceneColor;
+layout(set = 0, binding = 11) uniform sampler2D EnvironmentMap;
+
+layout(push_constant) uniform PushConstants
+{
+	uvec4 Grid;
+	vec4 Spacing;
+	vec4 Texel;
+	vec4 Offsets;
+} pc;
+
+const uint ViewLit = 0u;
+const uint ViewAmbient = 8u;
+const uint ViewIrradiance = 10u;
+
+const ivec2 GatherOffsets[4] = ivec2[](ivec2(0, 1), ivec2(1, 1), ivec2(1, 0), ivec2(0, 0));
+
+vec4 ProbeWeights(ivec2 base, vec2 f, vec4 depths, float spacing, vec2 offset, ivec2 grid, vec3 position, vec3 normal, out ivec2 probes[4])
+{
+	float tolerance = 0.5 * spacing * DomainTexelWorld(position) + 0.05;
+	vec4 weights = vec4(0.0);
+	for (int k = 0; k < 4; k++)
+	{
+		ivec2 corner = GatherOffsets[k];
+		ivec2 probe = clamp(base + corner, ivec2(0), grid - 1);
+		float bilinear = (corner.x == 0 ? 1.0 - f.x : f.x) * (corner.y == 0 ? 1.0 - f.y : f.y);
+		probes[k] = probe;
+		weights[k] = IsBackground(depths[k]) ? 0.0 : bilinear * (PlaneWeight(DomainView(ProbeTexel(probe, spacing, offset), depths[k]), position, normal, tolerance) + 1e-3);
+	}
+	float total = dot(weights, vec4(1.0));
+	return total > 0.0 ? weights / total : vec4(0.0);
+}
+
+vec2 Blend(uvec4 packed, vec4 weights)
+{
+	return unpackHalf2x16(packed.x) * weights.x + unpackHalf2x16(packed.y) * weights.y + unpackHalf2x16(packed.z) * weights.z + unpackHalf2x16(packed.w) * weights.w;
+}
+
+void main()
+{
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	if (pixel.x >= int(Rc.Screen.x) || pixel.y >= int(Rc.Screen.y))
+		return;
+	float depth = texelFetch(DepthBuffer, pixel, 0).r;
+	if (depth >= 1.0)
+		return;
+	vec3 position = ViewPosition((vec2(pixel) + 0.5) / Rc.Screen.xy, LinearDepth(depth));
+	vec3 world = (Rc.InverseView * vec4(position, 1.0)).xyz;
+	vec4 albedo = texelFetch(AlbedoBuffer, pixel, 0);
+	vec4 surface = texelFetch(SurfaceBuffer, pixel, 0);
+	vec3 n = DecodeNormal(surface.xy);
+	float roughness = surface.z;
+	float metallic = 1.0 - surface.w;
+	vec3 v = normalize(Rc.InverseView[3].xyz - world);
+	float cosO = dot(n, v);
+	if (cosO < 0.01)
+		n = normalize(n + v * (0.01 - cosO));
+	vec3 normal = mat3(Rc.View) * n;
+	vec2 coordinate = DomainCoordinate(position) + 0.5;
+
+	ivec2 grid = ivec2(pc.Grid.xy);
+	vec2 g = ProbeGrid(coordinate, pc.Spacing.x, pc.Offsets.xy);
+	ivec2 base = ivec2(floor(g));
+	vec2 uv = (vec2(base) + 1.0) / vec2(grid);
+	ivec2 probes[4];
+	vec4 weights = ProbeWeights(base, g - vec2(base), textureGather(ProbeDepth, uv, 0), pc.Spacing.x, pc.Offsets.xy, grid, position, normal, probes);
+	vec2 first = Blend(textureGather(ShPrimary, uv, 0), weights);
+	vec2 second = Blend(textureGather(ShPrimary, uv, 1), weights);
+	vec2 third = Blend(textureGather(ShPrimary, uv, 2), weights);
+	vec2 fourth = Blend(textureGather(ShPrimary, uv, 3), weights);
+	vec2 fifth = Blend(textureGather(ShSecondary, uv, 0), weights);
+	vec2 sixth = Blend(textureGather(ShSecondary, uv, 1), weights);
+	vec3 average = vec3(first, second.x);
+	vec3 shX = vec3(second.y, third);
+	vec3 shY = vec3(fourth, fifth.x);
+	vec3 shZ = vec3(fifth.y, sixth);
+	vec3 irradiance = max(average + shX * n.x + shY * n.y + shZ * n.z, vec3(0.0));
+	vec3 dominant = DominantDirection(n, v, roughness);
+	vec3 reflected = max(average + shX * dominant.x + shY * dominant.y + shZ * dominant.z, vec3(0.0));
+	if (Rc.Shading.y > 0.5 && roughness < 0.75)
+	{
+		vec2 coarse = TileCoordinate(dominant, 4);
+		vec3 sharp = vec3(0.0);
+		for (int k = 0; k < 4; k++)
+			if (weights[k] > 0.0)
+				sharp += textureLod(Merged0, (vec2(probes[k] * 4) + coarse) * pc.Texel.xy, 0.0).rgb * weights[k];
+		if (roughness < 0.45)
+		{
+			ivec2 upperGrid = ivec2(pc.Grid.zw);
+			vec2 h = ProbeGrid(coordinate, pc.Spacing.y, pc.Offsets.zw);
+			ivec2 upperBase = ivec2(floor(h));
+			vec4 upperDepths;
+			for (int k = 0; k < 4; k++)
+				upperDepths[k] = texelFetch(GiDepth, ProbeTexel(clamp(upperBase + GatherOffsets[k], ivec2(0), upperGrid - 1), pc.Spacing.y, pc.Offsets.zw), 0).x;
+			ivec2 upper[4];
+			vec4 upperWeights = ProbeWeights(upperBase, h - vec2(upperBase), upperDepths, pc.Spacing.y, pc.Offsets.zw, upperGrid, position, normal, upper);
+			vec2 fine = TileCoordinate(dominant, 8);
+			vec4 glossy = vec4(0.0);
+			for (int k = 0; k < 4; k++)
+				if (upperWeights[k] > 0.0)
+					glossy += textureLod(Merged1, (vec2(upper[k] * 8) + fine) * pc.Texel.zw, 0.0) * upperWeights[k];
+			if (Rc.Environment.x > 0.0)
+			{
+				float swap = glossy.a * (1.0 - smoothstep(0.1, 0.45, roughness));
+				vec3 detail = SampleEnvironment(EnvironmentMap, Rc.Environment, dominant, roughness) - SampleEnvironment(EnvironmentMap, Rc.Environment, dominant, 0.45);
+				glossy.rgb = max(glossy.rgb + detail * swap, vec3(0.0));
+			}
+			sharp = mix(glossy.rgb, sharp, smoothstep(0.2, 0.45, roughness));
+		}
+		reflected = mix(sharp, reflected, smoothstep(0.55, 0.75, roughness));
+	}
+	vec3 ambient = CombineAmbient(albedo.rgb, metallic, roughness, n, v, irradiance, reflected) * albedo.a;
+
+	vec4 scene = imageLoad(SceneColor, pixel);
+	uint view = Rc.Options.x;
+	if (view == ViewLit)
+		scene.rgb += ambient * (1.0 - DepthFade(Rc.Shading.x, world.y));
+	else if (view == ViewAmbient)
+		scene.rgb += ambient;
+	else if (view == ViewIrradiance)
+		scene.rgb = irradiance;
+	else
+		return;
+	imageStore(SceneColor, pixel, scene);
+}
