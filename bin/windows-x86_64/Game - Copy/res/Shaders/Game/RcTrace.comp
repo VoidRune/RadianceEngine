@@ -1,0 +1,271 @@
+#version 450
+#extension GL_EXT_nonuniform_qualifier : require
+#include "GBuffer.glsl"
+#include "Brdf.glsl"
+#include "Rc.glsl"
+#include "Environment.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 1) uniform sampler2D Heights;
+layout(set = 0, binding = 2) uniform sampler2D RadianceLevels[LevelCount];
+layout(set = 0, binding = 3) uniform sampler2D EmitterLevels[LevelCount];
+layout(set = 0, binding = 4) uniform sampler2D Upper;
+layout(set = 0, binding = 5, rgba16f) uniform writeonly image2D Merged;
+layout(set = 0, binding = 6) uniform sampler2D EnvironmentMap;
+layout(set = 0, binding = 7) uniform sampler2D SkyMask;
+layout(set = 0, binding = 8) uniform usampler2D Probes;
+layout(set = 0, binding = 9) uniform usampler2D UpperProbes;
+
+layout(push_constant) uniform PushConstants
+{
+	uvec4 Cascade;
+	uvec4 Grid;
+	vec4 Interval;
+	vec4 UpperTexel;
+	vec4 Offsets;
+} pc;
+
+const vec3 Luma = vec3(0.2126, 0.7152, 0.0722);
+const float MaxPlaneTolerance = 0.25;
+const float EscapeTexels = 2.0;
+#ifdef RECONNECT
+const bool Reconnect = true;
+#else
+const bool Reconnect = false;
+#endif
+
+float Escape(vec3 start)
+{
+	vec2 span = texelFetch(Heights, LevelTexel(DomainCoordinate(start), 0), 0).xy;
+	float height = (Rc.InverseView * vec4(start, 1.0)).y - Rc.Domain.w;
+	return height < span.x - Rc.Trace.w && height > span.y ? EscapeTexels * DomainTexelWorld(start) : 0.0;
+}
+
+vec4 March(vec3 origin, vec3 start, vec3 end, uint steps, float escapeDistance)
+{
+	float escape = escapeDistance / max(length(end - start), 1e-6);
+	float near = Rc.Projection.z;
+	if (start.z < near && end.z < near)
+		return vec4(0.0, 0.0, 0.0, 1.0);
+	if (start.z < near)
+		start = mix(start, end, (near - start.z) / (end.z - start.z));
+	else if (end.z < near)
+		end = mix(start, end, (start.z - near) / (start.z - end.z));
+	vec3 first = DomainHomogeneous(start);
+	vec3 delta = DomainHomogeneous(end) - first;
+	vec2 travel = (first.xy + delta.xy) / max(first.z + delta.z, 1e-6) - first.xy / max(first.z, 1e-6);
+	vec2 heading = sign(travel);
+	int stride = clamp(int(floor(log2(max(length(travel) / float(steps), 1.0)) + 0.5)), 0, LevelCount - 1);
+	int top = min(stride + 1, LevelCount - 1);
+	int level = top;
+	float heightStart = (Rc.InverseView * vec4(start, 1.0)).y - Rc.Domain.w;
+	float heightDelta = (Rc.InverseView * vec4(end, 1.0)).y - Rc.Domain.w - heightStart;
+	float s = 0.0;
+	float limit = 1.0;
+	bool hit = false;
+	for (uint i = 0u; i < steps * (pc.Cascade.w >> 8u); i++)
+	{
+		vec3 h = first + delta * s;
+		vec2 coordinate = h.xy / max(h.z, 1e-6);
+		if (h.z <= 1e-4 || any(lessThan(coordinate, vec2(0.0))) || any(greaterThan(coordinate, Rc.Domain.xy)))
+		{
+			limit = s;
+			break;
+		}
+		float size = float(1 << level);
+		vec2 offset = LevelOffset(level);
+		vec2 cell = floor((coordinate + heading * 1e-3 - offset) / size);
+		vec2 boundary = offset + (cell + max(heading, vec2(0.0))) * size;
+		vec2 denominator = delta.xy - boundary * delta.z;
+		vec2 crossing = vec2(2.0);
+		if (heading.x != 0.0 && abs(denominator.x) > 1e-12)
+			crossing.x = (boundary.x * first.z - first.x) / denominator.x;
+		if (heading.y != 0.0 && abs(denominator.y) > 1e-12)
+			crossing.y = (boundary.y * first.z - first.y) / denominator.y;
+		float exit = clamp(min(crossing.x, crossing.y), s + 1e-5, 1.0);
+		float entryHeight = heightStart + heightDelta * s;
+		float exitHeight = heightStart + heightDelta * exit;
+		vec2 span = texelFetch(Heights, LevelOrigin(level) + clamp(ivec2(cell) + 1, ivec2(0), LevelSize(level) - 1), 0).xy;
+		float front = span.x - Rc.Trace.w;
+		if (min(entryHeight, exitHeight) < front && max(entryHeight, exitHeight) > span.y)
+		{
+			if (level > 0)
+			{
+				level--;
+				continue;
+			}
+			if (exit > escape)
+			{
+				float surface = heightDelta < 0.0 ? front : span.y;
+				limit = entryHeight < front && entryHeight > span.y ? s : mix(s, exit, clamp((surface - entryHeight) / (exitHeight - entryHeight), 0.0, 1.0));
+				limit = max(limit, escape);
+				hit = true;
+				break;
+			}
+		}
+		s = exit;
+		if (s >= 1.0)
+			break;
+		level = min(level + 1, top);
+	}
+	bool capped = !hit && limit >= 1.0 && s < 1.0;
+	float stepLength = length(end - start) / float(steps);
+	float stepDepth = (end.z - start.z) / float(steps);
+	float stepHeight = abs(heightDelta) / float(steps);
+	float radius = Rc.Trace.z;
+	vec3 radiance = vec3(0.0);
+	for (uint i = 0u; i < steps; i++)
+	{
+		float t = (float(i) + 0.5) / float(steps);
+		if (t >= limit)
+			break;
+		vec3 p = mix(start, end, t);
+		vec3 h = first + delta * t;
+		vec2 coordinate = h.xy / max(h.z, 1e-6);
+		float cone = length(p - origin) * pc.UpperTexel.w / (Rc.Domain.z * h.z);
+		int filtered = clamp(int(ceil(log2(max(cone, 1.0)))), stride, LevelCount - 1);
+		vec4 emitter = textureLod(EmitterLevels[nonuniformEXT(filtered)], LevelUv(coordinate, filtered), 0.0);
+		float luminance = dot(emitter.rgb, Luma);
+		if (luminance > 1e-5)
+		{
+			float z = emitter.a / luminance;
+			float low = p.z - 0.5 * abs(stepDepth);
+			float high = p.z + 0.5 * abs(stepDepth);
+			float inside = abs(stepDepth) > 1e-4 ? clamp((min(high, z + radius) - max(low, z - radius)) / abs(stepDepth), 0.0, 1.0) : float(abs(p.z - z) < radius);
+			radiance += emitter.rgb * (inside * stepLength / (2.0 * radius));
+		}
+		if (capped && t > max(s, escape))
+		{
+			float height = heightStart + heightDelta * t;
+			vec2 span = texelFetch(Heights, LevelTexel(coordinate, 0), 0).xy;
+			if (height < span.x - Rc.Trace.w && height + stepHeight > span.y)
+			{
+				limit = t;
+				hit = true;
+				break;
+			}
+		}
+	}
+	if (!hit)
+		return vec4(radiance, 1.0);
+	vec3 h = first + delta * limit;
+	float cone = length(mix(start, end, limit) - origin) * pc.UpperTexel.w / (Rc.Domain.z * h.z);
+	int filtered = clamp(int(ceil(log2(max(cone, 1.0)))), stride, LevelCount - 1);
+	return vec4(radiance + textureLod(RadianceLevels[nonuniformEXT(filtered)], LevelUv(h.xy / max(h.z, 1e-6), filtered), 0.0).rgb, 0.0);
+}
+
+vec4 UpperRadiance(ivec2 probe, ivec2 direction)
+{
+	return textureLod(Upper, (vec2(probe * int(pc.UpperTexel.z) + direction * 2) + 1.0) * pc.UpperTexel.xy, 0.0);
+}
+
+vec4 Continue(vec4 traced, vec4 upper)
+{
+	return vec4(traced.rgb + traced.a * upper.rgb, traced.a * upper.a);
+}
+
+vec3 SkyRadiance(vec3 worldDirection)
+{
+	return Rc.Environment.x > 0.0 ? SampleEnvironment(EnvironmentMap, Rc.Environment, worldDirection, 1.0 / max(Rc.Environment.w, 1.0)) : EnvironmentRadiance(worldDirection);
+}
+
+vec4 ExtendRay(vec3 origin, vec3 from, vec3 rayDirection, vec3 worldDirection)
+{
+	vec4 traced = March(origin, from, from + rayDirection * max(Rc.Shading.z - pc.Interval.y, 0.0), 8u, 0.0);
+	float open = Rc.Environment.x > 0.0 ? SkyOpenness(SkyMask, Rc.SkyMaskTransform, (Rc.InverseView * vec4(origin, 1.0)).xyz) : 1.0;
+	return vec4(traced.rgb + traced.a * open * SkyRadiance(worldDirection), traced.a * open);
+}
+
+vec4 MergeUpper(uvec4 placed, vec3 origin, vec3 normal, vec3 worldNormal, vec3 start, vec3 rayDirection, ivec2 direction, vec3 worldDirection, float escape)
+{
+	float spacing = pc.Interval.w;
+	vec2 coordinate = DomainCoordinate(origin) + 0.5;
+	bool upperLocked = (pc.Cascade.w & 2u) != 0u;
+	vec2 offset = pc.Offsets.zw + (upperLocked && ProbeLocked(placed) ? LatticeShift(ProbeBand(placed), spacing, Rc.Lattice) : vec2(0.0));
+	vec2 grid = ProbeGrid(coordinate, spacing, offset);
+	ivec2 base = ivec2(floor(grid));
+	vec2 f = grid - vec2(base);
+	vec3 plane = PlaneNormal(worldNormal);
+	bool horizontal = worldNormal.y > 0.75;
+	float tolerance = 0.5 * spacing * DomainTexelWorld(origin) + 0.1;
+	if (horizontal)
+		tolerance = min(tolerance, MaxPlaneTolerance);
+	vec3 end = origin + normal * Rc.Trace.y + rayDirection * pc.Interval.y;
+	vec3 middle = mix(start, end, 0.6);
+	uint branchSteps = max(pc.Cascade.y * 3u / 8u, 2u);
+	vec4 prefix = Reconnect ? March(origin, start, middle, max(pc.Cascade.y * 5u / 8u, 2u), escape) : vec4(0.0, 0.0, 0.0, 1.0);
+	if (prefix.a <= 0.0)
+		return prefix;
+	vec4 sum = vec4(0.0);
+	float total = 0.0;
+	for (int j = 0; j < 2; j++)
+		for (int i = 0; i < 2; i++)
+		{
+			ivec2 probe = clamp(base + ivec2(i, j), ivec2(0), ivec2(pc.Grid.zw) - 1);
+			uvec4 upperProbe = texelFetch(UpperProbes, probe, 0);
+			vec3 position = ProbePosition(upperProbe);
+			if (IsBackground(position.z))
+				continue;
+			vec3 upperNormal = ProbeNormal(upperProbe);
+			float bilinear = upperLocked ? ProbeTent(position, coordinate, spacing) : (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
+			float weight = bilinear * PlaneWeight(position, origin, plane, tolerance) * (horizontal ? Facing(upperNormal, worldNormal) : 1.0);
+			if (weight <= 0.0)
+				continue;
+			vec4 upper = UpperRadiance(probe, direction);
+			if (Reconnect)
+				upper = Continue(March(origin, middle, position + mat3(Rc.View) * upperNormal * Rc.Trace.y + rayDirection * pc.Interval.y, branchSteps, 0.0), upper);
+			sum += upper * weight;
+			total += weight;
+		}
+	vec4 matched = sum / max(total, 1e-6);
+	float confidence = smoothstep(0.05, 0.3, total);
+	if (confidence >= 1.0)
+		return Reconnect ? Continue(prefix, matched) : matched;
+	vec4 fallback = ExtendRay(origin, end, rayDirection, worldDirection);
+	if (Reconnect)
+		fallback = Continue(March(origin, middle, end, branchSteps, 0.0), fallback);
+	return Continue(prefix, mix(fallback, matched, confidence));
+}
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	int directions = int(pc.Cascade.x);
+	ivec2 probe = texel / directions;
+	if (probe.x >= int(pc.Grid.x) || probe.y >= int(pc.Grid.y))
+		return;
+	ivec2 direction = texel - probe * directions;
+	vec3 worldDirection = TileDirection(direction, directions);
+	uvec4 placed = texelFetch(Probes, probe, 0);
+	vec3 origin = ProbePosition(placed);
+	if (IsBackground(origin.z))
+		return;
+	vec3 worldNormal = ProbeNormal(placed);
+	if ((pc.Cascade.w & 1u) != 0u && dot(worldDirection, worldNormal) < -0.15)
+	{
+		imageStore(Merged, texel, vec4(texelFetch(RadianceLevels[0], LevelTexel(DomainCoordinate(origin), 0), 0).rgb, 0.0));
+		return;
+	}
+	vec3 normal = mat3(Rc.View) * worldNormal;
+	vec3 rayDirection = mat3(Rc.View) * worldDirection;
+	vec3 base = origin + normal * Rc.Trace.y;
+	vec3 start = base + rayDirection * pc.Interval.x;
+	float escape = (pc.Cascade.w & 1u) != 0u ? Escape(start) : 0.0;
+	vec4 result;
+	if (pc.Cascade.z != 0u)
+	{
+		vec4 traced = March(origin, start, base + rayDirection * pc.Interval.y, pc.Cascade.y, escape);
+		float open = Rc.Environment.x > 0.0 ? SkyOpenness(SkyMask, Rc.SkyMaskTransform, (Rc.InverseView * vec4(origin, 1.0)).xyz) : 1.0;
+		float visibility = traced.a * open;
+		result = vec4(traced.rgb + visibility * SkyRadiance(worldDirection), visibility);
+	}
+	else if (Reconnect)
+		result = MergeUpper(placed, origin, normal, worldNormal, start, rayDirection, direction, worldDirection, escape);
+	else
+	{
+		vec4 traced = March(origin, start, base + rayDirection * pc.Interval.y, pc.Cascade.y, escape);
+		result = traced.a > 0.0 ? Continue(traced, MergeUpper(placed, origin, normal, worldNormal, start, rayDirection, direction, worldDirection, 0.0)) : traced;
+	}
+	imageStore(Merged, texel, result);
+}
