@@ -16,7 +16,6 @@ namespace Game
 		void Update(float dt) override;
 		void DrawUi() override;
 		bool Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex) override;
-		bool WantsVsync() const override { return true; }
 
 	private:
 		enum class Page : uint8_t

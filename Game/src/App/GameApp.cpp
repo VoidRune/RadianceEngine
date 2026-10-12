@@ -214,7 +214,7 @@ namespace Game
 		deviceConfig.FramesInFlight = 2;
 		deviceConfig.EnableValidation = options.Validation;
 		m_Device = std::make_unique<Rdn::Device>(deviceConfig);
-		m_PresentQueue = std::make_unique<Rdn::PresentQueue>(m_Device.get(), Rdn::PresentMode::Mailbox);
+		m_PresentQueue = std::make_unique<Rdn::PresentQueue>(m_Device.get(), Rdn::PresentMode::Fifo);
 		m_Allocator = std::make_unique<Rdn::ResourceAllocator>(m_Device.get());
 		m_Graph = std::make_unique<Rdn::RenderGraph>(m_Device.get(), m_Allocator.get());
 		m_ProfileGpu = options.ProfileGpu;
@@ -489,7 +489,6 @@ namespace Game
 
 	void GameApp::RenderFrame()
 	{
-		m_PresentQueue->SetPresentMode(m_State->WantsVsync() ? Rdn::PresentMode::Fifo : Rdn::PresentMode::Mailbox);
 		if (m_PresentQueue->NeedsRecreate() && !m_PresentQueue->Recreate())
 			return;
 		std::optional<Rdn::FrameContext> frame = m_PresentQueue->BeginFrame();

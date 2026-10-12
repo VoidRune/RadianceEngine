@@ -1803,7 +1803,7 @@ namespace Game
 		draw.TextAligned({ 0.0f, center.y + 136.0f, ui.GetSize().x, 40.0f }, m_Config.Host ? "Opening the Rift" : "Following the Rift", title, { 0.5f, 0.5f });
 		const std::string detail = m_Config.Host ? "Binding UDP port " + std::to_string(m_Config.Port) : "Reaching " + m_Config.Address;
 		draw.TextAligned({ 0.0f, center.y + 178.0f, ui.GetSize().x, 24.0f }, detail, Theme::Body(16.0f, Theme::Muted), { 0.5f, 0.5f });
-		if (ui.MenuEntry(Ui::MakeId("cancel"), UiRect::Centered({ center.x, center.y + 238.0f }, { 320.0f, 44.0f }), "Turn Back", {}, false, 0.5f))
+		if (ui.MenuEntry(Ui::MakeId("cancel"), UiRect::Centered({ center.x, center.y + 238.0f }, { 320.0f, 44.0f }), "Turn Back", {}, false, true))
 			ReturnToMenu({});
 	}
 
@@ -2705,7 +2705,7 @@ namespace Game
 		UiRect entries{ center.x - 230.0f, top + 116.0f, 460.0f, count * 54.0f };
 		const auto entry = [&](const char* id, const char* label)
 		{
-			const bool clicked = ui.MenuEntry(Ui::MakeId(id), entries.CutTop(48.0f), label, {}, false, 0.5f);
+			const bool clicked = ui.MenuEntry(Ui::MakeId(id), entries.CutTop(48.0f), label, {}, false, true);
 			entries.CutTop(6.0f);
 			return clicked;
 		};

@@ -168,7 +168,7 @@ namespace Game
 		UiRect Window(UiId id, std::string_view title, UiRect rect, bool* open = nullptr);
 		void Separator(const UiRect& rect, std::string_view label = {});
 		bool Button(UiId id, const UiRect& rect, std::string_view label, ButtonKind kind = ButtonKind::Normal, bool enabled = true, std::optional<UiIcon> icon = std::nullopt);
-		bool MenuEntry(UiId id, const UiRect& rect, std::string_view title, std::string_view subtitle, bool selected = false, float align = 0.0f);
+		bool MenuEntry(UiId id, const UiRect& rect, std::string_view title, std::string_view subtitle, bool selected = false, bool centered = false);
 		bool Checkbox(UiId id, const UiRect& rect, std::string_view label, bool& value);
 		bool Slider(UiId id, const UiRect& rect, float& value, float min, float max, std::string_view text);
 		bool Choice(UiId id, const UiRect& rect, int& index, std::span<const char* const> options);

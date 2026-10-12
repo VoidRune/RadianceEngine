@@ -463,7 +463,7 @@ namespace Game
 		return clicked;
 	}
 
-	bool Ui::MenuEntry(UiId id, const UiRect& rect, std::string_view title, std::string_view subtitle, bool selected, float align)
+	bool Ui::MenuEntry(UiId id, const UiRect& rect, std::string_view title, std::string_view subtitle, bool selected, bool centered)
 	{
 		const UiInteraction interaction = Interact(id, rect);
 		if (interaction.Hovered)
@@ -490,12 +490,12 @@ namespace Game
 		const float titleWidth = draw.MeasureWidth(title, titleStyle);
 		const float top = subtitle.empty() ? rect.Center().y - 16.0f : rect.Y + 2.0f;
 		const float middle = top + 16.0f;
-		const float x = glm::mix(rect.X + 34.0f + 8.0f * lit, rect.Center().x - titleWidth * 0.5f, align);
+		const float x = centered ? rect.Center().x - titleWidth * 0.5f : rect.X + 34.0f + 8.0f * lit;
 		draw.TextAligned({ x, top, titleWidth + 4.0f, 32.0f }, title, titleStyle, { 0.0f, 0.5f });
 		if (!subtitle.empty())
 		{
 			const float subtitleWidth = draw.MeasureWidth(subtitle, subtitleStyle);
-			draw.Text({ glm::mix(x + 2.0f, rect.Center().x - subtitleWidth * 0.5f, align), top + 33.0f }, subtitle, subtitleStyle);
+			draw.Text({ centered ? rect.Center().x - subtitleWidth * 0.5f : x + 2.0f, top + 33.0f }, subtitle, subtitleStyle);
 		}
 		const auto marker = [&](glm::vec2 at)
 		{
@@ -505,7 +505,7 @@ namespace Game
 			if (chosen > 0.01f)
 				draw.Sigil(at, 15.0f, { .Color = WithAlpha(Theme::Gold, 0.85f * chosen), .Accent = WithAlpha(Theme::AccentLight, 0.85f * chosen), .Speed = 2.0f, .LineWidth = 1.0f, .Glow = 0.5f, .Layers = SigilRings, .Progress = chosen });
 		};
-		if (align < 0.5f)
+		if (!centered)
 			marker({ rect.X + 14.0f, middle });
 		else
 		{
@@ -515,7 +515,7 @@ namespace Game
 		if (lit > 0.01f)
 		{
 			const float width = (titleWidth + 30.0f) * lit;
-			if (align < 0.5f)
+			if (!centered)
 				draw.Rect({ x - 6.0f, top + 30.0f, width, 1.0f }, { .Fill = WithAlpha(Theme::AccentLight, 0.75f * lit), .FillBottom = WithAlpha(Theme::AccentLight, 0.0f), .Horizontal = true });
 			else
 				FadedLine(draw, rect.Center().x - width * 0.5f, top + 30.0f, width, WithAlpha(Theme::AccentLight, 0.75f * lit));
