@@ -63,28 +63,32 @@ namespace Game
 		bool Teams = false;
 		uint8_t ScoreGoal = 15;
 		uint8_t Minutes = 8;
+		uint8_t Rounds = 5;
 	};
 
 	inline constexpr uint8_t MinScoreGoal = 5;
 	inline constexpr uint8_t MaxScoreGoal = 50;
 	inline constexpr uint8_t MinMatchMinutes = 3;
 	inline constexpr uint8_t MaxMatchMinutes = 20;
+	inline constexpr uint8_t MinBrawlRounds = 3;
+	inline constexpr uint8_t MaxBrawlRounds = 15;
 
 	inline MatchRules SanitizeRules(MatchRules rules)
 	{
 		rules.ScoreGoal = std::clamp(rules.ScoreGoal, MinScoreGoal, MaxScoreGoal);
 		rules.Minutes = std::clamp(rules.Minutes, MinMatchMinutes, MaxMatchMinutes);
+		rules.Rounds = std::clamp(rules.Rounds, MinBrawlRounds, MaxBrawlRounds);
 		return rules;
 	}
 
 	inline uint32_t EncodeRules(const MatchRules& rules)
 	{
-		return (rules.Teams ? 1u : 0u) | (uint32_t(rules.ScoreGoal) << 8) | (uint32_t(rules.Minutes) << 16);
+		return (rules.Teams ? 1u : 0u) | (uint32_t(rules.ScoreGoal) << 8) | (uint32_t(rules.Minutes) << 16) | (uint32_t(rules.Rounds) << 24);
 	}
 
 	inline MatchRules DecodeRules(uint32_t value)
 	{
-		return SanitizeRules({ (value & 1u) != 0, uint8_t((value >> 8) & 0xFFu), uint8_t((value >> 16) & 0xFFu) });
+		return SanitizeRules({ (value & 1u) != 0, uint8_t((value >> 8) & 0xFFu), uint8_t((value >> 16) & 0xFFu), uint8_t((value >> 24) & 0xFFu) });
 	}
 
 	inline constexpr uint8_t TeamCount = 2;
@@ -185,6 +189,17 @@ namespace Game
 			return reward;
 		reward.Gold = 60 + 20 * std::min(kills, 30u) + (won ? 200 : 0);
 		reward.Shards = won ? 3 : 1;
+		return reward;
+	}
+
+	inline MatchReward GetBrawlReward(bool won, uint32_t players, uint32_t points)
+	{
+		MatchReward reward;
+		if (players < 2)
+			return reward;
+		reward.Gold = 60 + 15 * std::min(points, 40u) + (won ? 250 : 0);
+		reward.Shards = won ? 3 : 1;
+		reward.Dust = won ? 2 : 0;
 		return reward;
 	}
 }

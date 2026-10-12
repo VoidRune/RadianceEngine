@@ -112,6 +112,7 @@ namespace Game
 		Image,
 		Orb,
 		Triangle,
+		Sigil,
 	};
 
 	struct UiPrimitive

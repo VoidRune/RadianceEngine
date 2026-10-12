@@ -19,6 +19,7 @@ namespace Game
 		constexpr uint32_t TraitsRefreshTicks = 120;
 		constexpr float JoinTimeout = 10.0f;
 		constexpr float PlayerListInterval = 2.0f;
+		constexpr float FlungSpeed = 6.0f;
 
 		PlayerInput Sanitize(PlayerInput input)
 		{
@@ -98,6 +99,8 @@ namespace Game
 				return "arena";
 			case GameMode::Royale:
 				return "battle royale";
+			case GameMode::Brawl:
+				return "spellbrawl";
 			default:
 				return "mission";
 			}
@@ -132,6 +135,8 @@ namespace Game
 			map = MapKind::Crucible;
 		else if (m_Config.StartMode == GameMode::Royale && !IsRoyaleMap(map))
 			map = MapKind::Ashlands;
+		else if (m_Config.StartMode == GameMode::Brawl && !IsBrawlMap(map))
+			map = MapKind::Caldera;
 		CreateWorld({
 			.Mode = m_Config.StartMode,
 			.Map = map,
@@ -176,7 +181,7 @@ namespace Game
 		if (!m_World)
 			return;
 		const bool hub = mode == GameMode::Hub;
-		const bool valid = hub || (mode == GameMode::Arena ? IsArenaMap(map) : mode == GameMode::Royale ? IsRoyaleMap(map) : IsMissionMap(map));
+		const bool valid = hub || (mode == GameMode::Arena ? IsArenaMap(map) : mode == GameMode::Royale ? IsRoyaleMap(map) : mode == GameMode::Brawl ? IsBrawlMap(map) : IsMissionMap(map));
 		if (!valid)
 			return;
 		const uint32_t seed = hub ? m_Config.MapSeed : (uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()) ^ (m_TravelCount * 0x9E3779B9u)) | 1u;
@@ -490,16 +495,25 @@ namespace Game
 			{
 				const GameMode mode = GameMode(std::min<uint32_t>(action.Value, uint32_t(GameMode::Count)));
 				const MapKind map = MapKind(std::min<uint32_t>(action.Target, uint32_t(MapKind::Count)));
-				if ((mode == GameMode::Arena && IsArenaMap(map)) || (mode == GameMode::Royale && IsRoyaleMap(map)))
+				if ((mode == GameMode::Arena && IsArenaMap(map)) || (mode == GameMode::Royale && IsRoyaleMap(map)) || (mode == GameMode::Brawl && IsBrawlMap(map)))
 				{
 					const MatchRules rules = DecodeRules(action.Extra);
 					Travel(mode, map, 1, 0, rules);
-					RDN_LOG("{} started {} on {}", client.Name, mode == GameMode::Royale ? "a battle royale" : rules.Teams ? "a team arena match" : "a free for all arena match", GetMapDef(map).Name);
+					RDN_LOG("{} started {} on {}", client.Name, mode == GameMode::Royale ? "a battle royale" : mode == GameMode::Brawl ? "a " + std::to_string(rules.Rounds) + " round spellbrawl" : rules.Teams ? "a team arena match" : "a free for all arena match", GetMapDef(map).Name);
 				}
 			}
 			break;
 		case ActionType::Spectate:
 			m_World->Spectate(client.Player, int16_t(action.Value));
+			break;
+		case ActionType::BrawlSpell:
+			m_World->PickBrawlSpell(client.Player, action.Value, AbilityId(std::min<uint32_t>(action.Target, uint32_t(AbilityId::Count))));
+			break;
+		case ActionType::BrawlBoon:
+			m_World->ChooseBoon(client.Player, action.Value);
+			break;
+		case ActionType::BrawlReady:
+			m_World->SetBrawlReady(client.Player, action.Value != 0);
 			break;
 		case ActionType::OpenChest:
 			changed = m_World->OpenChest(client.Player);
@@ -680,6 +694,16 @@ namespace Game
 			case WorldEventType::StormClosing:
 				RDN_LOG("The ash storm closes in (stage {})", event.Detail + 1);
 				break;
+			case WorldEventType::RoundStarted:
+				RDN_LOG("Round {} of {} begins with {} players", event.Detail, m_World->GetMatch().GetBrawl().Rounds, m_World->GetMatch().GetEntrants());
+				break;
+			case WorldEventType::RoundEnded:
+				if (client)
+					RDN_LOG("{} wins round {}", client->Name, event.Detail);
+				else
+					RDN_LOG("Round {} ends without a winner", event.Detail);
+				statsChanged = true;
+				break;
 			case WorldEventType::CacheDropped:
 				break;
 			case WorldEventType::LootPicked:
@@ -776,33 +800,39 @@ namespace Game
 			if (const PlayerController* controller = entities.TryGet<PlayerController>(entity))
 			{
 				if (!controller->State.Alive)
-					state.Flags |= uint8_t(EntityFlags::Dead);
+					state.Flags |= uint16_t(EntityFlags::Dead);
 				if (controller->State.Invulnerable > 0.0f || controller->State.DashDistance > 0.0f)
-					state.Flags |= uint8_t(EntityFlags::Dashing);
+					state.Flags |= uint16_t(EntityFlags::Dashing);
 				if (controller->State.Chill > 0.0f)
-					state.Flags |= uint8_t(EntityFlags::Chilled);
+					state.Flags |= uint16_t(EntityFlags::Chilled);
 				if (controller->State.Stun > 0.0f)
-					state.Flags |= uint8_t(EntityFlags::Stunned);
+					state.Flags |= uint16_t(EntityFlags::Stunned);
+				if (controller->State.Ward > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Warded);
+				if (m_World->GetMatch().IsBurning(controller->PlayerId) && m_Session.Mode == GameMode::Brawl)
+					state.Flags |= uint16_t(EntityFlags::Burning);
+				if (LengthSquared(controller->State.Push) > FlungSpeed * FlungSpeed)
+					state.Flags |= uint16_t(EntityFlags::Flung);
 				state.Variant = uint8_t(AbilityId::Count);
 				if (controller->State.CastSlot >= 0)
 				{
-					state.Flags |= uint8_t(EntityFlags::Attacking);
+					state.Flags |= uint16_t(EntityFlags::Attacking);
 					state.Variant = uint8_t(controller->Traits.Skills[size_t(controller->State.CastSlot)].Ability);
 				}
 			}
 			if (const Enemy* enemy = entities.TryGet<Enemy>(entity))
 			{
 				if (enemy->Windup > 0.0f)
-					state.Flags |= uint8_t(EntityFlags::Attacking);
+					state.Flags |= uint16_t(EntityFlags::Attacking);
 				if (enemy->Elite)
-					state.Flags |= uint8_t(EntityFlags::Elite);
+					state.Flags |= uint16_t(EntityFlags::Elite);
 				if (enemy->Chill > 0.0f)
-					state.Flags |= uint8_t(EntityFlags::Chilled);
+					state.Flags |= uint16_t(EntityFlags::Chilled);
 				if (enemy->Stun > 0.0f)
-					state.Flags |= uint8_t(EntityFlags::Stunned);
+					state.Flags |= uint16_t(EntityFlags::Stunned);
 			}
 			if (entities.TryGet<PendingStrike>(entity))
-				state.Flags |= uint8_t(EntityFlags::Pending);
+				state.Flags |= uint16_t(EntityFlags::Pending);
 			const Chest* chest = entities.TryGet<Chest>(entity);
 			states.push_back(state);
 			visibility.push_back({ replicated.Visibility, chest ? chest->Opened : uint16_t(0), chest != nullptr, chest && chest->Kind == ChestKind::Cache && chest->Opened == 0 });
@@ -883,6 +913,8 @@ namespace Game
 		local.Materials = inventory->Materials;
 		local.Watching = controller->Watching;
 		local.KilledBy = controller->KilledBy;
+		if (m_Session.Mode == GameMode::Brawl)
+			local.Brawl = m_World->GetMatch().GetLoadout(client.PlayerId);
 		return local;
 	}
 
@@ -920,6 +952,8 @@ namespace Game
 				.Team = m_World->GetTeam(client.PlayerId),
 				.Placement = pvp ? score.Placement : uint8_t(0),
 				.Host = client.Host,
+				.Score = m_World->GetMatch().GetPoints(client.PlayerId),
+				.Rounds = m_World->GetMatch().GetRoundWins(client.PlayerId),
 			});
 		}
 		std::sort(list.Players.begin(), list.Players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.PlayerId < b.PlayerId; });

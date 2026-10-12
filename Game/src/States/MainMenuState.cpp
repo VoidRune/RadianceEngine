@@ -1,25 +1,29 @@
 #include "MainMenuState.h"
 #include "App/GameApp.h"
 #include "Audio/GameAudio.h"
-#include "Rendering/WorldRenderer.h"
+#include "Rendering/MenuBackdrop.h"
 #include "States/SessionState.h"
+#include "UI/SettingsUi.h"
 #include "UI/Ui.h"
 #include <GameShared/Content/Items.h>
 #include <GameShared/Save/CharacterProfile.h>
+#include <RadianceEngine/Window/Input.h>
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <iterator>
 
 namespace Game
 {
 	namespace
 	{
-		constexpr float PanelWidth = 480.0f;
-		constexpr float PanelHeight = 598.0f;
-		constexpr float PanelGap = 28.0f;
-		constexpr float PanelTop = 196.0f;
-		constexpr uint32_t Embers = 48;
+		constexpr float MenuX = 64.0f;
+		constexpr float MenuTop = 300.0f;
+		constexpr float EntryHeight = 60.0f;
+		constexpr float PageX = 520.0f;
+		constexpr float PageWidth = 560.0f;
+		constexpr float PageTop = 112.0f;
+		constexpr float PageHeight = 676.0f;
+		constexpr uint32_t Motes = 44;
 
 		bool NameCharacter(uint32_t codepoint)
 		{
@@ -46,42 +50,22 @@ namespace Game
 			return float(seed & 0xFFFFFF) / float(0xFFFFFF);
 		}
 
-		UiRect Section(Ui& ui, const UiRect& rect, std::string_view title, UiIcon icon)
+		UiRect PageHeader(Ui& ui, UiRect area, std::string_view title, std::string_view subtitle)
 		{
-			ui.Panel(rect, 12.0f);
 			UiDrawList& draw = ui.Draw();
-			const UiRect header{ rect.X + 22.0f, rect.Y + 14.0f, rect.W - 44.0f, 34.0f };
-			draw.Icon(icon, { header.X, header.Center().y - 13.0f, 26.0f, 26.0f }, { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.7f) });
-			draw.TextAligned({ header.X + 36.0f, header.Y, header.W - 36.0f, header.H }, title, Theme::Title(24.0f), { 0.0f, 0.5f });
-			ui.Separator({ rect.X + 16.0f, header.Bottom() + 4.0f, rect.W - 32.0f, 8.0f });
-			return { rect.X + 24.0f, header.Bottom() + 20.0f, rect.W - 48.0f, rect.Bottom() - header.Bottom() - 38.0f };
+			TextStyle style = Theme::Title(30.0f);
+			style.Tracking = 2.5f;
+			draw.Text({ area.X, area.Y }, title, style);
+			draw.TextWrapped({ area.X, area.Y + 44.0f, area.W, 40.0f }, subtitle, Theme::Body(15.0f, Theme::Muted));
+			ui.Separator({ area.X, area.Y + 78.0f, area.W, 10.0f });
+			area.CutTop(104.0f);
+			return area;
 		}
 
-		bool ChoiceCard(Ui& ui, UiId id, const UiRect& rect, bool selected, UiIcon icon, std::string_view title, std::string_view description, float textSize)
+		void FieldLabel(Ui& ui, UiRect& area, std::string_view text)
 		{
-			const UiInteraction interaction = ui.Interact(id, rect);
-			const float hover = ui.Animate(id, interaction.Hovered);
-			const float chosen = ui.Animate(id ^ 0x51ED270B27ull, selected, 14.0f);
-			UiDrawList& draw = ui.Draw();
-			if (chosen > 0.01f)
-				draw.Shadow(rect, 8.0f, 10.0f, WithAlpha(Theme::Gold, 0.22f * chosen), { 0.0f, 0.0f });
-			draw.Rect(rect, { .Fill = glm::mix(Hex(0x1B191F), Hex(0x2C2418), chosen), .FillBottom = glm::mix(Hex(0x121115), Hex(0x1A140C), chosen), .Radius = 8.0f, .Border = glm::mix(WithAlpha(Theme::GoldDark, 0.55f + 0.35f * hover), Theme::Gold, chosen), .BorderWidth = 1.3f + 0.7f * chosen, .Glow = WithAlpha(Theme::GoldLight, 0.05f * hover + 0.08f * chosen), .GlowSize = 14.0f });
-			const float iconSize = std::min(rect.H - 20.0f, 44.0f);
-			const UiRect iconRect{ rect.X + 14.0f, rect.Y + 12.0f, iconSize, iconSize };
-			draw.Icon(icon, iconRect, { .Color = glm::mix(Theme::Muted, Theme::GoldLight, std::max(chosen, hover * 0.6f)), .ColorBottom = glm::mix(Theme::Faint, Theme::Gold, std::max(chosen, hover * 0.6f)), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.7f) });
-			const float textX = iconRect.Right() + 14.0f;
-			draw.Text({ textX, rect.Y + 9.0f }, title, Theme::Bold(18.0f, glm::mix(Theme::Text, Theme::GoldLight, chosen)));
-			draw.PushClip(rect.Shrink(2.0f));
-			draw.TextWrapped({ textX, rect.Y + 33.0f, rect.Right() - textX - 12.0f, rect.H - 36.0f }, description, Theme::Body(textSize, Theme::Muted), 0.0f, 0.92f);
-			draw.PopClip();
-			if (selected)
-				draw.Icon(UiIcon::CheckMark, { rect.Right() - 26.0f, rect.Y + 8.0f, 18.0f, 18.0f }, { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold });
-			return interaction.Clicked;
-		}
-
-		void FieldLabel(Ui& ui, float x, float y, std::string_view text)
-		{
-			ui.Draw().Text({ x, y }, text, Theme::Label(14.0f));
+			ui.Draw().Text({ area.X, area.Y }, text, Theme::Caps(13.0f, Theme::Muted, 1.6f));
+			area.CutTop(24.0f);
 		}
 	}
 
@@ -94,12 +78,6 @@ namespace Game
 		m_Port = std::to_string(settings.Port);
 		m_Kit = int(settings.Kit);
 		m_Unlimited = settings.UnlimitedMaterials;
-		m_Volume = settings.Volume;
-		m_MusicVolume = settings.MusicVolume;
-		m_EffectsVolume = settings.EffectsVolume;
-		m_Muted = settings.Muted;
-		m_LagMs = float(settings.Simulation.LagMs);
-		m_LossPercent = settings.Simulation.LossPercent;
 		app.GetGameAudio().EnterMenu();
 	}
 
@@ -120,208 +98,281 @@ namespace Game
 		}
 	}
 
-	void MainMenuState::DrawBackground(Ui& ui)
+	void MainMenuState::OpenPage(Page page)
 	{
-		ui.SetLayer(UiLayer::Background);
-		UiDrawList& draw = ui.Draw();
-		const UiRect screen = ui.GetScreen();
-		const float time = ui.GetTime();
-		draw.Rect(screen, { .Fill = Hex(0x1C1522), .FillBottom = Hex(0x09080B) });
-		draw.Shadow(UiRect::Centered({ screen.W * 0.5f, 120.0f }, { screen.W * 0.6f, 160.0f }), 80.0f, 220.0f, Rgba(1.0f, 0.62f, 0.25f, 0.12f), { 0.0f, 0.0f });
-		draw.Shadow(UiRect::Centered({ screen.W * 0.5f, screen.H + 40.0f }, { screen.W * 0.9f, 120.0f }), 60.0f, 200.0f, Rgba(0.55f, 0.25f, 0.85f, 0.10f), { 0.0f, 0.0f });
-		for (uint32_t i = 0; i < Embers; i++)
-		{
-			const float speed = 12.0f + 26.0f * Noise(i * 3u + 1u);
-			const float travel = screen.H + 60.0f;
-			const float y = screen.H + 30.0f - std::fmod(time * speed + Noise(i * 3u + 2u) * travel, travel);
-			const float x = Noise(i * 3u) * screen.W + std::sin(time * 0.6f + float(i)) * 18.0f;
-			const float flicker = 0.55f + 0.45f * std::sin(time * (2.0f + Noise(i) * 3.0f) + float(i) * 1.7f);
-			const float size = 1.2f + 2.2f * Noise(i * 7u + 5u);
-			const float fade = std::clamp((screen.H - y) / 260.0f, 0.0f, 1.0f) * std::clamp(y / 200.0f, 0.0f, 1.0f);
-			const UiColor color = Rgba(1.0f, 0.7f + 0.2f * Noise(i * 11u), 0.35f, 0.65f * flicker * fade);
-			draw.Shadow(UiRect::Centered({ x, y }, glm::vec2(size * 2.0f)), size, size * 3.5f, WithAlpha(color, 0.5f), { 0.0f, 0.0f });
-			draw.Circle({ x, y }, size * 0.6f, color);
-		}
-		draw.Rect(screen, { .Glow = Rgba(0.0f, 0.0f, 0.0f, 0.75f), .GlowSize = 240.0f });
+		if (page == m_Page)
+			return;
+		static constexpr float PageTones[] = { 1.0f, 1.0f, 1.1225f, 0.8409f, 0.7492f };
+		GameAudio& audio = m_App.GetGameAudio();
+		audio.PlayUi(Cue::UiShatter, page == Page::None ? 0.5f : 0.8f);
+		if (page == Page::None)
+			audio.PlayUi(Cue::UiClose, 0.8f);
+		else
+			audio.PlayUi(Cue::UiOpen, 0.8f, PageTones[size_t(page)], 0.04f);
+		m_Page = page;
+		m_Reveal = 0.0f;
+	}
+
+	void MainMenuState::Update(float dt)
+	{
+		m_Time += dt;
+		const Ui& ui = m_App.GetUi();
+		const glm::vec2 mouse = glm::clamp(ui.GetMouse() / glm::max(ui.GetSize(), glm::vec2(1.0f)) * 2.0f - 1.0f, glm::vec2(-1.0f), glm::vec2(1.0f));
+		m_Parallax += (mouse - m_Parallax) * (1.0f - std::exp(-dt * 1.2f));
+		m_Reveal = std::min(m_Reveal + dt / 0.42f, 1.0f);
+	}
+
+	bool MainMenuState::Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t)
+	{
+		static_assert(uint8_t(Page::Host) == uint8_t(BackdropMood::Kindle) && uint8_t(Page::Settings) == uint8_t(BackdropMood::Attune));
+		BackdropView view = BackdropMoods[size_t(m_Page)];
+		view.Time = m_App.GetUi().GetTime() + 30.0f;
+		view.Focus = m_Page == Page::None ? 0.42f : 0.95f;
+		view.Mouse = { m_Parallax.x, -m_Parallax.y };
+		view.Fade = std::min(m_Time / 1.8f, 1.0f);
+		return m_App.GetMenuBackdrop().Render(graph, target, extent, view);
 	}
 
 	void MainMenuState::DrawUi()
 	{
 		RefreshCharacter();
 		Ui& ui = m_App.GetUi();
-		DrawBackground(ui);
-
+		ui.SetMotion(1.0f);
+		if (m_Page != Page::None && !ui.WantsKeyboard() && Rdn::Input::IsKeyPressed(Rdn::KeyCode::Escape))
+			OpenPage(Page::None);
+		ui.SetLayer(UiLayer::Background);
+		DrawMotes(ui);
 		ui.SetLayer(UiLayer::Hud);
+		DrawTitle(ui);
+		DrawMenu(ui, { MenuX, MenuTop, 420.0f, ui.GetSize().y - MenuTop - 24.0f });
+		if (m_Page != Page::None)
+		{
+			ui.SetLayer(UiLayer::Windows);
+			DrawPage(ui);
+		}
+	}
+
+	void MainMenuState::DrawMotes(Ui& ui)
+	{
 		UiDrawList& draw = ui.Draw();
 		const UiRect screen = ui.GetScreen();
-		const float center = screen.W * 0.5f;
-		draw.Shadow(UiRect::Centered({ center, 56.0f }, { 34.0f, 22.0f }), 11.0f, 22.0f, Rgba(1.0f, 0.7f, 0.3f, 0.35f), { 0.0f, 0.0f });
-		draw.Icon(UiIcon::Crown, UiRect::Centered({ center, 54.0f }, { 46.0f, 46.0f }), { .Color = Theme::GoldLight, .ColorBottom = Theme::GoldDark, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
-		TextStyle title = Theme::Title(78.0f);
-		title.Tracking = 6.0f;
-		title.Weight = 0.25f;
+		draw.Rect({ 0.0f, 0.0f, 640.0f, screen.H }, { .Fill = Rgba(0.01f, 0.008f, 0.03f, 0.72f), .FillBottom = Rgba(0.01f, 0.008f, 0.03f, 0.0f), .Horizontal = true });
+		for (uint32_t i = 0; i < Motes; i++)
+		{
+			const float speed = 5.0f + 15.0f * Noise(i * 3u + 1u);
+			const float travel = screen.H + 80.0f;
+			const float y = screen.H + 40.0f - std::fmod(m_Time * speed + Noise(i * 3u + 2u) * travel, travel);
+			const float x = Noise(i * 3u) * screen.W + std::sin(m_Time * (0.15f + 0.3f * Noise(i * 5u)) + float(i)) * 34.0f;
+			const float twinkle = 0.5f + 0.5f * std::sin(m_Time * (0.8f + Noise(i) * 2.4f) + float(i) * 1.7f);
+			const float size = 0.7f + 1.9f * Noise(i * 7u + 5u);
+			const float fade = std::clamp((screen.H - y) / 220.0f, 0.0f, 1.0f) * std::clamp(y / 160.0f, 0.0f, 1.0f) * std::min(m_Time / 2.0f, 1.0f);
+			const UiColor color = glm::mix(Theme::Astral, Theme::Accent, Noise(i * 11u));
+			const float alpha = (0.2f + 0.6f * twinkle) * fade;
+			draw.Rect(UiRect::Centered({ x, y }, glm::vec2(size * 7.0f)), { .Fill = WithAlpha(color, 0.3f * alpha), .Radius = size * 3.5f, .Softness = size * 3.0f, .Additive = 1.0f });
+			draw.Rect(UiRect::Centered({ x, y }, glm::vec2(size * 1.2f)), { .Fill = WithAlpha(Lighten(color, 0.6f), alpha), .Radius = size * 0.6f, .Additive = 1.0f });
+		}
+	}
+
+	void MainMenuState::DrawTitle(Ui& ui)
+	{
+		UiDrawList& draw = ui.Draw();
+		const glm::vec2 anchor(MenuX + 214.0f, 148.0f);
+		const float height = ui.GetSize().y;
+		draw.Sigil({ -90.0f, height * 0.56f }, height * 0.64f, { .Color = WithAlpha(Theme::AccentLight, 0.075f), .Accent = WithAlpha(Theme::Astral, 0.1f), .Speed = 0.35f, .Phase = 0.31f, .LineWidth = 1.2f, .Glow = 0.3f, .Points = 7, .Skip = 3, .Progress = std::min(m_Time / 3.0f, 1.0f) });
+		draw.Sigil({ -90.0f, height * 0.56f }, height * 0.42f, { .Color = WithAlpha(Theme::Accent, 0.07f), .Speed = -0.5f, .Phase = 0.77f, .LineWidth = 1.0f, .Glow = 0.25f, .Layers = SigilRings | SigilRunes, .Progress = std::min(m_Time / 3.6f, 1.0f) });
+		TextStyle title = Theme::Title(66.0f);
+		title.Tracking = 8.0f;
+		title.Weight = 0.2f;
 		title.ShadowOffset = { 0.0f, 3.0f };
-		title.ShadowBlur = 4.0f;
-		draw.Shadow(UiRect::Centered({ center, 118.0f }, { draw.MeasureWidth("RADIANCE", title) * 0.8f, 30.0f }), 15.0f, 40.0f, Rgba(1.0f, 0.62f, 0.2f, 0.16f), { 0.0f, 0.0f });
-		draw.TextAligned({ 0.0f, 78.0f, screen.W, 80.0f }, "RADIANCE", title, { 0.5f, 0.5f });
-		TextStyle subtitle = Theme::Title(17.0f);
-		subtitle.Tracking = 5.0f;
-		subtitle.Color = Theme::Muted;
+		title.ShadowBlur = 5.0f;
+		title.GlowColor = WithAlpha(Theme::Accent, 0.6f);
+		title.GlowBlur = 12.0f;
+		title.Shimmer = 0.6f;
+		draw.TextAligned({ anchor.x - 300.0f, anchor.y - 46.0f, 600.0f, 70.0f }, "RADIANCE", title, { 0.5f, 0.5f });
+		TextStyle subtitle = Theme::Caps(15.0f, Theme::Muted, 6.0f);
 		subtitle.ColorBottom = Theme::Faint;
-		draw.TextAligned({ 0.0f, 152.0f, screen.W, 22.0f }, "CO-OP ACTION RPG", subtitle, { 0.5f, 0.5f });
+		draw.TextAligned({ anchor.x - 200.0f, anchor.y + 34.0f, 400.0f, 22.0f }, "co-op action rpg", subtitle, { 0.5f, 0.5f });
+		ui.Separator({ anchor.x - 140.0f, anchor.y + 64.0f, 280.0f, 10.0f });
+	}
 
-		const float left = center - PanelWidth - PanelGap * 0.5f;
-		DrawCharacterPanel(ui, { left, PanelTop, PanelWidth, PanelHeight });
-		DrawPlayPanel(ui, { center + PanelGap * 0.5f, PanelTop, PanelWidth, PanelHeight });
+	void MainMenuState::DrawMenu(Ui& ui, UiRect area)
+	{
+		UiDrawList& draw = ui.Draw();
+		const std::string wanderer = (m_Name.empty() ? std::string("Nameless") : m_Name) + "  \xC2\xB7  " + (m_HasSave && !m_Fresh ? std::string("saved character") : std::string(GetKit(StarterKit(m_Kit)).Name));
+		struct Entry
+		{
+			Page Target;
+			const char* Title;
+			std::string Subtitle;
+		};
+		const Entry entries[] = {
+			{ Page::Host, "Open a Rift", "Host a game for your party" },
+			{ Page::Join, "Follow a Rift", "Join a game someone is hosting" },
+			{ Page::Character, "The Wanderer", wanderer },
+			{ Page::Settings, "Attunement", "Sound, visuals and network" },
+		};
+		const auto reveal = [&](size_t index, const UiRect& rect)
+		{
+			const float appear = std::clamp((m_Time - 0.3f - 0.12f * float(index)) / 0.7f, 0.0f, 1.0f);
+			const float ease = 1.0f - (1.0f - appear) * (1.0f - appear);
+			draw.PushClip({ rect.X - 20.0f, rect.Y - 12.0f, (rect.W + 40.0f) * ease, rect.H + 24.0f });
+			return rect.Translate({ -20.0f * (1.0f - ease), 0.0f });
+		};
+		for (size_t i = 0; i < std::size(entries); i++)
+		{
+			const UiRect rect = reveal(i, area.CutTop(EntryHeight));
+			if (ui.MenuEntry(Ui::MakeId("menu", i), rect, entries[i].Title, entries[i].Subtitle, m_Page == entries[i].Target))
+				OpenPage(m_Page == entries[i].Target ? Page::None : entries[i].Target);
+			draw.PopClip();
+			area.CutTop(6.0f);
+		}
+		area.CutTop(14.0f);
+		const UiRect quit = reveal(std::size(entries), area.CutTop(EntryHeight));
+		if (ui.MenuEntry(Ui::MakeId("menu.quit"), quit, "Depart", "Quit to desktop"))
+			m_App.Quit();
+		draw.PopClip();
 
-		float y = PanelTop + PanelHeight + 18.0f;
 		if (!m_Message.empty())
 		{
-			const TextStyle error = Theme::Body(16.0f, Theme::Danger);
-			const float width = 2.0f * PanelWidth + PanelGap;
-			const float height = draw.TextWrapped({ left + 12.0f, y + 10.0f, width - 24.0f, 200.0f }, m_Message, error, 0.5f);
-			draw.Rect({ left, y, width, height + 20.0f }, { .Fill = Rgba(0.35f, 0.06f, 0.05f, 0.35f), .Radius = 8.0f, .Border = WithAlpha(Theme::Danger, 0.5f), .BorderWidth = 1.0f });
-			y += height + 34.0f;
+			area.CutTop(18.0f);
+			const TextStyle style = Theme::Body(15.5f, Hex(0xFFB8C2));
+			const float width = 330.0f;
+			const float height = float(draw.WrapText(m_Message, style, width).size()) * draw.LineHeight(style);
+			const UiRect box{ area.X + 20.0f, area.Y, width + 34.0f, height + 22.0f };
+			draw.Rect(box, { .Fill = Rgba(0.3f, 0.04f, 0.1f, 0.45f), .FillBottom = Rgba(0.15f, 0.02f, 0.06f, 0.45f), .Border = WithAlpha(Theme::Danger, 0.65f), .BorderWidth = 1.0f, .Chamfer = 8.0f });
+			draw.Diamond({ box.X, box.Center().y }, 9.0f, Theme::Danger, WithAlpha(Theme::Ink, 0.9f), 1.0f);
+			draw.TextWrapped({ box.X + 18.0f, box.Y + 11.0f, width, height }, m_Message, style);
 		}
-		if (ui.Button(Ui::MakeId("quit"), UiRect::Centered({ center, std::max(y + 24.0f, screen.H - 56.0f) }, { 200.0f, 42.0f }), "Quit", ButtonKind::Normal, true, UiIcon::ExitDoor))
-			m_App.Quit();
+		if (!m_App.GetSettings().SaveProfiles)
+			draw.Text({ MenuX + 34.0f, ui.GetSize().y - 36.0f }, "Saving is off for this run", Theme::Body(13.5f, Theme::Faint));
 	}
 
-	void MainMenuState::DrawCharacterPanel(Ui& ui, UiRect area)
+	void MainMenuState::DrawPage(Ui& ui)
 	{
-		UiRect content = Section(ui, area, "Character", UiIcon::PointyHat);
+		const float ease = 1.0f - std::pow(1.0f - m_Reveal, 3.0f);
+		const UiRect panel{ PageX, PageTop, PageWidth, std::min(PageHeight, ui.GetSize().y - PageTop - 24.0f) };
+		const float height = panel.H * ease;
 		UiDrawList& draw = ui.Draw();
-		FieldLabel(ui, content.X, content.Y, "Name");
-		content.CutTop(22.0f);
-		ui.TextField(Ui::MakeId("name"), content.CutTop(44.0f), m_Name, 24, "Your name", NameCharacter);
-		content.CutTop(18.0f);
+		draw.PushClip({ panel.X - 40.0f, panel.Center().y - height * 0.5f - 40.0f, panel.W + 80.0f, height + 80.0f });
+		ui.Panel(panel, 18.0f);
+		const UiRect content = panel.Shrink(34.0f, 30.0f);
+		switch (m_Page)
+		{
+		case Page::Host:
+			DrawHostPage(ui, content);
+			break;
+		case Page::Join:
+			DrawJoinPage(ui, content);
+			break;
+		case Page::Character:
+			DrawCharacterPage(ui, content);
+			break;
+		case Page::Settings:
+			DrawSettings(ui, m_App, PageHeader(ui, content, "Attunement", "Changes apply at once and are remembered."));
+			break;
+		default:
+			break;
+		}
+		draw.PopClip();
+	}
 
-		const bool showKits = !m_HasSave || m_Fresh;
+	void MainMenuState::DrawHostPage(Ui& ui, UiRect area)
+	{
+		area = PageHeader(ui, area, "Open a Rift", "Host a game. Friends follow your rift with your address and port.");
+		UiDrawList& draw = ui.Draw();
+		const UiRect hub = area.CutTop(108.0f);
+		ui.Card(hub, 0.0f, 0.0f);
+		const glm::vec2 seal(hub.X + 50.0f, hub.Center().y);
+		draw.Sigil(seal, 36.0f, { .Color = WithAlpha(Theme::Gold, 0.55f), .Accent = WithAlpha(Theme::AccentLight, 0.5f), .Speed = 0.8f, .LineWidth = 1.0f, .Glow = 0.45f, .Layers = SigilRings | SigilRunes });
+		draw.Icon(UiIcon::AnvilImpact, UiRect::Centered(seal, glm::vec2(32.0f)), { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .GlowColor = WithAlpha(Theme::Gold, 0.3f) });
+		draw.Text({ hub.X + 102.0f, hub.Y + 14.0f }, GetMapDef(MapKind::Hub).Name, Theme::Caps(19.0f, Theme::GoldLight, 1.5f));
+		draw.TextWrapped({ hub.X + 102.0f, hub.Y + 44.0f, hub.W - 116.0f, hub.H - 48.0f }, "Your party gathers in the hub town. Store loot in the stash, craft at the forge and lapidary, and choose missions at the board.", Theme::Body(14.5f, Theme::Muted));
+		area.CutTop(24.0f);
+		FieldLabel(ui, area, "PORT");
+		UiRect portRow = area.CutTop(44.0f);
+		ui.TextField(Ui::MakeId("port"), portRow.CutLeft(140.0f), m_Port, 5, "27020", DigitCharacter);
+		portRow.CutLeft(18.0f);
+		draw.TextWrapped({ portRow.X, portRow.Y + 3.0f, portRow.W, portRow.H }, "UDP. Others need to reach it to follow you in.", Theme::Body(14.0f, Theme::Faint));
+		area.CutTop(20.0f);
+		if (ui.Checkbox(Ui::MakeId("unlimited"), area.CutTop(30.0f), "Unlimited crafting materials (testing)", m_Unlimited))
+			m_App.GetSettings().UnlimitedMaterials = m_Unlimited;
+		const UiRect go = area.CutBottom(54.0f);
+		const std::string who = "You enter as " + (m_Name.empty() ? std::string("Player") : m_Name) + ", " + (m_HasSave && !m_Fresh ? std::string("with your saved gear") : std::string("the ") + GetKit(StarterKit(m_Kit)).Name);
+		draw.TextAligned(area.CutBottom(34.0f), who, Theme::Body(14.5f, Theme::Muted), { 0.5f, 0.5f });
+		if (ui.Button(Ui::MakeId("host"), go, "Open the Rift", ButtonKind::Primary, true, UiIcon::MagicPortal))
+			StartSession(true);
+	}
+
+	void MainMenuState::DrawJoinPage(Ui& ui, UiRect area)
+	{
+		area = PageHeader(ui, area, "Follow a Rift", "Join a game that someone else is hosting.");
+		UiDrawList& draw = ui.Draw();
+		FieldLabel(ui, area, "HOST ADDRESS");
+		ui.TextField(Ui::MakeId("address"), area.CutTop(44.0f), m_Address, 63, "Address, like 192.168.1.20", AddressCharacter);
+		area.CutTop(12.0f);
+		draw.TextWrapped(area.CutTop(44.0f), "Add :port after the address when the host doesn't use the default port.", Theme::Body(14.0f, Theme::Faint));
+		const UiRect go = area.CutBottom(54.0f);
+		const std::string who = "You enter as " + (m_Name.empty() ? std::string("Player") : m_Name) + ", " + (m_HasSave && !m_Fresh ? std::string("with your saved gear") : std::string("the ") + GetKit(StarterKit(m_Kit)).Name);
+		draw.TextAligned(area.CutBottom(34.0f), who, Theme::Body(14.5f, Theme::Muted), { 0.5f, 0.5f });
+		if (ui.Button(Ui::MakeId("join"), go, "Step Through", ButtonKind::Primary, !m_Address.empty(), UiIcon::MagicPortal))
+			StartSession(false);
+	}
+
+	void MainMenuState::DrawCharacterPage(Ui& ui, UiRect area)
+	{
+		const bool saving = m_App.GetSettings().SaveProfiles;
+		area = PageHeader(ui, area, "The Wanderer", saving ? "Your gear, stash and materials are bound to this name." : "Saving is off for this run, nothing you find is kept.");
+		UiDrawList& draw = ui.Draw();
+		FieldLabel(ui, area, "NAME");
+		ui.TextField(Ui::MakeId("name"), area.CutTop(44.0f), m_Name, 24, "Your name", NameCharacter);
+		area.CutTop(18.0f);
 		if (m_HasSave)
 		{
-			const UiRect status = content.CutTop(24.0f);
-			draw.Icon(UiIcon::CheckedShield, { status.X, status.Y + 1.0f, 22.0f, 22.0f }, { .Color = Theme::Success, .ColorBottom = Darken(Theme::Success, 0.3f) });
-			draw.TextAligned({ status.X + 30.0f, status.Y, status.W - 30.0f, status.H }, "Saved character found", Theme::Bold(17.0f, Theme::Success), { 0.0f, 0.5f });
-			content.CutTop(draw.TextWrapped({ content.X, content.Y + 4.0f, content.W, 60.0f }, m_SaveSummary, Theme::Body(15.0f, Theme::Muted)) + 12.0f);
-			ui.Checkbox(Ui::MakeId("fresh"), content.CutTop(28.0f), "Start over with a new starting kit (replaces the save)", m_Fresh);
-			content.CutTop(14.0f);
+			const UiRect status = area.CutTop(26.0f);
+			draw.Icon(UiIcon::CheckedShield, { status.X, status.Y + 2.0f, 22.0f, 22.0f }, { .Color = Theme::Success, .ColorBottom = Darken(Theme::Success, 0.3f) });
+			draw.TextAligned({ status.X + 32.0f, status.Y, status.W - 32.0f, status.H }, "A saved character answers to this name", Theme::Bold(16.5f, Theme::Success), { 0.0f, 0.5f });
+			area.CutTop(draw.TextWrapped({ area.X, area.Y + 4.0f, area.W, 60.0f }, m_SaveSummary, Theme::Body(14.5f, Theme::Muted)) + 12.0f);
+			ui.Checkbox(Ui::MakeId("fresh"), area.CutTop(30.0f), "Start over with a new kit (replaces the save)", m_Fresh);
+			area.CutTop(16.0f);
+			if (!m_Fresh)
+			{
+				draw.TextWrapped(area, "Your saved gear, gems and backpack come with you.", Theme::Body(14.5f, Theme::Faint));
+				return;
+			}
 		}
-		else
-		{
-			const char* note = m_App.GetSettings().SaveProfiles ? "New character. Pick a starting kit, your gear is saved as you play." : "Saving is off for this run (--no-save). Pick a starting kit:";
-			content.CutTop(draw.TextWrapped({ content.X, content.Y, content.W, 60.0f }, note, Theme::Body(15.0f, Theme::Muted)) + 14.0f);
-		}
-		if (!showKits)
-		{
-			draw.TextWrapped({ content.X, content.Y + 8.0f, content.W, 80.0f }, "Your saved gear, gems and backpack come with you into the game.", Theme::Body(15.0f, Theme::Faint));
-			return;
-		}
+		FieldLabel(ui, area, "STARTING KIT");
+		constexpr float Gap = 12.0f;
 		const float kits = float(std::size(Kits));
-		const float cardHeight = std::min(86.0f, (content.H - 10.0f * kits) / kits);
-		for (const KitDef& kit : Kits)
+		const float cardWidth = (area.W - Gap * (kits - 1.0f)) / kits;
+		UiRect row = area.CutTop(150.0f);
+		std::optional<size_t> hovered;
+		for (size_t i = 0; i < std::size(Kits); i++)
 		{
-			const UiRect card = content.CutTop(cardHeight);
-			if (ChoiceCard(ui, Ui::MakeId("kit", uint64_t(kit.Id)), card, m_Kit == int(kit.Id), IconFor(kit.Id), kit.Name, kit.Description, 14.5f))
+			const KitDef& kit = Kits[i];
+			const UiRect card = row.CutLeft(cardWidth);
+			row.CutLeft(Gap);
+			const UiId id = Ui::MakeId("kit", uint64_t(kit.Id));
+			const UiInteraction interaction = ui.Interact(id, card);
+			const bool selected = m_Kit == int(kit.Id);
+			const float hover = ui.Animate(id, interaction.Hovered);
+			const float chosen = ui.Animate(id ^ 0x51ED270B27ull, selected, 10.0f);
+			if (interaction.Hovered)
+				hovered = i;
+			if (interaction.Clicked)
 				m_Kit = int(kit.Id);
-			content.CutTop(10.0f);
+			ui.Card(card, hover, chosen, Theme::Gold);
+			const glm::vec2 seal(card.Center().x, card.Y + 56.0f);
+			draw.Sigil(seal, 38.0f, { .Color = WithAlpha(glm::mix(Theme::AccentLight, Theme::Gold, chosen), 0.25f + 0.3f * hover + 0.4f * chosen), .Accent = WithAlpha(Theme::Astral, 0.3f + 0.4f * chosen), .Speed = 0.6f + 1.2f * chosen,
+				.Phase = float(i) * 0.17f, .LineWidth = 1.0f, .Glow = 0.3f + 0.4f * chosen, .Layers = SigilRings | SigilRunes });
+			const float lit = std::max(chosen, hover * 0.7f);
+			draw.Icon(IconFor(kit.Id), UiRect::Centered(seal, glm::vec2(40.0f)), { .Color = glm::mix(Theme::Muted, chosen > 0.5f ? Theme::GoldLight : Theme::AccentLight, lit), .ColorBottom = glm::mix(Theme::Faint, chosen > 0.5f ? Theme::Gold : Theme::Accent, lit),
+				.ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .GlowColor = WithAlpha(chosen > 0.5f ? Theme::Gold : Theme::Accent, 0.35f * lit) });
+			draw.TextAligned({ card.X, card.Y + 106.0f, card.W, 24.0f }, kit.Name, Theme::Caps(15.5f, glm::mix(Theme::Text, Theme::GoldLight, chosen), 1.2f), { 0.5f, 0.5f });
 		}
-	}
-
-	void MainMenuState::DrawPlayPanel(Ui& ui, UiRect area)
-	{
-		UiRect content = Section(ui, area, "Play", UiIcon::CrossedSwords);
-		UiDrawList& draw = ui.Draw();
-		ui.Separator(content.CutTop(20.0f), "HOST A GAME");
-		content.CutTop(8.0f);
-		UiRect hub = content.CutTop(92.0f);
-		draw.Rect(hub, { .Fill = Hex(0x1B191F), .FillBottom = Hex(0x121115), .Radius = 8.0f, .Border = WithAlpha(Theme::GoldDark, 0.7f), .BorderWidth = 1.2f });
-		draw.Icon(UiIcon::AnvilImpact, { hub.X + 14.0f, hub.Y + 14.0f, 40.0f, 40.0f }, { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.7f) });
-		draw.Text({ hub.X + 68.0f, hub.Y + 10.0f }, GetMapDef(MapKind::Hub).Name, Theme::Bold(18.0f, Theme::GoldLight));
-		draw.TextWrapped({ hub.X + 68.0f, hub.Y + 34.0f, hub.W - 80.0f, hub.H - 38.0f }, "Your party starts in the hub town. Store loot in the stash, craft at the forge and lapidary, and pick missions at the board.", Theme::Body(14.0f, Theme::Muted));
-		content.CutTop(8.0f);
-		if (ui.Checkbox(Ui::MakeId("unlimited"), content.CutTop(28.0f), "Unlimited crafting materials (testing)", m_Unlimited))
-			m_App.GetSettings().UnlimitedMaterials = m_Unlimited;
-		content.CutTop(8.0f);
-		UiRect hostRow = content.CutTop(44.0f);
-		const UiRect portLabel = hostRow.CutLeft(38.0f);
-		draw.TextAligned(portLabel, "Port", Theme::Label(15.0f), { 0.0f, 0.5f });
-		ui.TextField(Ui::MakeId("port"), hostRow.CutLeft(92.0f), m_Port, 5, "27015", DigitCharacter);
-		hostRow.CutLeft(12.0f);
-		if (ui.Button(Ui::MakeId("host"), hostRow, "Host game", ButtonKind::Primary, true, UiIcon::CrossedSwords))
-			StartSession(true);
-
-		content.CutTop(20.0f);
-		ui.Separator(content.CutTop(20.0f), "JOIN A GAME");
-		content.CutTop(10.0f);
-		UiRect joinRow = content.CutTop(44.0f);
-		const UiRect joinButton = joinRow.CutRight(150.0f);
-		joinRow.CutRight(12.0f);
-		ui.TextField(Ui::MakeId("address"), joinRow, m_Address, 63, "Host address", AddressCharacter);
-		if (ui.Button(Ui::MakeId("join"), joinButton, "Join game", ButtonKind::Normal, !m_Address.empty(), UiIcon::MagicPortal))
-			StartSession(false);
-
-		content.CutTop(20.0f);
-		ui.Separator(content.CutTop(20.0f), "SETTINGS");
-		content.CutTop(8.0f);
-		char text[32];
-		const auto sliderRow = [&](std::string_view label)
-		{
-			UiRect row = content.CutTop(32.0f);
-			draw.TextAligned(row.CutLeft(132.0f), label, Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
-			return row;
-		};
-		std::snprintf(text, sizeof(text), "%.0f%%", double(m_Volume) * 100.0);
-		bool audioChanged = ui.Slider(Ui::MakeId("volume"), sliderRow("Volume"), m_Volume, 0.0f, 1.0f, text);
-		UiRect mixRow = content.CutTop(32.0f);
-		UiRect musicRow = mixRow.CutLeft((mixRow.W - 16.0f) * 0.5f);
-		mixRow.CutLeft(16.0f);
-		draw.TextAligned(musicRow.CutLeft(58.0f), "Music", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
-		std::snprintf(text, sizeof(text), "%.0f%%", double(m_MusicVolume) * 100.0);
-		audioChanged |= ui.Slider(Ui::MakeId("music"), musicRow, m_MusicVolume, 0.0f, 1.0f, text);
-		draw.TextAligned(mixRow.CutLeft(64.0f), "Effects", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
-		std::snprintf(text, sizeof(text), "%.0f%%", double(m_EffectsVolume) * 100.0);
-		audioChanged |= ui.Slider(Ui::MakeId("effects"), mixRow, m_EffectsVolume, 0.0f, 1.0f, text);
-		UiRect muteRow = content.CutTop(30.0f);
-		UiRect shadowRow = muteRow.CutRight(muteRow.W * 0.55f);
-		audioChanged |= ui.Checkbox(Ui::MakeId("mute"), muteRow, "Mute all sound", m_Muted);
-		draw.TextAligned(shadowRow.CutLeft(70.0f), "Shadows", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
-		constexpr const char* shadowLabels[] = { "Off", "Low", "High" };
-		static_assert(std::size(shadowLabels) == size_t(ShadowQuality::Count));
-		Settings& graphics = m_App.GetSettings();
-		float shadows = float(graphics.Shadows);
-		if (ui.Slider(Ui::MakeId("shadows"), shadowRow, shadows, 0.0f, float(uint32_t(ShadowQuality::Count) - 1), shadowLabels[size_t(graphics.Shadows)]))
-		{
-			graphics.Shadows = ShadowQuality(std::lround(shadows));
-			m_App.GetWorldRenderer().SetShadowQuality(graphics.Shadows);
-		}
-		if (audioChanged)
-		{
-			Settings& settings = m_App.GetSettings();
-			settings.Volume = m_Volume;
-			settings.MusicVolume = m_MusicVolume;
-			settings.EffectsVolume = m_EffectsVolume;
-			settings.Muted = m_Muted;
-			m_App.ApplyAudioSettings();
-		}
-		constexpr const char* giLabels[] = { "Off", "Low", "Medium", "High" };
-		static_assert(std::size(giLabels) == size_t(GiQuality::Count));
-		float gi = float(graphics.Gi);
-		if (ui.Slider(Ui::MakeId("gi"), sliderRow("Indirect light"), gi, 0.0f, float(uint32_t(GiQuality::Count) - 1), giLabels[size_t(graphics.Gi)]))
-		{
-			graphics.Gi = GiQuality(std::lround(gi));
-			m_App.GetWorldRenderer().SetGiQuality(graphics.Gi);
-		}
-		UiRect networkRow = content.CutTop(32.0f);
-		UiRect lagRow = networkRow.CutLeft((networkRow.W - 16.0f) * 0.5f);
-		networkRow.CutLeft(16.0f);
-		draw.TextAligned(lagRow.CutLeft(58.0f), "Lag", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
-		std::snprintf(text, sizeof(text), "%.0f ms", double(m_LagMs));
-		if (ui.Slider(Ui::MakeId("lag"), lagRow, m_LagMs, 0.0f, 500.0f, text))
-			m_LagMs = std::round(m_LagMs / 5.0f) * 5.0f;
-		draw.TextAligned(networkRow.CutLeft(64.0f), "Loss", Theme::Body(15.0f, Theme::Text), { 0.0f, 0.5f });
-		std::snprintf(text, sizeof(text), "%.1f%%", double(m_LossPercent));
-		if (ui.Slider(Ui::MakeId("loss"), networkRow, m_LossPercent, 0.0f, 25.0f, text))
-			m_LossPercent = std::round(m_LossPercent * 2.0f) * 0.5f;
+		area.CutTop(16.0f);
+		const KitDef& shown = Kits[hovered.value_or(size_t(std::clamp(m_Kit, 0, int(std::size(Kits)) - 1)))];
+		draw.Text({ area.X, area.Y }, shown.Name, Theme::Caps(17.0f, Theme::GoldLight, 1.4f));
+		draw.TextWrapped({ area.X, area.Y + 28.0f, area.W, 60.0f }, shown.Description, Theme::Body(15.0f, Theme::Text));
 	}
 
 	void MainMenuState::StartSession(bool host)
@@ -332,7 +383,7 @@ namespace Game
 		const int port = m_Port.empty() ? int(DefaultPort) : std::atoi(m_Port.c_str());
 		settings.Port = uint16_t(std::clamp(port, 1024, 65535));
 		settings.Kit = StarterKit(m_Kit);
-		settings.Simulation = { int32_t(m_LagMs), m_LossPercent };
+		m_App.RememberSettings(SettingsGroup::Identity);
 
 		SessionConfig config;
 		config.Host = host;
@@ -341,6 +392,7 @@ namespace Game
 		config.Map = settings.Map;
 		config.StartMode = GameMode::Hub;
 		config.Profile = m_App.LoadCharacter(settings.PlayerName, settings.Kit, m_HasSave && m_Fresh);
+		m_App.GetGameAudio().PlayUi(Cue::UiRift, 0.9f);
 		m_App.ChangeState(std::make_unique<SessionState>(m_App, config));
 	}
 }

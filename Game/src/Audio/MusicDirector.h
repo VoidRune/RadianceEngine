@@ -40,7 +40,8 @@ namespace Game
 	private:
 		enum class Track : uint8_t
 		{
-			Menu,
+			Cosmos,
+			Cathedral,
 			HubPavane,
 			HubFlow,
 			HubAdventure,

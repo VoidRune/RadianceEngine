@@ -90,6 +90,81 @@ namespace Game
 				return;
 			renderer.DrawBox({ x, (top + bottom) * 0.5f, z }, { half.x, (top - bottom) * 0.5f, half.y }, color, yaw, 0.0f, ground);
 		}
+
+		constexpr float SlabBottom = -0.62f;
+		constexpr float SlabHalf = 0.485f;
+
+		void DrawBasaltCell(WorldRenderer& renderer, int32_t x, int32_t y, const LevelView& view, bool risen)
+		{
+			const TerrainDef& def = GetTerrain(TerrainId::Basalt);
+			const float cx = float(x) + 0.5f;
+			const float cz = float(y) + 0.5f;
+			float drop = 0.0f;
+			float warn = 0.0f;
+			float fall = 0.0f;
+			if (view.Brawl)
+			{
+				const float collapse = TileCollapseTime(view.Brawl->Plan, x, y);
+				const float since = view.Brawl->Clock - collapse;
+				if (since >= CollapseFallSeconds)
+					return;
+				warn = std::clamp((since + CollapseWarning) / CollapseWarning, 0.0f, 1.0f);
+				fall = std::max(since, 0.0f) / CollapseFallSeconds;
+				drop = fall * fall * 1.5f;
+			}
+			if (risen && view.Restore < 1.0f)
+			{
+				const float rise = 1.0f - (1.0f - view.Restore) * (1.0f - view.Restore);
+				drop += (1.0f - rise) * 1.4f;
+			}
+			const float shake = fall <= 0.0f && warn > 0.0f ? warn * warn * 0.03f : 0.0f;
+			const float jitterX = shake * std::sin(view.Time * 47.0f + float(x) * 3.1f + float(y) * 1.7f);
+			const float jitterZ = shake * std::cos(view.Time * 41.0f + float(x) * 2.3f - float(y) * 2.9f);
+			const float top = -drop;
+			const float bottom = SlabBottom - drop;
+			const float half = SlabHalf - 0.06f * fall;
+			const float shade = Hash(x, y, 4);
+			const glm::vec3 stone = glm::mix(ToColor(def.Color), ToColor(def.Accent), shade * 0.65f);
+			const float heat = std::min(fall * 0.9f + warn * warn * 0.12f, 1.0f);
+			const glm::vec3 color = glm::mix(stone, glm::vec3(1.5f, 0.34f, 0.06f), heat);
+			renderer.DrawBox({ cx + jitterX, (top + bottom) * 0.5f, cz + jitterZ }, { half, (top - bottom) * 0.5f, half }, color, (Hash(x, y, 6) - 0.5f) * 0.05f + fall * 0.35f, heat * 0.85f, top, { .Roughness = 0.9f });
+			if (warn <= 0.0f || fall > 0.0f)
+				return;
+			GroundDecal cracks;
+			cracks.Center = { cx, top, cz };
+			cracks.Extent = glm::vec2(0.5f);
+			cracks.Depth = 0.25f;
+			cracks.Shape = DecalShape::Fracture;
+			cracks.Color = glm::vec4(1.6f, 0.5f, 0.13f, 1.0f);
+			cracks.Tint = glm::vec4(0.02f, 0.016f, 0.014f, 1.0f);
+			cracks.Roughness = 0.9f;
+			cracks.Params = glm::vec4(warn, 0.0f, 0.0f, 0.0f);
+			renderer.DrawDecal(cracks);
+		}
+	}
+
+	float SlabDrop(const BrawlStatus& brawl, int32_t x, int32_t y)
+	{
+		const float since = brawl.Clock - TileCollapseTime(brawl.Plan, x, y);
+		if (since <= 0.0f)
+			return 0.0f;
+		const float fall = std::min(since / CollapseFallSeconds, 1.0f);
+		return fall * fall * 1.5f;
+	}
+
+	float BrawlGroundHeight(const Level& level, const BrawlStatus& brawl, Vec2 position)
+	{
+		const int32_t x = int32_t(std::floor(position.x));
+		const int32_t y = int32_t(std::floor(position.y));
+		switch (level.Map.GetTerrain(x, y))
+		{
+		case TerrainId::Lava:
+			return LavaWading;
+		case TerrainId::Basalt:
+			return std::max(-SlabDrop(brawl, x, y), LavaWading);
+		default:
+			return level.Map.GetHeight(position);
+		}
 	}
 
 	glm::vec3 ToColor(uint32_t rgb)
@@ -102,6 +177,7 @@ namespace Game
 	{
 		Prepare(renderer, level);
 		DrawTerrain(renderer, level, view);
+		DrawLava(renderer, view);
 		DrawWalls(renderer, level, view);
 		DrawProps(renderer, level, view);
 		DrawScene(renderer, view);
@@ -124,6 +200,24 @@ namespace Game
 				renderer.SetSkyMask(0, 0, {}, {}, {});
 			}
 		}
+		const TileMap& map = level.Map;
+		m_LavaRuns.clear();
+		for (int32_t y = 0; y < map.GetHeight(); y++)
+		{
+			int32_t start = -1;
+			for (int32_t x = 0; x <= map.GetWidth(); x++)
+			{
+				const TerrainId terrain = x < map.GetWidth() ? map.GetTerrain(x, y) : TerrainId::Count;
+				const bool molten = terrain == TerrainId::Lava || terrain == TerrainId::Basalt;
+				if (molten && start < 0)
+					start = x;
+				else if (!molten && start >= 0)
+				{
+					m_LavaRuns.push_back({ float(start), float(y), float(x), float(y + 1) });
+					start = -1;
+				}
+			}
+		}
 		m_PropReach.clear();
 		m_PropTop.clear();
 		for (const PlacedProp& prop : level.Props)
@@ -138,6 +232,13 @@ namespace Game
 			m_PropReach.push_back(reach);
 			m_PropTop.push_back(top);
 		}
+	}
+
+	void LevelRenderer::DrawLava(WorldRenderer& renderer, const LevelView& view) const
+	{
+		for (const glm::vec4& run : m_LavaRuns)
+			if (run.z >= view.Min.x && run.x <= view.Max.x && run.w >= view.Min.y && run.y <= view.Max.y)
+				renderer.DrawLava(run, LavaSurface, view.Time);
 	}
 
 	void LevelRenderer::DrawScene(WorldRenderer& renderer, const LevelView& view) const
@@ -224,6 +325,13 @@ namespace Game
 				const uint8_t art = index < m_Scene.Cells.size() ? m_Scene.Cells[index] : 0;
 				if ((art & CellTop) && (art & CellSides))
 					continue;
+				if (def.Style == TerrainStyle::Molten)
+					continue;
+				if (cell.Terrain == TerrainId::Basalt)
+				{
+					DrawBasaltCell(renderer, x, y, view, view.Risen && index < view.Risen->size() && (*view.Risen)[index] != 0);
+					continue;
+				}
 				const float height = float(cell.Level) * HeightUnit;
 				const float shade = Hash(x, y);
 				const float cx = float(x) + 0.5f;

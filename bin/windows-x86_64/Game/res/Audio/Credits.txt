@@ -7,10 +7,20 @@ crossfaded into themselves.
 
 MUSIC
 
-Music/Menu, HubPavane, HubFlow, HubAdventure, OldTown, OldTownDark, Caves, BattleHurry,
-BattleStorm, BattleClash, Victory
-    "Epic Departure", "Pavane", "Flow", "Adventure Begins", "Zwischenwelt", "Obscurium",
-    "In Darkness", "Hurry!", "Ship In A Storm", "Clash" and "Victory Stats"
+Music/Cosmos
+    "Cosmic Navigation" (loop version) by Synth-thetic
+    License: CC0 (https://creativecommons.org/publicdomain/zero/1.0/)
+    https://opengameart.org/content/cosmic-navigation
+
+Music/Cathedral
+    "Cathedral in the Forest" (ambient loop) by congusbongus
+    License: CC0
+    https://opengameart.org/content/cathedral-in-the-forest-ambient-loop
+
+Music/HubPavane, HubFlow, HubAdventure, OldTown, OldTownDark, Caves, BattleHurry, BattleStorm,
+BattleClash, Victory
+    "Pavane", "Flow", "Adventure Begins", "Zwischenwelt", "Obscurium", "In Darkness", "Hurry!",
+    "Ship In A Storm", "Clash" and "Victory Stats"
     from "Essentials Pack for Fantasy Games - LOOP BOX #3" by Of Far Different Nature
     (https://fardifferent.carrd.co/)
     License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
@@ -34,11 +44,16 @@ Music/Defeat
 
 AMBIENCE
 
-Ambience/Hub, Town, Crucible, Ashlands, Storm, Menu, Campfire
-    "Summer Evening", "Autumn Forest", "Desert Wind", "Winter Wind", "Fog", "Campfire Crackling"
-    and "Large Bonfire" from "JC Sounds - Nature Ambient Pack Vol 1" by JC Sounds
+Ambience/Hub, Town, Crucible, Ashlands, Storm, Campfire, Menu (wind layer)
+    "Summer Evening", "Autumn Forest", "Desert Wind", "Winter Wind", "Fog", "Large Bonfire" and
+    "Mountain Peak" (slowed down) from "JC Sounds - Nature Ambient Pack Vol 1" by JC Sounds
     License: CC BY 4.0 - Credit: JC Sounds
     https://opengameart.org/content/jc-sounds-nature-ambient-pack-vol-1
+
+Ambience/Menu (sub layer)
+    "K Opal" by James Gargette (cinameng), slowed down and low-passed
+    License: CC0
+    https://opengameart.org/content/k-opal-7451
 
 Ambience/Caves
     "Loopable Dungeon Ambience" by JaggedStone
@@ -62,10 +77,20 @@ Sfx/Weapon (swings, bow, arrow and metal hits), Sfx/Spell
     License: CC BY 4.0 - Credit: JC Sounds
     https://opengameart.org/content/jc-sounds-fantasy-sfx-pack-vol-1
 
-Sfx/UI
+Sfx/UI (Confirm, Error, Notify, Reward, Rare, Success, Fail)
     "JC Sounds - UI Utility Pack Vol 1" by JC Sounds
     License: CC BY 4.0 - Credit: JC Sounds
     https://opengameart.org/content/jc-sounds-ui-utility-pack-vol-1
+
+Sfx/UI (Click, Open, Close, Shatter, Rift)
+    "Atmospheric Interaction Sound Pack" (sounds from the game Krank) by legoluft
+    (http://www.legoluft.de/), retuned and layered
+    License: CC0
+    https://opengameart.org/content/atmospheric-interaction-sound-pack
+
+Sfx/UI (Hover, and the glass ring in Shatter)
+    "Interface Sounds" by Kenney (https://kenney.nl/assets/interface-sounds)
+    License: CC0
 
 Sfx/Impact (Rock, Wood, Plank, Glass, GlassLight, Body, BodyLight, Soft, Plate, PlateLight, Bell),
 Sfx/Player (Step_Stone, Step_Grass, Step_Wood, Step_Carpet, Step_Sand)

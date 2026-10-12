@@ -20,6 +20,7 @@ namespace Game
 {
 	class GameAudio;
 	class ImGuiLayer;
+	class MenuBackdrop;
 	class Ui;
 	class UiAssets;
 	class UiRenderer;
@@ -38,6 +39,8 @@ namespace Game
 		bool Muted = false;
 		ShadowQuality Shadows = ShadowQuality::High;
 		GiQuality Gi = GiQuality::Medium;
+		bool Fullscreen = false;
+		bool ShowControls = true;
 		MapKind Map = MapKind::Town;
 		GameMode StartMode = GameMode::Hub;
 		uint8_t Tier = 1;
@@ -48,6 +51,13 @@ namespace Game
 		uint32_t FirstWave = 1;
 		float LootRate = 1.0f;
 		NetworkSimulation Simulation;
+	};
+
+	enum class SettingsGroup : uint8_t
+	{
+		Audio,
+		Visuals,
+		Identity,
 	};
 
 	class GameApp
@@ -69,10 +79,13 @@ namespace Game
 		bool UiWantsKeyboard() const;
 		uint32_t GetUiPrimitiveCount() const { return uint32_t(m_UiPrimitives.size()); }
 		WorldRenderer& GetWorldRenderer() { return *m_WorldRenderer; }
+		MenuBackdrop& GetMenuBackdrop() { return *m_MenuBackdrop; }
 		Timbre::AudioEngine& GetAudio() { return *m_Audio; }
 		GameAudio& GetGameAudio() { return *m_GameAudio; }
 		Settings& GetSettings() { return m_Settings; }
 		void ApplyAudioSettings();
+		void ApplyVisualSettings();
+		void RememberSettings(SettingsGroup group);
 		CharacterProfile LoadCharacter(const std::string& name, StarterKit kit, bool fresh) const;
 		void SaveCharacter(const CharacterProfile& profile) const;
 
@@ -85,7 +98,13 @@ namespace Game
 		void SaveAudioCapture() const;
 		void ProfileGpu();
 
+		void LoadPreferences();
+		void SavePreferences();
+
 		Settings m_Settings;
+		Settings m_Stored;
+		bool m_PreferencesDirty = false;
+		float m_PreferencesDelay = 0.0f;
 		std::unique_ptr<Rdn::Window> m_Window;
 		std::unique_ptr<Rdn::Device> m_Device;
 		std::unique_ptr<Rdn::PresentQueue> m_PresentQueue;
@@ -99,6 +118,7 @@ namespace Game
 		std::unique_ptr<Ui> m_Ui;
 		std::vector<UiPrimitive> m_UiPrimitives;
 		std::unique_ptr<WorldRenderer> m_WorldRenderer;
+		std::unique_ptr<MenuBackdrop> m_MenuBackdrop;
 		std::unique_ptr<AppState> m_State;
 		std::unique_ptr<AppState> m_NextState;
 		bool m_Running = true;

@@ -7,6 +7,14 @@ namespace Game
 {
 	class World;
 
+	enum class PushMode : uint8_t
+	{
+		Along,
+		Radial,
+		Cone,
+		Pull,
+	};
+
 	struct HitInfo
 	{
 		int32_t Damage = 0;
@@ -20,6 +28,12 @@ namespace Game
 		float Stun = 0.0f;
 		float PvpScale = 1.0f;
 		uint8_t Ability = uint8_t(AbilityId::Count);
+		float Push = 0.0f;
+		PushMode Mode = PushMode::Along;
+		Vec2 PushOrigin;
+		Vec2 PushDirection;
+		float PushReach = 0.0f;
+		bool Swap = false;
 	};
 
 	struct DamageEvent

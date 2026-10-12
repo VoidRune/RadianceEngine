@@ -18,7 +18,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 11;
+	constexpr uint32_t ProtocolVersion = 12;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -39,7 +39,7 @@ namespace Game
 		Count,
 	};
 
-	enum class EntityFlags : uint8_t
+	enum class EntityFlags : uint16_t
 	{
 		None = 0,
 		Dead = 1 << 0,
@@ -49,6 +49,9 @@ namespace Game
 		Pending = 1 << 4,
 		Chilled = 1 << 5,
 		Stunned = 1 << 6,
+		Warded = 1 << 7,
+		Burning = 1 << 8,
+		Flung = 1 << 9,
 	};
 
 	enum class ActionType : uint8_t
@@ -71,6 +74,9 @@ namespace Game
 		UseGateway,
 		StartMatch,
 		Spectate,
+		BrawlSpell,
+		BrawlBoon,
+		BrawlReady,
 		Count,
 	};
 
@@ -189,6 +195,8 @@ namespace Game
 		uint8_t Team = NoTeam;
 		uint8_t Placement = 0;
 		bool Host = false;
+		uint16_t Score = 0;
+		uint8_t Rounds = 0;
 	};
 
 	struct ServerPlayerList
@@ -208,9 +216,9 @@ namespace Game
 		uint8_t Variant = 0;
 		uint8_t Scale = 16;
 		uint8_t Health = 255;
-		uint8_t Flags = 0;
+		uint16_t Flags = 0;
 
-		bool Has(EntityFlags flag) const { return (Flags & uint8_t(flag)) != 0; }
+		bool Has(EntityFlags flag) const { return (Flags & uint16_t(flag)) != 0; }
 		float GetScale() const { return float(Scale) / 16.0f; }
 	};
 
@@ -230,6 +238,7 @@ namespace Game
 		MaterialStock Materials{};
 		uint32_t Watching = NoPlayer;
 		uint32_t KilledBy = NoPlayer;
+		BrawlLoadout Brawl;
 	};
 
 	struct ServerSnapshot

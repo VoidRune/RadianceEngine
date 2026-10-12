@@ -1,6 +1,7 @@
 #pragma once
 #include "UI/UiTypes.h"
 #include "UI/VectorAtlas.h"
+#include <GameShared/Content/Brawl.h>
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/Content/Items.h>
 #include <GameShared/Content/Upgrades.h>
@@ -152,6 +153,7 @@ namespace Game
 	UiIcon IconFor(ItemBase base);
 	UiIcon IconFor(AbilityId ability);
 	UiIcon IconFor(UpgradeId upgrade);
+	UiIcon IconFor(BoonId boon);
 	UiIcon IconFor(LootKind loot);
 	UiIcon IconFor(GearSlot slot);
 	UiIcon IconFor(StarterKit kit);

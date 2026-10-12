@@ -45,6 +45,26 @@ namespace Game
 		const GameStatus& status = m_Client.GetStatus();
 		const SessionInfo& session = m_Client.GetSession();
 		const uint32_t self = m_Client.GetPlayerId();
+		if (session.Mode == GameMode::Brawl)
+		{
+			if (status.Winner == NoPlayer)
+			{
+				title = "Draw";
+				text = "Nobody ended up on top";
+				return false;
+			}
+			const PlayerInfo* winner = m_Client.FindPlayer(status.Winner);
+			const std::string points = winner ? " with " + std::to_string(winner->Score) + " points" : std::string();
+			if (status.Winner == self)
+			{
+				title = "Victory";
+				text = "You rule the Caldera" + points;
+				return true;
+			}
+			title = "Defeat";
+			text = PlayerName(status.Winner) + " rules the Caldera" + points;
+			return false;
+		}
 		if (session.Mode == GameMode::Arena && session.Rules.Teams)
 		{
 			if (status.WinningTeam == NoTeam)
@@ -83,13 +103,14 @@ namespace Game
 		std::erase_if(m_Feed, [](const FeedEntry& entry) { return entry.Age >= FeedSeconds; });
 		GameAudio& audio = m_App.GetGameAudio();
 		const uint32_t self = m_Client.GetPlayerId();
+		const bool brawl = m_Client.GetSession().Mode == GameMode::Brawl;
 		for (const KillRecord& kill : m_Client.TakeKills())
 		{
 			m_Feed.push_back({ kill });
 			if (kill.Killer == self && kill.Victim != self)
 			{
 				audio.PlayEvent(AudioEvent::Kill);
-				m_Notices.push_back({ "You slew " + PlayerName(kill.Victim), Theme::GoldLight });
+				m_Notices.push_back({ (brawl ? "You knocked " + PlayerName(kill.Victim) + " into the lava" : "You slew " + PlayerName(kill.Victim)), Theme::AccentLight });
 			}
 		}
 		if (m_Feed.size() > FeedLines)
@@ -98,7 +119,9 @@ namespace Game
 		const GameStatus& status = m_Client.GetStatus();
 		if (!IsPvpMode(status.Mode))
 			return;
-		if (status.Match == MatchPhase::Countdown)
+		if (brawl)
+			UpdateBrawlFeedback();
+		if (status.Match == MatchPhase::Countdown && !brawl)
 		{
 			const int32_t second = int32_t(std::ceil(status.MatchTime));
 			if (second != m_SeenCountdown && second > 0 && second <= 3)
@@ -107,7 +130,7 @@ namespace Game
 		}
 		if (status.Match != m_SeenMatch)
 		{
-			if (status.Match == MatchPhase::Fight)
+			if (status.Match == MatchPhase::Fight && !brawl)
 			{
 				m_BannerTitle = "Fight!";
 				m_BannerText = status.Mode == GameMode::Royale ? "The ash storm is awake. Loot, hunt, survive" : "Kill your rivals, hold the shrines";
@@ -142,6 +165,11 @@ namespace Game
 
 	void SessionState::DrawMatchStatus()
 	{
+		if (m_Client.GetSession().Mode == GameMode::Brawl)
+		{
+			DrawBrawlStatus();
+			return;
+		}
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
 		const GameStatus& status = m_Client.GetStatus();
@@ -156,7 +184,7 @@ namespace Game
 		{
 		case MatchPhase::Countdown:
 			subtitle = std::string(royale ? "Grab what you can, the fight starts in " : "The fight starts in ") + std::to_string(int(std::ceil(status.MatchTime)));
-			subtitleColor = Theme::GoldLight;
+			subtitleColor = Theme::AccentLight;
 			break;
 		case MatchPhase::Fight:
 			if (royale)
@@ -177,6 +205,7 @@ namespace Game
 		const float titleWidth = draw.MeasureWidth(title, titleStyle);
 		draw.Shadow(UiRect::Centered({ center, 42.0f }, { titleWidth + 160.0f, 52.0f }), 26.0f, 30.0f, Rgba(0.0f, 0.0f, 0.0f, 0.55f), { 0.0f, 0.0f });
 		draw.TextAligned({ 0.0f, 16.0f, width, 34.0f }, title, titleStyle, { 0.5f, 0.5f });
+		DrawTitleOrnament(center, 32.0f, titleWidth);
 		draw.TextAligned({ 0.0f, 54.0f, width, 22.0f }, subtitle, Theme::Floating(16.0f, subtitleColor, UiFont::Body), { 0.5f, 0.5f });
 
 		float y = 84.0f;
@@ -188,7 +217,7 @@ namespace Game
 				const UiRect box{ center + (team == 0 ? -pill - 8.0f : 8.0f), y, pill, 32.0f };
 				const UiColor color = WithAlpha(TeamColor(team));
 				const bool mine = m_Client.GetTeam(m_Client.GetPlayerId()) == team;
-				draw.Rect(box, { .Fill = WithAlpha(Darken(color, 0.65f), 0.85f), .Radius = 8.0f, .Border = mine ? Lighten(color, 0.3f) : WithAlpha(color, 0.6f), .BorderWidth = mine ? 2.0f : 1.0f });
+				draw.Rect(box, { .Fill = WithAlpha(Darken(color, 0.65f), 0.85f), .Border = mine ? Lighten(color, 0.3f) : WithAlpha(color, 0.6f), .BorderWidth = mine ? 1.8f : 1.0f, .Chamfer = 8.0f});
 				draw.TextAligned(box.Shrink(12.0f, 0.0f), GetTeamName(team), Theme::Bold(15.0f, Lighten(color, 0.4f)), { team == 0 ? 0.0f : 1.0f, 0.5f });
 				draw.TextAligned(box.Shrink(12.0f, 0.0f), std::to_string(status.TeamScores[team]), Theme::Title(22.0f), { team == 0 ? 1.0f : 0.0f, 0.5f });
 			}
@@ -221,7 +250,7 @@ namespace Game
 			const TextStyle style = Theme::Floating(15.0f, color, UiFont::Bold);
 			const float lineWidth = draw.MeasureWidth(line, style) + 54.0f;
 			const UiRect pill = UiRect::Centered({ center, y + 13.0f }, { lineWidth, 28.0f });
-			draw.Rect(pill, { .Fill = Rgba(0.12f, 0.05f, 0.18f, 0.75f), .Radius = 14.0f, .Border = WithAlpha(color, 0.7f), .BorderWidth = 1.0f });
+			draw.Rect(pill, { .Fill = Rgba(0.1f, 0.04f, 0.18f, 0.78f), .Border = WithAlpha(color, 0.7f), .BorderWidth = 1.0f, .Chamfer = 8.0f });
 			draw.Icon(UiIcon::Waves, { pill.X + 10.0f, pill.Center().y - 9.0f, 18.0f, 18.0f }, { .Color = color });
 			draw.TextAligned({ pill.X + 34.0f, pill.Y, pill.W - 44.0f, pill.H }, line, style, { 0.0f, 0.5f });
 		}
@@ -247,14 +276,15 @@ namespace Game
 			const std::string killer = storm ? std::string() : PlayerName(kill.Killer);
 			const TextStyle killerStyle = Theme::Bold(14.5f, WithAlpha(Lighten(WithAlpha(ColorOf(kill.Killer)), 0.35f), alpha));
 			const TextStyle tailStyle = Theme::Body(14.0f, WithAlpha(Theme::Muted, alpha));
-			const char* tail = m_Client.GetSession().Mode == GameMode::Royale ? "fell to the storm" : "fell";
+			const GameMode feedMode = m_Client.GetSession().Mode;
+			const char* tail = feedMode == GameMode::Royale ? "fell to the storm" : feedMode == GameMode::Brawl ? "burned in the lava" : "fell";
 			const float icon = 20.0f;
 			const float killerWidth = storm ? 0.0f : draw.MeasureWidth(killer, killerStyle) + 8.0f;
 			const float victimWidth = draw.MeasureWidth(victim, victimStyle);
 			const float tailWidth = storm ? draw.MeasureWidth(tail, tailStyle) + 8.0f : 0.0f;
 			const float total = killerWidth + icon + 8.0f + victimWidth + tailWidth + 24.0f;
 			const UiRect pill = Strip(y, total, right);
-			draw.Rect(pill, { .Fill = Rgba(0.06f, 0.05f, 0.07f, 0.75f * alpha), .Radius = 13.0f, .Border = WithAlpha(involved ? Theme::Gold : Theme::GoldDark, (involved ? 0.9f : 0.5f) * alpha), .BorderWidth = involved ? 1.6f : 1.0f });
+			draw.Rect(pill, { .Fill = Rgba(0.05f, 0.04f, 0.1f, 0.78f * alpha), .Border = WithAlpha(involved ? Theme::Accent : Theme::Edge, (involved ? 0.9f : 0.5f) * alpha), .BorderWidth = involved ? 1.5f : 1.0f, .Chamfer = 7.0f });
 			float x = pill.X + 12.0f;
 			if (!storm)
 			{
@@ -311,7 +341,7 @@ namespace Game
 		const float scale = frame.W / extent;
 		const auto toMap = [&](Vec2 position) { return glm::vec2(frame.X + position.x * scale, frame.Bottom() - position.y * scale); };
 		draw.Shadow(frame, 8.0f, 12.0f, Rgba(0.0f, 0.0f, 0.0f, 0.45f), { 0.0f, 3.0f });
-		draw.Rect(frame, { .Fill = Rgba(0.07f, 0.12f, 0.18f, 0.88f), .Radius = 8.0f });
+		draw.Rect(frame, { .Fill = Rgba(0.05f, 0.07f, 0.14f, 0.9f), .Radius = 8.0f });
 		draw.PushClip(frame.Shrink(2.0f));
 		for (const glm::vec4& run : m_MinimapLand)
 		{
@@ -346,10 +376,10 @@ namespace Game
 				continue;
 			const glm::vec2 point = toMap(entity.Position);
 			const glm::vec2 forward(std::cos(entity.Facing), -std::sin(entity.Facing));
-			draw.Triangle(point + forward * 2.0f, { 9.0f, 11.0f }, std::atan2(forward.x, -forward.y), self ? Theme::GoldLight : WithAlpha(ColorOf(entity.Owner)), Rgba(0.0f, 0.0f, 0.0f, 0.9f), 1.2f);
+			draw.Triangle(point + forward * 2.0f, { 9.0f, 11.0f }, std::atan2(forward.x, -forward.y), self ? Theme::AccentLight : WithAlpha(ColorOf(entity.Owner)), Rgba(0.0f, 0.0f, 0.0f, 0.9f), 1.2f);
 		}
 		draw.PopClip();
-		draw.Rect(frame, { .Radius = 8.0f, .Border = WithAlpha(Theme::GoldDark, 0.9f), .BorderWidth = 1.5f });
+		draw.Rect(frame, { .Radius = 8.0f, .Border = WithAlpha(Theme::Edge, 0.9f), .BorderWidth = 1.5f, .Seed = 0.29f });
 		if (const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId()))
 			if (const Region* region = level->FindRegion(self->Position))
 				draw.TextAligned({ frame.X, frame.Bottom() + 2.0f, frame.W, 18.0f }, region->Name, Theme::Floating(13.0f, Theme::Muted, UiFont::Body), { 0.5f, 0.0f });
@@ -418,9 +448,12 @@ namespace Game
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
 		const bool royale = status.Mode == GameMode::Royale;
+		const bool brawl = status.Mode == GameMode::Brawl;
 		std::vector<PlayerInfo> players = m_Client.GetPlayers();
 		if (royale)
 			std::stable_sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return (a.Placement == 0) != (b.Placement == 0) ? b.Placement == 0 : a.Placement != b.Placement ? a.Placement < b.Placement : a.Kills > b.Kills; });
+		else if (brawl)
+			std::stable_sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.Score != b.Score ? a.Score > b.Score : a.Rounds != b.Rounds ? a.Rounds > b.Rounds : a.Kills > b.Kills; });
 		else
 			std::stable_sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.Kills != b.Kills ? a.Kills > b.Kills : a.Deaths < b.Deaths; });
 		constexpr float RowHeight = 30.0f;
@@ -444,8 +477,8 @@ namespace Game
 		const TextStyle headStyle = Theme::Label(13.5f);
 		draw.TextAligned({ header.X, header.Y, 60.0f, header.H }, royale ? "Place" : "#", headStyle, { 0.0f, 0.5f });
 		draw.TextAligned({ header.X + 60.0f, header.Y, 200.0f, header.H }, "Player", headStyle, { 0.0f, 0.5f });
-		draw.TextAligned({ header.Right() - 160.0f, header.Y, 70.0f, header.H }, "Kills", headStyle, { 0.5f, 0.5f });
-		draw.TextAligned({ header.Right() - 80.0f, header.Y, 80.0f, header.H }, "Deaths", headStyle, { 0.5f, 0.5f });
+		draw.TextAligned({ header.Right() - 160.0f, header.Y, 70.0f, header.H }, brawl ? "Points" : "Kills", headStyle, { 0.5f, 0.5f });
+		draw.TextAligned({ header.Right() - 80.0f, header.Y, 80.0f, header.H }, brawl ? "Rounds" : "Deaths", headStyle, { 0.5f, 0.5f });
 		ui.Separator(table.CutTop(6.0f));
 		for (size_t i = 0; i < players.size(); i++)
 		{
@@ -453,17 +486,17 @@ namespace Game
 			const UiRect row = table.CutTop(RowHeight);
 			const bool you = player.PlayerId == m_Client.GetPlayerId();
 			if (you)
-				draw.Rect(row, { .Fill = Rgba(1.0f, 0.85f, 0.5f, 0.07f), .Radius = 6.0f, .Border = WithAlpha(Theme::GoldDark, 0.6f), .BorderWidth = 1.0f });
+				draw.Rect(row, { .Fill = Rgba(0.75f, 0.65f, 1.0f, 0.07f), .Border = WithAlpha(Theme::Edge, 0.6f), .BorderWidth = 1.0f, .Chamfer = 6.0f });
 			const std::string place = royale ? (player.Placement > 0 ? Ordinal(player.Placement) : "-") : std::to_string(i + 1);
 			const bool first = royale ? player.Placement == 1 : i == 0;
-			draw.TextAligned({ row.X + 8.0f, row.Y, 52.0f, row.H }, place, Theme::Bold(15.0f, first ? Theme::GoldLight : Theme::Text), { 0.0f, 0.5f });
+			draw.TextAligned({ row.X + 8.0f, row.Y, 52.0f, row.H }, place, Theme::Bold(15.0f, first ? Theme::AccentLight : Theme::Text), { 0.0f, 0.5f });
 			if (first)
-				draw.Icon(UiIcon::Crown, { row.X + 40.0f, row.Center().y - 8.0f, 16.0f, 16.0f }, { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold });
+				draw.Icon(UiIcon::Crown, { row.X + 40.0f, row.Center().y - 8.0f, 16.0f, 16.0f }, { .Color = Theme::AccentLight, .ColorBottom = Theme::Accent });
 			const UiColor color = WithAlpha(ColorOf(player.PlayerId));
 			draw.Circle({ row.X + 68.0f, row.Center().y }, 5.0f, color, Rgba(0.0f, 0.0f, 0.0f, 0.6f), 1.0f);
 			draw.TextFit({ row.X + 80.0f, row.Y, 220.0f, row.H }, player.Name + (you ? "  (you)" : ""), Theme::Bold(15.0f, Lighten(color, 0.45f)));
-			draw.TextAligned({ row.Right() - 160.0f, row.Y, 70.0f, row.H }, std::to_string(player.Kills), Theme::Body(15.0f, Theme::Text), { 0.5f, 0.5f });
-			draw.TextAligned({ row.Right() - 80.0f, row.Y, 80.0f, row.H }, std::to_string(player.Deaths), Theme::Body(15.0f, Theme::Muted), { 0.5f, 0.5f });
+			draw.TextAligned({ row.Right() - 160.0f, row.Y, 70.0f, row.H }, std::to_string(brawl ? uint32_t(player.Score) : player.Kills), Theme::Body(15.0f, Theme::Text), { 0.5f, 0.5f });
+			draw.TextAligned({ row.Right() - 80.0f, row.Y, 80.0f, row.H }, std::to_string(brawl ? uint32_t(player.Rounds) : player.Deaths), Theme::Body(15.0f, Theme::Muted), { 0.5f, 0.5f });
 		}
 		draw.TextAligned({ panel.X, panel.Bottom() - 32.0f, panel.W, 22.0f }, "Returning to Emberhold in " + std::to_string(int(std::ceil(status.MatchTime))), Theme::Body(14.0f, Theme::Faint), { 0.5f, 0.5f });
 	}

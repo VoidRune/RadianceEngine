@@ -1,5 +1,6 @@
 #include "GameApp.h"
 #include "Audio/GameAudio.h"
+#include "Rendering/MenuBackdrop.h"
 #include "Rendering/ModelSources.h"
 #include "Rendering/WorldRenderer.h"
 #include "States/LightingTestState.h"
@@ -14,6 +15,7 @@
 #include <RadianceEngine/Core/Log.h>
 #include <RadianceEngine/Core/Timer.h>
 #include <algorithm>
+#include <charconv>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -31,10 +33,122 @@ namespace Game
 	namespace
 	{
 		constexpr uint32_t AudioCaptureRate = 48000;
+		constexpr const char* PreferencesPath = "Settings.ini";
+
+		template<typename T>
+		bool ParseNumber(std::string_view text, T& value)
+		{
+			const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+			return error == std::errc() && end == text.data() + text.size();
+		}
+
+		template<typename T, size_t N>
+		bool ParseName(std::string_view text, const char* const (&names)[N], T& value)
+		{
+			for (size_t i = 0; i < N; i++)
+				if (text == names[i])
+				{
+					value = T(i);
+					return true;
+				}
+			return false;
+		}
+
+		void ReadVolume(std::string_view text, float& value)
+		{
+			float parsed = 0.0f;
+			if (ParseNumber(text, parsed))
+				value = std::clamp(parsed, 0.0f, 1.0f);
+		}
+	}
+
+	void GameApp::LoadPreferences()
+	{
+		std::ifstream file(PreferencesPath);
+		std::string line;
+		while (std::getline(file, line))
+		{
+			const size_t equals = line.find('=');
+			if (equals == std::string::npos)
+				continue;
+			const std::string_view key = std::string_view(line).substr(0, equals);
+			const std::string_view value = std::string_view(line).substr(equals + 1);
+			if (key == "PlayerName" && !value.empty())
+				m_Settings.PlayerName = value;
+			else if (key == "JoinAddress")
+				m_Settings.JoinAddress = value;
+			else if (uint16_t port = 0; key == "Port" && ParseNumber(value, port) && port >= 1024)
+				m_Settings.Port = port;
+			else if (key == "Kit")
+			{
+				for (const KitDef& kit : Kits)
+					if (value == kit.Name)
+						m_Settings.Kit = kit.Id;
+			}
+			else if (key == "Volume")
+				ReadVolume(value, m_Settings.Volume);
+			else if (key == "MusicVolume")
+				ReadVolume(value, m_Settings.MusicVolume);
+			else if (key == "EffectsVolume")
+				ReadVolume(value, m_Settings.EffectsVolume);
+			else if (key == "Muted")
+				m_Settings.Muted = value == "1";
+			else if (key == "Shadows")
+				ParseName(value, ShadowQualityNames, m_Settings.Shadows);
+			else if (key == "Gi")
+				ParseName(value, GiQualityNames, m_Settings.Gi);
+			else if (key == "Fullscreen")
+				m_Settings.Fullscreen = value == "1";
+			else if (key == "ShowControls")
+				m_Settings.ShowControls = value == "1";
+		}
+	}
+
+	void GameApp::RememberSettings(SettingsGroup group)
+	{
+		switch (group)
+		{
+		case SettingsGroup::Audio:
+			m_Stored.Volume = m_Settings.Volume;
+			m_Stored.MusicVolume = m_Settings.MusicVolume;
+			m_Stored.EffectsVolume = m_Settings.EffectsVolume;
+			m_Stored.Muted = m_Settings.Muted;
+			break;
+		case SettingsGroup::Visuals:
+			m_Stored.Shadows = m_Settings.Shadows;
+			m_Stored.Gi = m_Settings.Gi;
+			m_Stored.Fullscreen = m_Settings.Fullscreen;
+			m_Stored.ShowControls = m_Settings.ShowControls;
+			break;
+		case SettingsGroup::Identity:
+			m_Stored.PlayerName = m_Settings.PlayerName;
+			m_Stored.JoinAddress = m_Settings.JoinAddress;
+			m_Stored.Port = m_Settings.Port;
+			m_Stored.Kit = m_Settings.Kit;
+			break;
+		}
+		m_PreferencesDelay = 0.5f;
+		m_PreferencesDirty = m_Settings.SaveProfiles;
+	}
+
+	void GameApp::SavePreferences()
+	{
+		m_PreferencesDirty = false;
+		std::ofstream file(PreferencesPath);
+		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nKit=" << GetKit(m_Stored.Kit).Name
+			<< "\nVolume=" << m_Stored.Volume << "\nMusicVolume=" << m_Stored.MusicVolume << "\nEffectsVolume=" << m_Stored.EffectsVolume << "\nMuted=" << (m_Stored.Muted ? 1 : 0)
+			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0)
+			<< "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\n";
+		if (!file)
+			RDN_LOG_ERROR("Can't save the settings to {}", PreferencesPath);
 	}
 
 	GameApp::GameApp(const LaunchOptions& options)
 	{
+		m_Settings.SaveProfiles = options.SaveProfile;
+		if (m_Settings.SaveProfiles)
+			LoadPreferences();
+		m_Stored = m_Settings;
 		if (!options.Name.empty())
 			m_Settings.PlayerName = options.Name;
 		m_Settings.Simulation = options.Simulation;
@@ -44,7 +158,6 @@ namespace Game
 			m_Settings.Port = *options.HostPort;
 		if (options.Kit)
 			m_Settings.Kit = *options.Kit;
-		m_Settings.SaveProfiles = options.SaveProfile;
 		if (options.Map)
 			m_Settings.Map = *options.Map;
 		if (options.Volume)
@@ -53,7 +166,8 @@ namespace Game
 			m_Settings.MusicVolume = *options.MusicVolume;
 		if (options.EffectsVolume)
 			m_Settings.EffectsVolume = *options.EffectsVolume;
-		m_Settings.Muted = options.Muted;
+		if (options.Muted)
+			m_Settings.Muted = true;
 		m_Settings.FirstWave = options.FirstWave;
 		m_Settings.Peaceful = options.Peaceful;
 		m_Settings.LootRate = options.LootRate;
@@ -91,6 +205,7 @@ namespace Game
 		windowDesc.Title = "RadianceEngine Game";
 		windowDesc.Width = 1600;
 		windowDesc.Height = 900;
+		windowDesc.Fullscreen = m_Settings.Fullscreen;
 		m_Window = std::make_unique<Rdn::Window>(windowDesc);
 
 		Rdn::DeviceConfig deviceConfig;
@@ -146,6 +261,7 @@ namespace Game
 			RDN_LOG_FATAL("Can't load the models: {}", modelError);
 			std::exit(1);
 		}
+		m_MenuBackdrop = std::make_unique<MenuBackdrop>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
 		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
 		if (options.Shadows)
 			m_Settings.Shadows = ShadowQuality(*options.Shadows);
@@ -211,9 +327,12 @@ namespace Game
 
 	GameApp::~GameApp()
 	{
+		if (m_PreferencesDirty)
+			SavePreferences();
 		m_NextState.reset();
 		m_State.reset();
 		m_Device->WaitIdle();
+		m_MenuBackdrop.reset();
 		m_WorldRenderer.reset();
 		m_Ui.reset();
 		m_UiAssets.reset();
@@ -230,6 +349,13 @@ namespace Game
 	{
 		m_Audio->GetMasterBus().SetVolume(m_Settings.Muted ? 0.0f : m_Settings.Volume);
 		m_GameAudio->SetMix(m_Settings.MusicVolume, m_Settings.EffectsVolume);
+	}
+
+	void GameApp::ApplyVisualSettings()
+	{
+		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);
+		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
+		m_Window->SetFullscreen(m_Settings.Fullscreen);
 	}
 
 	void GameApp::ChangeState(std::unique_ptr<AppState> state)
@@ -349,6 +475,10 @@ namespace Game
 		m_DebugUi->EndFrame();
 		if (m_Ui->TakeClicks() > 0)
 			m_GameAudio->PlayUi(Cue::UiClick);
+		if (const int hover = m_Ui->TakeHover(); hover >= 0)
+			m_GameAudio->PlayHover(hover);
+		if (m_PreferencesDirty && (m_PreferencesDelay -= dt) <= 0.0f)
+			SavePreferences();
 		m_GameAudio->Update(dt);
 		m_Audio->Update();
 		if (!m_AudioCapturePath.empty())
@@ -359,6 +489,7 @@ namespace Game
 
 	void GameApp::RenderFrame()
 	{
+		m_PresentQueue->SetPresentMode(m_State->WantsVsync() ? Rdn::PresentMode::Fifo : Rdn::PresentMode::Mailbox);
 		if (m_PresentQueue->NeedsRecreate() && !m_PresentQueue->Recreate())
 			return;
 		std::optional<Rdn::FrameContext> frame = m_PresentQueue->BeginFrame();

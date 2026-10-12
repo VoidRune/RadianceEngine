@@ -1,4 +1,5 @@
 #include "Combat.h"
+#include "GameShared/Content/Brawl.h"
 #include "GameShared/Content/Items.h"
 #include "GameShared/Content/Pvp.h"
 #include "GameShared/Simulation/World.h"
@@ -104,12 +105,22 @@ namespace Game
 
 		HitInfo MakeHit(int32_t damage, const AbilityDef& ability, const AbilityContext& context)
 		{
-			return { damage, context.Owner, context.Source, context.CritChance, context.CritMultiplier, context.LifeSteal, ability.Damages, ability.Chill, ability.Stun, context.PvpScale, uint8_t(ability.Id) };
+			HitInfo hit{ damage, context.Owner, context.Source, context.CritChance, context.CritMultiplier, context.LifeSteal, ability.Damages, ability.Chill, ability.Stun, context.PvpScale, uint8_t(ability.Id) };
+			hit.Push = ability.Push;
+			hit.PushOrigin = context.Origin;
+			hit.PushDirection = context.Direction;
+			hit.PushReach = ability.Reach * context.AreaScale;
+			hit.Mode = ability.Kind == AbilityKind::Nova ? PushMode::Radial : ability.Shape == StrikeShape::Line ? PushMode::Along : PushMode::Cone;
+			return hit;
 		}
 
 		HitInfo MakeHit(const Projectile& projectile, uint32_t owner)
 		{
-			return { projectile.Damage, owner, projectile.Source, projectile.CritChance, projectile.CritMultiplier, projectile.LifeSteal, projectile.Damages, projectile.Chill, projectile.Stun, projectile.PvpScale, projectile.Ability };
+			HitInfo hit{ projectile.Damage, owner, projectile.Source, projectile.CritChance, projectile.CritMultiplier, projectile.LifeSteal, projectile.Damages, projectile.Chill, projectile.Stun, projectile.PvpScale, projectile.Ability };
+			hit.Push = projectile.Push;
+			hit.PushDirection = projectile.Velocity;
+			hit.Swap = projectile.Swap;
+			return hit;
 		}
 
 		Vec2 Scatter(Random& random, Vec2 position)
@@ -119,9 +130,128 @@ namespace Game
 
 		void Explode(World& world, const Projectile& projectile, Vec2 position, uint32_t owner, uint16_t tag)
 		{
-			StrikeCircle(world, position, projectile.ImpactRadius, MakeHit(projectile, owner), projectile.Side, projectile.Rewind);
+			HitInfo hit = MakeHit(projectile, owner);
+			hit.Mode = PushMode::Radial;
+			hit.PushOrigin = position;
+			hit.PushReach = projectile.ImpactRadius;
+			StrikeCircle(world, position, projectile.ImpactRadius, hit, projectile.Side, projectile.Rewind);
 			const AbilityDef& ability = GetAbility(AbilityId(projectile.Ability));
 			world.SpawnEffect(ability.Id, position, 0.0f, owner, tag, ability.ImpactRadius > 0.0f ? projectile.ImpactRadius / ability.ImpactRadius : 1.0f);
+		}
+
+		void ResetHistory(World& world, Entity entity, Vec2 position)
+		{
+			if (MotionHistory* history = world.GetEntities().TryGet<MotionHistory>(entity))
+			{
+				history->Positions.fill(position);
+				history->FirstTick = world.GetTick() + 1;
+			}
+		}
+
+		bool SwapPlaces(World& world, Entity caster, Entity target)
+		{
+			EntityRegistry& entities = world.GetEntities();
+			Transform* from = entities.TryGet<Transform>(caster);
+			Transform* to = entities.TryGet<Transform>(target);
+			PlayerController* casterController = entities.TryGet<PlayerController>(caster);
+			PlayerController* targetController = entities.TryGet<PlayerController>(target);
+			if (caster == target || !from || !to || !casterController || !targetController || !casterController->State.Alive)
+				return false;
+			std::swap(from->Position, to->Position);
+			for (PlayerController* controller : { casterController, targetController })
+			{
+				controller->State.Push = {};
+				controller->State.DashDistance = 0.0f;
+			}
+			ResetHistory(world, caster, from->Position);
+			ResetHistory(world, target, to->Position);
+			world.SpawnEffect(AbilityId::Swap, from->Position, from->Facing, casterController->PlayerId, 0, 1.0f);
+			world.SpawnEffect(AbilityId::Swap, to->Position, to->Facing, casterController->PlayerId, 0, 1.0f);
+			return true;
+		}
+
+		bool ApplyKnockback(World& world, Entity target, const HitInfo& hit)
+		{
+			EntityRegistry& entities = world.GetEntities();
+			PlayerController* controller = entities.TryGet<PlayerController>(target);
+			const Transform* transform = entities.TryGet<Transform>(target);
+			const Health* health = entities.TryGet<Health>(target);
+			if (!controller || !transform || !health || !controller->State.Alive || controller->State.Invulnerable > 0.0f)
+				return false;
+			if (hit.Attacker != NoPlayer && hit.Attacker != controller->PlayerId)
+			{
+				controller->LastAttacker = hit.Attacker;
+				controller->LastAttackAge = 0.0f;
+				controller->LastAbility = hit.Ability;
+			}
+			if (const Replicated* replicated = entities.TryGet<Replicated>(target))
+				world.RecordHit({ replicated->NetId, transform->Position, 0, false, true, hit.Damages });
+			if (hit.Swap)
+			{
+				SwapPlaces(world, hit.Source, target);
+				return true;
+			}
+			if (hit.Push == 0.0f || controller->State.Ward > 0.0f)
+				return true;
+			const Vec2 offset = transform->Position - hit.PushOrigin;
+			const float distance = Length(offset);
+			const Vec2 radial = distance > 1e-4f ? offset / distance : Normalize(hit.PushDirection);
+			const float fraction = float(std::max(health->Current, 0)) / float(std::max(health->Max, 1));
+			Vec2 impulse;
+			switch (hit.Mode)
+			{
+			case PushMode::Pull:
+				impulse = radial * -(distance * PushFriction * 0.95f);
+				break;
+			case PushMode::Radial:
+				impulse = radial * (hit.Push * (hit.PushReach > 0.0f ? 1.0f - 0.4f * std::clamp(distance / hit.PushReach, 0.0f, 1.0f) : 1.0f));
+				break;
+			case PushMode::Cone:
+				impulse = Normalize(Normalize(hit.PushDirection) * 0.65f + radial * 0.35f) * hit.Push;
+				break;
+			default:
+				impulse = Normalize(hit.PushDirection) * hit.Push;
+				break;
+			}
+			impulse *= world.GetMatch().GetKnockbackScale(hit.Attacker, controller->PlayerId, hit.Mode == PushMode::Pull ? 1.0f : fraction);
+			PlayerState& state = controller->State;
+			state.Push = ClampLength(state.Push + impulse, MaxPush);
+			if (Length(impulse) >= PushStagger)
+			{
+				state.CastSlot = -1;
+				state.CastTimer = 0.0f;
+			}
+			return true;
+		}
+
+		bool Reflect(World& world, Entity entity, Projectile& projectile, Transform& transform, Entity target, Vec2 point)
+		{
+			EntityRegistry& entities = world.GetEntities();
+			const PlayerController* controller = entities.TryGet<PlayerController>(target);
+			if (!controller || !controller->State.Alive || controller->State.Ward <= 0.0f)
+				return false;
+			const float speed = Length(projectile.Velocity);
+			Vec2 heading = Normalize(projectile.Velocity) * -1.0f;
+			if (const Transform* caster = entities.TryGet<Transform>(projectile.Source); caster && entities.Has<PlayerController>(projectile.Source) && projectile.Source != target)
+				if (const Vec2 toward = caster->Position - point; LengthSquared(toward) > 0.25f)
+					heading = Normalize(toward);
+			projectile.Velocity = heading * speed;
+			projectile.Lifetime = GetProjectileLifetime(GetAbility(AbilityId(projectile.Ability)), speed);
+			projectile.Source = target;
+			projectile.Rewind = 0.0f;
+			projectile.Hits = {};
+			projectile.Hits[0] = target;
+			projectile.HitCount = 1;
+			transform.Position = point;
+			transform.Facing = AngleOf(heading);
+			if (Replicated* replicated = entities.TryGet<Replicated>(entity))
+			{
+				replicated->Owner = controller->PlayerId;
+				replicated->Tag = 0;
+			}
+			if (const Replicated* warded = entities.TryGet<Replicated>(target))
+				world.RecordHit({ warded->NetId, point, 0, false, true, projectile.Damages });
+			return true;
 		}
 
 		bool Chain(World& world, const std::vector<Target>& targets, const Projectile& projectile, Entity hit, Vec2 from, uint32_t owner)
@@ -211,7 +341,12 @@ namespace Game
 		const bool critical = hit.CritChance > 0.0f && world.GetRandom().Float() < hit.CritChance;
 		const float crit = critical ? (pvp ? 1.0f + (hit.CritMultiplier - 1.0f) * PvpCritScale : hit.CritMultiplier) : 1.0f;
 		const int32_t damage = hit.Damage > 0 ? std::max(1, ScaleDamage(hit.Damage, crit * (pvp ? hit.PvpScale : 1.0f))) : 0;
-		if (!ApplyDamage(world, target, { .Amount = damage, .Attacker = hit.Attacker, .Damages = hit.Damages, .Ability = hit.Ability, .Critical = critical, .Pvp = pvp }))
+		if (damage <= 0)
+		{
+			if (!ApplyKnockback(world, target, hit))
+				return false;
+		}
+		else if (!ApplyDamage(world, target, { .Amount = damage, .Attacker = hit.Attacker, .Damages = hit.Damages, .Ability = hit.Ability, .Critical = critical, .Pvp = pvp }))
 			return false;
 		if (Enemy* enemy = entities.TryGet<Enemy>(target))
 		{
@@ -383,9 +518,15 @@ namespace Game
 
 			const HitInfo hit = MakeHit(projectile, owner);
 			bool spent = false;
+			bool reflected = false;
 			for (const Contact& contact : contacts)
 			{
 				const Vec2 point = Lerp(start, reached, contact.Parameter);
+				if (Reflect(world, entity, projectile, *transform, contact.Handle, point))
+				{
+					reflected = true;
+					break;
+				}
 				if (projectile.ImpactRadius > 0.0f)
 				{
 					Explode(world, projectile, point, owner, tag);
@@ -410,6 +551,8 @@ namespace Game
 				}
 				projectile.Pierce--;
 			}
+			if (reflected)
+				return;
 			if (!spent && projectile.ImpactRadius > 0.0f && (!clear || projectile.Lifetime <= 0.0f))
 				Explode(world, projectile, reached, owner, tag);
 			if (spent || !clear || projectile.Lifetime <= 0.0f)
@@ -430,7 +573,12 @@ namespace Game
 				const Vec2 center = transform->Position;
 				const float facing = transform->Facing;
 				const PendingStrike landed = strike;
-				const HitInfo hit{ landed.Damage, landed.Owner, landed.Source, landed.CritChance, landed.CritMultiplier, landed.LifeSteal, landed.Damages, landed.Chill, landed.Stun, landed.PvpScale, landed.Ability };
+				HitInfo hit{ landed.Damage, landed.Owner, landed.Source, landed.CritChance, landed.CritMultiplier, landed.LifeSteal, landed.Damages, landed.Chill, landed.Stun, landed.PvpScale, landed.Ability };
+				hit.Push = landed.Push;
+				hit.Mode = landed.Push < 0.0f ? PushMode::Pull : PushMode::Radial;
+				hit.PushOrigin = center;
+				hit.PushDirection = FromAngle(facing);
+				hit.PushReach = landed.Radius;
 				for (const Target& target : CollectTargets(entities))
 				{
 					Vec2 from;

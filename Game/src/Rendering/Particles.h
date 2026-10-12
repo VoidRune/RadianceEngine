@@ -50,6 +50,7 @@ namespace Game
 		Scorch,
 		Frost,
 		Cracks,
+		Fracture,
 	};
 
 	enum class ParticleAlign : uint8_t
@@ -149,6 +150,7 @@ namespace Game
 		void DrawSprite(const ParticleSprite& sprite);
 		void DrawDecal(const GroundDecal& decal);
 		void Advance(float dt);
+		float GetTime() const { return m_Time; }
 		void Clear();
 		void Upload(Rdn::Extent2D extent, uint32_t frameIndex, const WorldCamera& camera);
 		void RenderDecals(Rdn::RenderGraph& graph, const GBuffer& gbuffer, uint32_t frameIndex);

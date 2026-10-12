@@ -316,9 +316,19 @@ namespace Game
 		case AbilityId::IceSpear:
 		case AbilityId::ChainLightning:
 		case AbilityId::Blink:
+		case AbilityId::EmberBolt:
+		case AbilityId::ArcLightning:
+		case AbilityId::Frostbite:
+		case AbilityId::Swap:
+		case AbilityId::Warp:
+		case AbilityId::Gust:
 			return { Anim::MagicShoot };
 		case AbilityId::Meteor:
+		case AbilityId::Comet:
+		case AbilityId::GravityWell:
 			return { Anim::MagicRaise, Anim::MagicShoot };
+		case AbilityId::Shockwave:
+		case AbilityId::MirrorWard:
 		case AbilityId::FrostNova:
 			return { Anim::MagicCast };
 		case AbilityId::Rejuvenate:

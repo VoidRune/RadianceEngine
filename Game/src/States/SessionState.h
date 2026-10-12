@@ -108,6 +108,7 @@ namespace Game
 		glm::vec3 Ground(Vec2 position, float lift = 0.0f) const { return { position.x, GroundHeight(position) + lift, position.y }; }
 		void UpdateCamera(float dt);
 		void UpdatePortals(float dt);
+		void UpdateArena(float dt);
 		void UpdateEffects(float dt);
 		void UpdateFeedback(float dt);
 		float FlashOf(uint32_t netId) const;
@@ -149,6 +150,7 @@ namespace Game
 		void DrawMissionStatus();
 		void DrawBossBar(float top);
 		void DrawBanner();
+		void DrawTitleOrnament(float center, float y, float titleWidth);
 		void DrawMaterials(const UiRect& area, bool compact);
 		void DrawInteractionLabels();
 		void DrawStationWindow();
@@ -163,6 +165,11 @@ namespace Game
 		void DrawMinimap();
 		void DrawStorm(WorldRenderer& renderer) const;
 		void UpdateMatchFeedback(float dt);
+		void UpdateBrawlFeedback();
+		void DrawBrawlStatus();
+		void DrawBrawlLoadout();
+		void DrawBrawlPlayer(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
+		void DrawLavaWarning();
 		bool DescribeOutcome(std::string& title, std::string& text) const;
 		std::string PlayerName(uint32_t playerId) const;
 		glm::vec3 ColorOf(uint32_t playerId) const;
@@ -180,6 +187,8 @@ namespace Game
 		std::string m_Error;
 		bool m_Leaving = false;
 		bool m_Paused = false;
+		bool m_PauseSettings = false;
+		float m_PauseTime = 0.0f;
 		bool m_ShowNetStats = false;
 		bool m_ShowInventory = false;
 		float m_Aim = 0.0f;
@@ -229,6 +238,20 @@ namespace Game
 		ModifierMask m_BoardModifiers = 0;
 		MatchRules m_ArenaRules;
 		MapKind m_RoyaleMap = MapKind::Ashlands;
+		MatchRules m_BrawlRules;
+		CollapsePlan m_SeenPlan;
+		bool m_HasPlan = false;
+		float m_SeenClock = -1e5f;
+		float m_RestoreAge = 1e9f;
+		std::vector<uint8_t> m_Risen;
+		std::vector<uint8_t> m_Fallen;
+		float m_CrumbleCooldown = 0.0f;
+		BrawlPhase m_SeenBrawlPhase = BrawlPhase::Draft;
+		uint8_t m_SeenRound = 0;
+		uint8_t m_FoughtRound = 0;
+		bool m_LoadoutOpen = true;
+		std::optional<uint32_t> m_PickingSlot;
+		std::optional<uint32_t> m_ChosenBoon;
 		struct FeedEntry
 		{
 			KillRecord Kill;

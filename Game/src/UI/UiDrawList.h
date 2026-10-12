@@ -20,6 +20,12 @@ namespace Game
 		float Sweep = 0.0f;
 		float Rotation = 0.0f;
 		bool Horizontal = false;
+		float Chamfer = 0.0f;
+		float Flow = 0.0f;
+		float Aether = 0.0f;
+		float Seed = 0.0f;
+		float Additive = 0.0f;
+		float Stars = 0.0f;
 	};
 
 	struct TextStyle
@@ -35,6 +41,9 @@ namespace Game
 		UiColor ShadowColor{ 0.0f };
 		float ShadowBlur = 1.0f;
 		float Tracking = 0.0f;
+		UiColor GlowColor{ 0.0f };
+		float GlowBlur = 6.0f;
+		float Shimmer = 0.0f;
 	};
 
 	struct IconStyle
@@ -47,6 +56,33 @@ namespace Game
 		glm::vec2 ShadowOffset{ 0.0f, 1.5f };
 		UiColor ShadowColor{ 0.0f };
 		float ShadowBlur = 2.0f;
+		UiColor GlowColor{ 0.0f };
+		float GlowBlur = 5.0f;
+	};
+
+	enum SigilLayer : uint32_t
+	{
+		SigilRings = 1,
+		SigilRunes = 2,
+		SigilStar = 4,
+		SigilCore = 8,
+		SigilAll = 15,
+	};
+
+	struct SigilStyle
+	{
+		UiColor Color{ 1.0f };
+		UiColor Accent{ -1.0f };
+		UiColor Fill{ 0.0f };
+		float Speed = 1.0f;
+		float Phase = 0.0f;
+		float LineWidth = 1.2f;
+		float Glow = 0.6f;
+		uint32_t Layers = SigilAll;
+		uint32_t Points = 7;
+		uint32_t Skip = 2;
+		float Progress = 1.0f;
+		float Additive = 1.0f;
 	};
 
 	struct TextLine
@@ -72,6 +108,8 @@ namespace Game
 		void Line(glm::vec2 from, glm::vec2 to, float width, UiColor color);
 		void Triangle(glm::vec2 center, glm::vec2 size, float rotation, UiColor color, UiColor border = UiColor(0.0f), float borderWidth = 0.0f);
 		void Orb(glm::vec2 center, float radius, float fill, UiColor light, UiColor deep, UiColor glass, UiColor highlight, float phase, float wave = 0.035f);
+		void Sigil(glm::vec2 center, float radius, const SigilStyle& style);
+		void Diamond(glm::vec2 center, float size, UiColor fill, UiColor border = UiColor(0.0f), float borderWidth = 0.0f);
 		void Icon(UiIcon icon, const UiRect& rect, const IconStyle& style);
 		void Image(UiImage image, const UiRect& rect, UiColor tint = UiColor(1.0f), float saturation = 1.0f, float radius = 0.0f);
 
@@ -91,7 +129,7 @@ namespace Game
 
 	private:
 		UiPrimitive& Add(UiMode mode, glm::vec2 center, glm::vec2 halfSize);
-		void Glyphs(glm::vec2 pen, std::string_view text, const TextStyle& style, UiColor top, UiColor bottom, glm::vec2 offset, float outline, float softness);
+		void Glyphs(glm::vec2 pen, std::string_view text, const TextStyle& style, UiColor top, UiColor bottom, glm::vec2 offset, float outline, float softness, bool additive = false);
 		float Snap(float value) const;
 
 		const UiAssets* m_Assets = nullptr;

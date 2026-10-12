@@ -358,14 +358,19 @@ namespace Game
 		switch (ability)
 		{
 		case AbilityId::Fireball:
+		case AbilityId::EmberBolt:
 			return Fx::FireTrail;
 		case AbilityId::Orb:
 			return Fx::FrostTrail;
 		case AbilityId::Bolt:
 		case AbilityId::ChainLightning:
+		case AbilityId::ArcLightning:
 			return Fx::BoltTrail;
 		case AbilityId::IceSpear:
+		case AbilityId::Frostbite:
 			return Fx::IceTrail;
+		case AbilityId::Swap:
+			return Fx::ArcaneTrail;
 		case AbilityId::Arrow:
 		case AbilityId::Volley:
 		case AbilityId::Quarrel:
@@ -389,11 +394,17 @@ namespace Game
 		{
 		case AbilityId::Bolt:
 		case AbilityId::ChainLightning:
+		case AbilityId::ArcLightning:
 			return Fx::LightningBurst;
 		case AbilityId::Orb:
 		case AbilityId::IceSpear:
 		case AbilityId::ShardBurst:
+		case AbilityId::Frostbite:
 			return Fx::FrostBurst;
+		case AbilityId::EmberBolt:
+			return Fx::FireBurst;
+		case AbilityId::Swap:
+			return Fx::ArcaneBurst;
 		case AbilityId::Arrow:
 		case AbilityId::Volley:
 		case AbilityId::Quarrel:
@@ -416,9 +427,20 @@ namespace Game
 		case AbilityId::Fireball:
 			return Fx::Explosion;
 		case AbilityId::Meteor:
+		case AbilityId::Comet:
 			return Fx::MeteorImpact;
 		case AbilityId::FrostNova:
 			return Fx::FrostNova;
+		case AbilityId::Gust:
+			return Fx::Cyclone;
+		case AbilityId::Shockwave:
+			return Fx::LightningBurst;
+		case AbilityId::GravityWell:
+		case AbilityId::MirrorWard:
+			return Fx::ArcaneBurst;
+		case AbilityId::Warp:
+		case AbilityId::Swap:
+			return Fx::Blink;
 		case AbilityId::Firestrike:
 			return Fx::FireBurst;
 		case AbilityId::Slam:
@@ -689,10 +711,28 @@ namespace Game
 			shock(radius, 0.35f);
 			break;
 		case AbilityId::Meteor:
+		case AbilityId::Comet:
 			scorch(ground, radius * 0.85f, 9.0f, 0.8f);
 			cracks(ground, radius * 1.05f, 8.0f, 1.0f);
 			shock(radius * 1.1f, 0.45f);
 			runes(ground, radius, 0.7f, 0.0f, 1.0f, 1.15f);
+			break;
+		case AbilityId::Shockwave:
+			shock(reach, 0.4f);
+			shock(reach * 0.6f, 0.3f);
+			runes(ground, reach, 0.6f, 0.55f, 0.5f, 1.05f);
+			break;
+		case AbilityId::GravityWell:
+			runes(ground, radius, 0.9f, 0.3f, 1.15f, 0.25f);
+			shock(radius * 0.5f, 0.35f);
+			break;
+		case AbilityId::Gust:
+			flash(DecalShape::Sector, ground, glm::vec2(reach), facing, def.HalfArc, 0.4f);
+			break;
+		case AbilityId::Warp:
+		case AbilityId::Swap:
+		case AbilityId::MirrorWard:
+			runes(ground, 1.1f, 0.6f, 0.0f, 0.6f, 1.0f);
 			break;
 		case AbilityId::Firestrike:
 			scorch(ground, radius * 0.8f, 5.0f, 1.5f);

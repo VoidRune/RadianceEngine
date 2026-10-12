@@ -57,6 +57,10 @@ namespace Game
 		void StartHorde(MapKind map);
 		void StartArena(MapKind map, const MatchRules& rules);
 		void StartRoyale(MapKind map);
+		void StartBrawl(MapKind map, const MatchRules& rules);
+		void PickBrawlSpell(uint32_t slot, AbilityId spell);
+		void ChooseBoon(uint32_t choice);
+		void SetBrawlReady(bool ready);
 		void Spectate(int32_t direction);
 		void ReturnToHub();
 		void OpenChest();

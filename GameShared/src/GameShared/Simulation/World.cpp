@@ -196,7 +196,7 @@ namespace Game
 		if (!inventory.Gear[size_t(GearSlot::Weapon)].IsValid())
 			inventory.Gear[size_t(GearSlot::Weapon)] = MakeItem(ItemBase::Wand, AllocateItemId());
 
-		PlayerTraits traits = ComputeTraits(inventory.Gear, inventory.Gems, {}, inventory.Upgrades);
+		PlayerTraits traits = m_Settings.Mode == GameMode::Brawl ? m_Match.GetBrawlTraits(playerId) : ComputeTraits(inventory.Gear, inventory.Gems, {}, inventory.Upgrades);
 		if (m_Settings.Mode == GameMode::Mission)
 			ApplyPenalties(traits, m_Settings.Modifiers);
 		PlayerController controller{ .PlayerId = playerId, .Traits = traits };
@@ -323,6 +323,24 @@ namespace Game
 			m_Match.Watch(*this, player, direction);
 	}
 
+	bool World::PickBrawlSpell(Entity player, uint32_t slot, AbilityId spell)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && m_Settings.Mode == GameMode::Brawl && m_Match.PickSpell(*this, player, controller->PlayerId, slot, spell);
+	}
+
+	bool World::ChooseBoon(Entity player, uint32_t choice)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && m_Settings.Mode == GameMode::Brawl && m_Match.ChooseBoon(*this, player, controller->PlayerId, choice);
+	}
+
+	bool World::SetBrawlReady(Entity player, bool ready)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && m_Settings.Mode == GameMode::Brawl && m_Match.SetReady(controller->PlayerId, ready);
+	}
+
 	void World::RefreshTraits(Entity player)
 	{
 		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
@@ -331,7 +349,7 @@ namespace Game
 		if (!controller || !inventory || !health)
 			return;
 		const int32_t previousMax = controller->Traits.MaxHealth;
-		controller->Traits = ComputeTraits(inventory->Gear, inventory->Gems, controller->Buffs, inventory->Upgrades);
+		controller->Traits = m_Settings.Mode == GameMode::Brawl ? m_Match.GetBrawlTraits(controller->PlayerId) : ComputeTraits(inventory->Gear, inventory->Gems, controller->Buffs, inventory->Upgrades);
 		if (m_Settings.Mode == GameMode::Mission)
 			ApplyPenalties(controller->Traits, m_Settings.Modifiers);
 		controller->State.Mana = std::min(controller->State.Mana, controller->Traits.MaxMana);
@@ -401,6 +419,8 @@ namespace Game
 			.Chill = ability.Chill,
 			.Stun = ability.Stun,
 			.PvpScale = context.PvpScale,
+			.Push = ability.Push,
+			.Swap = ability.Swap,
 			.Damages = ability.Damages,
 			.Ability = uint8_t(ability.Id),
 			.Source = context.Source,
@@ -460,6 +480,7 @@ namespace Game
 			.Chill = ability.Chill,
 			.Stun = ability.Stun,
 			.PvpScale = context.PvpScale,
+			.Push = ability.Push,
 			.Ability = uint8_t(ability.Id),
 		});
 		return entity;

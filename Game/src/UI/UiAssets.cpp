@@ -189,7 +189,34 @@ namespace Game
 		case AbilityId::PiercingShot: return UiIcon::TargetArrows;
 		case AbilityId::Rejuvenate: return UiIcon::Healing;
 		case AbilityId::Roll: return UiIcon::Dodge;
+		case AbilityId::EmberBolt: return UiIcon::Fireball;
+		case AbilityId::Gust: return UiIcon::Whirlwind;
+		case AbilityId::Comet: return UiIcon::MeteorImpact;
+		case AbilityId::Warp: return UiIcon::Teleport;
+		case AbilityId::Shockwave: return UiIcon::Aura;
+		case AbilityId::GravityWell: return UiIcon::MagicSwirl;
+		case AbilityId::ArcLightning: return UiIcon::LightningArc;
+		case AbilityId::Swap: return UiIcon::MagicPortal;
+		case AbilityId::MirrorWard: return UiIcon::CheckedShield;
+		case AbilityId::Frostbite: return UiIcon::IceSpear;
 		default: return UiIcon::Gems;
+		}
+	}
+
+	UiIcon IconFor(BoonId boon)
+	{
+		switch (boon)
+		{
+		case BoonId::FleetFoot: return UiIcon::Sprint;
+		case BoonId::HeavyHand: return UiIcon::Hand;
+		case BoonId::Anchored: return UiIcon::AnvilImpact;
+		case BoonId::Firewalker: return UiIcon::Fireball;
+		case BoonId::Vigor: return UiIcon::HeartPlus;
+		case BoonId::Quickening: return UiIcon::Stopwatch;
+		case BoonId::SwiftSpells: return UiIcon::Sparkles;
+		case BoonId::Nimble: return UiIcon::Dodge;
+		case BoonId::SecondWind: return UiIcon::LifeInTheBalance;
+		default: return UiIcon::Upgrade;
 		}
 	}
 

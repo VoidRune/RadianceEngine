@@ -27,15 +27,20 @@ layout(location = 2) out vec2 outScreen;
 layout(location = 3) flat out uint outIndex;
 
 const vec2 Corners[6] = vec2[](vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(-1.0, 1.0), vec2(1.0, -1.0), vec2(1.0, 1.0));
-const uint ModeGlyph = 1u;
-const uint ModeImage = 2u;
+const uint ModeRect = 0u;
+const uint ModeTriangle = 4u;
+const uint ModeSigil = 5u;
 
 void main()
 {
 	Primitive primitive = primitives[gl_InstanceIndex];
 	vec2 corner = Corners[gl_VertexIndex];
 	uint mode = primitive.Info.x;
-	float padding = (mode == ModeGlyph || mode == ModeImage) ? 0.0 : primitive.Shape.z + 2.0 / pc.Scale;
+	float padding = 0.0;
+	if (mode == ModeRect || mode == ModeTriangle)
+		padding = primitive.Shape.z + 2.0 / pc.Scale + (mode == ModeRect && primitive.Uv.y > 0.0 ? 7.0 : 0.0);
+	else if (mode == ModeSigil)
+		padding = 2.0 / pc.Scale;
 	vec2 local = corner * (primitive.Rect.zw + padding);
 	float s = sin(primitive.Shape.w);
 	float c = cos(primitive.Shape.w);

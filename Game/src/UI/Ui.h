@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -57,27 +58,36 @@ namespace Game
 
 	namespace Theme
 	{
-		inline const UiColor Text = Hex(0xEAE3D2);
-		inline const UiColor Muted = Hex(0xA39B8C);
-		inline const UiColor Faint = Hex(0x716B60);
-		inline const UiColor Gold = Hex(0xE3B456);
-		inline const UiColor GoldLight = Hex(0xF8E3A3);
-		inline const UiColor GoldDark = Hex(0x7A5C2A);
-		inline const UiColor PanelTop = Hex(0x201D23, 0.97f);
-		inline const UiColor PanelBottom = Hex(0x131216, 0.97f);
-		inline const UiColor SlotTop = Hex(0x141317);
-		inline const UiColor SlotBottom = Hex(0x0C0B0E);
-		inline const UiColor Danger = Hex(0xE8665C);
-		inline const UiColor Success = Hex(0x7FD884);
-		inline const UiColor Warning = Hex(0xF2B95A);
-		inline const UiColor Mana = Hex(0x5E8DFF);
-		inline const UiColor Health = Hex(0xD84848);
+		inline const UiColor Text = Hex(0xECE8F6);
+		inline const UiColor Muted = Hex(0xA59EBD);
+		inline const UiColor Faint = Hex(0x6F688A);
+		inline const UiColor Edge = Hex(0x6D61A8);
+		inline const UiColor Accent = Hex(0xA48BFF);
+		inline const UiColor AccentLight = Hex(0xDDD3FF);
+		inline const UiColor AccentDark = Hex(0x3F3274);
+		inline const UiColor Astral = Hex(0x8CE7F4);
+		inline const UiColor Gold = Hex(0xE8C47E);
+		inline const UiColor GoldLight = Hex(0xF8E8C0);
+		inline const UiColor GoldDark = Hex(0x8E6C36);
+		inline const UiColor Ink = Hex(0x06050D);
+		inline const UiColor PanelTop = Hex(0x15112A, 0.93f);
+		inline const UiColor PanelBottom = Hex(0x090714, 0.95f);
+		inline const UiColor CardTop = Hex(0x17132C, 0.9f);
+		inline const UiColor CardBottom = Hex(0x0C0A19, 0.92f);
+		inline const UiColor SlotTop = Hex(0x120F23);
+		inline const UiColor SlotBottom = Hex(0x08070F);
+		inline const UiColor Danger = Hex(0xF0646E);
+		inline const UiColor Success = Hex(0x83E0A6);
+		inline const UiColor Warning = Hex(0xF2C46A);
+		inline const UiColor Mana = Hex(0x6F8DFF);
+		inline const UiColor Health = Hex(0xE04B5A);
 
 		TextStyle Body(float size = 16.0f, UiColor color = Text);
 		TextStyle Bold(float size = 16.0f, UiColor color = Text);
 		TextStyle Title(float size = 22.0f);
 		TextStyle Label(float size = 15.0f, UiColor color = Muted);
 		TextStyle Floating(float size, UiColor color, UiFont font = UiFont::Bold);
+		TextStyle Caps(float size, UiColor color, float tracking = 1.5f);
 	}
 
 	class UiTooltip
@@ -111,7 +121,7 @@ namespace Game
 		UiTooltip& Separator();
 		UiTooltip& Space(float height = 4.0f);
 
-		UiColor Accent = Theme::GoldDark;
+		UiColor Accent = Theme::Edge;
 		float Width = 330.0f;
 		std::vector<Line> Lines;
 	};
@@ -135,6 +145,7 @@ namespace Game
 		float GetScale() const { return m_Scale; }
 		float GetTime() const { return m_Time; }
 		float GetDeltaTime() const { return m_DeltaTime; }
+		void SetMotion(float motion) { m_Motion = motion; }
 		glm::vec2 GetMouse() const { return m_Mouse; }
 		glm::vec2 ToLogical(glm::vec2 pixels) const { return pixels / m_Scale; }
 
@@ -144,18 +155,23 @@ namespace Game
 		bool WantsMouse() const;
 		bool WantsKeyboard() const { return m_FocusId != 0; }
 		uint32_t TakeClicks() { return std::exchange(m_Clicks, 0u); }
+		int TakeHover() { return std::exchange(m_HoverEntry, -1); }
 		float Animate(UiId id, bool target, float speed = 10.0f);
+		float Since(UiId id, bool active);
 
 		void OfferDrag(UiId id, int type, int value);
 		const UiPayload* GetDrag() const { return m_Drag ? &*m_Drag : nullptr; }
 		std::optional<int> AcceptDrop(const UiRect& rect, int type);
 
-		void Panel(const UiRect& rect, float radius = 10.0f, bool blocks = true);
+		void Panel(const UiRect& rect, float chamfer = 14.0f, bool blocks = true);
+		void Card(const UiRect& rect, float hover, float selected, UiColor accent = Theme::Accent);
 		UiRect Window(UiId id, std::string_view title, UiRect rect, bool* open = nullptr);
 		void Separator(const UiRect& rect, std::string_view label = {});
 		bool Button(UiId id, const UiRect& rect, std::string_view label, ButtonKind kind = ButtonKind::Normal, bool enabled = true, std::optional<UiIcon> icon = std::nullopt);
+		bool MenuEntry(UiId id, const UiRect& rect, std::string_view title, std::string_view subtitle, bool selected = false, float align = 0.0f);
 		bool Checkbox(UiId id, const UiRect& rect, std::string_view label, bool& value);
 		bool Slider(UiId id, const UiRect& rect, float& value, float min, float max, std::string_view text);
+		bool Choice(UiId id, const UiRect& rect, int& index, std::span<const char* const> options);
 		bool TextField(UiId id, const UiRect& rect, std::string& text, size_t maxLength, std::string_view placeholder = {}, bool (*accept)(uint32_t) = nullptr);
 		UiTooltip& Tooltip();
 
@@ -194,6 +210,7 @@ namespace Game
 		float m_Scale = 1.0f;
 		float m_Time = 0.0f;
 		float m_DeltaTime = 0.0f;
+		float m_Motion = 0.0f;
 		glm::vec2 m_Mouse{ 0.0f };
 		glm::vec2 m_PreviousMouse{ 0.0f };
 		glm::vec2 m_PressPosition{ 0.0f };
@@ -201,6 +218,10 @@ namespace Game
 		bool m_LeftPressed = false;
 		bool m_LeftReleased = false;
 		uint32_t m_Clicks = 0;
+		int m_HoverEntry = -1;
+		int m_EntryCount = 0;
+		UiId m_EntryHovered = 0;
+		UiId m_EntryHoveredBefore = 0;
 		bool m_LeftDown = false;
 		bool m_RightPressed = false;
 		std::vector<Region> m_Regions;
@@ -215,6 +236,7 @@ namespace Game
 		bool m_DropAccepted = false;
 		std::unordered_map<UiId, WindowState> m_Windows;
 		std::unordered_map<UiId, float> m_Animations;
+		std::unordered_map<UiId, float> m_Timers;
 		std::unordered_map<int, float> m_RepeatTimers;
 		UiTooltip m_Tooltip;
 		bool m_TooltipActive = false;

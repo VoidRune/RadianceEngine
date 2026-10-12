@@ -12,7 +12,8 @@ namespace Game
 		constexpr float VictorySeconds = 10.5f;
 
 		constexpr const char* TrackFiles[] = {
-			"res/Audio/Music/Menu.ogg",
+			"res/Audio/Music/Cosmos.ogg",
+			"res/Audio/Music/Cathedral.ogg",
 			"res/Audio/Music/HubPavane.ogg",
 			"res/Audio/Music/HubFlow.ogg",
 			"res/Audio/Music/HubAdventure.ogg",
@@ -52,7 +53,7 @@ namespace Game
 
 	std::span<const MusicDirector::Track> MusicDirector::Playlist(MusicMood mood)
 	{
-		static constexpr Track Menu[] = { Track::Menu };
+		static constexpr Track Menu[] = { Track::Cosmos, Track::Cathedral };
 		static constexpr Track Hub[] = { Track::HubPavane, Track::HubFlow, Track::HubAdventure };
 		static constexpr Track Town[] = { Track::OldTown, Track::OldTownDark };
 		static constexpr Track Caves[] = { Track::Caves };

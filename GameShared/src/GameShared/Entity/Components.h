@@ -98,6 +98,8 @@ namespace Game
 		Vec2 DashDirection;
 		float DashDistance = 0.0f;
 		float DashSpeed = 0.0f;
+		Vec2 Push;
+		float Ward = 0.0f;
 		float Invulnerable = 0.0f;
 		float PortalCooldown = 0.0f;
 		std::array<float, AbilitySlots> Cooldowns{};
@@ -160,6 +162,8 @@ namespace Game
 		float Chill = 0.0f;
 		float Stun = 0.0f;
 		float PvpScale = 1.0f;
+		float Push = 0.0f;
+		bool Swap = false;
 		Element Damages = Element::Physical;
 		uint8_t Ability = 0;
 		Entity Source;
@@ -198,6 +202,7 @@ namespace Game
 		float Chill = 0.0f;
 		float Stun = 0.0f;
 		float PvpScale = 1.0f;
+		float Push = 0.0f;
 		uint8_t Ability = 0;
 	};
 

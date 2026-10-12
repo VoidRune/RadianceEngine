@@ -48,6 +48,19 @@ namespace Game
 
 	glm::vec3 SkillColor(AbilityId ability)
 	{
+		switch (ability)
+		{
+		case AbilityId::Gust:
+			return { 0.72f, 0.95f, 1.0f };
+		case AbilityId::GravityWell:
+			return { 0.62f, 0.36f, 1.0f };
+		case AbilityId::Swap:
+			return { 0.98f, 0.42f, 0.95f };
+		case AbilityId::MirrorWard:
+			return { 1.0f, 0.86f, 0.48f };
+		default:
+			break;
+		}
 		const AbilityDef& def = GetAbility(ability);
 		if (def.Damages != Element::Physical)
 			return ElementColor(def.Damages);

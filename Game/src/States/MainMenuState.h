@@ -13,14 +13,31 @@ namespace Game
 	public:
 		explicit MainMenuState(GameApp& app, std::string message = {});
 
+		void Update(float dt) override;
 		void DrawUi() override;
+		bool Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex) override;
+		bool WantsVsync() const override { return true; }
 
 	private:
+		enum class Page : uint8_t
+		{
+			None,
+			Host,
+			Join,
+			Character,
+			Settings,
+		};
+
 		void StartSession(bool host);
 		void RefreshCharacter();
-		void DrawBackground(Ui& ui);
-		void DrawCharacterPanel(Ui& ui, UiRect area);
-		void DrawPlayPanel(Ui& ui, UiRect area);
+		void OpenPage(Page page);
+		void DrawMotes(Ui& ui);
+		void DrawTitle(Ui& ui);
+		void DrawMenu(Ui& ui, UiRect area);
+		void DrawPage(Ui& ui);
+		void DrawHostPage(Ui& ui, UiRect area);
+		void DrawJoinPage(Ui& ui, UiRect area);
+		void DrawCharacterPage(Ui& ui, UiRect area);
 
 		GameApp& m_App;
 		std::string m_Message;
@@ -33,11 +50,9 @@ namespace Game
 		std::string m_CheckedName;
 		std::string m_SaveSummary;
 		bool m_Unlimited = false;
-		float m_Volume = 0.8f;
-		float m_MusicVolume = 0.8f;
-		float m_EffectsVolume = 1.0f;
-		bool m_Muted = false;
-		float m_LagMs = 0.0f;
-		float m_LossPercent = 0.0f;
+		Page m_Page = Page::None;
+		float m_Reveal = 0.0f;
+		float m_Time = 0.0f;
+		glm::vec2 m_Parallax{ 0.0f };
 	};
 }

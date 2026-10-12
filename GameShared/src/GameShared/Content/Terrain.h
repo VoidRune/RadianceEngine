@@ -20,6 +20,8 @@ namespace Game
 		Dirt,
 		Sand,
 		Ash,
+		Basalt,
+		Lava,
 		Count,
 	};
 
@@ -31,6 +33,7 @@ namespace Game
 		Ground,
 		Slabs,
 		Planks,
+		Molten,
 	};
 
 	struct TerrainDef
@@ -58,6 +61,8 @@ namespace Game
 		{ TerrainId::Dirt, "Dirt", true, false, TerrainStyle::Ground, 0x7B6145, 0x6E563C },
 		{ TerrainId::Sand, "Sand", true, false, TerrainStyle::Ground, 0xC2AE84, 0xB39F76 },
 		{ TerrainId::Ash, "Ash", true, false, TerrainStyle::Ground, 0x4D4844, 0x5A5450 },
+		{ TerrainId::Basalt, "Basalt", true, false, TerrainStyle::Slabs, 0x3A3431, 0x221D1B },
+		{ TerrainId::Lava, "Lava", true, false, TerrainStyle::Molten, 0xFF5A14, 0xFFB43C },
 	};
 
 	constexpr bool TerrainsMatchIds()

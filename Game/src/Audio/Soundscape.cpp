@@ -25,6 +25,7 @@ namespace Game
 			{ "res/Audio/Ambience/Caves.ogg", 0.8f },
 			{ "res/Audio/Ambience/Crucible.ogg", 0.75f },
 			{ "res/Audio/Ambience/Ashlands.ogg", 0.85f },
+			{ "res/Audio/Ambience/Campfire.ogg", 0.5f },
 		};
 
 		float FireVolume(PropId id)
@@ -37,6 +38,8 @@ namespace Game
 				return 0.7f;
 			case PropId::Brazier:
 				return 0.55f;
+			case PropId::FireBowl:
+				return 0.4f;
 			case PropId::WallTorch:
 				return 0.3f;
 			default:

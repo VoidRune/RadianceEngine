@@ -1,7 +1,9 @@
 #include "PlayerSimulation.h"
+#include "GameShared/Content/Brawl.h"
 #include "GameShared/Content/Pvp.h"
 #include "GameShared/World/Collision.h"
 #include <algorithm>
+#include <cmath>
 
 namespace Game
 {
@@ -14,6 +16,27 @@ namespace Game
 		void Cool(float& timer, float dt)
 		{
 			timer = std::max(timer - dt, 0.0f);
+		}
+
+		float PushControl(const PlayerState& state)
+		{
+			return 1.0f - std::min(Length(state.Push) / PushControlSpeed, PushControlLoss);
+		}
+
+		void DecayPush(PlayerState& state, float dt)
+		{
+			state.Push *= std::exp(-PushFriction * dt);
+			if (LengthSquared(state.Push) < PushStop * PushStop)
+				state.Push = {};
+		}
+
+		Vec2 MoveAndBrake(const Level& level, PlayerState& state, Vec2 position, Vec2 delta, std::span<const BodyCircle> bodies)
+		{
+			const Vec2 moved = MoveCircle(level, position, PlayerRadius, delta, bodies);
+			const float wanted = LengthSquared(delta);
+			if (wanted > 1e-10f && LengthSquared(state.Push) > 0.0f)
+				state.Push *= std::clamp(Dot(moved - position, delta) / wanted, 0.0f, 1.0f);
+			return moved;
 		}
 
 		void StartDash(PlayerState& state, const AbilityDef& ability, Vec2 direction, float distance)
@@ -45,7 +68,12 @@ namespace Game
 			actions.Released |= uint8_t(1u << slot);
 			const AbilityDef& ability = GetAbility(skill.Ability);
 			if (ability.Kind == AbilityKind::Dash)
+			{
 				StartDash(state, ability, aim, ability.Range > 0.0f ? std::clamp(aimDistance, 1.0f, ability.Range) : ability.DashDistance);
+				state.Push = {};
+			}
+			else if (ability.Kind == AbilityKind::Ward)
+				state.Ward = ability.Ward;
 		}
 	}
 
@@ -81,11 +109,13 @@ namespace Game
 		Cool(state.Stun, dt);
 		Cool(state.Chill, dt);
 		Cool(state.StunGuard, dt);
+		Cool(state.Ward, dt);
 		if (!state.Alive)
 		{
 			state.DashDistance = 0.0f;
 			state.CastSlot = -1;
 			state.CastTimer = 0.0f;
+			state.Push = {};
 			return actions;
 		}
 		state.Mana = std::min(traits.MaxMana, state.Mana + traits.ManaRegen * dt);
@@ -104,6 +134,9 @@ namespace Game
 				state.DashDistance = state.DashDistance - step > 1e-5f ? state.DashDistance - step : 0.0f;
 				transform.Position = MoveCircle(level, transform.Position, PlayerRadius, state.DashDirection * step);
 			}
+			else if (LengthSquared(state.Push) > 0.0f)
+				transform.Position = MoveAndBrake(level, state, transform.Position, state.Push * dt, {});
+			DecayPush(state, dt);
 			return actions;
 		}
 		transform.Facing = input.Aim;
@@ -126,6 +159,7 @@ namespace Game
 			state.CastTimer = 0.0f;
 			StartDash(state, roll, LengthSquared(move) > 0.01f ? Normalize(move) : aim, roll.DashDistance);
 			state.DodgeCooldown = traits.Dodge.Cooldown;
+			state.Push *= 0.5f;
 			actions.Dodged = true;
 		}
 
@@ -162,15 +196,18 @@ namespace Game
 		}
 
 		const float speed = traits.MoveSpeed * (castingSlot >= 0 ? traits.Skills[size_t(castingSlot)].MoveScale : 1.0f) * (state.Chill > 0.0f ? ChilledMoveScale : 1.0f);
-		Vec2 delta = move * (speed * dt) + lunge;
+		Vec2 delta = move * (speed * dt * PushControl(state)) + lunge + state.Push * dt;
 		const bool dashing = state.DashDistance > 0.0f;
 		if (dashing)
 		{
 			const float step = state.DashSpeed > 0.0f ? std::min(state.DashDistance, state.DashSpeed * dt) : state.DashDistance;
 			delta = state.DashDirection * step;
 			state.DashDistance = state.DashDistance - step > 1e-5f ? state.DashDistance - step : 0.0f;
+			transform.Position = MoveCircle(level, transform.Position, PlayerRadius, delta);
 		}
-		transform.Position = MoveCircle(level, transform.Position, PlayerRadius, delta, dashing ? std::span<const BodyCircle>() : bodies);
+		else
+			transform.Position = MoveAndBrake(level, state, transform.Position, delta, bodies);
+		DecayPush(state, dt);
 		return actions;
 	}
 }

@@ -83,7 +83,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -161,6 +161,19 @@ namespace Game
 				if (hasValue && ParseRoyaleMap(value, map))
 					i++;
 				options.Map = map;
+			}
+			else if (argument == "--brawl")
+			{
+				options.StartMode = GameMode::Brawl;
+				options.Map = MapKind::Caldera;
+				uint32_t rounds = 0;
+				if (hasValue && ParseNumber(value, rounds))
+				{
+					valid = rounds >= MinBrawlRounds && rounds <= MaxBrawlRounds;
+					if (valid)
+						options.Rules.Rounds = uint8_t(rounds);
+					i++;
+				}
 			}
 			else if (argument == "--goal" && hasValue)
 			{

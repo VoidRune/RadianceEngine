@@ -183,6 +183,21 @@ namespace Game
 		const glm::vec3 forward = Heading(facing);
 		switch (ability)
 		{
+		case AbilityId::Swap:
+		{
+			DrawGlow(renderer, center, 0.6f, { 0.35f, 0.08f, 0.32f });
+			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.2f, { 1.6f, 0.55f, 1.5f });
+			core.Seed = seed;
+			renderer.DrawSprite(core);
+			for (uint32_t i = 0; i < 2; i++)
+			{
+				const float angle = time * 7.0f + float(i) * 3.1416f;
+				DrawStar(renderer, center + Heading(angle) * 0.32f + Up * (0.08f * std::sin(time * 9.0f + float(i))), 0.12f, { 1.8f, 0.7f, 1.9f }, angle);
+			}
+			renderer.DrawSprite(RingSprite(center, 0.3f, 0.03f, { 1.1f, 0.35f, 1.2f }));
+			break;
+		}
+		case AbilityId::EmberBolt:
 		case AbilityId::Fireball:
 		{
 			DrawGlow(renderer, center, 0.6f, { 0.5f, 0.18f, 0.05f });
@@ -214,8 +229,9 @@ namespace Game
 		}
 		case AbilityId::Bolt:
 		case AbilityId::ChainLightning:
+		case AbilityId::ArcLightning:
 		{
-			const float scale = ability == AbilityId::ChainLightning ? 1.35f : 1.0f;
+			const float scale = ability == AbilityId::Bolt ? 1.0f : 1.35f;
 			DrawGlow(renderer, center, 0.42f * scale, { 0.1f, 0.15f, 0.45f });
 			const uint32_t frame = uint32_t(time * 30.0f);
 			for (uint32_t i = 0; i < 3; i++)
@@ -232,8 +248,9 @@ namespace Game
 		}
 		case AbilityId::IceSpear:
 		case AbilityId::ShardBurst:
+		case AbilityId::Frostbite:
 		{
-			const float length = ability == AbilityId::IceSpear ? 0.42f : 0.3f;
+			const float length = ability == AbilityId::ShardBurst ? 0.3f : 0.42f;
 			DrawGlow(renderer, center, 0.4f, { 0.25f, 0.5f, 1.0f });
 			ParticleSprite body = Stretched(ParticleShape::Shard, center + forward * length, center - forward * length, 0.1f, { 1.2f, 1.8f, 2.6f });
 			body.Additive = 0.45f;

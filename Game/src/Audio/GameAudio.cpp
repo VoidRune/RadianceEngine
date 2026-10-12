@@ -19,14 +19,14 @@ namespace Game
 		constexpr uint32_t MaxProjectileImpacts = 3;
 		constexpr uint8_t BossPhaseHealth[] = { 170, 85 };
 
-		bool Rose(uint8_t before, uint8_t after, EntityFlags flag)
+		bool Rose(uint16_t before, uint16_t after, EntityFlags flag)
 		{
-			return !(before & uint8_t(flag)) && (after & uint8_t(flag));
+			return !(before & uint16_t(flag)) && (after & uint16_t(flag));
 		}
 
-		bool Fell(uint8_t before, uint8_t after, EntityFlags flag)
+		bool Fell(uint16_t before, uint16_t after, EntityFlags flag)
 		{
-			return (before & uint8_t(flag)) && !(after & uint8_t(flag));
+			return (before & uint16_t(flag)) && !(after & uint16_t(flag));
 		}
 
 		AbilityId AbilityOf(const EntityState& entity)
@@ -70,6 +70,8 @@ namespace Game
 				return AmbienceScene::Crucible;
 			case MapKind::Ashlands:
 				return AmbienceScene::Ashlands;
+			case MapKind::Caldera:
+				return AmbienceScene::Caldera;
 			default:
 				return AmbienceScene::None;
 			}
@@ -137,6 +139,12 @@ namespace Game
 		case AmbienceScene::Ashlands:
 			space = { 0.9f, 0.6f, 0.015f, 0.35f };
 			break;
+		case AmbienceScene::Menu:
+			space = { 3.6f, 0.3f, 0.05f, 0.7f };
+			break;
+		case AmbienceScene::Caldera:
+			space = { 1.7f, 0.45f, 0.03f, 0.55f };
+			break;
 		default:
 			break;
 		}
@@ -158,6 +166,7 @@ namespace Game
 		m_Overlaid = false;
 		m_InventoryOpen = false;
 		m_StationOpen = false;
+		m_PauseOpen = false;
 	}
 
 	void GameAudio::Reset()
@@ -208,6 +217,12 @@ namespace Game
 	void GameAudio::PlayUi(Cue cue, float volume, float pitch, float delay)
 	{
 		PlayFlat(cue, m_Buses.Interface, volume, pitch, delay);
+	}
+
+	void GameAudio::PlayHover(int index)
+	{
+		static constexpr float Pentatonic[] = { 3.0f, 0.0f, -2.0f, -4.0f, -7.0f, -9.0f, -12.0f };
+		PlayUi(Cue::UiHover, 1.0f, std::exp2(Pentatonic[size_t(std::max(index, 0)) % std::size(Pentatonic)] / 12.0f));
 	}
 
 	void GameAudio::PlayStinger(MusicStinger stinger)
@@ -335,6 +350,7 @@ namespace Game
 			mood = MusicMood::Horde;
 			break;
 		case GameMode::Arena:
+		case GameMode::Brawl:
 			mood = MusicMood::Arena;
 			break;
 		case GameMode::Royale:
@@ -384,6 +400,11 @@ namespace Game
 		if (m_StationOpen && !station)
 			PlayUi(Cue::BookClose, 0.5f);
 		m_StationOpen = station;
+		if (paused != m_PauseOpen)
+		{
+			m_PauseOpen = paused;
+			PlayUi(paused ? Cue::UiOpen : Cue::UiClose, 0.7f, paused ? 0.8409f : 1.0f);
+		}
 	}
 
 	void GameAudio::PlayStation(StationKind kind)
@@ -465,7 +486,20 @@ namespace Game
 			PlayFlat(Cue::Thunder, m_Buses.Stingers, 0.8f);
 			PlayFlat(Cue::Horn, m_Buses.Stingers, 0.4f, 0.8f, 0.3f);
 			break;
+		case AudioEvent::RoundWon:
+			PlayFlat(Cue::Gong, m_Buses.Stingers, 0.75f, 1.15f);
+			PlayUi(Cue::UiReward, 0.7f, 1.0f, 0.15f);
+			break;
+		case AudioEvent::RoundLost:
+			PlayFlat(Cue::Gong, m_Buses.Stingers, 0.6f, 0.85f);
+			break;
 		}
+	}
+
+	void GameAudio::PlayCrumble(Vec2 position)
+	{
+		PlayAt(Cue::Rock, position, 0.45f, 0.65f + 0.2f * m_Random.Float());
+		PlayAt(Cue::FireImpact, position, 0.2f, 0.55f + 0.15f * m_Random.Float(), 0.05f);
 	}
 
 	void GameAudio::OnAppear(const EntityState& entity, Tracked& tracked, const GameClient& client)
@@ -535,6 +569,13 @@ namespace Game
 				PlayAt(Cue::TeleportIn, entity.Position, 0.7f);
 				PlayAt(Cue::Heal, entity.Position, 0.45f, 1.0f, 0.2f);
 			}
+			if (Rose(before.Flags, entity.Flags, EntityFlags::Burning) && !dead)
+			{
+				PlayAt(Cue::FireImpact, entity.Position, self ? 0.6f : 0.4f, 1.35f);
+				PlayAt(Cue::Soft, entity.Position, self ? 0.5f : 0.3f, 0.7f);
+			}
+			if (Rose(before.Flags, entity.Flags, EntityFlags::Warded) && !dead)
+				PlayAt(Cue::Shield, entity.Position, self ? 0.75f : 0.5f, 1.2f);
 			if (Rose(before.Flags, entity.Flags, EntityFlags::Attacking) || (entity.Has(EntityFlags::Attacking) && entity.Variant != before.Variant))
 				StartCast(entity, tracked, self);
 			else if (Fell(before.Flags, entity.Flags, EntityFlags::Attacking))
@@ -681,6 +722,19 @@ namespace Game
 		case AbilityId::ShardBurst:
 			PlayAt(Cue::IceLaunch, at, 0.5f, 1.35f);
 			break;
+		case AbilityId::EmberBolt:
+			PlayAt(Cue::FireLaunch, at, 0.7f * loud, 1.25f);
+			break;
+		case AbilityId::ArcLightning:
+			PlayAt(Cue::ShockLaunch, at, 0.75f * loud, 1.1f);
+			break;
+		case AbilityId::Frostbite:
+			PlayAt(Cue::IceLaunch, at, 0.7f * loud, 1.25f);
+			break;
+		case AbilityId::Swap:
+			PlayAt(Cue::ManaStart, at, 0.6f * loud, 1.35f);
+			PlayAt(Cue::WhooshLight, at, 0.4f * loud, 1.3f);
+			break;
 		default:
 			PlayAt(Cue::WhooshLight, at, 0.5f);
 			break;
@@ -727,6 +781,18 @@ namespace Game
 		case AbilityId::ShardBurst:
 			PlayAt(Cue::GlassLight, at, 0.6f);
 			PlayAt(Cue::IceImpact, at, 0.35f, 1.3f);
+			break;
+		case AbilityId::EmberBolt:
+			PlayAt(Cue::FireImpact, at, 0.5f, 1.35f);
+			break;
+		case AbilityId::ArcLightning:
+			PlayAt(Cue::ShockHit, at, 0.55f, 1.1f);
+			break;
+		case AbilityId::Frostbite:
+			PlayAt(Cue::IceImpact, at, 0.6f, 1.2f);
+			break;
+		case AbilityId::Swap:
+			PlayAt(Cue::TeleportIn, at, 0.4f, 1.3f);
 			break;
 		default:
 			break;
@@ -850,7 +916,32 @@ namespace Game
 			PlayAt(Cue::Cloth, at, 0.55f);
 			break;
 		case AbilityId::Blink:
+		case AbilityId::Warp:
 			PlayAt(Cue::TeleportOut, at, 0.75f);
+			break;
+		case AbilityId::Comet:
+			PlayAt(Cue::Explosion, at, 0.9f, 0.95f);
+			PlayAt(Cue::FireImpact, at, 0.9f, 0.85f);
+			PlayAt(Cue::Rock, at, 0.7f, 0.75f, 0.04f);
+			break;
+		case AbilityId::Gust:
+			PlayAt(Cue::WhooshHeavy, at, 0.95f, 1.05f);
+			PlayAt(Cue::WhooshLight, at, 0.6f, 0.8f, 0.05f);
+			break;
+		case AbilityId::Shockwave:
+			PlayAt(Cue::ShockHit, at, 0.9f, 0.75f);
+			PlayAt(Cue::Explosion, at, 0.45f, 1.4f);
+			break;
+		case AbilityId::GravityWell:
+			PlayAt(Cue::Rumble, at, 0.8f, 1.2f);
+			PlayAt(Cue::ManaEnd, at, 0.7f, 0.6f);
+			break;
+		case AbilityId::Swap:
+			PlayAt(Cue::TeleportIn, at, 0.65f, 1.15f);
+			break;
+		case AbilityId::MirrorWard:
+			PlayAt(Cue::Shield, at, 0.8f, 1.3f);
+			PlayAt(Cue::Bell, at, 0.3f, 1.6f, 0.05f);
 			break;
 		default:
 			break;
@@ -863,7 +954,11 @@ namespace Game
 		switch (AbilityOf(entity))
 		{
 		case AbilityId::Meteor:
+		case AbilityId::Comet:
 			PlayAt(Cue::FireLaunch, at, 1.0f, 0.6f);
+			break;
+		case AbilityId::GravityWell:
+			tracked.Loop = PlayAt(Cue::ShockLoop, at, 0.5f, 0.55f);
 			break;
 		case AbilityId::Firestrike:
 			tracked.Loop = PlayAt(Cue::FireLoop, at, 0.5f);
@@ -968,6 +1063,26 @@ namespace Game
 			break;
 		case AbilityId::Rejuvenate:
 			tracked.Loop = PlayAt(Cue::ManaStart, at, loud);
+			break;
+		case AbilityId::EmberBolt:
+			tracked.Loop = PlayAt(Cue::FireBuildup, at, 0.45f * loud, 1.35f);
+			break;
+		case AbilityId::Comet:
+			tracked.Loop = PlayAt(Cue::FireBuildup, at, loud, 0.85f);
+			break;
+		case AbilityId::Shockwave:
+		case AbilityId::ArcLightning:
+			tracked.Loop = PlayAt(Cue::ShockBuildup, at, 0.8f * loud, ability == AbilityId::Shockwave ? 0.85f : 1.1f);
+			break;
+		case AbilityId::Frostbite:
+			tracked.Loop = PlayAt(Cue::IceBuildup, at, 0.7f * loud, 1.25f);
+			break;
+		case AbilityId::GravityWell:
+		case AbilityId::Swap:
+			tracked.Loop = PlayAt(Cue::ManaStart, at, 0.8f * loud, ability == AbilityId::Swap ? 1.3f : 0.75f);
+			break;
+		case AbilityId::Gust:
+			PlayAt(Cue::WhooshLight, at, 0.6f * loud, 0.75f);
 			break;
 		default:
 			break;
@@ -1200,6 +1315,16 @@ namespace Game
 			const auto it = m_Tracked.find(hit.Target);
 			const EntityKind kind = it != m_Tracked.end() ? it->second.Last.Kind : hit.OnPlayer ? EntityKind::Player : EntityKind::Chaser;
 			const Vec2 at = hit.Position;
+			if ((hit.OnPlayer || kind == EntityKind::Player) && m_Status.Mode == GameMode::Brawl)
+			{
+				if (hit.Damage == 0)
+				{
+					const bool self = hit.Target == m_Self;
+					PlayAt(Cue::Body, at, self ? 0.85f : 0.6f, 1.1f);
+					PlayAt(Cue::WhooshHeavy, at, self ? 0.6f : 0.4f, 1.25f);
+				}
+				continue;
+			}
 			if (hit.OnPlayer || kind == EntityKind::Player)
 			{
 				const bool self = hit.Target == m_Self;

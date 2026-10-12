@@ -29,8 +29,10 @@ namespace Game
 		if (m_Pipeline)
 		{
 			m_Allocator.ReleaseResource(m_Pipeline.get());
+			m_Allocator.ReleaseResource(m_SigilPipeline.get());
 			m_Allocator.ReleaseResource(m_VertexShader.get());
 			m_Allocator.ReleaseResource(m_FragmentShader.get());
+			m_Allocator.ReleaseResource(m_SigilShader.get());
 		}
 	}
 
@@ -38,22 +40,31 @@ namespace Game
 	{
 		Rdn::ShaderDesc vertexDesc;
 		Rdn::ShaderDesc fragmentDesc;
-		if (!Rdn::ShaderCompiler::Compile("res/Shaders/Game/Ui.vert", vertexDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/Ui.frag", fragmentDesc))
+		Rdn::ShaderDesc sigilDesc;
+		if (!Rdn::ShaderCompiler::Compile("res/Shaders/Game/Ui.vert", vertexDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/Ui.frag", fragmentDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/UiSigil.frag", sigilDesc))
 			return false;
 		m_VertexShader = std::make_unique<Rdn::Shader>();
 		m_FragmentShader = std::make_unique<Rdn::Shader>();
+		m_SigilShader = std::make_unique<Rdn::Shader>();
 		m_Allocator.CreateShader(m_VertexShader.get(), vertexDesc);
 		m_Allocator.CreateShader(m_FragmentShader.get(), fragmentDesc);
-		m_Pipeline = std::make_unique<Rdn::Pipeline>();
-		m_Allocator.CreatePipeline(m_Pipeline.get(), Rdn::PipelineDesc{
-			.ShaderStages = { m_VertexShader.get(), m_FragmentShader.get() },
-			.CullMode = Rdn::CullMode::None,
-			.DepthTest = false,
-			.DepthWrite = false,
-			.Blend = Rdn::BlendMode::Alpha,
-			.ColorAttachmentFormats = { targetFormat },
-			.PushDescriptorSets = { 0 },
-		});
+		m_Allocator.CreateShader(m_SigilShader.get(), sigilDesc);
+		const auto create = [&](Rdn::Shader* fragment)
+		{
+			auto pipeline = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(pipeline.get(), Rdn::PipelineDesc{
+				.ShaderStages = { m_VertexShader.get(), fragment },
+				.CullMode = Rdn::CullMode::None,
+				.DepthTest = false,
+				.DepthWrite = false,
+				.Blend = Rdn::BlendMode::Premultiplied,
+				.ColorAttachmentFormats = { targetFormat },
+				.PushDescriptorSets = { 0 },
+			});
+			return pipeline;
+		};
+		m_Pipeline = create(m_FragmentShader.get());
+		m_SigilPipeline = create(m_SigilShader.get());
 		return true;
 	}
 
@@ -104,27 +115,47 @@ namespace Game
 			std::memcpy(static_cast<uint8_t*>(m_Buffer->GetMappedPtr()) + m_Buffer->GetOffset(frameIndex), primitives.data(), size_t(count) * sizeof(UiPrimitive));
 		}
 		m_Constants = { screenSize, scale, m_DistanceRange, time };
+		m_Runs.clear();
+		for (uint32_t index = 0; index < count; index++)
+		{
+			const bool sigil = primitives[index].Info.x == uint32_t(UiMode::Sigil);
+			if (m_Runs.empty() || m_Runs.back().Sigil != sigil)
+				m_Runs.push_back({ index, 0, sigil });
+			m_Runs.back().Count++;
+		}
 
 		graph.AddPass("UI", Rdn::PassType::Graphics,
 			[&](Rdn::PassBuilder& builder)
 			{
-				builder.AddColorAttachment(target, clear ? Rdn::AttachmentLoadOp::Clear : Rdn::AttachmentLoadOp::Load, Rdn::AttachmentStoreOp::Store, { 0.03f, 0.028f, 0.035f, 1.0f });
+				builder.AddColorAttachment(target, clear ? Rdn::AttachmentLoadOp::Clear : Rdn::AttachmentLoadOp::Load, Rdn::AttachmentStoreOp::Store, { 0.02f, 0.016f, 0.04f, 1.0f });
 			},
 			[this, count, frameIndex](Rdn::CommandBuffer& cmd, const Rdn::PassContext&)
 			{
 				if (count == 0)
 					return;
+				const Rdn::BufferWrite buffer(0, Rdn::DescriptorType::StorageBuffer, m_Buffer->GetHandle(), m_Buffer->GetOffset(frameIndex), uint64_t(count) * sizeof(UiPrimitive));
 				Rdn::DescriptorWrite write;
-				write.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_Buffer->GetHandle(), m_Buffer->GetOffset(frameIndex), uint64_t(count) * sizeof(UiPrimitive)));
+				write.AddWrite(buffer);
 				for (uint32_t slot = 0; slot < MaxTextures; slot++)
 				{
 					const Rdn::GpuImage& image = *m_Textures[slot < m_TextureCount ? slot : 0];
 					write.AddWrite(Rdn::ImageWrite(1, Rdn::DescriptorType::CombinedImageSampler, image.GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_Sampler->GetHandle(), slot));
 				}
-				cmd.BindPipeline(m_Pipeline->GetHandle());
-				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_Pipeline->GetLayout(), 0, write);
-				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Pipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
-				cmd.Draw(6, count, 0, 0);
+				Rdn::DescriptorWrite sigilWrite;
+				sigilWrite.AddWrite(buffer);
+				std::optional<bool> bound;
+				for (const Run& run : m_Runs)
+				{
+					if (bound != run.Sigil)
+					{
+						const Rdn::Pipeline& pipeline = run.Sigil ? *m_SigilPipeline : *m_Pipeline;
+						cmd.BindPipeline(pipeline.GetHandle());
+						cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline.GetLayout(), 0, run.Sigil ? sigilWrite : write);
+						cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, pipeline.GetLayout(), &m_Constants, sizeof(m_Constants));
+						bound = run.Sigil;
+					}
+					cmd.Draw(6, run.Count, 0, run.First);
+				}
 			});
 	}
 }

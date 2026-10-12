@@ -133,11 +133,65 @@ namespace Game
 			return !reader.Failed();
 		}
 
+		void WriteBrawlStatus(ByteWriter& writer, const BrawlStatus& brawl)
+		{
+			writer.Write(brawl.Phase);
+			writer.Write(brawl.Round);
+			writer.Write(brawl.Rounds);
+			writer.Write(brawl.Timer);
+			writer.Write(brawl.Clock);
+			writer.Write(brawl.Plan.Center);
+			writer.Write(brawl.Plan.StartRadius);
+			writer.Write(brawl.Plan.Seed);
+			writer.Write(QuantizeOwner(brawl.RoundWinner));
+			writer.Write(brawl.Ready);
+			writer.Write(brawl.Players);
+		}
+
+		bool ReadBrawlStatus(ByteReader& reader, BrawlStatus& brawl)
+		{
+			brawl.Phase = reader.Read<BrawlPhase>();
+			brawl.Round = reader.Read<uint8_t>();
+			brawl.Rounds = reader.Read<uint8_t>();
+			brawl.Timer = reader.Read<float>();
+			brawl.Clock = reader.Read<float>();
+			brawl.Plan.Center = reader.ReadVec2();
+			brawl.Plan.StartRadius = reader.Read<float>();
+			brawl.Plan.Seed = reader.Read<uint32_t>();
+			brawl.RoundWinner = DequantizeOwner(reader.Read<uint8_t>());
+			brawl.Ready = reader.Read<uint8_t>();
+			brawl.Players = reader.Read<uint8_t>();
+			return !reader.Failed() && uint8_t(brawl.Phase) <= uint8_t(BrawlPhase::Shop);
+		}
+
+		void WriteLoadout(ByteWriter& writer, const BrawlLoadout& loadout)
+		{
+			WriteBytes(writer, loadout.Spells);
+			WriteBytes(writer, loadout.Boons);
+			WriteBytes(writer, loadout.Offer);
+			writer.Write(uint8_t((loadout.OfferPending ? 1u : 0u) | (loadout.Ready ? 2u : 0u)));
+		}
+
+		bool ReadLoadout(ByteReader& reader, BrawlLoadout& loadout)
+		{
+			ReadBytes(reader, loadout.Spells);
+			ReadBytes(reader, loadout.Boons);
+			ReadBytes(reader, loadout.Offer);
+			const uint8_t flags = reader.Read<uint8_t>();
+			loadout.OfferPending = (flags & 1u) != 0;
+			loadout.Ready = (flags & 2u) != 0;
+			const bool spells = std::all_of(loadout.Spells.begin(), loadout.Spells.end(), [](AbilityId id) { return id < AbilityId::Count; });
+			const bool offer = std::all_of(loadout.Offer.begin(), loadout.Offer.end(), [](BoonId id) { return id <= BoonId::Count; });
+			return !reader.Failed() && spells && offer;
+		}
+
 		void WriteState(ByteWriter& writer, const PlayerState& state)
 		{
 			writer.Write(state.DashDirection);
 			writer.Write(state.DashDistance);
 			writer.Write(state.DashSpeed);
+			writer.Write(state.Push);
+			writer.Write(state.Ward);
 			writer.Write(state.Invulnerable);
 			writer.Write(state.PortalCooldown);
 			WriteBytes(writer, state.Cooldowns);
@@ -157,6 +211,8 @@ namespace Game
 			state.DashDirection = reader.ReadVec2();
 			state.DashDistance = reader.Read<float>();
 			state.DashSpeed = reader.Read<float>();
+			state.Push = reader.ReadVec2();
+			state.Ward = reader.Read<float>();
 			state.Invulnerable = reader.Read<float>();
 			state.PortalCooldown = reader.Read<float>();
 			ReadBytes(reader, state.Cooldowns);
@@ -460,6 +516,8 @@ namespace Game
 			writer.Write(player.Team);
 			writer.Write(player.Placement);
 			writer.Write(uint8_t(player.Host ? 1 : 0));
+			writer.Write(player.Score);
+			writer.Write(player.Rounds);
 		}
 	}
 
@@ -482,6 +540,8 @@ namespace Game
 			player.Team = reader.Read<uint8_t>();
 			player.Placement = reader.Read<uint8_t>();
 			player.Host = reader.Read<uint8_t>() != 0;
+			player.Score = reader.Read<uint16_t>();
+			player.Rounds = reader.Read<uint8_t>();
 			if (player.Look.Weapon >= ItemBase::Count || player.Look.Head > ItemBase::Count || player.Look.Body > ItemBase::Count || player.Look.Feet > ItemBase::Count || player.Look.WeaponQuality >= Rarity::Count)
 				return false;
 		}
@@ -533,6 +593,8 @@ namespace Game
 			writer.Write(uint8_t(storm.Shrinking ? 1 : 0));
 			writer.Write(storm.Damage);
 		}
+		if (status.Mode == GameMode::Brawl)
+			WriteBrawlStatus(writer, status.Brawl);
 
 		const LocalPlayerState& local = message.LocalPlayer;
 		writer.Write(uint8_t(local.Valid ? 1 : 0));
@@ -553,6 +615,8 @@ namespace Game
 			WriteBytes(writer, local.Materials);
 			writer.Write(QuantizeOwner(local.Watching));
 			writer.Write(QuantizeOwner(local.KilledBy));
+			if (status.Mode == GameMode::Brawl)
+				WriteLoadout(writer, local.Brawl);
 		}
 
 		const size_t count = std::min<size_t>(message.Entities.size(), MaxListSize);
@@ -635,6 +699,8 @@ namespace Game
 			storm.Shrinking = reader.Read<uint8_t>() != 0;
 			storm.Damage = reader.Read<float>();
 		}
+		if (status.Mode == GameMode::Brawl && !ReadBrawlStatus(reader, status.Brawl))
+			return false;
 
 		LocalPlayerState& local = message.LocalPlayer;
 		local.Valid = reader.Read<uint8_t>() != 0;
@@ -658,6 +724,8 @@ namespace Game
 			local.KilledBy = DequantizeOwner(reader.Read<uint8_t>());
 			if (std::any_of(local.Offer.begin(), local.Offer.end(), [](UpgradeId id) { return id > UpgradeId::Count; }))
 				return false;
+			if (status.Mode == GameMode::Brawl && !ReadLoadout(reader, local.Brawl))
+				return false;
 		}
 
 		const uint16_t count = reader.Read<uint16_t>();
@@ -676,7 +744,7 @@ namespace Game
 			entity.Variant = reader.Read<uint8_t>();
 			entity.Scale = reader.Read<uint8_t>();
 			entity.Health = reader.Read<uint8_t>();
-			entity.Flags = reader.Read<uint8_t>();
+			entity.Flags = reader.Read<uint16_t>();
 			if (uint8_t(entity.Kind) >= uint8_t(EntityKind::Count))
 				return false;
 		}

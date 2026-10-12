@@ -247,6 +247,26 @@ namespace Game
 		SendAction(ActionType::StartMatch, uint32_t(GameMode::Royale), uint32_t(map));
 	}
 
+	void GameClient::StartBrawl(MapKind map, const MatchRules& rules)
+	{
+		SendAction(ActionType::StartMatch, uint32_t(GameMode::Brawl), uint32_t(map), EncodeRules(rules));
+	}
+
+	void GameClient::PickBrawlSpell(uint32_t slot, AbilityId spell)
+	{
+		SendAction(ActionType::BrawlSpell, slot, uint32_t(spell));
+	}
+
+	void GameClient::ChooseBoon(uint32_t choice)
+	{
+		SendAction(ActionType::BrawlBoon, choice);
+	}
+
+	void GameClient::SetBrawlReady(bool ready)
+	{
+		SendAction(ActionType::BrawlReady, ready ? 1u : 0u);
+	}
+
 	void GameClient::Spectate(int32_t direction)
 	{
 		SendAction(ActionType::Spectate, uint16_t(int16_t(direction)));
@@ -260,7 +280,14 @@ namespace Game
 
 	bool GameClient::IsHostile(const EntityState& entity) const
 	{
-		if (!IsPvpMode(m_Session.Mode) || m_Status.Match != MatchPhase::Fight || entity.Kind != EntityKind::Player || entity.Owner == m_Welcome.PlayerId || entity.Has(EntityFlags::Dead))
+		if (!IsPvpMode(m_Session.Mode) || entity.Kind != EntityKind::Player || entity.Owner == m_Welcome.PlayerId || entity.Has(EntityFlags::Dead))
+			return false;
+		if (m_Session.Mode == GameMode::Brawl)
+		{
+			const BrawlPhase phase = m_Status.Brawl.Phase;
+			return m_Status.Match != MatchPhase::Ended && (phase == BrawlPhase::Draft || phase == BrawlPhase::Shop || phase == BrawlPhase::Fight);
+		}
+		if (m_Status.Match != MatchPhase::Fight)
 			return false;
 		const uint8_t team = GetTeam(m_Welcome.PlayerId);
 		return !m_Session.Rules.Teams || team == NoTeam || team != GetTeam(entity.Owner);
@@ -577,6 +604,13 @@ namespace Game
 				float parameter = 0.0f;
 				if (entity.NetId == projectile.LastHit || !SegmentTouchesCircle(projectile.Previous, projectile.Position, entity.Position, radius + projectile.Radius, parameter))
 					continue;
+				if (entity.Has(EntityFlags::Warded))
+				{
+					projectile.Position = Lerp(projectile.Previous, projectile.Position, parameter);
+					projectile.Lifetime = 0.0f;
+					projectile.Explodes = false;
+					break;
+				}
 				if (projectile.Explodes)
 				{
 					projectile.Position = Lerp(projectile.Previous, projectile.Position, parameter);
@@ -768,16 +802,22 @@ namespace Game
 		self.Variant = uint8_t(AbilityId::Count);
 		self.Health = m_LocalPlayer.MaxHealth > 0 ? uint8_t(std::clamp((m_LocalPlayer.Health * 255 + m_LocalPlayer.MaxHealth - 1) / m_LocalPlayer.MaxHealth, 0, 255)) : 255;
 		if (!m_PredictedState.Alive)
-			self.Flags |= uint8_t(EntityFlags::Dead);
+			self.Flags |= uint16_t(EntityFlags::Dead);
 		if (m_PredictedState.Invulnerable > 0.0f || m_PredictedState.DashDistance > 0.0f)
-			self.Flags |= uint8_t(EntityFlags::Dashing);
+			self.Flags |= uint16_t(EntityFlags::Dashing);
 		if (m_PredictedState.Chill > 0.0f)
-			self.Flags |= uint8_t(EntityFlags::Chilled);
+			self.Flags |= uint16_t(EntityFlags::Chilled);
 		if (m_PredictedState.Stun > 0.0f)
-			self.Flags |= uint8_t(EntityFlags::Stunned);
+			self.Flags |= uint16_t(EntityFlags::Stunned);
+		if (m_PredictedState.Ward > 0.0f)
+			self.Flags |= uint16_t(EntityFlags::Warded);
+		if (LengthSquared(m_PredictedState.Push) > 36.0f)
+			self.Flags |= uint16_t(EntityFlags::Flung);
+		if (const auto server = std::find_if(m_Entities.begin(), m_Entities.end(), [&](const EntityState& entity) { return entity.NetId == m_Welcome.PlayerNetId; }); server != m_Entities.end() && server->Has(EntityFlags::Burning))
+			self.Flags |= uint16_t(EntityFlags::Burning);
 		if (m_PredictedState.CastSlot >= 0)
 		{
-			self.Flags |= uint8_t(EntityFlags::Attacking);
+			self.Flags |= uint16_t(EntityFlags::Attacking);
 			self.Variant = uint8_t(GetTraits().Skills[size_t(m_PredictedState.CastSlot)].Ability);
 		}
 		m_View.push_back(self);
@@ -785,6 +825,6 @@ namespace Game
 		for (const PredictedProjectile& projectile : m_PredictedProjectiles)
 			m_View.push_back({ .NetId = PredictedNetIdBase + (uint32_t(projectile.Tag) << 4) + projectile.Index, .Kind = EntityKind::Projectile, .Position = Lerp(projectile.Previous, projectile.Position, alpha), .Facing = AngleOf(projectile.Velocity), .Owner = playerId, .Tag = projectile.Tag, .Variant = uint8_t(projectile.Ability) });
 		for (const PredictedEffect& effect : m_PredictedEffects)
-			m_View.push_back({ .NetId = (effect.Pending ? PredictedEffectNetIdBase : PredictedImpactNetIdBase) + (uint32_t(effect.Tag) << 4) + effect.Index, .Kind = EntityKind::Effect, .Position = effect.Position, .Facing = effect.Facing, .Owner = playerId, .Tag = effect.Tag, .Variant = uint8_t(effect.Ability), .Scale = effect.Scale, .Flags = uint8_t(effect.Pending ? uint8_t(EntityFlags::Pending) : 0) });
+			m_View.push_back({ .NetId = (effect.Pending ? PredictedEffectNetIdBase : PredictedImpactNetIdBase) + (uint32_t(effect.Tag) << 4) + effect.Index, .Kind = EntityKind::Effect, .Position = effect.Position, .Facing = effect.Facing, .Owner = playerId, .Tag = effect.Tag, .Variant = uint8_t(effect.Ability), .Scale = effect.Scale, .Flags = uint16_t(effect.Pending ? uint16_t(EntityFlags::Pending) : 0) });
 	}
 }

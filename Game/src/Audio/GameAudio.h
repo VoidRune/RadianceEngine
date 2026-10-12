@@ -26,6 +26,8 @@ namespace Game
 		MatchWon,
 		MatchLost,
 		StormClosing,
+		RoundWon,
+		RoundLost,
 	};
 
 	class GameAudio
@@ -45,6 +47,8 @@ namespace Game
 		void PlayNotice(bool success, std::optional<StationKind> station);
 		void PlayEvent(AudioEvent event);
 		void PlayUi(Cue cue, float volume = 1.0f, float pitch = 1.0f, float delay = 0.0f);
+		void PlayHover(int index);
+		void PlayCrumble(Vec2 position);
 		uint32_t GetPlayedCount() const { return m_Played; }
 		void SetTrace(bool trace) { m_Trace = trace; }
 
@@ -133,5 +137,6 @@ namespace Game
 		bool m_Overlaid = false;
 		bool m_InventoryOpen = false;
 		bool m_StationOpen = false;
+		bool m_PauseOpen = false;
 	};
 }

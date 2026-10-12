@@ -147,6 +147,83 @@ namespace Game
 			Quad(mesh, { -1, -1, -1 }, { 1, -1, -1 }, { 1, -1, 1 }, { -1, -1, 1 }, { 0, -1, 0 });
 			return mesh;
 		}
+
+		constexpr uint32_t LavaTextureSize = 512;
+		constexpr int32_t LavaCells = 14;
+		constexpr float LavaPeriod = 16.0f;
+
+		float LavaHash(uint32_t x, uint32_t y, uint32_t salt)
+		{
+			uint32_t h = x * 374761393u + y * 668265263u + salt * 2246822519u;
+			h = (h ^ (h >> 13)) * 1274126177u;
+			return float((h ^ (h >> 16)) & 0xFFFF) / 65535.0f;
+		}
+
+		uint32_t Wrap(int32_t value, int32_t period)
+		{
+			return uint32_t(((value % period) + period) % period);
+		}
+
+		float TileNoise(glm::vec2 uv, int32_t cells, uint32_t salt)
+		{
+			const glm::vec2 p = uv * float(cells);
+			const glm::vec2 cell = glm::floor(p);
+			glm::vec2 f = p - cell;
+			f = f * f * (3.0f - 2.0f * f);
+			const int32_t x = int32_t(cell.x);
+			const int32_t y = int32_t(cell.y);
+			const auto at = [&](int32_t dx, int32_t dy) { return LavaHash(Wrap(x + dx, cells), Wrap(y + dy, cells), salt); };
+			return glm::mix(glm::mix(at(0, 0), at(1, 0), f.x), glm::mix(at(0, 1), at(1, 1), f.x), f.y);
+		}
+
+		glm::vec2 CrustPoint(int32_t x, int32_t y)
+		{
+			const uint32_t wx = Wrap(x, LavaCells);
+			const uint32_t wy = Wrap(y, LavaCells);
+			return glm::vec2(float(x), float(y)) + 0.1f + 0.8f * glm::vec2(LavaHash(wx, wy, 11), LavaHash(wx, wy, 12));
+		}
+
+		std::vector<uint16_t> BakeLavaTexture()
+		{
+			std::vector<uint16_t> texels(size_t(LavaTextureSize) * LavaTextureSize * 4);
+			const float cellWorld = LavaPeriod / float(LavaCells);
+			for (uint32_t ty = 0; ty < LavaTextureSize; ty++)
+				for (uint32_t tx = 0; tx < LavaTextureSize; tx++)
+				{
+					const glm::vec2 uv = (glm::vec2(float(tx), float(ty)) + 0.5f) / float(LavaTextureSize);
+					const glm::vec2 p = uv * float(LavaCells);
+					const glm::ivec2 cell(glm::floor(p));
+					glm::vec2 nearest(0.0f);
+					glm::ivec2 nearestCell = cell;
+					float best = 1e9f;
+					for (int32_t j = -1; j <= 1; j++)
+						for (int32_t i = -1; i <= 1; i++)
+						{
+							const glm::vec2 d = CrustPoint(cell.x + i, cell.y + j) - p;
+							if (const float dd = glm::dot(d, d); dd < best)
+							{
+								best = dd;
+								nearest = d;
+								nearestCell = cell + glm::ivec2(i, j);
+							}
+						}
+					float border = 1e9f;
+					for (int32_t j = -2; j <= 2; j++)
+						for (int32_t i = -2; i <= 2; i++)
+						{
+							const glm::vec2 d = CrustPoint(nearestCell.x + i, nearestCell.y + j) - p;
+							const glm::vec2 between = d - nearest;
+							if (glm::dot(between, between) > 1e-6f)
+								border = std::min(border, glm::dot(0.5f * (nearest + d), glm::normalize(between)));
+						}
+					uint16_t* texel = &texels[(size_t(ty) * LavaTextureSize + tx) * 4];
+					texel[0] = glm::packHalf1x16(std::min(border * cellWorld, 4.0f));
+					texel[1] = glm::packHalf1x16(LavaHash(Wrap(nearestCell.x, LavaCells), Wrap(nearestCell.y, LavaCells), 13));
+					texel[2] = glm::packHalf1x16(0.7f * TileNoise(uv, 5, 21) + 0.3f * TileNoise(uv, 10, 22));
+					texel[3] = glm::packHalf1x16(0.7f * TileNoise(uv, 3, 23) + 0.3f * TileNoise(uv, 6, 24));
+				}
+			return texels;
+		}
 	}
 
 	WorldRenderer::WorldRenderer(Rdn::Device& device, Rdn::ResourceAllocator& allocator, Rdn::Format colorFormat)
@@ -154,6 +231,8 @@ namespace Game
 	{
 		if (!CreatePipeline() || !CreateModelPipeline())
 			RDN_LOG_ERROR("The world shaders failed to compile, the world won't be drawn");
+		if (!CreateLavaPipeline())
+			RDN_LOG_ERROR("The lava shaders failed to compile, lava won't be drawn");
 		CreateShadowPipelines();
 		m_Particles = std::make_unique<ParticleSystem>(device, allocator);
 		m_Particles->SetMaterials(MakeParticleMaterials());
@@ -197,7 +276,7 @@ namespace Game
 				m_Allocator.ReleaseResource(buffer);
 		if (m_MeshBuffer)
 			m_Allocator.ReleaseResource(m_MeshBuffer.get());
-		for (Rdn::GpuImage* image : { m_SkyMask.get(), m_BlackEnvironment.get() })
+		for (Rdn::GpuImage* image : { m_SkyMask.get(), m_BlackEnvironment.get(), m_LavaTexture.get() })
 			if (image)
 				m_Allocator.ReleaseResource(image);
 		for (Rdn::Sampler* sampler : { m_ModelSampler.get(), m_NearestSampler.get(), m_RepeatSampler.get(), m_EnvironmentSampler.get() })
@@ -209,7 +288,7 @@ namespace Game
 		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get() })
 			if (shader)
 				m_Allocator.ReleaseResource(shader);
-		for (const auto& [pipeline, vertex, fragment] : { std::tuple(m_Pipeline.get(), m_VertexShader.get(), m_FragmentShader.get()), std::tuple(m_ModelPipeline.get(), m_ModelVertexShader.get(), m_ModelFragmentShader.get()) })
+		for (const auto& [pipeline, vertex, fragment] : { std::tuple(m_Pipeline.get(), m_VertexShader.get(), m_FragmentShader.get()), std::tuple(m_ModelPipeline.get(), m_ModelVertexShader.get(), m_ModelFragmentShader.get()), std::tuple(m_LavaPipeline.get(), m_LavaVertexShader.get(), m_LavaFragmentShader.get()) })
 		{
 			if (!pipeline)
 				continue;
@@ -495,6 +574,37 @@ namespace Game
 		return true;
 	}
 
+	bool WorldRenderer::CreateLavaPipeline()
+	{
+		Rdn::ShaderDesc vertexDesc;
+		Rdn::ShaderDesc fragmentDesc;
+		if (!Rdn::ShaderCompiler::Compile("res/Shaders/Game/Lava.vert", vertexDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/Lava.frag", fragmentDesc))
+			return false;
+		m_LavaVertexShader = std::make_unique<Rdn::Shader>();
+		m_LavaFragmentShader = std::make_unique<Rdn::Shader>();
+		m_Allocator.CreateShader(m_LavaVertexShader.get(), vertexDesc);
+		m_Allocator.CreateShader(m_LavaFragmentShader.get(), fragmentDesc);
+		m_LavaPipeline = std::make_unique<Rdn::Pipeline>();
+		m_Allocator.CreatePipeline(m_LavaPipeline.get(), Rdn::PipelineDesc{
+			.ShaderStages = { m_LavaVertexShader.get(), m_LavaFragmentShader.get() },
+			.CullMode = Rdn::CullMode::None,
+			.ColorAttachmentFormats = { AlbedoFormat, SurfaceFormat, EmissionFormat },
+			.DepthAttachmentFormat = DepthFormat,
+			.PushDescriptorSets = { 0 },
+		});
+		return true;
+	}
+
+	void WorldRenderer::EnsureLavaTexture()
+	{
+		if (m_LavaTexture)
+			return;
+		const std::vector<uint16_t> texels = BakeLavaTexture();
+		m_LavaTexture = std::make_unique<Rdn::GpuImage>();
+		m_Allocator.CreateGpuImage(m_LavaTexture.get(), Rdn::GpuImageDesc{ .ImageSize = { LavaTextureSize, LavaTextureSize, 1 }, .Format = Rdn::Format::R16G16B16A16_Sfloat, .UsageFlags = Rdn::ImageUsage::Sampled | Rdn::ImageUsage::TransferDst });
+		m_Allocator.SetImageData(m_LavaTexture.get(), texels.data(), texels.size() * sizeof(uint16_t), Rdn::ImageLayout::ShaderReadOnlyOptimal);
+	}
+
 	bool WorldRenderer::CreateModelPipeline()
 	{
 		Rdn::ShaderDesc vertexDesc;
@@ -650,6 +760,7 @@ namespace Game
 			draws.clear();
 		for (std::vector<ModelInstance>& draws : m_ModelShadowDraws)
 			draws.clear();
+		m_LavaQuads.clear();
 		m_Palettes.clear();
 		m_Particles->BeginFrame();
 		m_Camera = camera;
@@ -663,6 +774,11 @@ namespace Game
 	{
 		if (size_t(mesh) < m_ShadowCasters.size())
 			m_ShadowCasters[size_t(mesh)].push_back({ glm::vec4(center, yaw), glm::vec4(halfExtents, 0.0f), glm::vec4(0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f) });
+	}
+
+	void WorldRenderer::DrawLava(const glm::vec4& area, float height, float time)
+	{
+		m_LavaQuads.push_back({ glm::vec4((area.x + area.z) * 0.5f, height, (area.y + area.w) * 0.5f, 0.0f), glm::vec4((area.z - area.x) * 0.5f, 0.0f, (area.w - area.y) * 0.5f, 0.0f), glm::vec4(time, 0.0f, 0.0f, 0.0f), glm::vec4(0.0f) });
 	}
 
 	void WorldRenderer::Draw(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, const glm::vec3& color, float yaw, float emission, float ground, const BoxSurface& surface)
@@ -725,6 +841,12 @@ namespace Game
 			m_BoxRanges[i] = { uint32_t(m_Packed.size()), uint32_t(source.size()) };
 			m_Packed.insert(m_Packed.end(), source.begin(), source.end());
 		}
+		m_LavaRange = { uint32_t(m_Packed.size()), m_LavaPipeline ? uint32_t(m_LavaQuads.size()) : 0u };
+		if (m_LavaRange.second > 0)
+		{
+			EnsureLavaTexture();
+			m_Packed.insert(m_Packed.end(), m_LavaQuads.begin(), m_LavaQuads.end());
+		}
 		const uint32_t count = m_Pipeline ? uint32_t(m_Packed.size()) : 0;
 		if (count > 0)
 		{
@@ -773,7 +895,7 @@ namespace Game
 					builder.AddColorAttachment(attachment, Rdn::AttachmentLoadOp::Clear, Rdn::AttachmentStoreOp::Store, { 0.0f, 0.0f, 0.0f, 0.0f });
 				builder.SetDepthAttachment(gbuffer.Depth, Rdn::AttachmentLoadOp::Clear, Rdn::AttachmentStoreOp::Store);
 			},
-			[this, count, modelCount, paletteCount, frameIndex](Rdn::CommandBuffer& cmd, const Rdn::PassContext&)
+			[this, count, modelCount, paletteCount, frameIndex, lava = m_LavaRange](Rdn::CommandBuffer& cmd, const Rdn::PassContext&)
 			{
 				if (count > 0)
 				{
@@ -785,6 +907,16 @@ namespace Game
 					for (size_t mesh = 0; mesh < m_Instances.size(); mesh++)
 						if (m_BoxRanges[mesh].second > 0)
 							cmd.Draw(m_Meshes[mesh].VertexCount, m_BoxRanges[mesh].second, m_Meshes[mesh].FirstVertex, m_BoxRanges[mesh].first);
+				}
+				if (count > 0 && lava.second > 0 && m_LavaTexture)
+				{
+					const LavaConstants constants{ m_Constants.ViewProjection, glm::vec4(m_Constants.Focus.x, 0.0f, 0.0f, 0.0f) };
+					cmd.BindPipeline(m_LavaPipeline->GetHandle());
+					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_LavaPipeline->GetLayout(), 0, Rdn::DescriptorWrite()
+						.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_InstanceBuffer->GetHandle(), m_InstanceBuffer->GetOffset(frameIndex), uint64_t(count) * sizeof(BoxInstance)))
+						.AddWrite(Rdn::ImageWrite(1, Rdn::DescriptorType::CombinedImageSampler, m_LavaTexture->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_RepeatSampler->GetHandle())));
+					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_LavaPipeline->GetLayout(), &constants, sizeof(constants));
+					cmd.Draw(6, lava.second, 0, lava.first);
 				}
 				if (modelCount == 0 || !m_TextureSet)
 					return;

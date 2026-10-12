@@ -19,6 +19,7 @@ namespace Game
 		Crucible,
 		Ashlands,
 		Abbey,
+		Caldera,
 		Count,
 	};
 
@@ -36,6 +37,7 @@ namespace Game
 		{ MapKind::Crucible, "The Crucible", "A walled fighting pit around a low dais, with broken colonnades, cover walls and pools of black water. Shrines hand out healing and power." },
 		{ MapKind::Ashlands, "The Ashlands", "A burned island: a ruined village, a drowned chapel, a walled graveyard, crystal hollows, a sunken library, farmland and the watchtower hill. Chests everywhere, and the ash storm closes in." },
 		{ MapKind::Abbey, "Vesper Abbey", "A rain-soaked abbey courtyard at dusk, with a walled garden, a storage yard and a candlelit crypt." },
+		{ MapKind::Caldera, "The Caldera", "A disc of basalt floating on a lake of lava inside a volcano. It crumbles from the edge inward every round." },
 	};
 	static_assert(std::size(Maps) == size_t(MapKind::Count));
 
@@ -57,6 +59,11 @@ namespace Game
 	inline bool IsRoyaleMap(MapKind kind)
 	{
 		return kind == MapKind::Ashlands || IsMissionMap(kind);
+	}
+
+	inline bool IsBrawlMap(MapKind kind)
+	{
+		return kind == MapKind::Caldera;
 	}
 
 	enum class StationKind : uint8_t
@@ -227,4 +234,5 @@ namespace Game
 	Level BuildCrucibleLevel(uint32_t seed);
 	Level BuildAshlandsLevel(uint32_t seed);
 	Level BuildAbbeyLevel(uint32_t seed);
+	Level BuildCalderaLevel(uint32_t seed);
 }

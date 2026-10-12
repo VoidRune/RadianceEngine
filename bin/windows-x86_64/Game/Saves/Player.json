@@ -613,11 +613,11 @@
 	],
 	"kit": "Arcanist",
 	"materials": {
-		"arcaneDust": 229,
-		"gold": 215253,
-		"shards": 1421,
-		"starsteel": 157,
-		"voidShards": 27
+		"arcaneDust": 273,
+		"gold": 252614,
+		"shards": 1613,
+		"starsteel": 175,
+		"voidShards": 30
 	},
 	"name": "Player",
 	"stash": [
@@ -1083,57 +1083,8 @@
 			"power": 8.18401,
 			"rarity": "Legendary"
 		},
-		{
-			"affixes": [
-				{
-					"stat": "ColdDamage",
-					"tier": 1,
-					"value": 0.0842
-				},
-				{
-					"stat": "GemLevel",
-					"tier": 2,
-					"value": 1.0
-				},
-				{
-					"stat": "CritChance",
-					"tier": 1,
-					"value": 0.04099
-				}
-			],
-			"base": "Wand",
-			"level": 30,
-			"power": 8.20151,
-			"rarity": "Rare"
-		},
-		{
-			"affixes": [
-				{
-					"stat": "MaxHealth",
-					"tier": 1,
-					"value": 13.05004
-				},
-				{
-					"stat": "PoisonResist",
-					"tier": 1,
-					"value": 0.07248
-				},
-				{
-					"stat": "LightningResist",
-					"tier": 1,
-					"value": 0.08322
-				},
-				{
-					"stat": "FireResist",
-					"tier": 3,
-					"value": 0.15212
-				}
-			],
-			"base": "Sandals",
-			"level": 30,
-			"power": 8.29293,
-			"rarity": "Legendary"
-		},
+		null,
+		null,
 		{
 			"affixes": [
 				{
@@ -1172,80 +1123,19 @@
 			"level": 2,
 			"skill": "Volley"
 		},
-		{
-			"affixes": [
-				{
-					"stat": "CastSpeed",
-					"tier": 1,
-					"value": 0.06063
-				},
-				{
-					"stat": "Armor",
-					"tier": 4,
-					"value": 58.7345
-				},
-				{
-					"stat": "LightningResist",
-					"tier": 1,
-					"value": 0.0682
-				}
-			],
-			"base": "Hood",
-			"level": 30,
-			"power": 8.32824,
-			"rarity": "Rare"
-		},
+		null,
 		{
 			"base": "Gem",
 			"level": 6,
 			"skill": "Blink"
 		},
-		{
-			"affixes": [
-				{
-					"stat": "FireResist",
-					"tier": 3,
-					"value": 0.13117
-				},
-				{
-					"stat": "MaxHealth",
-					"tier": 4,
-					"value": 72.08869
-				},
-				{
-					"stat": "ColdResist",
-					"tier": 4,
-					"value": 0.18401
-				}
-			],
-			"base": "Tunic",
-			"level": 30,
-			"power": 7.77363,
-			"rarity": "Rare"
-		},
+		null,
 		{
 			"base": "Gem",
 			"level": 5,
 			"skill": "Volley"
 		},
-		{
-			"affixes": [
-				{
-					"stat": "ColdResist",
-					"tier": 1,
-					"value": 0.07967
-				},
-				{
-					"stat": "CastSpeed",
-					"tier": 2,
-					"value": 0.06988
-				}
-			],
-			"base": "Helm",
-			"level": 30,
-			"power": 7.94812,
-			"rarity": "Rare"
-		},
+		null,
 		null,
 		null,
 		null,
@@ -1254,25 +1144,35 @@
 			"level": 2,
 			"skill": "PiercingShot"
 		},
-		{
-			"affixes": [
-				{
-					"stat": "LightningResist",
-					"tier": 4,
-					"value": 0.19477
-				}
-			],
-			"base": "Boots",
-			"level": 28,
-			"power": 6.89881,
-			"rarity": "Uncommon"
-		},
+		null,
 		{
 			"base": "Gem",
 			"level": 4,
 			"skill": "Rejuvenate"
 		},
-		null,
+		{
+			"affixes": [
+				{
+					"stat": "PhysicalDamage",
+					"tier": 2,
+					"value": 0.13114
+				},
+				{
+					"stat": "CooldownRecovery",
+					"tier": 3,
+					"value": 0.11188
+				},
+				{
+					"stat": "AreaSize",
+					"tier": 2,
+					"value": 0.12209
+				}
+			],
+			"base": "Spear",
+			"level": 30,
+			"power": 7.99196,
+			"rarity": "Legendary"
+		},
 		null,
 		null,
 		null,

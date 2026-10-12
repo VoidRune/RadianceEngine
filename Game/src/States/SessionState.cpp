@@ -1,12 +1,14 @@
 #include "SessionState.h"
 #include "App/GameApp.h"
 #include "Audio/GameAudio.h"
+#include "Rendering/MenuBackdrop.h"
 #include "Rendering/Models.h"
 #include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
 #include "States/MainMenuState.h"
 #include "UI/ItemUi.h"
 #include "UI/Palette.h"
+#include "UI/SettingsUi.h"
 #include "UI/Ui.h"
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/World/Collision.h>
@@ -91,6 +93,15 @@ namespace Game
 				lighting.SkyColor = { 0.035f, 0.042f, 0.06f };
 				lighting.GroundColor = { 0.025f, 0.021f, 0.018f };
 				lighting.EmissionGi = 6.0f;
+			}
+			else if (map == MapKind::Caldera)
+			{
+				lighting.SunDirection = { -0.35f, -1.0f, 0.55f };
+				lighting.SunColor = { 1.0f, 0.62f, 0.45f };
+				lighting.SunIntensity = 0.7f;
+				lighting.SkyColor = { 0.07f, 0.035f, 0.045f };
+				lighting.GroundColor = { 0.09f, 0.03f, 0.015f };
+				lighting.EmissionGi = 4.5f;
 			}
 			else if (map == MapKind::Abbey)
 			{
@@ -211,6 +222,16 @@ namespace Game
 		m_SeenCountdown = -1;
 		m_SeenStormStage = 0;
 		m_SeenStormShrinking = false;
+		m_HasPlan = false;
+		m_RestoreAge = 1e9f;
+		m_Risen.clear();
+		m_Fallen.clear();
+		m_SeenBrawlPhase = BrawlPhase::Draft;
+		m_SeenRound = 0;
+		m_FoughtRound = 0;
+		m_LoadoutOpen = true;
+		m_PickingSlot.reset();
+		m_ChosenBoon.reset();
 		m_Feed.clear();
 		m_Client.TakeKills();
 		m_BannerTitle = GetMapDef(session.Map).Name;
@@ -223,6 +244,8 @@ namespace Game
 			m_BannerText = (session.Rules.Teams ? "Team arena, first team to " : "Free for all, first to ") + std::to_string(session.Rules.ScoreGoal) + " kills wins";
 		else if (session.Mode == GameMode::Royale)
 			m_BannerText = "Battle royale. Loot fast, outrun the ash storm, be the last one standing";
+		else if (session.Mode == GameMode::Brawl)
+			m_BannerText = "Spellbrawl, " + std::to_string(session.Rules.Rounds) + " rounds. Pick three spells, then shove everyone into the lava";
 		else
 		{
 			const EnemyDef* boss = FindEnemyDef(session.Map == MapKind::Caves ? EntityKind::Wyrm : EntityKind::Archivist);
@@ -348,6 +371,7 @@ namespace Game
 		m_AimPoint = MouseAimPoint();
 		UpdateInteractions();
 		UpdatePortals(dt);
+		UpdateArena(dt);
 		m_App.GetWorldRenderer().GetParticles().Advance(dt);
 		UpdateEffects(dt);
 		UpdateFeedback(dt);
@@ -360,7 +384,11 @@ namespace Game
 	float SessionState::GroundHeight(Vec2 position) const
 	{
 		const Level* level = m_Client.GetLevel();
-		return level ? level->Map.GetHeight(position) : 0.0f;
+		if (!level)
+			return 0.0f;
+		if (m_Client.GetSession().Mode == GameMode::Brawl)
+			return BrawlGroundHeight(*level, m_Client.GetStatus().Brawl, position);
+		return level->Map.GetHeight(position);
 	}
 
 	void SessionState::UsePortal(int32_t portal)
@@ -416,14 +444,24 @@ namespace Game
 
 	void SessionState::HandleHotkeys()
 	{
-		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::Escape))
+		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::Escape) && !m_App.UiWantsKeyboard())
 		{
-			if (m_Station && !m_Paused)
+			const BrawlPhase brawlPhase = m_Client.GetStatus().Brawl.Phase;
+			const bool choosing = m_Client.GetSession().Mode == GameMode::Brawl && m_Client.GetStatus().Match != MatchPhase::Ended && (brawlPhase == BrawlPhase::Draft || brawlPhase == BrawlPhase::Shop);
+			if (m_Paused && m_PauseSettings)
+				m_PauseSettings = false;
+			else if (m_Station && !m_Paused)
 				m_Station.reset();
 			else if (m_ShowInventory && !m_Paused)
 				m_ShowInventory = false;
+			else if (choosing && m_LoadoutOpen && !m_Paused)
+				m_LoadoutOpen = false;
 			else
+			{
 				m_Paused = !m_Paused;
+				m_PauseSettings = false;
+				m_PauseTime = 0.0f;
+			}
 		}
 		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F3))
 			m_ShowNetStats = !m_ShowNetStats;
@@ -455,7 +493,8 @@ namespace Game
 			m_App.GetWorldRenderer().SetGiQuality(settings.Gi);
 			RDN_LOG("Global illumination: {}", GiQualityNames[size_t(settings.Gi)]);
 		}
-		if (!m_Paused && !m_App.UiWantsMouse() && m_Client.GetSession().Mode == GameMode::Royale && !m_Client.GetPredictedState().Alive && m_Client.GetLocalPlayer().Watching != NoPlayer)
+		const GameMode sessionMode = m_Client.GetSession().Mode;
+		if (!m_Paused && !m_App.UiWantsMouse() && (sessionMode == GameMode::Royale || sessionMode == GameMode::Brawl) && !m_Client.GetPredictedState().Alive && m_Client.GetLocalPlayer().Watching != NoPlayer)
 		{
 			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::MouseLeft))
 				m_Client.Spectate(1);
@@ -466,9 +505,14 @@ namespace Game
 			return;
 		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::I) || Rdn::Input::IsKeyPressed(Rdn::KeyCode::Tab))
 		{
-			m_ShowInventory = !m_ShowInventory;
-			if (m_ShowInventory)
-				m_Station.reset();
+			if (sessionMode == GameMode::Brawl)
+				m_LoadoutOpen = !m_LoadoutOpen;
+			else
+			{
+				m_ShowInventory = !m_ShowInventory;
+				if (m_ShowInventory)
+					m_Station.reset();
+			}
 		}
 		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::E) && !Interact())
 		{
@@ -689,6 +733,12 @@ namespace Game
 		view.Cutaway = !m_Overview;
 		view.HoveredPortal = m_HoveredPortal;
 		view.ReachablePortal = m_ReachablePortal;
+		if (m_Client.GetSession().Mode == GameMode::Brawl)
+		{
+			view.Brawl = &m_Client.GetStatus().Brawl;
+			view.Risen = &m_Risen;
+			view.Restore = std::min(m_RestoreAge / RestoreSeconds, 1.0f);
+		}
 		const Level* level = m_Client.GetLevel();
 		if (m_Overview || !level)
 		{
@@ -747,6 +797,13 @@ namespace Game
 				OnEntityAppeared(entity);
 			else if (entity.Kind == EntityKind::Player && entity.Has(EntityFlags::Dashing) && !fx.Last.Has(EntityFlags::Dashing) && !entity.Has(EntityFlags::Dead))
 				m_Effects->Burst(Fx::Dodge, Ground(entity.Position, 0.1f));
+			if (!inserted && entity.Kind == EntityKind::Player && !entity.Has(EntityFlags::Dead))
+			{
+				if (entity.Has(EntityFlags::Flung) && !fx.Last.Has(EntityFlags::Flung))
+					m_Effects->Burst(Fx::Dodge, Ground(entity.Position, 0.2f), glm::vec3(0.0f, 1.0f, 0.0f), 1.4f);
+				if (entity.Has(EntityFlags::Burning) && !fx.Last.Has(EntityFlags::Burning))
+					m_Effects->Burst(Fx::FireBurst, Ground(entity.Position, 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.7f);
+			}
 			if (!inserted && entity.Health < fx.LastHealth)
 			{
 				fx.Flash = HurtFlashSeconds;
@@ -777,7 +834,7 @@ namespace Game
 			if (fx.SinceHit < KillWindow && m_Characters->ForEnemy(fx.Last.Kind))
 			{
 				m_Corpses.push_back({ fx.Last, fx.Animator });
-				m_Corpses.back().Entity.Flags |= uint8_t(EntityFlags::Dead);
+				m_Corpses.back().Entity.Flags |= uint16_t(EntityFlags::Dead);
 				m_Effects->Burst(Fx::Death, Ground(fx.Last.Position, 0.6f), glm::vec3(0.0f, 1.0f, 0.0f), fx.Last.GetScale());
 			}
 			else if (fx.Last.Kind == EntityKind::Projectile)
@@ -810,8 +867,12 @@ namespace Game
 		std::erase_if(m_DamageNumbers, [](const DamageNumber& number) { return number.Age >= DamageNumberSeconds; });
 		for (const HitEvent& hit : m_Client.GetNewHits())
 		{
-			const float drift = std::fmod(float(m_HitCounter++) * 0.618034f, 1.0f) - 0.5f;
+			if (hit.Damage == 0)
+				continue;
 			const bool hurtsUs = hit.OnPlayer && (!IsPvpMode(m_Client.GetSession().Mode) || hit.Target == m_Client.GetPlayerNetId());
+			if (m_Client.GetSession().Mode == GameMode::Brawl && !hurtsUs)
+				continue;
+			const float drift = std::fmod(float(m_HitCounter++) * 0.618034f, 1.0f) - 0.5f;
 			m_DamageNumbers.push_back({ .Position = hit.Position, .Drift = drift * 0.9f, .Damage = hit.Damage, .Critical = hit.Critical, .OnPlayer = hurtsUs, .Damages = hit.Damages });
 		}
 		if (m_DamageNumbers.size() > MaxDamageNumbers)
@@ -913,6 +974,20 @@ namespace Game
 
 	void SessionState::EmitContinuous(float dt)
 	{
+		if (const Level* level = m_Client.GetLevel(); level && m_Client.GetSession().Mode == GameMode::Brawl)
+		{
+			const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+			const uint32_t epoch = uint32_t(m_Time / 2.5f);
+			for (uint32_t i = 0; i < 10; i++)
+			{
+				const uint32_t salt = (epoch + i * 7u) * 2654435761u + i * 40503u;
+				const float u = float(salt & 0xFFFFu) / 65535.0f;
+				const float v = float((salt >> 16) & 0xFFFFu) / 65535.0f;
+				const Vec2 spot = Vec2(m_CameraTarget.x, m_CameraTarget.z) + Vec2(u - 0.5f, v - 0.5f) * 28.0f;
+				if (IsBrawlLava(*level, brawl, spot))
+					m_Effects->Trail(Fx::Campfire, (4ull << 40) | (uint64_t(epoch) << 8) | i, { spot.x, LavaSurface + 0.02f, spot.y }, dt, 0.4f + 0.3f * u);
+			}
+		}
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
 		for (size_t i = 0; i < fires.size(); i++)
 		{
@@ -938,9 +1013,9 @@ namespace Game
 				m_Effects->Trail(Fx::GatewaySwirl, entity.NetId, Ground(entity.Position, 0.15f), dt);
 				break;
 			case EntityKind::Effect:
-				if (entity.Has(EntityFlags::Pending) && AbilityOf(entity) == AbilityId::Meteor)
+				if (entity.Has(EntityFlags::Pending) && (AbilityOf(entity) == AbilityId::Meteor || AbilityOf(entity) == AbilityId::Comet))
 				{
-					const float delay = GetAbility(AbilityId::Meteor).ImpactDelay;
+					const float delay = GetAbility(AbilityOf(entity)).ImpactDelay;
 					m_Effects->Trail(Fx::MeteorTrail, entity.NetId, MeteorPoint(entity, delay > 0.0f ? std::clamp(AgeOf(entity.NetId) / delay, 0.0f, 1.0f) : 1.0f), dt);
 				}
 				break;
@@ -951,6 +1026,8 @@ namespace Game
 						const glm::vec3 hand = Ground(entity.Position, 1.0f) + Heading(entity.Facing) * 0.35f + Heading(entity.Facing - HalfPi) * 0.3f;
 						m_Effects->Trail(*cast, uint64_t(entity.NetId) | (1ull << 40), hand, dt);
 					}
+				if (entity.Has(EntityFlags::Burning) && !entity.Has(EntityFlags::Dead))
+					m_Effects->Trail(Fx::Campfire, uint64_t(entity.NetId) | (3ull << 40), Ground(entity.Position, 0.05f), dt, 0.55f);
 				break;
 			default:
 				break;
@@ -968,7 +1045,7 @@ namespace Game
 		std::erase_if(m_Notices, [](const Notice& notice) { return notice.Age >= NoticeSeconds; });
 		for (const ServerNotice& notice : m_Client.TakeNotices())
 		{
-			m_Notices.push_back({ notice.Text, notice.Success ? Theme::GoldLight : Theme::Danger });
+			m_Notices.push_back({ notice.Text, notice.Success ? Theme::AccentLight : Theme::Danger });
 			m_App.GetGameAudio().PlayNotice(notice.Success, m_Station);
 		}
 		const MaterialStock& materials = m_Client.GetMaterials();
@@ -1092,6 +1169,8 @@ namespace Game
 			color = glm::mix(color, glm::vec3(1.0f, 0.82f, 0.45f), 0.4f);
 		if (entity.Has(EntityFlags::Chilled))
 			color = glm::mix(color, glm::vec3(0.6f, 0.85f, 1.0f), 0.5f);
+		if (entity.Has(EntityFlags::Burning))
+			color = glm::mix(color, glm::vec3(1.0f, 0.5f, 0.28f), 0.45f + 0.15f * std::sin(m_Time * 11.0f + float(entity.NetId)));
 		return glm::vec4(color, FlashOf(entity.NetId) * 0.45f);
 	}
 
@@ -1127,7 +1206,13 @@ namespace Game
 		const Level* level = m_Client.GetLevel();
 		WorldRenderer& renderer = m_App.GetWorldRenderer();
 		if (!level || !renderer.IsReady())
-			return false;
+		{
+			if (m_Client.GetState() == ClientState::InGame)
+				return false;
+			BackdropView view = BackdropMoods[size_t(m_Config.Host ? BackdropMood::Kindle : BackdropMood::Seek)];
+			view.Time = m_App.GetUi().GetTime() + 30.0f;
+			return m_App.GetMenuBackdrop().Render(graph, target, extent, view);
+		}
 		if (extent != m_Extent)
 		{
 			m_Extent = extent;
@@ -1234,6 +1319,8 @@ namespace Game
 		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, look, *animator, base, entity.Facing, look.Scale, CharacterTint(entity), 0.0f);
 		if (dead)
 			return;
+		if (m_Client.GetSession().Mode == GameMode::Brawl)
+			DrawBrawlPlayer(renderer, entity, base);
 		DrawGroundRing(renderer, base, 0.42f, ColorOf(entity.Owner), 1.2f, 0.022f);
 		if (m_Client.IsHostile(entity))
 			DrawGroundRing(renderer, base, 0.56f, { 1.0f, 0.25f, 0.18f }, 1.6f, 0.03f, 12.0f, 0.15f);
@@ -1526,8 +1613,18 @@ namespace Game
 		{
 			const float progress = def.ImpactDelay > 0.0f ? std::clamp(age / def.ImpactDelay, 0.0f, 1.0f) : 1.0f;
 			DrawTelegraph(renderer, entity, progress);
-			if (ability == AbilityId::Meteor)
+			if (ability == AbilityId::Meteor || ability == AbilityId::Comet)
 				DrawMeteor(renderer, entity, progress);
+			if (ability == AbilityId::GravityWell)
+			{
+				const float radius = def.ImpactRadius * scale;
+				for (uint32_t i = 0; i < 3; i++)
+				{
+					const float phase = std::fmod(m_Time * 1.4f + float(i) / 3.0f, 1.0f);
+					DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.12f + 0.25f * phase, 0.0f), radius * (1.0f - phase) + 0.15f, color * (1.6f * phase), 0.03f);
+				}
+				DrawGlow(renderer, base + glm::vec3(0.0f, 0.4f, 0.0f), 0.5f + 0.4f * progress, color * (0.8f + progress));
+			}
 			return;
 		}
 
@@ -1542,6 +1639,15 @@ namespace Game
 			if (ability == AbilityId::Cyclone)
 				for (uint32_t i = 0; i < 3; i++)
 					DrawSlash(renderer, base + glm::vec3(0.0f, 0.35f + 0.15f * float(i), 0.0f), m_Time * 17.0f + float(i) * 2.094f, def.Reach * scale * (0.7f + 0.12f * float(i)), 1.3f, 1.0f, glm::mix(bright, color, 0.4f) * 0.7f, false, 0.55f);
+			else if (ability == AbilityId::Shockwave)
+			{
+				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.35f, 0.0f), def.Reach * scale * swing, color * (2.6f * (1.0f - t)), 0.07f);
+				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.2f, 0.0f), def.Reach * scale * swing * 0.7f, glm::mix(color, glm::vec3(1.0f), 0.5f) * (1.8f * (1.0f - t)), 0.04f);
+			}
+			break;
+		case AbilityKind::Ward:
+			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.9f, 0.0f), 0.5f + 0.5f * swing, color * (2.4f * (1.0f - t)), 0.05f);
+			DrawGlow(renderer, base + glm::vec3(0.0f, 0.9f, 0.0f), 0.9f * (1.0f - t) + 0.2f, color * 1.4f);
 			break;
 		case AbilityKind::Melee:
 		{
@@ -1576,6 +1682,10 @@ namespace Game
 			}
 			case AbilityId::GroundSlam:
 				DrawSlash(renderer, base + glm::vec3(0.0f, 0.12f, 0.0f), entity.Facing, reach, def.HalfArc, swing, glm::mix(color, glm::vec3(1.0f, 0.8f, 0.5f), 0.5f) * 1.1f, mirrored, 0.2f);
+				break;
+			case AbilityId::Gust:
+				for (uint32_t i = 0; i < 3; i++)
+					DrawSlash(renderer, chest + glm::vec3(0.0f, -0.15f + 0.15f * float(i), 0.0f) + forward * (0.3f * float(i)), entity.Facing, reach * (0.55f + 0.2f * float(i)) * (0.6f + 0.4f * swing), def.HalfArc, swing, color * (1.6f - 0.35f * float(i)), i % 2 == 0, 0.6f);
 				break;
 			default:
 				DrawSlash(renderer, chest, entity.Facing, reach * 0.85f, def.HalfArc, swing, glm::mix(owner, glm::vec3(1.0f, 0.9f, 0.75f), ability == AbilityId::Chop ? 0.6f : 0.45f) * 1.25f, mirrored);
@@ -1631,6 +1741,7 @@ namespace Game
 				tint.Rect(ui.GetScreen(), { .Fill = Rgba(0.25f, 0.05f, 0.35f, 0.08f), .Glow = Rgba(0.5f, 0.12f, 0.65f, 0.6f * throb), .GlowSize = 180.0f });
 				tint.TextAligned({ 0.0f, ui.GetSize().y * 0.2f, ui.GetSize().x, 24.0f }, "You are in the ash storm! Get back inside the circle", Theme::Bold(18.0f, Hex(0xE7B8FF)), { 0.5f, 0.5f });
 			}
+		DrawLavaWarning();
 		DrawWorldUi();
 		ui.SetLayer(UiLayer::Hud);
 		DrawOverlay();
@@ -1643,6 +1754,7 @@ namespace Game
 		if (m_ShowInventory)
 			DrawInventory();
 		DrawStationWindow();
+		DrawBrawlLoadout();
 		DrawMatchResults();
 		if (m_Paused)
 		{
@@ -1657,11 +1769,11 @@ namespace Game
 		if (m_HintTime > 0.0f && !m_Hint.empty())
 		{
 			const float alpha = std::clamp(m_HintTime / 0.4f, 0.0f, 1.0f);
-			const TextStyle style = Theme::Bold(17.0f, WithAlpha(Theme::GoldLight, alpha));
+			const TextStyle style = Theme::Bold(17.0f, WithAlpha(Theme::AccentLight, alpha));
 			const float width = draw.MeasureWidth(m_Hint, style) + 40.0f;
 			const UiRect pill = UiRect::Centered({ ui.GetSize().x * 0.5f, ui.GetSize().y * 0.64f }, { width, 36.0f });
-			draw.Shadow(pill, 18.0f, 12.0f, Rgba(0.0f, 0.0f, 0.0f, 0.5f * alpha), { 0.0f, 4.0f });
-			draw.Rect(pill, { .Fill = Rgba(0.07f, 0.06f, 0.08f, 0.9f * alpha), .Radius = 18.0f, .Border = WithAlpha(Theme::GoldDark, alpha), .BorderWidth = 1.3f });
+			draw.Rect(pill.Translate({ 0.0f, 4.0f }), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.5f * alpha), .Softness = 10.0f, .Chamfer = 10.0f });
+			draw.Rect(pill, { .Fill = Rgba(0.06f, 0.045f, 0.11f, 0.9f * alpha), .FillBottom = Rgba(0.03f, 0.024f, 0.06f, 0.9f * alpha), .Border = WithAlpha(Theme::Edge, alpha), .BorderWidth = 1.2f, .Chamfer = 9.0f });
 			draw.TextAligned(pill, m_Hint, style, { 0.5f, 0.5f });
 		}
 		if (m_Fade > 0.0f)
@@ -1671,23 +1783,27 @@ namespace Game
 	void SessionState::DrawConnecting()
 	{
 		Ui& ui = m_App.GetUi();
-		ui.SetLayer(UiLayer::Background);
-		ui.Draw().Rect(ui.GetScreen(), { .Fill = Hex(0x18131D), .FillBottom = Hex(0x09080B) });
+		ui.SetMotion(1.0f);
 		ui.SetLayer(UiLayer::Windows);
-		const UiRect panel = UiRect::Centered(ui.GetSize() * 0.5f, { 440.0f, 196.0f });
-		ui.Panel(panel, 12.0f);
 		UiDrawList& draw = ui.Draw();
-		draw.TextAligned({ panel.X, panel.Y + 22.0f, panel.W, 34.0f }, m_Config.Host ? "Starting the Game" : "Connecting", Theme::Title(26.0f), { 0.5f, 0.5f });
-		const std::string detail = m_Config.Host ? "Opening UDP port " + std::to_string(m_Config.Port) : "Reaching " + m_Config.Address;
-		draw.TextAligned({ panel.X, panel.Y + 60.0f, panel.W, 24.0f }, detail, Theme::Body(16.0f, Theme::Muted), { 0.5f, 0.5f });
-		const glm::vec2 spinner(panel.Center().x, panel.Y + 108.0f);
-		for (int i = 0; i < 8; i++)
+		const glm::vec2 center = ui.GetSize() * 0.5f + glm::vec2(0.0f, -40.0f);
+		const float time = ui.GetTime();
+		draw.Rect(UiRect::Centered(center, glm::vec2(330.0f)), { .Fill = Rgba(0.01f, 0.008f, 0.03f, 0.6f), .Radius = 165.0f, .Softness = 60.0f });
+		draw.Sigil(center, 112.0f, { .Color = WithAlpha(Theme::AccentLight, 0.75f), .Accent = WithAlpha(Theme::Astral, 0.85f), .Speed = 3.0f, .Phase = 0.21f, .LineWidth = 1.2f, .Glow = 0.8f, .Points = 7, .Skip = 3 });
+		for (int i = 0; i < 3; i++)
 		{
-			const float angle = float(i) / 8.0f * 6.2831853f;
-			const float phase = std::fmod(ui.GetTime() * 1.4f - float(i) / 8.0f + 8.0f, 1.0f);
-			draw.Circle(spinner + glm::vec2(std::cos(angle), std::sin(angle)) * 14.0f, 3.2f, WithAlpha(Theme::Gold, 0.2f + 0.8f * (1.0f - phase)));
+			const float angle = time * 1.7f + float(i) * 2.0943951f;
+			const glm::vec2 spark = center + glm::vec2(std::cos(angle), std::sin(angle)) * 104.0f;
+			draw.Rect(UiRect::Centered(spark, glm::vec2(22.0f)), { .Fill = WithAlpha(Theme::Astral, 0.5f), .Radius = 11.0f, .Softness = 8.0f, .Additive = 1.0f });
+			draw.Rect(UiRect::Centered(spark, glm::vec2(4.0f)), { .Fill = Rgba(0.9f, 1.0f, 1.0f, 1.0f), .Radius = 2.0f, .Additive = 1.0f });
 		}
-		if (ui.Button(Ui::MakeId("cancel"), UiRect::Centered({ panel.Center().x, panel.Bottom() - 36.0f }, { 180.0f, 38.0f }), "Cancel"))
+		TextStyle title = Theme::Title(30.0f);
+		title.Tracking = 4.0f;
+		title.Shimmer = 0.5f;
+		draw.TextAligned({ 0.0f, center.y + 136.0f, ui.GetSize().x, 40.0f }, m_Config.Host ? "Opening the Rift" : "Following the Rift", title, { 0.5f, 0.5f });
+		const std::string detail = m_Config.Host ? "Binding UDP port " + std::to_string(m_Config.Port) : "Reaching " + m_Config.Address;
+		draw.TextAligned({ 0.0f, center.y + 178.0f, ui.GetSize().x, 24.0f }, detail, Theme::Body(16.0f, Theme::Muted), { 0.5f, 0.5f });
+		if (ui.MenuEntry(Ui::MakeId("cancel"), UiRect::Centered({ center.x, center.y + 238.0f }, { 320.0f, 44.0f }), "Turn Back", {}, false, 0.5f))
 			ReturnToMenu({});
 	}
 
@@ -1744,7 +1860,7 @@ namespace Game
 				draw.Line(label.Anchor, { label.Anchor.x, pill.Bottom() }, 1.2f, WithAlpha(color, 0.6f));
 			if (!gem && rarity >= Rarity::Legendary)
 				draw.Shadow(pill, 14.0f, 10.0f, WithAlpha(color, 0.35f + 0.25f * pulse), { 0.0f, 0.0f });
-			draw.Rect(pill, { .Fill = Rgba(0.06f, 0.055f, 0.07f, 0.9f), .FillBottom = Rgba(0.03f, 0.025f, 0.035f, 0.9f), .Radius = 14.0f, .Border = WithAlpha(color, 0.9f), .BorderWidth = 1.3f });
+			draw.Rect(pill, { .Fill = Rgba(0.05f, 0.04f, 0.1f, 0.9f), .FillBottom = Rgba(0.025f, 0.02f, 0.05f, 0.9f), .Border = WithAlpha(color, 0.9f), .BorderWidth = 1.2f, .Chamfer = 7.0f });
 			const UiRect markerRect{ pill.X + 10.0f, pill.Center().y - marker * 0.5f, marker, marker };
 			if (emblem)
 				draw.Image(*emblem, markerRect);
@@ -1796,15 +1912,15 @@ namespace Game
 					continue;
 				const std::string title = "To the " + portal.Label;
 				const char* action = reachable ? "Click or press E" : hovered ? "Get closer to use" : nullptr;
-				const TextStyle titleStyle = Theme::Bold(15.0f, Theme::GoldLight);
+				const TextStyle titleStyle = Theme::Bold(15.0f, Theme::AccentLight);
 				const TextStyle actionStyle = Theme::Body(13.0f, Theme::Text);
 				const float width = std::max(draw.MeasureWidth(title, titleStyle), action ? draw.MeasureWidth(action, actionStyle) : 0.0f) + 54.0f;
 				const float height = action ? 46.0f : 30.0f;
 				const UiRect box{ point->x - width * 0.5f, point->y - height, width, height };
 				const float strength = hovered || reachable ? 1.0f : 0.7f;
-				draw.Shadow(box, 8.0f, 10.0f, Rgba(0.0f, 0.0f, 0.0f, 0.5f), { 0.0f, 3.0f });
-				draw.Rect(box, { .Fill = Rgba(0.08f, 0.065f, 0.05f, 0.92f), .FillBottom = Rgba(0.04f, 0.035f, 0.03f, 0.92f), .Radius = 8.0f, .Border = WithAlpha(Theme::Gold, strength), .BorderWidth = hovered ? 2.0f : 1.2f, .Glow = WithAlpha(Theme::Gold, hovered ? 0.12f : 0.0f), .GlowSize = 10.0f });
-				draw.Icon(UiIcon::Door, { box.X + 9.0f, box.Y + 6.0f, 18.0f, 18.0f }, { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold });
+				draw.Rect(box.Translate({ 0.0f, 3.0f }), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.5f), .Softness = 8.0f, .Chamfer = 8.0f });
+				draw.Rect(box, { .Fill = Rgba(0.06f, 0.05f, 0.11f, 0.92f), .FillBottom = Rgba(0.03f, 0.025f, 0.06f, 0.92f), .Border = WithAlpha(Theme::Accent, strength), .BorderWidth = hovered ? 1.8f : 1.2f, .Glow = WithAlpha(Theme::Accent, hovered ? 0.12f : 0.0f), .GlowSize = 10.0f, .Chamfer = 8.0f});
+				draw.Icon(UiIcon::Door, { box.X + 9.0f, box.Y + 6.0f, 18.0f, 18.0f }, { .Color = Theme::AccentLight, .ColorBottom = Theme::Accent });
 				draw.Text({ box.X + 34.0f, box.Y + 5.0f }, title, titleStyle);
 				if (action)
 					draw.Text({ box.X + 34.0f, box.Y + 25.0f }, action, actionStyle);
@@ -1893,9 +2009,11 @@ namespace Game
 			std::stable_sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.Team != b.Team ? a.Team < b.Team : a.Kills != b.Kills ? a.Kills > b.Kills : a.Deaths < b.Deaths; });
 		else if (mode == GameMode::Royale)
 			std::stable_sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return (a.Placement == 0) != (b.Placement == 0) ? a.Placement == 0 : a.Placement != b.Placement ? a.Placement < b.Placement : a.Kills > b.Kills; });
+		else if (mode == GameMode::Brawl)
+			std::stable_sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.Score != b.Score ? a.Score > b.Score : a.Rounds > b.Rounds; });
 		const UiRect frame{ 14.0f, 14.0f, 318.0f, 40.0f + float(players.size()) * 30.0f };
-		draw.Shadow(frame, 8.0f, 12.0f, Rgba(0.0f, 0.0f, 0.0f, 0.4f), { 0.0f, 3.0f });
-		draw.Rect(frame, { .Fill = Rgba(0.08f, 0.07f, 0.09f, 0.72f), .FillBottom = Rgba(0.04f, 0.035f, 0.05f, 0.72f), .Radius = 8.0f, .Border = WithAlpha(Theme::GoldDark, 0.6f), .BorderWidth = 1.0f });
+		draw.Rect(frame.Translate({ 0.0f, 4.0f }), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.4f), .Softness = 10.0f, .Chamfer = 10.0f });
+		draw.Rect(frame, { .Fill = Hex(0x120E24, 0.78f), .FillBottom = Hex(0x07060E, 0.8f), .Border = WithAlpha(Theme::Edge, 0.75f), .BorderWidth = 1.0f, .Chamfer = 10.0f, .Aether = 0.4f, .Seed = 0.13f });
 		const ConnectionStats connection = m_Client.GetConnectionStats();
 		char line[96];
 		if (m_Server)
@@ -1920,14 +2038,19 @@ namespace Game
 				draw.TextAligned({ frame.X + 34.0f + nameWidth, y, 40.0f, 30.0f }, "you", Theme::Body(12.5f, Theme::Faint), { 0.0f, 0.5f });
 			const UiColor weapon = WithAlpha(RarityColor(player.Look.WeaponQuality));
 			draw.Icon(IconFor(player.Look.Weapon), { frame.X + 178.0f, y + 6.0f, 18.0f, 18.0f }, { .Color = Lighten(weapon, 0.35f), .ColorBottom = weapon, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
-			std::snprintf(line, sizeof(line), "%u / %u", player.Kills, player.Deaths);
+			if (mode == GameMode::Brawl)
+				std::snprintf(line, sizeof(line), "%u pts", unsigned(player.Score));
+			else
+				std::snprintf(line, sizeof(line), "%u / %u", player.Kills, player.Deaths);
 			draw.TextAligned({ frame.X + 202.0f, y, 60.0f, 30.0f }, line, Theme::Body(13.5f, Theme::Text), { 0.0f, 0.5f });
 			std::snprintf(line, sizeof(line), "%d ms", player.Ping);
 			draw.TextAligned({ frame.X, y, frame.W - 12.0f, 30.0f }, line, Theme::Body(12.5f, Theme::Faint), { 1.0f, 0.5f });
 			y += 30.0f;
 		}
+		if (!m_App.GetSettings().ShowControls)
+			return;
 		draw.Text({ 16.0f, ui.GetSize().y - 46.0f }, "WASD move   LMB attack   RMB / Q / R skills   Space dodge", Theme::Floating(13.0f, Theme::Muted, UiFont::Body));
-		draw.Text({ 16.0f, ui.GetSize().y - 26.0f }, "E interact   I inventory   F4 map   F3 network   Esc menu", Theme::Floating(13.0f, Theme::Muted, UiFont::Body));
+		draw.Text({ 16.0f, ui.GetSize().y - 26.0f }, mode == GameMode::Brawl ? "Tab spellbook   F4 map   F3 network   Esc menu" : "E interact   I inventory   F4 map   F3 network   Esc menu", Theme::Floating(13.0f, Theme::Muted, UiFont::Body));
 	}
 
 	void SessionState::DrawNetworkWindow()
@@ -2024,19 +2147,12 @@ namespace Game
 		const float titleWidth = draw.MeasureWidth(title, titleStyle);
 		draw.Shadow(UiRect::Centered({ center, 44.0f }, { titleWidth + 160.0f, 56.0f }), 28.0f, 30.0f, Rgba(0.0f, 0.0f, 0.0f, 0.55f), { 0.0f, 0.0f });
 		draw.TextAligned({ 0.0f, 16.0f, ui.GetSize().x, 36.0f }, title, titleStyle, { 0.5f, 0.5f });
-		for (const float side : { -1.0f, 1.0f })
-		{
-			const float start = center + side * (titleWidth * 0.5f + 18.0f);
-			const float length = 90.0f;
-			const UiRect line{ side < 0.0f ? start - length : start, 33.0f, length, 1.5f };
-			draw.Rect(line, { .Fill = WithAlpha(Theme::Gold, side < 0.0f ? 0.0f : 0.8f), .FillBottom = WithAlpha(Theme::Gold, side < 0.0f ? 0.8f : 0.0f), .Horizontal = true });
-			draw.Rect(UiRect::Centered({ start, 33.75f }, { 6.0f, 6.0f }), { .Fill = Theme::Gold, .Rotation = 0.7853982f });
-		}
+		DrawTitleOrnament(center, 33.0f, titleWidth);
 		draw.TextAligned({ 0.0f, 56.0f, ui.GetSize().x, 22.0f }, subtitle, Theme::Floating(16.0f, danger ? Theme::Danger : Theme::Text, UiFont::Body), { 0.5f, 0.5f });
 		if (status.Phase == GamePhase::Intermission && status.PendingChoices > 0)
 		{
 			if (m_Client.GetLocalPlayer().OfferPending)
-				draw.TextAligned({ 0.0f, 80.0f, ui.GetSize().x, 20.0f }, "Pick an upgrade with 1, 2 or 3, the next wave waits for it", Theme::Floating(15.0f, Theme::GoldLight, UiFont::Body), { 0.5f, 0.5f });
+				draw.TextAligned({ 0.0f, 80.0f, ui.GetSize().x, 20.0f }, "Pick an upgrade with 1, 2 or 3, the next wave waits for it", Theme::Floating(15.0f, Theme::AccentLight, UiFont::Body), { 0.5f, 0.5f });
 			else
 			{
 				char waiting[64];
@@ -2063,28 +2179,43 @@ namespace Game
 		const float barWidth = float(AbilitySlots + 1) * SlotSize + float(AbilitySlots) * SlotGap;
 		const UiRect slots{ center - barWidth * 0.5f, size.y - 22.0f - SlotSize, barWidth, SlotSize };
 		const UiRect plate = slots.Expand(12.0f);
-		draw.Shadow(plate, 12.0f, 18.0f, Rgba(0.0f, 0.0f, 0.0f, 0.55f), { 0.0f, 5.0f });
-		draw.Rect(plate, { .Fill = Rgba(0.1f, 0.09f, 0.11f, 0.9f), .FillBottom = Rgba(0.05f, 0.045f, 0.06f, 0.92f), .Radius = 12.0f, .Border = WithAlpha(Theme::GoldDark, 0.95f), .BorderWidth = 1.5f });
-		draw.Rect(plate.Shrink(4.0f), { .Radius = 9.0f, .Border = Rgba(1.0f, 0.86f, 0.55f, 0.07f), .BorderWidth = 1.0f });
+		draw.Rect(plate.Translate({ 0.0f, 6.0f }).Expand(4.0f), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.55f), .Softness = 16.0f, .Chamfer = 18.0f });
+		draw.Rect(plate, { .Fill = Hex(0x130F26, 0.9f), .FillBottom = Hex(0x07060E, 0.94f), .Border = WithAlpha(Theme::Edge, 0.95f), .BorderWidth = 1.3f, .Glow = WithAlpha(Theme::Accent, 0.06f), .GlowSize = 30.0f, .Chamfer = 14.0f, .Aether = 0.7f, .Seed = 0.42f });
+		draw.Rect(plate.Shrink(4.0f), { .Border = WithAlpha(Theme::AccentLight, 0.06f), .BorderWidth = 1.0f, .Chamfer = 12.0f });
+		draw.Diamond({ plate.Center().x, plate.Y }, 10.0f, Theme::AccentLight, WithAlpha(Theme::Ink, 0.9f), 1.2f);
 		ui.Block(plate);
 		DrawAbilityBar(slots);
 
-		const auto orb = [&](float x, float fill, UiColor light, UiColor deep, const std::string& text, float phase)
+		const auto orb = [&](float x, float fill, UiColor light, UiColor deep, UiColor rune, const std::string& text, float phase, float danger)
 		{
 			const glm::vec2 orbCenter(x, size.y - 18.0f - OrbRadius);
-			const UiRect bounds = UiRect::Centered(orbCenter, glm::vec2((OrbRadius + 8.0f) * 2.0f));
-			draw.Shadow(bounds, OrbRadius + 8.0f, 14.0f, Rgba(0.0f, 0.0f, 0.0f, 0.6f), { 0.0f, 4.0f });
-			draw.Circle(orbCenter, OrbRadius + 8.0f, Hex(0x17141B), WithAlpha(Theme::GoldDark, 0.95f), 2.0f);
-			draw.Orb(orbCenter, OrbRadius, fill, light, deep, Rgba(0.07f, 0.06f, 0.08f, 0.95f), Rgba(1.0f, 1.0f, 1.0f, 0.32f), phase);
-			draw.Circle(orbCenter, OrbRadius + 1.5f, UiColor(0.0f), WithAlpha(Theme::Gold, 0.85f), 2.0f);
-			draw.Rect(UiRect::Centered(orbCenter - glm::vec2(0.0f, OrbRadius + 8.0f), { 9.0f, 9.0f }), { .Fill = Theme::GoldLight, .FillBottom = Theme::GoldDark, .Radius = 1.0f, .Rotation = 0.7853982f });
-			draw.TextAligned(UiRect::Centered(orbCenter, { 160.0f, 24.0f }), text, Theme::Floating(17.0f, Hex(0xFFF6E8)), { 0.5f, 0.5f });
+			const float frame = OrbRadius + 11.0f;
+			const UiRect bounds = UiRect::Centered(orbCenter, glm::vec2(frame * 2.0f));
+			draw.Rect(bounds.Translate({ 0.0f, 5.0f }).Expand(2.0f), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.6f), .Radius = frame + 2.0f, .Softness = 14.0f });
+			if (danger > 0.01f)
+				draw.Rect(bounds.Expand(10.0f), { .Fill = WithAlpha(rune, 0.3f * danger * (0.6f + 0.4f * std::sin(m_Time * 5.0f))), .Radius = frame + 10.0f, .Softness = 16.0f, .Additive = 1.0f });
+			draw.Circle(orbCenter, frame, Hex(0x0B0918, 0.96f), WithAlpha(glm::mix(Theme::Edge, rune, danger), 0.95f), 1.3f);
+			draw.Sigil(orbCenter, frame, { .Color = WithAlpha(glm::mix(Theme::AccentLight, rune, 0.5f + 0.5f * danger), 0.6f + 0.35f * danger), .Speed = 3.0f * danger, .Phase = phase, .LineWidth = 1.0f, .Glow = 0.35f + 0.6f * danger, .Layers = SigilRings });
+			draw.Orb(orbCenter, OrbRadius, fill, light, deep, Rgba(0.04f, 0.03f, 0.08f, 0.95f), Rgba(1.0f, 1.0f, 1.0f, 0.3f), phase);
+			draw.Circle(orbCenter, OrbRadius + 1.0f, UiColor(0.0f), WithAlpha(Theme::AccentLight, 0.55f), 1.4f);
+			draw.Diamond(orbCenter - glm::vec2(0.0f, frame), 12.0f, Lighten(rune, 0.45f), WithAlpha(Theme::Ink, 0.9f), 1.2f);
+			draw.TextAligned(UiRect::Centered(orbCenter, { 160.0f, 24.0f }), text, Theme::Floating(17.0f, Hex(0xFFF7FF)), { 0.5f, 0.5f });
 			ui.Block(bounds);
 		};
 		const float healthFraction = local.MaxHealth > 0 ? float(std::max(local.Health, 0)) / float(local.MaxHealth) : 0.0f;
 		const float manaFraction = traits.MaxMana > 0.0f ? state.Mana / traits.MaxMana : 0.0f;
-		orb(plate.X - OrbRadius - 4.0f, healthFraction, Hex(0xFF6A55), Hex(0x6A0A10), std::to_string(std::max(local.Health, 0)) + " / " + std::to_string(local.MaxHealth), 0.0f);
-		orb(plate.Right() + OrbRadius + 4.0f, manaFraction, Hex(0x78A6FF), Hex(0x111E66), std::to_string(int(state.Mana)) + " / " + std::to_string(int(traits.MaxMana)), 2.1f);
+		const float danger = state.Alive ? std::clamp((0.35f - healthFraction) / 0.25f, 0.0f, 1.0f) : 0.0f;
+		orb(plate.X - OrbRadius - 8.0f, healthFraction, Hex(0xFF5F6F), Hex(0x5E0A24), Hex(0xFF7A96), std::to_string(std::max(local.Health, 0)) + " / " + std::to_string(local.MaxHealth), 0.0f, danger);
+		if (m_Client.GetSession().Mode == GameMode::Brawl)
+		{
+			const float missing = state.Alive ? 1.0f - healthFraction : 0.0f;
+			const float rise = std::clamp((missing - 0.4f) / 0.5f, 0.0f, 1.0f);
+			orb(plate.Right() + OrbRadius + 8.0f, missing, Hex(0xFFB45A), Hex(0x5E2208), Hex(0xFF9A4A), "+" + std::to_string(int(std::lround(missing * MissingHealthKnockback * 100.0f))) + "% fling", 2.1f, rise);
+			if (ui.Interact(Ui::MakeId("flingorb"), UiRect::Centered({ plate.Right() + OrbRadius + 8.0f, size.y - 18.0f - OrbRadius }, glm::vec2(OrbRadius * 2.0f))).Hovered)
+				ui.Tooltip().Header("Fling", Hex(0xFFB45A), std::nullopt, UiIcon::Whirlwind).Text("Spells don't hurt you, but the less health you have, the further they throw you.").Muted("Lava and its afterburn are the only things that cost health.");
+		}
+		else
+			orb(plate.Right() + OrbRadius + 8.0f, manaFraction, Hex(0x7FA8FF), Hex(0x13135E), Theme::Astral, std::to_string(int(state.Mana)) + " / " + std::to_string(int(traits.MaxMana)), 2.1f, 0.0f);
 
 		float buffX = plate.X;
 		const float buffY = plate.Y - 40.0f;
@@ -2094,7 +2225,7 @@ namespace Game
 				continue;
 			const UiRect tile{ buffX, buffY, 32.0f, 32.0f };
 			const UiColor color = WithAlpha(LootColors[std::min(i, std::size(LootColors) - 1)]);
-			draw.Rect(tile, { .Fill = Hex(0x17151A, 0.9f), .FillBottom = Hex(0x0D0C10, 0.9f), .Radius = 6.0f, .Border = WithAlpha(color, 0.8f), .BorderWidth = 1.2f, .Glow = WithAlpha(color, 0.15f), .GlowSize = 8.0f });
+			draw.Rect(tile, { .Fill = WithAlpha(Theme::SlotTop, 0.92f), .FillBottom = WithAlpha(Theme::SlotBottom, 0.92f), .Border = WithAlpha(color, 0.8f), .BorderWidth = 1.2f, .Glow = WithAlpha(color, 0.15f), .GlowSize = 8.0f, .Chamfer = 6.0f });
 			draw.Icon(IconFor(LootKind(i)), tile.Shrink(5.0f), { .Color = Lighten(color, 0.4f), .ColorBottom = color, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
 			draw.TextAligned(tile.Shrink(2.0f, 0.0f).Translate({ 3.0f, 3.0f }), std::to_string(local.Buffs[i]), Theme::Floating(12.5f, Theme::Text), { 1.0f, 1.0f });
 			if (ui.Interact(Ui::MakeId("buff", i), tile).Hovered)
@@ -2110,7 +2241,18 @@ namespace Game
 			draw.TextAligned({ 0.0f, noticeY, size.x, 22.0f }, it->Text, Theme::Floating(16.0f, WithAlpha(it->Color, it->Color.a * alpha), UiFont::Bold), { 0.5f, 0.5f });
 		}
 
-		if (!state.Alive)
+		const GameStatus& match = m_Client.GetStatus();
+		const bool brawlFight = match.Mode == GameMode::Brawl && match.Match != MatchPhase::Ended && match.Brawl.Phase == BrawlPhase::Fight;
+		if (!state.Alive && brawlFight && m_FoughtRound != match.Brawl.Round)
+		{
+			TextStyle waiting = Theme::Title(40.0f);
+			waiting.Tracking = 3.0f;
+			draw.TextAligned({ 0.0f, size.y * 0.3f, size.x, 48.0f }, "Next Round Soon", waiting, { 0.5f, 0.5f });
+			const std::string watching = local.Watching != NoPlayer ? PlayerName(local.Watching) : std::string();
+			const std::string line = watching.empty() ? std::string("This round started without you. You join the next one") : "This round started without you. Spectating " + watching + ", click to switch";
+			draw.TextAligned({ 0.0f, size.y * 0.3f + 52.0f, size.x, 24.0f }, line, Theme::Floating(18.0f, Theme::Text, UiFont::Body), { 0.5f, 0.5f });
+		}
+		else if (!state.Alive && (match.Mode != GameMode::Brawl || brawlFight))
 		{
 			TextStyle died = Theme::Title(56.0f);
 			died.Color = Hex(0xFF7A6A);
@@ -2121,11 +2263,21 @@ namespace Game
 			died.ShadowBlur = 16.0f;
 			const GameStatus& status = m_Client.GetStatus();
 			const bool royaleOut = status.Mode == GameMode::Royale && status.Match != MatchPhase::Countdown;
-			draw.TextAligned({ 0.0f, size.y * 0.3f, size.x, 64.0f }, royaleOut ? "Eliminated" : IsPvpMode(status.Mode) ? "Slain" : "You Died", died, { 0.5f, 0.5f });
+			const bool brawlOut = status.Mode == GameMode::Brawl;
+			draw.TextAligned({ 0.0f, size.y * 0.3f, size.x, 64.0f }, brawlOut ? "Burned Away" : royaleOut ? "Eliminated" : IsPvpMode(status.Mode) ? "Slain" : "You Died", died, { 0.5f, 0.5f });
 			char respawn[160];
 			respawn[0] = 0;
 			const std::string killer = local.KilledBy != NoPlayer ? PlayerName(local.KilledBy) : std::string();
-			if (royaleOut)
+			if (brawlOut)
+			{
+				const std::string watching = local.Watching != NoPlayer ? PlayerName(local.Watching) : std::string();
+				const std::string cause = killer.empty() ? std::string("The lava got you") : killer + " shoved you into the lava";
+				if (!watching.empty())
+					std::snprintf(respawn, sizeof(respawn), "%s. Spectating %s, click to switch. You're back next round", cause.c_str(), watching.c_str());
+				else
+					std::snprintf(respawn, sizeof(respawn), "%s. You're back next round", cause.c_str());
+			}
+			else if (royaleOut)
 			{
 				const std::string watching = local.Watching != NoPlayer ? PlayerName(local.Watching) : std::string();
 				if (!watching.empty() && status.Match == MatchPhase::Fight)
@@ -2155,7 +2307,7 @@ namespace Game
 		if (mode != GameMode::Horde && !IsPvpMode(mode))
 		{
 			const UiRect strip{ size.x - 374.0f, 14.0f, 360.0f, 34.0f };
-			draw.Rect(strip, { .Fill = Rgba(0.08f, 0.07f, 0.09f, 0.72f), .FillBottom = Rgba(0.04f, 0.035f, 0.05f, 0.72f), .Radius = 8.0f, .Border = WithAlpha(Theme::GoldDark, 0.6f), .BorderWidth = 1.0f });
+			draw.Rect(strip, { .Fill = Hex(0x120E24, 0.8f), .FillBottom = Hex(0x07060E, 0.82f), .Border = WithAlpha(Theme::Edge, 0.75f), .BorderWidth = 1.0f, .Chamfer = 9.0f, .Aether = 0.4f, .Seed = 0.61f });
 			DrawMaterials(strip.Shrink(12.0f, 0.0f), true);
 		}
 		if (mode == GameMode::Royale)
@@ -2192,35 +2344,35 @@ namespace Game
 				border = Hex(0xFFF6DD);
 			else if (interaction.Hovered)
 				border = Lighten(border, 0.35f);
-			draw.Rect(rect, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Radius = 8.0f, .Border = border, .BorderWidth = casting ? 2.4f : 1.5f, .Glow = WithAlpha(color, active ? 0.16f : 0.0f), .GlowSize = 14.0f });
+			draw.Rect(rect, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Border = border, .BorderWidth = casting ? 2.2f : 1.4f, .Glow = WithAlpha(color, active ? 0.16f : 0.0f), .GlowSize = 14.0f, .Chamfer = 10.0f, .Seed = float(slot) * 0.21f });
 			if (empty)
-				draw.Icon(UiIcon::Emerald, rect.Shrink(17.0f), { .Color = Rgba(0.6f, 0.55f, 0.45f, 0.2f) });
+				draw.Icon(UiIcon::Emerald, rect.Shrink(17.0f), { .Color = Rgba(0.62f, 0.56f, 0.9f, 0.2f) });
 			else
 			{
-				const UiColor top = active ? Lighten(color, 0.55f) : Hex(0x8A857D);
-				const UiColor bottom = active ? color : Hex(0x4E4A44);
+				const UiColor top = active ? Lighten(color, 0.55f) : Hex(0x8A86A0);
+				const UiColor bottom = active ? color : Hex(0x4A4760);
 				draw.Icon(IconFor(skill.Ability), rect.Shrink(10.0f), { .Color = top, .ColorBottom = bottom, .Outline = 0.9f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.75f), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
 			}
 			if (ready < 1.0f)
 			{
-				draw.Rect(rect.Shrink(1.5f), { .Fill = Rgba(0.02f, 0.02f, 0.03f, 0.7f), .Radius = 7.0f, .Sweep = ready });
+				draw.Rect(rect.Shrink(1.5f), { .Fill = Rgba(0.02f, 0.015f, 0.05f, 0.74f), .Sweep = ready, .Chamfer = 9.0f });
 				if (cooldown > 0.25f)
 				{
 					char text[16];
 					std::snprintf(text, sizeof(text), cooldown < 3.0f ? "%.1f" : "%.0f", double(cooldown));
-					draw.TextAligned(rect, text, Theme::Floating(19.0f, Hex(0xFFF3DC)), { 0.5f, 0.5f });
+					draw.TextAligned(rect, text, Theme::Floating(19.0f, Hex(0xF4F0FF)), { 0.5f, 0.5f });
 				}
 			}
 			if (!empty && !skill.Usable)
 			{
-				draw.Rect(rect.Shrink(1.5f), { .Fill = Rgba(0.45f, 0.05f, 0.04f, 0.35f), .Radius = 7.0f });
+				draw.Rect(rect.Shrink(1.5f), { .Fill = Rgba(0.45f, 0.05f, 0.12f, 0.35f), .Chamfer = 9.0f });
 				draw.Icon(UiIcon::Padlock, UiRect::Centered(rect.Center(), { 26.0f, 26.0f }), { .Color = Hex(0xFF8A7A), .ColorBottom = Hex(0xB83A30), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.8f) });
 			}
 			const char* key = dodge ? "Space" : SlotKeys[slot];
-			const TextStyle keyStyle = Theme::Bold(11.5f, Theme::GoldLight);
+			const TextStyle keyStyle = Theme::Bold(11.5f, Theme::AccentLight);
 			const float keyWidth = draw.MeasureWidth(key, keyStyle) + 10.0f;
 			const UiRect badge{ rect.X + 3.0f, rect.Bottom() - 17.0f, keyWidth, 15.0f };
-			draw.Rect(badge, { .Fill = Rgba(0.04f, 0.035f, 0.05f, 0.92f), .Radius = 4.0f, .Border = WithAlpha(Theme::GoldDark, 0.9f), .BorderWidth = 1.0f });
+			draw.Rect(badge, { .Fill = Rgba(0.03f, 0.025f, 0.06f, 0.94f), .Border = WithAlpha(Theme::Edge, 0.9f), .BorderWidth = 1.0f, .Chamfer = 3.0f });
 			draw.TextAligned(badge, key, keyStyle, { 0.5f, 0.5f });
 			if (!empty && skill.ManaCost > 0.0f)
 			{
@@ -2276,18 +2428,18 @@ namespace Game
 			const UiRect lifted = card.Translate({ 0.0f, -4.0f * hover });
 			draw.Shadow(lifted, 10.0f, 14.0f + 8.0f * hover, Rgba(0.0f, 0.0f, 0.0f, 0.6f), { 0.0f, 6.0f });
 			if (hover > 0.01f)
-				draw.Shadow(lifted, 10.0f, 12.0f, WithAlpha(Theme::Gold, 0.3f * hover), { 0.0f, 0.0f });
-			draw.Rect(lifted, { .Fill = glm::mix(Hex(0x221F26), Hex(0x33281A), hover), .FillBottom = glm::mix(Hex(0x131216), Hex(0x1A130B), hover), .Radius = 10.0f, .Border = glm::mix(WithAlpha(Theme::GoldDark, 0.9f), Theme::GoldLight, hover), .BorderWidth = 1.5f + hover, .Glow = WithAlpha(Theme::Gold, 0.06f + 0.1f * hover), .GlowSize = 22.0f });
+				draw.Shadow(lifted, 10.0f, 12.0f, WithAlpha(Theme::Accent, 0.3f * hover), { 0.0f, 0.0f });
+			draw.Rect(lifted, { .Fill = glm::mix(Theme::CardTop, Hex(0x251C4A, 0.95f), hover), .FillBottom = glm::mix(Theme::CardBottom, Hex(0x110C27, 0.96f), hover), .Border = glm::mix(WithAlpha(Theme::Edge, 0.9f), Theme::Gold, hover), .BorderWidth = 1.4f + 0.6f * hover, .Glow = WithAlpha(Theme::Accent, 0.06f + 0.1f * hover), .GlowSize = 22.0f, .Chamfer = 12.0f, .Aether = 0.4f + 0.4f * hover, .Seed = float(i) * 0.31f });
 			const UiRect icon = UiRect::Centered({ lifted.Center().x, lifted.Y + 38.0f }, { 48.0f, 48.0f });
-			draw.Shadow(icon.Shrink(6.0f), 20.0f, 14.0f, WithAlpha(Theme::Gold, 0.25f + 0.2f * hover), { 0.0f, 0.0f });
-			draw.Icon(IconFor(upgrade.Id), icon, { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .Outline = 0.8f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.7f), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
-			draw.TextAligned({ lifted.X, lifted.Y + 68.0f, lifted.W, 24.0f }, upgrade.Name, Theme::Bold(19.0f, Theme::GoldLight), { 0.5f, 0.5f });
+			draw.Sigil(icon.Center(), 34.0f, { .Color = WithAlpha(glm::mix(Theme::AccentLight, Theme::Gold, hover), 0.35f + 0.4f * hover), .Accent = WithAlpha(Theme::Astral, 0.4f + 0.4f * hover), .Speed = 0.15f + 1.2f * hover, .Phase = float(i) * 0.27f, .LineWidth = 1.0f, .Glow = 0.3f + 0.5f * hover, .Layers = SigilRings | SigilRunes });
+			draw.Icon(IconFor(upgrade.Id), icon.Shrink(4.0f), { .Color = Theme::AccentLight, .ColorBottom = Theme::Accent, .Outline = 0.8f, .OutlineColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.6f), .GlowColor = WithAlpha(Theme::Accent, 0.3f * hover) });
+			draw.TextAligned({ lifted.X, lifted.Y + 68.0f, lifted.W, 24.0f }, upgrade.Name, Theme::Bold(19.0f, Theme::AccentLight), { 0.5f, 0.5f });
 			draw.TextWrapped({ lifted.X + 16.0f, lifted.Y + 96.0f, lifted.W - 32.0f, 44.0f }, upgrade.Description, Theme::Body(15.0f, Theme::Text), 0.5f);
 			char footer[48];
 			std::snprintf(footer, sizeof(footer), "taken %u of %u", unsigned(inventory.Upgrades[size_t(upgrade.Id)]), unsigned(upgrade.MaxPicks));
 			const UiRect badge{ lifted.X + 14.0f, lifted.Bottom() - 30.0f, 24.0f, 20.0f };
-			draw.Rect(badge, { .Fill = Rgba(0.04f, 0.035f, 0.05f, 0.95f), .Radius = 4.0f, .Border = WithAlpha(Theme::Gold, 0.8f), .BorderWidth = 1.0f });
-			draw.TextAligned(badge, std::to_string(i + 1), Theme::Bold(13.0f, Theme::GoldLight), { 0.5f, 0.5f });
+			draw.Rect(badge, { .Fill = Rgba(0.04f, 0.035f, 0.05f, 0.95f), .Radius = 4.0f, .Border = WithAlpha(Theme::Accent, 0.8f), .BorderWidth = 1.0f });
+			draw.TextAligned(badge, std::to_string(i + 1), Theme::Bold(13.0f, Theme::AccentLight), { 0.5f, 0.5f });
 			draw.TextAligned({ badge.Right() + 8.0f, badge.Y, lifted.Right() - badge.Right() - 22.0f, badge.H }, footer, Theme::Body(13.5f, Theme::Muted), { 1.0f, 0.5f });
 		}
 	}
@@ -2433,7 +2585,7 @@ namespace Game
 				DescribeItem(tooltip, item, affinity);
 				if (!item.IsGem())
 				{
-					tooltip.Separator().Text("If equipped", Theme::GoldLight, 14.0f);
+					tooltip.Separator().Text("If equipped", Theme::AccentLight, 14.0f);
 					CompareTraits(tooltip, current, candidate);
 				}
 				tooltip.Space(4.0f).Muted(item.IsGem() ? "Left click to slot it, right click to drop" : "Left click to equip, right click to drop", 13.5f);
@@ -2458,11 +2610,11 @@ namespace Game
 			const UpgradeDef& upgrade = GetUpgrade(UpgradeId(i));
 			const UiRect tile = upgrades.CutLeft(36.0f);
 			upgrades.CutLeft(6.0f);
-			draw.Rect(tile, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Radius = 6.0f, .Border = WithAlpha(Theme::GoldDark, 0.9f), .BorderWidth = 1.2f });
-			draw.Icon(IconFor(upgrade.Id), tile.Shrink(6.0f), { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
+			draw.Rect(tile, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Radius = 6.0f, .Border = WithAlpha(Theme::Edge, 0.9f), .BorderWidth = 1.2f });
+			draw.Icon(IconFor(upgrade.Id), tile.Shrink(6.0f), { .Color = Theme::AccentLight, .ColorBottom = Theme::Accent, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
 			draw.TextAligned(tile.Shrink(2.0f, 0.0f).Translate({ 3.0f, 3.0f }), std::to_string(inventory.Upgrades[i]), Theme::Floating(12.0f, Theme::Text), { 1.0f, 1.0f });
 			if (ui.Interact(Ui::MakeId("taken", i), tile).Hovered && !drag)
-				ui.Tooltip().Header(upgrade.Name, Theme::GoldLight, std::nullopt, IconFor(upgrade.Id)).Text(upgrade.Description).Muted("Taken " + std::to_string(inventory.Upgrades[i]) + " of " + std::to_string(upgrade.MaxPicks) + " times this run");
+				ui.Tooltip().Header(upgrade.Name, Theme::AccentLight, std::nullopt, IconFor(upgrade.Id)).Text(upgrade.Description).Muted("Taken " + std::to_string(inventory.Upgrades[i]) + " of " + std::to_string(upgrade.MaxPicks) + " times this run");
 		}
 		if (!any)
 			draw.TextAligned(upgrades, m_Client.GetSession().Mode == GameMode::Horde ? "None yet, you pick one after every wave" : "Upgrades only exist in endless horde runs", Theme::Body(14.5f, Theme::Faint), { 0.0f, 0.5f });
@@ -2500,7 +2652,7 @@ namespace Game
 		std::snprintf(text, sizeof(text), "Connection problem: no update from the server for %.1f s", double(age));
 		const TextStyle style = Theme::Bold(15.0f, Theme::Warning);
 		const UiRect pill = UiRect::Centered({ ui.GetSize().x * 0.5f, 122.0f }, { draw.MeasureWidth(text, style) + 64.0f, 34.0f });
-		draw.Rect(pill, { .Fill = Rgba(0.18f, 0.11f, 0.03f, 0.92f), .Radius = 17.0f, .Border = WithAlpha(Theme::Warning, 0.8f), .BorderWidth = 1.3f });
+		draw.Rect(pill, { .Fill = Rgba(0.16f, 0.1f, 0.04f, 0.92f), .Border = WithAlpha(Theme::Warning, 0.8f), .BorderWidth = 1.2f, .Chamfer = 9.0f });
 		draw.Icon(UiIcon::Hourglass, { pill.X + 14.0f, pill.Center().y - 10.0f, 20.0f, 20.0f }, { .Color = Theme::Warning });
 		draw.TextAligned({ pill.X + 40.0f, pill.Y, pill.W - 52.0f, pill.H }, text, style, { 0.0f, 0.5f });
 	}
@@ -2509,30 +2661,66 @@ namespace Game
 	{
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
-		draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.55f) });
-		ui.Block(ui.GetScreen());
+		m_PauseTime += ui.GetDeltaTime();
+		const float appear = std::min(m_PauseTime / 0.3f, 1.0f);
+		const UiRect screen = ui.GetScreen();
+		const glm::vec2 center = screen.Center();
+		draw.Rect(screen, { .Fill = Rgba(0.02f, 0.012f, 0.05f, 0.64f * appear), .Glow = Rgba(0.0f, 0.0f, 0.02f, 0.75f * appear), .GlowSize = 320.0f });
+		ui.Block(screen);
+		draw.Sigil(center, std::min(screen.H * 0.46f, 400.0f), { .Color = WithAlpha(Theme::AccentLight, 0.13f * appear), .Accent = WithAlpha(Theme::Astral, 0.17f * appear), .Speed = 0.5f, .Phase = 0.53f, .LineWidth = 1.2f, .Glow = 0.35f,
+			.Points = 9, .Skip = 4, .Progress = std::min(m_PauseTime / 1.1f, 1.0f) });
+
+		TextStyle title = Theme::Title(m_PauseSettings ? 30.0f : 44.0f);
+		title.Tracking = m_PauseSettings ? 2.5f : 7.0f;
+		title.GlowColor = WithAlpha(Theme::Accent, 0.55f);
+		title.GlowBlur = 10.0f;
+		title.Shimmer = 0.5f;
+		if (m_PauseSettings)
+		{
+			const UiRect panel = UiRect::Centered(center, { 600.0f, std::min(700.0f, screen.H - 40.0f) });
+			ui.Panel(panel, 18.0f);
+			UiRect content = panel.Shrink(36.0f, 30.0f);
+			draw.Text({ content.X, content.Y }, "Attunement", title);
+			draw.TextWrapped({ content.X, content.Y + 44.0f, content.W, 40.0f }, "Changes apply at once and are remembered.", Theme::Body(15.0f, Theme::Muted));
+			ui.Separator({ content.X, content.Y + 74.0f, content.W, 10.0f });
+			content.CutTop(100.0f);
+			UiRect back = content.CutBottom(44.0f);
+			DrawSettings(ui, m_App, content);
+			if (ui.Button(Ui::MakeId("pause.back"), back.CutLeft(170.0f), "Back"))
+				m_PauseSettings = false;
+			draw.TextAligned(back, "Esc returns", Theme::Body(13.5f, Theme::Faint), { 1.0f, 0.5f });
+			return;
+		}
+
 		const GameMode mode = m_Client.GetSession().Mode;
 		const bool canReturn = mode != GameMode::Hub && (!IsPvpMode(mode) || m_Server || m_Client.GetStatus().Match == MatchPhase::Ended);
-		const UiRect panel = UiRect::Centered(ui.GetSize() * 0.5f, { 360.0f, canReturn ? 358.0f : 300.0f });
-		ui.Panel(panel, 12.0f);
-		draw.TextAligned({ panel.X, panel.Y + 20.0f, panel.W, 40.0f }, "Paused", Theme::Title(32.0f), { 0.5f, 0.5f });
-		ui.Separator({ panel.X + 24.0f, panel.Y + 66.0f, panel.W - 48.0f, 8.0f });
-		UiRect buttons{ panel.X + 36.0f, panel.Y + 92.0f, panel.W - 72.0f, panel.H - 110.0f };
-		if (ui.Button(Ui::MakeId("resume"), buttons.CutTop(46.0f), "Resume", ButtonKind::Primary))
+		const char* returnLabel = mode == GameMode::Mission ? "Abandon the Mission" : IsPvpMode(mode) && m_Client.GetStatus().Match != MatchPhase::Ended ? "End the Match" : "Return to Emberhold";
+		const float count = canReturn ? 5.0f : 4.0f;
+		const float top = center.y - (count * 54.0f + 120.0f) * 0.5f;
+		draw.TextAligned({ 0.0f, top, screen.W, 56.0f }, "Paused", title, { 0.5f, 0.5f });
+		TextStyle motto = Theme::Caps(14.0f, Theme::Muted, 4.0f);
+		motto.ColorBottom = Theme::Faint;
+		draw.TextAligned({ 0.0f, top + 56.0f, screen.W, 20.0f }, "the world does not wait", motto, { 0.5f, 0.5f });
+		ui.Separator({ center.x - 150.0f, top + 88.0f, 300.0f, 10.0f });
+		UiRect entries{ center.x - 230.0f, top + 116.0f, 460.0f, count * 54.0f };
+		const auto entry = [&](const char* id, const char* label)
+		{
+			const bool clicked = ui.MenuEntry(Ui::MakeId(id), entries.CutTop(48.0f), label, {}, false, 0.5f);
+			entries.CutTop(6.0f);
+			return clicked;
+		};
+		if (entry("pause.resume", "Resume"))
 			m_Paused = false;
-		buttons.CutTop(12.0f);
-		const char* returnLabel = mode == GameMode::Mission ? "Abandon mission" : IsPvpMode(mode) && m_Client.GetStatus().Match != MatchPhase::Ended ? "End the match" : "Return to Emberhold";
-		if (canReturn && ui.Button(Ui::MakeId("tohub"), buttons.CutTop(46.0f), returnLabel, ButtonKind::Normal, true, UiIcon::MagicPortal))
+		if (entry("pause.settings", "Attunement"))
+			m_PauseSettings = true;
+		if (canReturn && entry("pause.hub", returnLabel))
 		{
 			m_Client.ReturnToHub();
 			m_Paused = false;
 		}
-		if (canReturn)
-			buttons.CutTop(12.0f);
-		if (ui.Button(Ui::MakeId("leave"), buttons.CutTop(46.0f), m_Server ? "Stop hosting" : "Leave game", ButtonKind::Normal, true, UiIcon::Door))
+		if (entry("pause.leave", m_Server ? "Stop Hosting" : "Leave the Game"))
 			ReturnToMenu({});
-		buttons.CutTop(12.0f);
-		if (ui.Button(Ui::MakeId("desktop"), buttons.CutTop(46.0f), "Quit to desktop", ButtonKind::Danger, true, UiIcon::ExitDoor))
+		if (entry("pause.quit", "Quit to Desktop"))
 			m_App.Quit();
 	}
 }

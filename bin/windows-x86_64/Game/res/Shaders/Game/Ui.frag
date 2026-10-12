@@ -1,49 +1,48 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
+#include "UiCommon.glsl"
 
-struct Primitive
-{
-	vec4 Rect;
-	vec4 Uv;
-	vec4 Clip;
-	vec4 Shape;
-	vec4 Params;
-	uvec4 Colors;
-	uvec4 Info;
-};
-
-layout(std430, set = 0, binding = 0) readonly buffer Primitives { Primitive primitives[]; };
 layout(set = 0, binding = 1) uniform sampler2D Textures[8];
-
-layout(push_constant) uniform Constants
-{
-	vec2 ScreenSize;
-	float Scale;
-	float DistanceRange;
-	float Time;
-} pc;
-
-layout(location = 0) in vec2 inLocal;
-layout(location = 1) in vec2 inUv;
-layout(location = 2) in vec2 inScreen;
-layout(location = 3) flat in uint inIndex;
-layout(location = 0) out vec4 outColor;
 
 const uint ModeRect = 0u;
 const uint ModeGlyph = 1u;
 const uint ModeImage = 2u;
 const uint ModeOrb = 3u;
 const uint ModeTriangle = 4u;
-const float TwoPi = 6.28318531;
-
-vec4 Premultiply(vec4 color)
-{
-	return vec4(color.rgb * color.a, color.a);
-}
+const uint FlagHorizontal = 1u;
+const uint FlagShimmer = 2u;
 
 float Median(float a, float b, float c)
 {
 	return max(min(a, b), min(max(a, b), c));
+}
+
+float Lattice(vec2 cell)
+{
+	vec3 p = fract(vec3(cell.xyx) * 0.1031);
+	p += dot(p, p.yzx + 33.33);
+	return fract((p.x + p.y) * p.z);
+}
+
+float Noise(vec2 p)
+{
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(Lattice(i), Lattice(i + vec2(1.0, 0.0)), f.x), mix(Lattice(i + vec2(0.0, 1.0)), Lattice(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+float Fbm(vec2 p)
+{
+	float value = 0.0;
+	float amplitude = 0.5;
+	for (int i = 0; i < 3; i++)
+	{
+		value += amplitude * Noise(p);
+		p = p * 2.07 + vec2(13.7, 7.1);
+		amplitude *= 0.5;
+	}
+	return value / 0.875;
 }
 
 float RoundBox(vec2 p, vec2 extent, float radius)
@@ -51,6 +50,18 @@ float RoundBox(vec2 p, vec2 extent, float radius)
 	radius = min(radius, min(extent.x, extent.y));
 	vec2 q = abs(p) - extent + radius;
 	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+float Frame(vec2 p, vec2 extent, float radius, float chamfer)
+{
+	float d = RoundBox(p, extent, radius);
+	if (chamfer > 0.0)
+	{
+		chamfer = min(chamfer, min(extent.x, extent.y));
+		vec2 q = abs(p);
+		d = max(d, (q.x + q.y - (extent.x + extent.y - chamfer)) * 0.70710678);
+	}
+	return d;
 }
 
 float Triangle(vec2 p, vec2 q)
@@ -63,15 +74,40 @@ float Triangle(vec2 p, vec2 q)
 	return -sqrt(d.x) * sign(d.y);
 }
 
-float Coverage(float distance, float pixel)
+vec3 Aether(vec2 position, vec3 tint, float seed, float stars)
 {
-	return clamp(0.5 - distance / pixel, 0.0, 1.0);
+	float t = pc.Time * 0.03;
+	vec2 q = position / 240.0 + vec2(seed * 3.7, seed * 1.9);
+	float warp = Fbm(q + vec2(t, -0.6 * t));
+	float n = Fbm(q * 1.6 + vec2(warp, 1.0 - warp) * 1.8 - vec2(0.0, t));
+	float wisps = smoothstep(0.5, 0.95, n);
+	float sparkle = Lattice(floor(position / 5.0) + vec2(floor(seed * 97.0), 0.0));
+	vec2 f = fract(position / 5.0) - 0.5;
+	float twinkle = 0.5 + 0.5 * sin(pc.Time * (1.2 + 2.5 * fract(sparkle * 13.0)) + sparkle * 50.0);
+	float star = step(0.995, sparkle) * smoothstep(0.32, 0.0, length(f)) * twinkle;
+	return tint * wisps * 0.2 + mix(tint, vec3(1.0), 0.6) * star * 0.5 * stars;
+}
+
+float PerimeterCoordinate(vec2 p, vec2 e)
+{
+	if (e.y - abs(p.y) < e.x - abs(p.x))
+		return p.y < 0.0 ? p.x + e.x : 3.0 * e.x + 2.0 * e.y - p.x;
+	return p.x > 0.0 ? 2.0 * e.x + e.y + p.y : 4.0 * e.x + 3.0 * e.y - p.y;
+}
+
+float Flow(vec2 p, vec2 e, float seed)
+{
+	float perimeter = 4.0 * (e.x + e.y);
+	float s = PerimeterCoordinate(p, e);
+	float head = mod(pc.Time * 38.0 + seed * perimeter, perimeter);
+	float tail = clamp(perimeter * 0.22, 50.0, 240.0);
+	float a = mod(head - s, perimeter);
+	return exp(-a / tail) * smoothstep(0.0, 40.0, a);
 }
 
 void main()
 {
 	Primitive primitive = primitives[inIndex];
-	bool clipped = any(lessThan(inScreen, primitive.Clip.xy)) || any(greaterThanEqual(inScreen, primitive.Clip.zw));
 
 	uint mode = primitive.Info.x;
 	float pixel = 1.0 / pc.Scale;
@@ -80,15 +116,17 @@ void main()
 	vec4 bottom = unpackUnorm4x8(primitive.Colors.y);
 	vec4 border = unpackUnorm4x8(primitive.Colors.z);
 	vec4 extra = unpackUnorm4x8(primitive.Colors.w);
-	float along = (primitive.Info.z & 1u) != 0u ? inLocal.x / max(extent.x, 1e-4) : inLocal.y / max(extent.y, 1e-4);
+	float along = (primitive.Info.z & FlagHorizontal) != 0u ? inLocal.x / max(extent.x, 1e-4) : inLocal.y / max(extent.y, 1e-4);
 	vec4 fill = mix(top, bottom, clamp(along * 0.5 + 0.5, 0.0, 1.0));
 	vec4 result = vec4(0.0);
 
 	if (mode == ModeRect)
 	{
-		float d = RoundBox(inLocal, extent, primitive.Shape.x);
+		float d = Frame(inLocal, extent, primitive.Shape.x, primitive.Uv.x);
 		float softness = primitive.Shape.z;
 		float coverage = softness > 0.0 ? 1.0 - smoothstep(-softness, softness, d) : Coverage(d, pixel);
+		if (primitive.Uv.z > 0.0)
+			fill.rgb += Aether(inScreen, border.a > 0.0 ? border.rgb : extra.rgb, primitive.Uv.w, primitive.Params.z) * primitive.Uv.z;
 		vec4 color = Premultiply(fill);
 		if (primitive.Shape.y > 0.0)
 			color = mix(Premultiply(border), color, Coverage(d + primitive.Shape.y, pixel));
@@ -104,6 +142,12 @@ void main()
 			angle = angle < 0.0 ? angle + 1.0 : angle;
 			result *= clamp((angle - primitive.Params.x) * TwoPi * max(length(inLocal), 1.0) / pixel + 0.5, 0.0, 1.0);
 		}
+		if (primitive.Uv.y > 0.0)
+		{
+			float band = max(abs(d + 0.5 * primitive.Shape.y) - 0.5 * primitive.Shape.y, 0.0);
+			float light = Flow(inLocal, extent, primitive.Uv.w) * exp(-band / 2.5) * smoothstep(7.0, 3.5, band) * primitive.Uv.y;
+			result.rgb += mix(border.rgb, vec3(1.0), 0.3) * light * border.a * 0.8;
+		}
 	}
 	else if (mode == ModeGlyph)
 	{
@@ -117,6 +161,12 @@ void main()
 		float distance = (Median(field.r, field.g, field.b) - 0.5) * screenRange + weight;
 		float trueDistance = (field.a - 0.5) * screenRange + weight;
 		float alpha = softness > 0.0 ? smoothstep(-softness, softness, trueDistance) : clamp(distance + 0.5, 0.0, 1.0);
+		if ((primitive.Info.z & FlagShimmer) != 0u)
+		{
+			float band = fract((inScreen.x + inScreen.y * 0.4) / 900.0 - pc.Time * 0.08);
+			float highlight = smoothstep(0.0, 0.05, band) * (1.0 - smoothstep(0.05, 0.14, band));
+			fill.rgb = mix(fill.rgb, vec3(1.0), highlight * primitive.Params.w);
+		}
 		result = Premultiply(fill) * alpha;
 		if (outline > 0.0)
 			result += Premultiply(border) * clamp(trueDistance + outline + 0.5, 0.0, 1.0) * (1.0 - result.a);
@@ -146,6 +196,8 @@ void main()
 		liquidColor += vec3(0.35) * exp(-abs(depth) * radius * 0.3) * liquid;
 		float swirl = sin(q.x * 3.0 + q.y * 4.0 + time * 0.7) * sin(q.y * 5.0 - time * 0.9);
 		liquidColor *= 1.0 + 0.08 * swirl;
+		vec2 flow = q * 2.2 + vec2(0.0, time * 0.12);
+		liquidColor += top.rgb * smoothstep(0.62, 0.95, Fbm(flow + vec2(Fbm(flow * 1.3 - time * 0.05), 0.0))) * 0.35 * liquid;
 		vec3 glass = border.rgb * (1.0 - 0.35 * r);
 		vec4 color = mix(Premultiply(vec4(glass, border.a)), vec4(liquidColor, 1.0), liquid);
 		vec2 highlight = (q - vec2(-0.32, -0.48)) / vec2(0.46, 0.26);
@@ -167,5 +219,5 @@ void main()
 		result = color * coverage;
 	}
 
-	outColor = clipped || result.a <= 0.002 ? vec4(0.0) : vec4(result.rgb / result.a, result.a);
+	outColor = Finish(primitive, result);
 }

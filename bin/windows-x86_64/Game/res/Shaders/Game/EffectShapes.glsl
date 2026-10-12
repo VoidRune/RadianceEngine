@@ -13,6 +13,7 @@ const uint DecalGlow = 4u;
 const uint DecalScorch = 5u;
 const uint DecalFrost = 6u;
 const uint DecalCracks = 7u;
+const uint DecalFracture = 8u;
 
 const float Tau = 6.28318531;
 
@@ -230,6 +231,63 @@ float CrackPath(float r, uint key, float amplitude)
 	float a = (HashUnit(key * 7u + uint(i)) - 0.5) * amplitude;
 	float b = (HashUnit(key * 7u + uint(i) + 1u) - 0.5) * amplitude;
 	return mix(a, b, x - i);
+}
+
+float CrustHash(vec2 p)
+{
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+
+vec2 CrustHash2(vec2 p)
+{
+	vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.103, 0.0973));
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+vec2 CrustCells(vec2 p)
+{
+	vec2 cell = floor(p);
+	vec2 f = fract(p);
+	vec2 nearest = vec2(0.0);
+	vec2 nearestCell = vec2(0.0);
+	float best = 8.0;
+	for (int j = -1; j <= 1; j++)
+		for (int i = -1; i <= 1; i++)
+		{
+			vec2 g = vec2(float(i), float(j));
+			vec2 d = g + 0.1 + 0.8 * CrustHash2(cell + g) - f;
+			float dd = dot(d, d);
+			if (dd < best)
+			{
+				best = dd;
+				nearest = d;
+				nearestCell = g;
+			}
+		}
+	float border = 8.0;
+	for (int j = -1; j <= 1; j++)
+		for (int i = -1; i <= 1; i++)
+		{
+			vec2 g = nearestCell + vec2(float(i), float(j));
+			vec2 d = g + 0.1 + 0.8 * CrustHash2(cell + g) - f;
+			vec2 between = d - nearest;
+			if (dot(between, between) > 1e-5)
+				border = min(border, dot(0.5 * (nearest + d), normalize(between)));
+		}
+	return vec2(border, CrustHash(cell + nearestCell));
+}
+
+vec2 FractureShape(vec2 p, float pixel, float heat, float time)
+{
+	const float scale = 2.6;
+	vec2 cells = CrustCells(p * scale);
+	float spread = smoothstep(cells.y, cells.y + 0.25, heat * 1.25);
+	float crack = Line(cells.x / scale, mix(0.004, 0.022, heat) * spread, pixel * 0.5) * spread;
+	float flicker = 0.85 + 0.15 * sin(time * 11.0 + cells.y * 40.0);
+	return vec2(crack, crack * heat * flicker);
 }
 
 vec2 CracksShape(vec2 uv, float pixel, float radius, float heat, uint seed)

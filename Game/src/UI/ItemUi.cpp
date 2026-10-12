@@ -12,7 +12,7 @@ namespace Game
 	namespace
 	{
 		const UiColor AffixColor = Hex(0x8FB8FF);
-		const UiColor ImplicitColor = Hex(0xE2DCC2);
+		const UiColor ImplicitColor = Hex(0xE4E0F0);
 		const UiColor BetterColor = Hex(0x7FD884);
 		const UiColor WorseColor = Hex(0xF06A5E);
 		const UiColor CorruptColor = Hex(0xE45AA9);
@@ -140,8 +140,8 @@ namespace Game
 			draw.Icon(IconFor(item.Skill), rect, { .Color = WithAlpha(Lighten(color, 0.55f), alpha), .ColorBottom = WithAlpha(color, alpha), .Outline = 0.8f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.7f * alpha), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.55f * alpha) });
 			return;
 		}
-		const UiColor top = item.Quality == Rarity::Common ? Hex(0xF2EEE6) : Lighten(color, 0.5f);
-		const UiColor bottom = item.Quality == Rarity::Common ? Hex(0xA8A296) : color;
+		const UiColor top = item.Quality == Rarity::Common ? Hex(0xEEECF6) : Lighten(color, 0.5f);
+		const UiColor bottom = item.Quality == Rarity::Common ? Hex(0xA4A0B6) : color;
 		draw.Icon(IconFor(item.Base), rect, { .Color = WithAlpha(top, alpha), .ColorBottom = WithAlpha(bottom, alpha), .Outline = 0.8f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.7f * alpha), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f * alpha) });
 	}
 
@@ -149,24 +149,24 @@ namespace Game
 	{
 		UiDrawList& draw = ui.Draw();
 		const bool valid = item.IsValid();
-		const UiColor color = valid ? ItemColor(item) : Theme::GoldDark;
+		const UiColor color = valid ? ItemColor(item) : Theme::Edge;
 		const Rarity quality = valid && !item.IsGem() ? item.Quality : Rarity::Common;
 		const float pulse = 0.5f + 0.5f * std::sin(ui.GetTime() * 3.0f + rect.X * 0.05f);
 		if (valid && quality >= Rarity::Legendary)
-			draw.Shadow(rect, 8.0f, 7.0f, WithAlpha(color, (0.3f + 0.2f * pulse) * (look.Dim ? 0.4f : 1.0f)), { 0.0f, 0.0f });
+			draw.Rect(rect.Expand(2.0f), { .Fill = WithAlpha(color, (0.3f + 0.2f * pulse) * (look.Dim ? 0.4f : 1.0f)), .Softness = 7.0f, .Chamfer = 9.0f, .Additive = 0.6f });
 		if (look.Hovered || look.Target)
-			draw.Shadow(rect, 8.0f, 6.0f, WithAlpha(look.Target ? Theme::Gold : Theme::GoldLight, look.Target ? 0.25f + 0.25f * pulse : 0.25f), { 0.0f, 0.0f });
+			draw.Rect(rect.Expand(2.0f), { .Fill = WithAlpha(look.Target ? Theme::Accent : Theme::Astral, look.Target ? 0.25f + 0.25f * pulse : 0.22f), .Softness = 6.0f, .Chamfer = 9.0f, .Additive = 0.6f });
 
-		UiColor border = valid ? WithAlpha(color, look.Dim ? 0.35f : 0.85f) : WithAlpha(Theme::GoldDark, 0.55f);
+		UiColor border = valid ? WithAlpha(color, look.Dim ? 0.35f : 0.85f) : WithAlpha(Theme::Edge, 0.55f);
 		if (look.Hovered)
 			border = Lighten(border, 0.35f);
 		if (look.Target)
-			border = glm::mix(border, Theme::GoldLight, pulse);
+			border = glm::mix(border, Theme::AccentLight, pulse);
 		if (look.Highlight)
-			border = Theme::GoldLight;
+			border = Theme::AccentLight;
 		const UiColor glow = valid && quality >= Rarity::Rare ? WithAlpha(color, 0.14f + (quality >= Rarity::Legendary ? 0.08f * pulse : 0.0f)) : UiColor(0.0f);
-		draw.Rect(rect, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Radius = 7.0f, .Border = border, .BorderWidth = look.Highlight ? 2.2f : 1.5f, .Glow = glow, .GlowSize = rect.W * 0.22f });
-		draw.Rect(rect.Shrink(3.0f), { .Radius = 5.0f, .Border = Rgba(1.0f, 1.0f, 1.0f, 0.035f), .BorderWidth = 1.0f });
+		draw.Rect(rect, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Border = border, .BorderWidth = look.Highlight ? 2.0f : 1.4f, .Glow = glow, .GlowSize = rect.W * 0.22f, .Chamfer = std::min(8.0f, rect.W * 0.14f), .Seed = rect.X * 0.013f });
+		draw.Rect(rect.Shrink(3.0f), { .Border = Rgba(0.85f, 0.8f, 1.0f, 0.04f), .BorderWidth = 1.0f, .Chamfer = std::min(6.0f, rect.W * 0.11f) });
 
 		if (valid)
 		{
@@ -183,16 +183,16 @@ namespace Game
 		else
 		{
 			if (look.EmptyIcon)
-				draw.Icon(*look.EmptyIcon, rect.Shrink(rect.W * 0.25f), { .Color = Rgba(0.62f, 0.56f, 0.46f, 0.22f) });
+				draw.Icon(*look.EmptyIcon, rect.Shrink(rect.W * 0.25f), { .Color = Rgba(0.62f, 0.57f, 0.9f, 0.22f) });
 			if (!look.EmptyLabel.empty())
 				draw.TextAligned(rect.Shrink(4.0f, 3.0f), look.EmptyLabel, Theme::Body(12.0f, WithAlpha(Theme::Faint, 0.9f)), { 0.5f, 1.0f });
 		}
 		if (!look.KeyLabel.empty())
 		{
-			const TextStyle key = Theme::Bold(11.0f, Theme::GoldLight);
+			const TextStyle key = Theme::Bold(11.0f, Theme::AccentLight);
 			const float width = draw.MeasureWidth(look.KeyLabel, key) + 9.0f;
 			const UiRect badge{ rect.X + 3.0f, rect.Bottom() - 17.0f, width, 14.0f };
-			draw.Rect(badge, { .Fill = Rgba(0.05f, 0.04f, 0.06f, 0.92f), .Radius = 4.0f, .Border = WithAlpha(Theme::GoldDark, 0.9f), .BorderWidth = 1.0f });
+			draw.Rect(badge, { .Fill = Rgba(0.03f, 0.025f, 0.06f, 0.94f), .Border = WithAlpha(Theme::Edge, 0.9f), .BorderWidth = 1.0f, .Chamfer = 3.0f });
 			draw.TextAligned(badge, look.KeyLabel, key, { 0.5f, 0.5f });
 		}
 	}
@@ -387,7 +387,7 @@ namespace Game
 			const float y = area.Y + float(i / 2) * RowHeight;
 			const UiRect row{ x, y, columnWidth, RowHeight };
 			if ((i / 2) % 2 == 0)
-				draw.Rect(row.Expand(1.0f), { .Fill = Rgba(1.0f, 0.9f, 0.7f, 0.03f), .Radius = 3.0f });
+				draw.Rect(row.Expand(1.0f), { .Fill = Rgba(0.8f, 0.75f, 1.0f, 0.035f), .Radius = 3.0f });
 			draw.TextAligned(row.Shrink(6.0f, 0.0f), lines[i].Label, Theme::Body(14.5f, Theme::Muted), { 0.0f, 0.5f });
 			draw.TextAligned(row.Shrink(6.0f, 0.0f), Format(lines[i]), Theme::Bold(14.5f, Theme::Text), { 1.0f, 0.5f });
 		}

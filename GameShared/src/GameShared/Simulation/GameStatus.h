@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/Brawl.h"
 #include "GameShared/Content/Missions.h"
 #include "GameShared/Content/Pvp.h"
 #include <array>
@@ -47,5 +48,6 @@ namespace Game
 		uint8_t Alive = 0;
 		uint8_t Entrants = 0;
 		StormState Storm;
+		BrawlStatus Brawl;
 	};
 }

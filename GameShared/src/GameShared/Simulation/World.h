@@ -69,6 +69,8 @@ namespace Game
 		MatchEnded,
 		StormClosing,
 		CacheDropped,
+		RoundStarted,
+		RoundEnded,
 	};
 
 	struct WorldEvent
@@ -127,6 +129,9 @@ namespace Game
 		CraftResult CraftGem(Entity player, ItemRef ref, GemAction action);
 		bool OpenChest(Entity player);
 		void Spectate(Entity player, int32_t direction);
+		bool PickBrawlSpell(Entity player, uint32_t slot, AbilityId spell);
+		bool ChooseBoon(Entity player, uint32_t choice);
+		bool SetBrawlReady(Entity player, bool ready);
 		bool IsNearGateway(Entity player) const;
 		bool IsNearStation(Entity player, StationKind kind) const;
 		void GrantMaterials(Entity player, const MaterialStock& materials);

@@ -14,6 +14,13 @@ namespace Game
 		{
 			return codepoint == ' ' || codepoint == '\t';
 		}
+
+		uint32_t AdditiveBits(float amount)
+		{
+			return uint32_t(std::clamp(amount, 0.0f, 1.0f) * 255.0f + 0.5f);
+		}
+
+		constexpr uint32_t FlagShimmer = 2;
 	}
 
 	uint32_t DecodeUtf8(std::string_view text, size_t& index)
@@ -77,13 +84,15 @@ namespace Game
 
 	void UiDrawList::Rect(const UiRect& rect, const RectStyle& style)
 	{
-		if ((style.Fill.a <= 0.0f && Resolve(style.FillBottom, style.Fill).a <= 0.0f && style.BorderWidth <= 0.0f && style.Glow.a <= 0.0f) || rect.W <= 0.0f || rect.H <= 0.0f)
+		if ((style.Fill.a <= 0.0f && Resolve(style.FillBottom, style.Fill).a <= 0.0f && style.BorderWidth <= 0.0f && style.Glow.a <= 0.0f && style.Flow <= 0.0f) || rect.W <= 0.0f || rect.H <= 0.0f)
 			return;
 		UiPrimitive& primitive = Add(UiMode::Rect, rect.Center(), rect.Size() * 0.5f);
+		primitive.Uv = glm::vec4(style.Chamfer, style.Flow, style.Aether, style.Seed);
 		primitive.Colors = glm::uvec4(PackColor(style.Fill), PackColor(Resolve(style.FillBottom, style.Fill)), PackColor(style.Border), PackColor(style.Glow));
 		primitive.Shape = glm::vec4(style.Radius, style.BorderWidth, style.Softness, style.Rotation);
-		primitive.Params = glm::vec4(style.Sweep, style.GlowSize, 0.0f, 0.0f);
+		primitive.Params = glm::vec4(style.Sweep, style.GlowSize, style.Stars, 0.0f);
 		primitive.Info.z = style.Horizontal ? 1u : 0u;
+		primitive.Info.w = AdditiveBits(style.Additive);
 	}
 
 	void UiDrawList::Shadow(const UiRect& rect, float radius, float blur, UiColor color, glm::vec2 offset)
@@ -103,6 +112,7 @@ namespace Game
 		if (length < 1e-4f || color.a <= 0.0f)
 			return;
 		UiPrimitive& primitive = Add(UiMode::Rect, (from + to) * 0.5f, glm::vec2(length * 0.5f + width * 0.5f, width * 0.5f));
+		primitive.Uv = glm::vec4(0.0f);
 		primitive.Colors = glm::uvec4(PackColor(color), PackColor(color), 0u, 0u);
 		primitive.Shape = glm::vec4(width * 0.5f, 0.0f, 0.0f, std::atan2(delta.y, delta.x));
 	}
@@ -121,12 +131,29 @@ namespace Game
 		primitive.Params = glm::vec4(fill, phase, wave, 0.0f);
 	}
 
+	void UiDrawList::Sigil(glm::vec2 center, float radius, const SigilStyle& style)
+	{
+		if (radius <= 0.5f || (style.Color.a <= 0.0f && style.Fill.a <= 0.0f))
+			return;
+		UiPrimitive& primitive = Add(UiMode::Sigil, center, glm::vec2(radius));
+		primitive.Colors = glm::uvec4(PackColor(style.Color), PackColor(Resolve(style.Accent, style.Color)), PackColor(style.Fill), 0u);
+		primitive.Shape = glm::vec4(std::clamp(style.Progress, 0.0f, 1.0f), float(style.Points), float(style.Skip), 0.0f);
+		primitive.Params = glm::vec4(style.Speed, style.Phase, style.LineWidth, style.Glow);
+		primitive.Info.z = style.Layers << 2;
+		primitive.Info.w = AdditiveBits(style.Additive);
+	}
+
+	void UiDrawList::Diamond(glm::vec2 center, float size, UiColor fill, UiColor border, float borderWidth)
+	{
+		Rect(UiRect::Centered(center, glm::vec2(size * 0.70710678f)), { .Fill = fill, .Border = border, .BorderWidth = borderWidth, .Rotation = 0.78539816f });
+	}
+
 	void UiDrawList::Icon(UiIcon icon, const UiRect& rect, const IconStyle& style)
 	{
 		const AtlasIcon& entry = m_Assets->GetIcon(icon);
 		if (!entry.Valid)
 			return;
-		const auto emit = [&](glm::vec2 offset, UiColor top, UiColor bottom, float outline, float softness)
+		const auto emit = [&](glm::vec2 offset, UiColor top, UiColor bottom, float outline, float softness, bool additive)
 		{
 			const glm::vec2 min = rect.Min() + entry.PlaneMin * rect.Size() + offset;
 			const glm::vec2 max = rect.Min() + entry.PlaneMax * rect.Size() + offset;
@@ -135,10 +162,13 @@ namespace Game
 			primitive.Colors = glm::uvec4(PackColor(top), PackColor(bottom), PackColor(style.OutlineColor), 0u);
 			primitive.Params = glm::vec4(style.Weight, outline, softness, 0.0f);
 			primitive.Info.y = m_Assets->GetAtlasTexture();
+			primitive.Info.w = additive ? 255u : 0u;
 		};
 		if (style.ShadowColor.a > 0.0f)
-			emit(style.ShadowOffset, style.ShadowColor, style.ShadowColor, 0.0f, std::max(style.ShadowBlur, 0.01f));
-		emit(glm::vec2(0.0f), style.Color, Resolve(style.ColorBottom, style.Color), style.Outline, 0.0f);
+			emit(style.ShadowOffset, style.ShadowColor, style.ShadowColor, 0.0f, std::max(style.ShadowBlur, 0.01f), false);
+		if (style.GlowColor.a > 0.0f)
+			emit(glm::vec2(0.0f), style.GlowColor, style.GlowColor, 0.0f, std::max(style.GlowBlur, 0.01f), true);
+		emit(glm::vec2(0.0f), style.Color, Resolve(style.ColorBottom, style.Color), style.Outline, 0.0f, false);
 	}
 
 	void UiDrawList::Image(UiImage image, const UiRect& rect, UiColor tint, float saturation, float radius)
@@ -184,8 +214,9 @@ namespace Game
 		return width;
 	}
 
-	void UiDrawList::Glyphs(glm::vec2 pen, std::string_view text, const TextStyle& style, UiColor top, UiColor bottom, glm::vec2 offset, float outline, float softness)
+	void UiDrawList::Glyphs(glm::vec2 pen, std::string_view text, const TextStyle& style, UiColor top, UiColor bottom, glm::vec2 offset, float outline, float softness, bool additive)
 	{
+		const bool shimmer = style.Shimmer > 0.0f && softness <= 0.0f && outline <= 0.0f && !additive;
 		const FontFace& font = m_Assets->GetFont(style.Font);
 		const float lineTop = pen.y - CapHeight(style);
 		const float lineHeight = std::max(pen.y - lineTop, 1.0f);
@@ -214,8 +245,10 @@ namespace Game
 					glyphBottom = glm::mix(top, bottom, (max.y - offset.y - lineTop) / lineHeight);
 				}
 				primitive.Colors = glm::uvec4(PackColor(glyphTop), PackColor(glyphBottom), PackColor(style.OutlineColor), 0u);
-				primitive.Params = glm::vec4(style.Weight, outline, softness, 0.0f);
+				primitive.Params = glm::vec4(style.Weight, outline, softness, shimmer ? style.Shimmer : 0.0f);
 				primitive.Info.y = m_Assets->GetAtlasTexture();
+				primitive.Info.z = shimmer ? FlagShimmer : 0u;
+				primitive.Info.w = additive ? 255u : 0u;
 			}
 			pen.x += glyph->Advance * style.Size;
 		}
@@ -227,6 +260,8 @@ namespace Game
 		const glm::vec2 pen(Snap(topLeft.x), Snap(topLeft.y + font.Ascender * style.Size));
 		if (style.ShadowColor.a > 0.0f)
 			Glyphs(pen, text, style, style.ShadowColor, style.ShadowColor, style.ShadowOffset, 0.0f, std::max(style.ShadowBlur, 0.01f));
+		if (style.GlowColor.a > 0.0f)
+			Glyphs(pen, text, style, style.GlowColor, style.GlowColor, glm::vec2(0.0f), 0.0f, std::max(style.GlowBlur, 0.01f), true);
 		if (style.Outline > 0.0f && style.OutlineColor.a > 0.0f)
 			Glyphs(pen, text, style, UiColor(0.0f), UiColor(0.0f), glm::vec2(0.0f), style.Outline, 0.0f);
 		Glyphs(pen, text, style, style.Color, Resolve(style.ColorBottom, style.Color), glm::vec2(0.0f), 0.0f, 0.0f);

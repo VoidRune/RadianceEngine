@@ -84,6 +84,7 @@ namespace Game
 		void Draw(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, const glm::vec3& color, float yaw = 0.0f, float emission = 0.0f, float ground = 0.0f, const BoxSurface& surface = {});
 		void DrawBox(const glm::vec3& center, const glm::vec3& halfExtents, const glm::vec3& color, float yaw = 0.0f, float emission = 0.0f, float ground = 0.0f, const BoxSurface& surface = {}) { Draw(MeshKind::Box, center, halfExtents, color, yaw, emission, ground, surface); }
 		void DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw = 0.0f);
+		void DrawLava(const glm::vec4& area, float height, float time);
 		uint32_t AddPalette(const JointMatrices& skin);
 		void DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f);
 		ModelInstance MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f) const;
@@ -138,9 +139,17 @@ namespace Game
 			glm::vec4 Focus;
 		};
 
+		struct LavaConstants
+		{
+			glm::mat4 ViewProjection;
+			glm::vec4 Params;
+		};
+
 		bool HasGi() const { return m_GiQuality != GiQuality::Off && m_Gi && m_Gi->IsReady() && m_Deferred && m_Deferred->HasGi(); }
 		bool CreatePipeline();
 		bool CreateModelPipeline();
+		bool CreateLavaPipeline();
+		void EnsureLavaTexture();
 		void CreateShadowPipelines();
 		void RenderShadows(Rdn::RenderGraph& graph, Rdn::RGImage shadowMap, const ShadowView& shadow, uint32_t boxCount, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
 		void RenderBackFaces(Rdn::RenderGraph& graph, Rdn::RGImage target, uint32_t boxCount, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
@@ -172,6 +181,12 @@ namespace Game
 		std::array<std::pair<uint32_t, uint32_t>, size_t(MeshKind::Count) * 2> m_BoxRanges{};
 		std::vector<BoxInstance> m_Packed;
 		PushConstants m_Constants{};
+		std::unique_ptr<Rdn::Shader> m_LavaVertexShader;
+		std::unique_ptr<Rdn::Shader> m_LavaFragmentShader;
+		std::unique_ptr<Rdn::Pipeline> m_LavaPipeline;
+		std::unique_ptr<Rdn::GpuImage> m_LavaTexture;
+		std::vector<BoxInstance> m_LavaQuads;
+		std::pair<uint32_t, uint32_t> m_LavaRange{};
 
 		ModelLibrary m_Models;
 		std::unique_ptr<Rdn::Shader> m_ModelVertexShader;

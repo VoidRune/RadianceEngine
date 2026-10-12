@@ -84,8 +84,24 @@ namespace Game
 		SetPhase(MatchPhase::Countdown);
 		if (m_Mode == GameMode::Arena)
 			BeginArena(world);
+		else if (m_Mode == GameMode::Brawl)
+			BeginBrawl(world);
 		else
 			BeginRoyale(world);
+	}
+
+	bool MatchDirector::CanRespawn() const
+	{
+		if (m_Mode == GameMode::Brawl)
+			return m_Phase != MatchPhase::Ended && (m_Brawl.Phase == BrawlPhase::Draft || m_Brawl.Phase == BrawlPhase::Shop);
+		return m_Phase == MatchPhase::Countdown || (m_Phase == MatchPhase::Fight && m_Mode == GameMode::Arena);
+	}
+
+	bool MatchDirector::IsFighting() const
+	{
+		if (m_Mode == GameMode::Brawl)
+			return m_Phase != MatchPhase::Ended && (m_Brawl.Phase == BrawlPhase::Draft || m_Brawl.Phase == BrawlPhase::Shop || m_Brawl.Phase == BrawlPhase::Fight);
+		return m_Phase == MatchPhase::Fight;
 	}
 
 	void MatchDirector::BeginArena(World& world)
@@ -171,8 +187,28 @@ namespace Game
 			m_Scores[playerId] = {};
 			m_Teams[playerId] = NoTeam;
 			m_Present[playerId] = true;
+			if (m_Mode == GameMode::Brawl)
+				m_Brawlers[playerId] = {};
 		}
 		EntityRegistry& entities = world.GetEntities();
+		if (m_Mode == GameMode::Brawl)
+		{
+			PlayerController* controller = entities.TryGet<PlayerController>(player);
+			if (!controller)
+				return;
+			if (m_Phase == MatchPhase::Ended || !CanRespawn())
+			{
+				controller->State.Alive = false;
+				controller->RespawnTimer = 0.0f;
+				if (Health* health = entities.TryGet<Health>(player))
+					health->Current = 0;
+				controller->Watching = NoPlayer;
+				return;
+			}
+			controller->State.Invulnerable = SpawnProtection;
+			FitBrawlArena();
+			return;
+		}
 		if (m_Mode == GameMode::Arena && m_Rules.Teams && m_Teams[playerId] == NoTeam)
 		{
 			std::array<uint32_t, TeamCount> members{};
@@ -217,15 +253,27 @@ namespace Game
 			m_Fallen.push_back(playerId);
 			FinishRoyaleIfDecided(world);
 		}
+		if (m_Mode == GameMode::Brawl && score.Entered && !score.Out)
+			score.Out = true;
 		m_Present[playerId] = false;
 		m_Scores[playerId] = {};
 		m_Teams[playerId] = NoTeam;
+		if (m_Mode == GameMode::Brawl)
+		{
+			m_Brawlers[playerId] = {};
+			FitBrawlArena();
+		}
 	}
 
 	void MatchDirector::OnPlayerKilled(World& world, Entity player, uint32_t victim, uint32_t killer)
 	{
 		if (victim >= MaxPlayers)
 			return;
+		if (m_Mode == GameMode::Brawl)
+		{
+			OnBrawlerKilled(world, player, victim, IsPresent(killer) ? killer : NoPlayer);
+			return;
+		}
 		const bool fighting = m_Phase == MatchPhase::Fight;
 		if (fighting)
 			m_Scores[victim].Deaths++;
@@ -325,6 +373,15 @@ namespace Game
 	void MatchDirector::Update(World& world, float dt)
 	{
 		m_PhaseTime += dt;
+		if (m_Mode == GameMode::Brawl)
+		{
+			if (m_Phase == MatchPhase::Fight)
+				m_Clock += dt;
+			if (m_Phase != MatchPhase::Ended)
+				UpdateBrawl(world, dt);
+			UpdateWatchers(world);
+			return;
+		}
 		switch (m_Phase)
 		{
 		case MatchPhase::Countdown:
@@ -572,6 +629,11 @@ namespace Game
 
 	Vec2 MatchDirector::FindSpawn(World& world, uint32_t playerId)
 	{
+		if (m_Mode == GameMode::Brawl)
+		{
+			const float angle = float(m_SpawnCounter++) * 2.39996f + float(playerId) * 0.7f;
+			return world.FindFreeSpotNear(m_Brawl.Plan.Center + FromAngle(angle) * (m_Brawl.Plan.StartRadius * BrawlSpawnRing), PlayerRadius);
+		}
 		if (m_SpawnPoints.empty())
 			return world.FindFreeSpotNear(world.GetLevel().PlayerSpawn, PlayerRadius);
 		EntityRegistry& entities = world.GetEntities();
@@ -658,14 +720,23 @@ namespace Game
 		switch (m_Phase)
 		{
 		case MatchPhase::Countdown:
-			status.MatchTime = std::max((m_Mode == GameMode::Arena ? ArenaCountdown : RoyaleCountdown) - m_PhaseTime, 0.0f);
+			status.MatchTime = m_Mode == GameMode::Brawl ? std::max(m_Brawl.Timer, 0.0f) : std::max((m_Mode == GameMode::Arena ? ArenaCountdown : RoyaleCountdown) - m_PhaseTime, 0.0f);
 			break;
 		case MatchPhase::Fight:
-			status.MatchTime = m_Mode == GameMode::Arena ? std::max(float(m_Rules.Minutes) * 60.0f - m_Clock, 0.0f) : m_Clock;
+			status.MatchTime = m_Mode == GameMode::Brawl ? std::max(m_Brawl.Timer, 0.0f) : m_Mode == GameMode::Arena ? std::max(float(m_Rules.Minutes) * 60.0f - m_Clock, 0.0f) : m_Clock;
 			break;
 		case MatchPhase::Ended:
 			status.MatchTime = std::max(MatchEndSeconds - m_PhaseTime, 0.0f);
 			break;
+		}
+		if (m_Mode == GameMode::Brawl)
+		{
+			status.Brawl = m_Brawl;
+			status.Brawl.Players = uint8_t(std::min(CountPresent(), 255u));
+			uint32_t ready = 0;
+			for (uint32_t id = 0; id < MaxPlayers; id++)
+				ready += m_Present[id] && m_Brawlers[id].Loadout.Ready ? 1u : 0u;
+			status.Brawl.Ready = uint8_t(ready);
 		}
 		status.TeamScores = m_TeamScores;
 		status.Winner = m_Winner;
@@ -684,6 +755,8 @@ namespace Game
 		const MatchScore& score = m_Scores[playerId];
 		if (m_Mode == GameMode::Royale)
 			return GetRoyaleReward(score.Placement > 0 ? score.Placement : m_Entrants, m_Entrants, score.Kills);
+		if (m_Mode == GameMode::Brawl)
+			return GetBrawlReward(m_Winner == playerId, std::max(m_Entrants, CountPresent()), m_Brawlers[playerId].Points);
 		const bool won = m_Rules.Teams ? m_WinningTeam != NoTeam && m_Teams[playerId] == m_WinningTeam : m_Winner == playerId;
 		return GetArenaReward(won, m_Entrants, score.Kills);
 	}

@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace Game
 {
@@ -36,11 +37,21 @@ namespace Game
 			float Time;
 		};
 
+		struct Run
+		{
+			uint32_t First = 0;
+			uint32_t Count = 0;
+			bool Sigil = false;
+		};
+
 		Rdn::Device& m_Device;
 		Rdn::ResourceAllocator& m_Allocator;
 		std::unique_ptr<Rdn::Shader> m_VertexShader;
 		std::unique_ptr<Rdn::Shader> m_FragmentShader;
+		std::unique_ptr<Rdn::Shader> m_SigilShader;
 		std::unique_ptr<Rdn::Pipeline> m_Pipeline;
+		std::unique_ptr<Rdn::Pipeline> m_SigilPipeline;
+		std::vector<Run> m_Runs;
 		std::unique_ptr<Rdn::Sampler> m_Sampler;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_Buffer;
 		std::array<std::unique_ptr<Rdn::GpuImage>, MaxTextures> m_Textures;

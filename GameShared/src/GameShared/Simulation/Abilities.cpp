@@ -38,6 +38,7 @@ namespace Game
 			world.SpawnEffect(ability, context, context.Origin, context.Tag);
 			break;
 		case AbilityKind::Dash:
+		case AbilityKind::Ward:
 			world.SpawnEffect(ability, context, context.Origin, context.Tag);
 			break;
 		}

@@ -14,12 +14,13 @@ namespace Game
 		Horde,
 		Arena,
 		Royale,
+		Brawl,
 		Count,
 	};
 
 	inline bool IsPvpMode(GameMode mode)
 	{
-		return mode == GameMode::Arena || mode == GameMode::Royale;
+		return mode == GameMode::Arena || mode == GameMode::Royale || mode == GameMode::Brawl;
 	}
 
 	enum class MissionModifier : uint8_t

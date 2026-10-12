@@ -146,6 +146,8 @@ namespace Game
 			return BuildAshlandsLevel(seed);
 		case MapKind::Abbey:
 			return BuildAbbeyLevel(seed);
+		case MapKind::Caldera:
+			return BuildCalderaLevel(seed);
 		default:
 			return BuildCavesLevel(seed);
 		}

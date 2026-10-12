@@ -19,6 +19,7 @@ namespace Game
 		Caves,
 		Crucible,
 		Ashlands,
+		Caldera,
 		Count,
 	};
 

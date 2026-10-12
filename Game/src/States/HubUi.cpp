@@ -64,7 +64,7 @@ namespace Game
 
 		void ActionRow(UiDrawList& draw, const UiRect& row, bool hovered)
 		{
-			draw.Rect(row, { .Fill = Rgba(1.0f, 0.9f, 0.7f, hovered ? 0.05f : 0.03f), .Radius = 7.0f, .Border = WithAlpha(Theme::GoldDark, hovered ? 0.7f : 0.4f), .BorderWidth = 1.0f });
+			draw.Rect(row, { .Fill = Rgba(0.8f, 0.75f, 1.0f, hovered ? 0.05f : 0.03f), .Border = WithAlpha(Theme::Edge, hovered ? 0.75f : 0.45f), .BorderWidth = 1.0f, .Chamfer = 7.0f });
 		}
 	}
 
@@ -157,7 +157,7 @@ namespace Game
 	{
 		Ui& ui = m_App.GetUi();
 		bool open = true;
-		UiRect content = ui.Window(Ui::MakeId("proving"), "Proving Grounds", StationRect(ui, 940.0f, 556.0f), &open);
+		UiRect content = ui.Window(Ui::MakeId("proving"), "Proving Grounds", StationRect(ui, 1340.0f, 580.0f), &open);
 		if (!open)
 		{
 			m_Station.reset();
@@ -166,16 +166,19 @@ namespace Game
 		UiDrawList& draw = ui.Draw();
 		const uint32_t players = std::max<uint32_t>(uint32_t(m_Client.GetPlayers().size()), 1u);
 		const std::string who = players == 1 ? "Nobody else is here yet, so a match now is practice." : Format("Fight the other %u player%s in this game.", unsigned(players - 1), players == 2 ? "" : "s");
-		draw.TextWrapped(content.CutTop(40.0f), who + " Damage between players is scaled down and stuns and chills are shorter, so fights last a while and nobody dies to one hit.", Theme::Body(14.5f, Theme::Muted));
+		draw.TextWrapped(content.CutTop(40.0f), who + " In the arena and the royale damage between players is scaled down, so fights last a while. Spellbrawl has no damage at all, only shoving and lava.", Theme::Body(14.5f, Theme::Muted));
 		content.CutTop(8.0f);
-		UiRect left = content.CutLeft((content.W - 24.0f) * 0.5f);
+		const float column = (content.W - 48.0f) / 3.0f;
+		UiRect left = content.CutLeft(column);
 		content.CutLeft(24.0f);
-		UiRect right = content;
+		UiRect right = content.CutLeft(column);
+		content.CutLeft(24.0f);
+		UiRect third = content;
 
 		const auto heading = [&](UiRect& column, UiIcon icon, const char* title, const char* subtitle)
 		{
 			UiRect row = column.CutTop(48.0f);
-			draw.Icon(icon, { row.X, row.Y + 4.0f, 40.0f, 40.0f }, { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.7f) });
+			draw.Icon(icon, { row.X, row.Y + 4.0f, 40.0f, 40.0f }, { .Color = Theme::AccentLight, .ColorBottom = Theme::Accent, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.7f) });
 			draw.Text({ row.X + 52.0f, row.Y + 2.0f }, title, Theme::Title(22.0f));
 			draw.Text({ row.X + 52.0f, row.Y + 28.0f }, subtitle, Theme::Body(14.0f, Theme::Muted));
 			column.CutTop(8.0f);
@@ -233,8 +236,8 @@ namespace Game
 			const float hover = ui.Animate(id, interaction.Hovered || selected);
 			if (interaction.Clicked)
 				m_RoyaleMap = map;
-			draw.Rect(card, { .Fill = glm::mix(Hex(0x1B191F), Hex(0x2C2418), hover), .FillBottom = glm::mix(Hex(0x121115), Hex(0x1A140C), hover), .Radius = 8.0f, .Border = selected ? Theme::Gold : WithAlpha(Theme::GoldDark, 0.6f), .BorderWidth = selected ? 2.0f : 1.2f });
-			draw.Text({ card.X + 14.0f, card.Y + 7.0f }, GetMapDef(map).Name, Theme::Bold(17.0f, selected ? Theme::GoldLight : Theme::Text));
+			ui.Card(card, hover, selected ? 1.0f : 0.0f);
+			draw.Text({ card.X + 14.0f, card.Y + 7.0f }, GetMapDef(map).Name, Theme::Bold(17.0f, selected ? Theme::AccentLight : Theme::Text));
 			const char* size = map == MapKind::Ashlands ? "Large island, best for 4 to 12 players" : map == MapKind::Town ? "Medium, good for 2 to 6 players" : "Twisting caverns, good for 2 to 6 players";
 			draw.Text({ card.X + 14.0f, card.Y + 30.0f }, size, Theme::Body(13.5f, Theme::Muted));
 		}
@@ -246,6 +249,32 @@ namespace Game
 		if (ui.Button(Ui::MakeId("startroyale"), right.CutTop(46.0f), "Start the Battle Royale", ButtonKind::Primary, true, UiIcon::Crown))
 		{
 			m_Client.StartRoyale(m_RoyaleMap);
+			m_Station.reset();
+		}
+
+		heading(third, UiIcon::Whirlwind, "Spellbrawl", GetMapDef(MapKind::Caldera).Name);
+		third.CutTop(draw.TextWrapped(third, "Spells don't hurt here, they shove. Knock your friends off a crumbling disc of stone into the lava. The last mage standing takes the round.", Theme::Body(14.0f, Theme::Text)) + 10.0f);
+		ui.Separator(third.CutTop(20.0f), "RULES");
+		third.CutTop(8.0f);
+		{
+			int rounds = m_BrawlRules.Rounds;
+			UiRect row = third.CutTop(40.0f);
+			draw.TextAligned(row.CutLeft(150.0f), "Rounds", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
+			if (ui.Button(Ui::MakeId("brawlrounds"), row.CutLeft(40.0f), "-", ButtonKind::Normal, rounds > MinBrawlRounds))
+				rounds--;
+			draw.TextAligned(row.CutLeft(90.0f), std::to_string(rounds), Theme::Title(22.0f), { 0.5f, 0.5f });
+			if (ui.Button(Ui::MakeId("brawlrounds") + 1, row.CutLeft(40.0f), "+", ButtonKind::Normal, rounds < MaxBrawlRounds))
+				rounds++;
+			m_BrawlRules.Rounds = uint8_t(std::clamp(rounds, int(MinBrawlRounds), int(MaxBrawlRounds)));
+			third.CutTop(6.0f);
+		}
+		third.CutTop(draw.TextWrapped(third, "Everyone has 100 health and the same Ember Bolt. Pick three more spells at the start: Gust, Comet, Warp, Shockwave, Gravity Well, Arc Lightning, Swap, Mirror Ward or Frostbite. Between rounds you can swap them and take a small boon. Your gear only changes how you look.", Theme::Body(13.5f, Theme::Faint)) + 8.0f);
+		const MatchReward brawlReward = GetBrawlReward(true, std::max(players, 2u), 15);
+		draw.TextAligned(third.CutTop(22.0f), Format("Winning with 15 points pays about %u gold", unsigned(brawlReward.Gold)), Theme::Body(13.5f, Theme::Success), { 0.0f, 0.5f });
+		third.CutTop(6.0f);
+		if (ui.Button(Ui::MakeId("startbrawl"), third.CutTop(46.0f), "Enter the Caldera", ButtonKind::Primary, true, UiIcon::Whirlwind))
+		{
+			m_Client.StartBrawl(MapKind::Caldera, m_BrawlRules);
 			m_Station.reset();
 		}
 	}
@@ -340,7 +369,7 @@ namespace Game
 			held = &inventory.Pack[size_t(drag->Value)];
 		const bool over = held && bin.Contains(ui.GetMouse());
 		const float pulse = 0.5f + 0.5f * std::sin(ui.GetTime() * 4.0f);
-		draw.Rect(bin, { .Fill = Rgba(0.25f, 0.08f, 0.04f, over ? 0.45f : held ? 0.25f : 0.12f), .Radius = 8.0f, .Border = WithAlpha(over ? Theme::Warning : Theme::GoldDark, held ? 0.6f + 0.4f * pulse : 0.5f), .BorderWidth = over ? 2.0f : 1.2f });
+		draw.Rect(bin, { .Fill = Rgba(0.28f, 0.06f, 0.12f, over ? 0.45f : held ? 0.25f : 0.12f), .Border = WithAlpha(over ? Theme::Warning : Theme::Edge, held ? 0.6f + 0.4f * pulse : 0.5f), .BorderWidth = over ? 1.8f : 1.2f, .Chamfer = 8.0f});
 		draw.Icon(UiIcon::AnvilImpact, { bin.X + 12.0f, bin.Y + 12.0f, 34.0f, 34.0f }, { .Color = over ? Theme::Warning : Theme::Muted, .ColorBottom = over ? Darken(Theme::Warning, 0.3f) : Theme::Faint });
 		if (held && held->IsValid())
 		{
@@ -500,7 +529,7 @@ namespace Game
 				left.CutTop(6.0f);
 				if (i >= item->AffixCount)
 				{
-					draw.Rect(row, { .Radius = 6.0f, .Border = WithAlpha(Theme::GoldDark, 0.35f), .BorderWidth = 1.0f });
+					draw.Rect(row, { .Border = WithAlpha(Theme::Edge, 0.35f), .BorderWidth = 1.0f, .Chamfer = 6.0f });
 					draw.TextAligned(row.Shrink(12.0f, 0.0f), "Open slot, imbue to fill it", Theme::Body(14.0f, Theme::Faint), { 0.0f, 0.5f });
 					continue;
 				}
@@ -510,10 +539,10 @@ namespace Game
 				const bool selected = m_ForgeAffix == i;
 				if (interaction.Clicked)
 					m_ForgeAffix = i;
-				draw.Rect(row, { .Fill = Rgba(1.0f, 0.85f, 0.5f, selected ? 0.1f : interaction.Hovered ? 0.05f : 0.02f), .Radius = 6.0f, .Border = selected ? Theme::Gold : WithAlpha(Theme::GoldDark, 0.5f), .BorderWidth = selected ? 1.8f : 1.0f });
+				draw.Rect(row, { .Fill = Rgba(0.75f, 0.65f, 1.0f, selected ? 0.1f : interaction.Hovered ? 0.05f : 0.02f), .Border = selected ? Theme::Accent : WithAlpha(Theme::Edge, 0.5f), .BorderWidth = selected ? 1.6f : 1.0f, .Chamfer = 6.0f});
 				const UiRect pill{ row.X + 8.0f, row.Center().y - 10.0f, 30.0f, 20.0f };
 				const UiColor tier = TierColor(affix.Tier);
-				draw.Rect(pill, { .Fill = WithAlpha(Darken(tier, 0.55f), 0.9f), .Radius = 5.0f, .Border = tier, .BorderWidth = 1.0f });
+				draw.Rect(pill, { .Fill = WithAlpha(Darken(tier, 0.55f), 0.9f), .Border = tier, .BorderWidth = 1.0f, .Chamfer = 4.0f });
 				draw.TextAligned(pill, Format("T%u", unsigned(affix.Tier)), Theme::Bold(12.5f, Lighten(tier, 0.3f)), { 0.5f, 0.5f });
 				draw.TextFit({ pill.Right() + 10.0f, row.Y, row.Right() - pill.Right() - 18.0f, row.H }, DescribeAffix(affix), Theme::Body(14.5f, Hex(0x8FB8FF)));
 				if (interaction.Hovered && !drag)
@@ -540,7 +569,7 @@ namespace Game
 			ActionRow(draw, row, row.Contains(ui.GetMouse()));
 			const UiRect button{ row.Right() - 118.0f, row.Y + 21.0f, 106.0f, 34.0f };
 			const UiRect text{ row.X + 12.0f, row.Y + 6.0f, button.X - row.X - 20.0f, row.H - 12.0f };
-			draw.Text({ text.X, text.Y }, GetForgeActionName(action), Theme::Bold(17.0f, Theme::GoldLight));
+			draw.Text({ text.X, text.Y }, GetForgeActionName(action), Theme::Bold(17.0f, Theme::AccentLight));
 			if (action == ForgeAction::Hone && item && !reason)
 				draw.TextAligned({ text.X, text.Y, text.W, 20.0f }, Format("%.0f%% chance", double(GetHoneChance(*item, m_ForgeAffix)) * 100.0), Theme::Bold(14.0f, Theme::Success), { 1.0f, 0.5f });
 			if (action == ForgeAction::Imbue)
@@ -549,10 +578,10 @@ namespace Game
 				for (uint32_t c = 0; c < uint32_t(StatCategory::Count); c++)
 				{
 					const StatCategory category = StatCategory(c);
-					const TextStyle style = Theme::Bold(12.5f, m_ImbueCategory == category ? Hex(0x1A140C) : Theme::Muted);
+					const TextStyle style = Theme::Bold(12.5f, m_ImbueCategory == category ? Theme::Ink : Theme::Muted);
 					const UiRect chip{ x, text.Y + 1.0f, draw.MeasureWidth(CategoryName(category), style) + 16.0f, 20.0f };
 					const UiInteraction pick = ui.Interact(Ui::MakeId("category", c), chip);
-					draw.Rect(chip, { .Fill = m_ImbueCategory == category ? Theme::Gold : Rgba(1.0f, 1.0f, 1.0f, pick.Hovered ? 0.08f : 0.03f), .Radius = 10.0f, .Border = WithAlpha(Theme::Gold, 0.6f), .BorderWidth = 1.0f });
+					draw.Rect(chip, { .Fill = m_ImbueCategory == category ? Theme::Accent : Rgba(0.8f, 0.75f, 1.0f, pick.Hovered ? 0.08f : 0.03f), .Border = WithAlpha(Theme::Accent, 0.6f), .BorderWidth = 1.0f, .Chamfer = 5.0f });
 					draw.TextAligned(chip, CategoryName(category), style, { 0.5f, 0.5f });
 					if (pick.Clicked)
 						m_ImbueCategory = category;
@@ -653,7 +682,7 @@ namespace Game
 			ActionRow(draw, row, row.Contains(ui.GetMouse()));
 			const UiRect button{ row.Right() - 118.0f, row.Y + 25.0f, 106.0f, 34.0f };
 			const UiRect text{ row.X + 12.0f, row.Y + 6.0f, button.X - row.X - 20.0f, row.H - 12.0f };
-			draw.Text({ text.X, text.Y }, GetGemActionName(action), Theme::Bold(17.0f, action == GemAction::Corrupt ? CorruptColor : Theme::GoldLight));
+			draw.Text({ text.X, text.Y }, GetGemActionName(action), Theme::Bold(17.0f, action == GemAction::Corrupt ? CorruptColor : Theme::AccentLight));
 			draw.TextWrapped({ text.X, text.Y + 22.0f, text.W, 36.0f }, reason && gem ? *reason : DescribeGemAction(action), Theme::Body(13.5f, reason && gem ? Theme::Danger : Theme::Muted));
 			if (gem && !reason)
 				DrawCost(draw, { text.X, text.Y + 56.0f, text.W, 18.0f }, cost, stock, unlimited);
@@ -700,11 +729,9 @@ namespace Game
 			const float hover = ui.Animate(id, interaction.Hovered || selected);
 			if (interaction.Clicked)
 				m_BoardMap = map;
-			if (selected)
-				draw.Shadow(card, 8.0f, 10.0f, WithAlpha(Theme::Gold, 0.22f), { 0.0f, 0.0f });
-			draw.Rect(card, { .Fill = glm::mix(Hex(0x1B191F), Hex(0x2C2418), hover), .FillBottom = glm::mix(Hex(0x121115), Hex(0x1A140C), hover), .Radius = 8.0f, .Border = selected ? Theme::Gold : WithAlpha(Theme::GoldDark, 0.6f), .BorderWidth = selected ? 2.0f : 1.2f });
-			draw.Icon(map == MapKind::Caves ? UiIcon::SkullCrossedBones : UiIcon::Door, { card.X + 14.0f, card.Y + 14.0f, 40.0f, 40.0f }, { .Color = selected ? Theme::GoldLight : Theme::Muted, .ColorBottom = selected ? Theme::Gold : Theme::Faint });
-			draw.Text({ card.X + 66.0f, card.Y + 10.0f }, def.Name, Theme::Bold(19.0f, selected ? Theme::GoldLight : Theme::Text));
+			ui.Card(card, hover, selected ? 1.0f : 0.0f);
+			draw.Icon(map == MapKind::Caves ? UiIcon::SkullCrossedBones : UiIcon::Door, { card.X + 14.0f, card.Y + 14.0f, 40.0f, 40.0f }, { .Color = selected ? Theme::AccentLight : Theme::Muted, .ColorBottom = selected ? Theme::Accent : Theme::Faint });
+			draw.Text({ card.X + 66.0f, card.Y + 10.0f }, def.Name, Theme::Bold(19.0f, selected ? Theme::AccentLight : Theme::Text));
 			if (boss)
 				draw.Text({ card.X + 66.0f, card.Y + 34.0f }, Format("Boss: %s, %s", boss->Name, boss->Title), Theme::Bold(13.5f, Hex(0xFF8A7A)));
 			draw.PushClip(card.Shrink(2.0f));
@@ -741,7 +768,7 @@ namespace Game
 			if (interaction.Clicked)
 				m_BoardModifiers ^= ModifierMask(1u << i);
 			const UiColor accent = modifier.Penalty ? Theme::Danger : Theme::Warning;
-			draw.Rect(chip, { .Fill = active ? WithAlpha(Darken(accent, 0.7f), 0.55f) : Rgba(1.0f, 1.0f, 1.0f, interaction.Hovered ? 0.06f : 0.025f), .Radius = 7.0f, .Border = active ? accent : WithAlpha(Theme::GoldDark, 0.5f), .BorderWidth = active ? 1.8f : 1.0f });
+			draw.Rect(chip, { .Fill = active ? WithAlpha(Darken(accent, 0.7f), 0.55f) : Rgba(0.8f, 0.75f, 1.0f, interaction.Hovered ? 0.06f : 0.025f), .Border = active ? accent : WithAlpha(Theme::Edge, 0.5f), .BorderWidth = active ? 1.6f : 1.0f, .Chamfer = 7.0f, .Seed = float(i) * 0.19f });
 			draw.Icon(modifier.Penalty ? UiIcon::SkullCrack : UiIcon::Biceps, { chip.X + 10.0f, chip.Y + 9.0f, 20.0f, 20.0f }, { .Color = active ? Lighten(accent, 0.3f) : Theme::Faint, .ColorBottom = active ? accent : Theme::Faint });
 			draw.Text({ chip.X + 38.0f, chip.Y + 8.0f }, modifier.Name, Theme::Bold(15.5f, active ? Theme::Text : Theme::Muted));
 			draw.TextAligned({ chip.X + 10.0f, chip.Y + 8.0f, chip.W - 20.0f, 20.0f }, Format("+%.0f%% / +%.0f%%", double(modifier.Quantity) * 100.0, double(modifier.Rarity) * 100.0), Theme::Body(12.5f, active ? Theme::Success : Theme::Faint), { 1.0f, 0.5f });
@@ -770,7 +797,7 @@ namespace Game
 			m_Station.reset();
 		}
 		if (ui.Interact(Ui::MakeId("hordehint"), horde).Hovered)
-			ui.Tooltip().Header("Endless horde", Theme::GoldLight, std::nullopt, UiIcon::CrossedSwords).Text("The old wave mode: monsters keep coming and you pick an upgrade after every wave.").Muted("The run ends when everyone falls, then you return to Emberhold.");
+			ui.Tooltip().Header("Endless horde", Theme::AccentLight, std::nullopt, UiIcon::CrossedSwords).Text("The old wave mode: monsters keep coming and you pick an upgrade after every wave.").Muted("The run ends when everyone falls, then you return to Emberhold.");
 	}
 
 	void SessionState::DrawMissionStatus()
@@ -813,6 +840,7 @@ namespace Game
 		const float titleWidth = draw.MeasureWidth(title, titleStyle);
 		draw.Shadow(UiRect::Centered({ center, 42.0f }, { titleWidth + 160.0f, 52.0f }), 26.0f, 30.0f, Rgba(0.0f, 0.0f, 0.0f, 0.55f), { 0.0f, 0.0f });
 		draw.TextAligned({ 0.0f, 16.0f, ui.GetSize().x, 34.0f }, title, titleStyle, { 0.5f, 0.5f });
+		DrawTitleOrnament(center, 32.0f, titleWidth);
 		draw.TextAligned({ 0.0f, 54.0f, ui.GetSize().x, 22.0f }, subtitle, Theme::Floating(16.0f, subtitleColor, UiFont::Body), { 0.5f, 0.5f });
 		if (session.Mode != GameMode::Mission)
 			return;
@@ -822,8 +850,8 @@ namespace Game
 		{
 			const UiRect bar = UiRect::Centered({ center, y + 6.0f }, { 300.0f, 8.0f });
 			const float fraction = std::clamp(float(status.Kills) / float(status.KillGoal), 0.0f, 1.0f);
-			draw.Rect(bar.Expand(1.5f), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.7f), .Radius = 5.0f, .Border = WithAlpha(Theme::GoldDark, 0.8f), .BorderWidth = 1.0f });
-			draw.Rect({ bar.X, bar.Y, bar.W * fraction, bar.H }, { .Fill = Theme::GoldLight, .FillBottom = Theme::Gold, .Radius = 4.0f });
+			draw.Rect(bar.Expand(1.5f), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.7f), .Radius = 5.0f, .Border = WithAlpha(Theme::Edge, 0.8f), .BorderWidth = 1.0f });
+			draw.Rect({ bar.X, bar.Y, bar.W * fraction, bar.H }, { .Fill = Theme::AccentLight, .FillBottom = Theme::Accent, .Radius = 4.0f });
 			y += 18.0f;
 		}
 		if (status.Mission == MissionPhase::Boss)
@@ -847,11 +875,25 @@ namespace Game
 		const UiRect bar = UiRect::Centered({ ui.GetSize().x * 0.5f, top + 14.0f }, { 560.0f, 18.0f });
 		const float pulse = 0.5f + 0.5f * std::sin(ui.GetTime() * 3.0f);
 		draw.Shadow(bar, 9.0f, 14.0f, Rgba(0.9f, 0.15f, 0.1f, 0.25f + 0.15f * pulse), { 0.0f, 0.0f });
-		draw.Rect(bar.Expand(2.0f), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.85f), .Radius = 6.0f, .Border = WithAlpha(Theme::Gold, 0.85f), .BorderWidth = 1.4f });
+		draw.Rect(bar.Expand(2.0f), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.85f), .Radius = 6.0f, .Border = WithAlpha(Theme::Accent, 0.85f), .BorderWidth = 1.4f });
 		draw.Rect({ bar.X, bar.Y, bar.W * fraction, bar.H }, { .Fill = Hex(0xFF5A48), .FillBottom = Hex(0x8E1612), .Radius = 5.0f });
 		for (const float notch : { 0.66f, 0.33f })
-			draw.Rect({ bar.X + bar.W * notch - 1.0f, bar.Y - 2.0f, 2.0f, bar.H + 4.0f }, { .Fill = WithAlpha(Theme::GoldLight, 0.8f) });
+			draw.Rect({ bar.X + bar.W * notch - 1.0f, bar.Y - 2.0f, 2.0f, bar.H + 4.0f }, { .Fill = WithAlpha(Theme::AccentLight, 0.8f) });
 		draw.TextAligned(bar, Format("%.0f%%", double(fraction) * 100.0), Theme::Floating(13.0f, Hex(0xFFF2E6)), { 0.5f, 0.5f });
+	}
+
+	void SessionState::DrawTitleOrnament(float center, float y, float titleWidth)
+	{
+		UiDrawList& draw = m_App.GetUi().Draw();
+		for (const float side : { -1.0f, 1.0f })
+		{
+			const float start = center + side * (titleWidth * 0.5f + 20.0f);
+			constexpr float Length = 96.0f;
+			draw.Rect({ side < 0.0f ? start - Length : start, y, Length, 1.0f }, { .Fill = WithAlpha(Theme::AccentLight, side < 0.0f ? 0.0f : 0.75f), .FillBottom = WithAlpha(Theme::AccentLight, side < 0.0f ? 0.75f : 0.0f), .Horizontal = true });
+			draw.Rect(UiRect::Centered({ start, y + 0.5f }, glm::vec2(14.0f)), { .Fill = WithAlpha(Theme::Accent, 0.45f), .Radius = 7.0f, .Softness = 5.0f, .Additive = 1.0f });
+			draw.Diamond({ start, y + 0.5f }, 9.0f, Theme::AccentLight, WithAlpha(Theme::Ink, 0.9f), 1.0f);
+			draw.Diamond({ start + side * 14.0f, y + 0.5f }, 4.5f, WithAlpha(Theme::Accent, 0.85f));
+		}
 	}
 
 	void SessionState::DrawBanner()
@@ -887,16 +929,16 @@ namespace Game
 			if (!pixels)
 				return false;
 			const glm::vec2 point = ui.ToLogical(*pixels);
-			const TextStyle titleStyle = Theme::Bold(15.0f, Theme::GoldLight);
+			const TextStyle titleStyle = Theme::Bold(15.0f, Theme::AccentLight);
 			const TextStyle actionStyle = Theme::Body(13.0f, Theme::Text);
 			const float width = std::max(draw.MeasureWidth(title, titleStyle), action ? draw.MeasureWidth(action, actionStyle) : 0.0f) + 54.0f;
 			const float height = action ? 46.0f : 30.0f;
 			const UiRect box{ point.x - width * 0.5f, point.y - height, width, height };
 			const UiInteraction interaction = ui.Interact(id, box);
 			const bool lit = near || interaction.Hovered;
-			draw.Shadow(box, 8.0f, 10.0f, Rgba(0.0f, 0.0f, 0.0f, 0.5f), { 0.0f, 3.0f });
-			draw.Rect(box, { .Fill = Rgba(0.08f, 0.065f, 0.05f, 0.92f), .FillBottom = Rgba(0.04f, 0.035f, 0.03f, 0.92f), .Radius = 8.0f, .Border = WithAlpha(Theme::Gold, lit ? 1.0f : 0.6f), .BorderWidth = lit ? 2.0f : 1.2f, .Glow = WithAlpha(Theme::Gold, lit ? 0.12f : 0.0f), .GlowSize = 10.0f });
-			draw.Icon(icon, { box.X + 9.0f, box.Y + 6.0f, 18.0f, 18.0f }, { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold });
+			draw.Rect(box.Translate({ 0.0f, 3.0f }), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.5f), .Softness = 8.0f, .Chamfer = 8.0f });
+			draw.Rect(box, { .Fill = Rgba(0.06f, 0.05f, 0.11f, 0.92f), .FillBottom = Rgba(0.03f, 0.025f, 0.06f, 0.92f), .Border = WithAlpha(Theme::Accent, lit ? 1.0f : 0.6f), .BorderWidth = lit ? 1.8f : 1.2f, .Glow = WithAlpha(Theme::Accent, lit ? 0.12f : 0.0f), .GlowSize = 10.0f, .Chamfer = 8.0f});
+			draw.Icon(icon, { box.X + 9.0f, box.Y + 6.0f, 18.0f, 18.0f }, { .Color = Theme::AccentLight, .ColorBottom = Theme::Accent });
 			draw.Text({ box.X + 34.0f, box.Y + 5.0f }, title, titleStyle);
 			if (action)
 				draw.Text({ box.X + 34.0f, box.Y + 25.0f }, action, actionStyle);
