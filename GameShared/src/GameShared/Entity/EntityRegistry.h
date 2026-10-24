@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -154,8 +155,8 @@ namespace Game
 
 		static uint32_t NextTypeId()
 		{
-			static uint32_t counter = 0;
-			return counter++;
+			static std::atomic<uint32_t> counter = 0;
+			return counter.fetch_add(1);
 		}
 
 		template<typename T>

@@ -30,7 +30,7 @@ namespace Game
 			builder.Prop(i % 2 == 0 ? PropId::Boulder : PropId::Rock, Around(16.8f + 0.9f * float(i % 3), angle), angle * 1.7f);
 		}
 		for (int32_t i = 0; i < 4; i++)
-			builder.Prop(PropId::Crystal, Around(18.6f, 1.2f + float(i) * Pi * 0.5f), float(i));
+			builder.Prop(PropId::ObsidianCluster, Around(18.6f, 1.2f + float(i) * Pi * 0.5f), float(i) * 1.7f);
 		for (int32_t i = 0; i < 12; i++)
 		{
 			const float angle = float(i) * Pi / 6.0f + Pi / 12.0f;

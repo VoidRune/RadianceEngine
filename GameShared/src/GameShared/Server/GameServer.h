@@ -1,6 +1,7 @@
 #pragma once
 #include "GameShared/Net/Protocol.h"
 #include "GameShared/Net/Transport.h"
+#include "GameShared/Simulation/BotBrain.h"
 #include "GameShared/Simulation/World.h"
 #include <cstdint>
 #include <deque>
@@ -60,6 +61,7 @@ namespace Game
 		const SessionInfo& GetSession() const { return m_Session; }
 		void Travel(GameMode mode, MapKind map, uint8_t tier, ModifierMask modifiers, MatchRules rules = {});
 		uint32_t GetPlayerCount() const;
+		uint32_t GetBotCount() const { return uint32_t(m_Bots.size()); }
 		uint32_t GetStarvedTicks() const { return m_StarvedTicks; }
 		float GetTickPhase() const { return m_Accumulator; }
 		std::vector<ServerPlayerStats> GetPlayerStats() const;
@@ -87,6 +89,16 @@ namespace Game
 			PlayerTraits SentTraits;
 			uint32_t TraitsResend = 0;
 			uint32_t TraitsRefresh = 0;
+			uint8_t Honors = 0;
+			Cosmetics Style;
+		};
+
+		struct Bot
+		{
+			uint32_t PlayerId = 0;
+			std::string Name;
+			Cosmetics Style;
+			BotStyle Personality = BotStyle::Balanced;
 		};
 
 		void HandleEvent(const NetEvent& event);
@@ -96,6 +108,7 @@ namespace Game
 		void OnAction(Client& client, const ClientAction& action);
 		void SendInventory(const Client& client);
 		void SendStash(const Client& client);
+		void SendChess(const Client& client);
 		void SendNotice(const Client& client, const std::string& text, bool success);
 		Entity SpawnClient(Client& client, const Inventory& inventory);
 		void CreateWorld(const SessionInfo& session);
@@ -113,6 +126,9 @@ namespace Game
 		Client* FindClient(ConnectionId connection);
 		Client* FindClientByPlayer(uint32_t playerId);
 		bool AllocatePlayerId(uint32_t& playerId) const;
+		void FillBots();
+		void DropBot();
+		std::string NameOf(uint32_t playerId) const;
 
 		template<typename T>
 		void Send(const Client& client, const T& message, SendMode mode)
@@ -129,8 +145,13 @@ namespace Game
 		float m_ReturnTimer = 0.0f;
 		uint32_t m_TravelCount = 0;
 		std::vector<Client> m_Clients;
+		std::vector<Bot> m_Bots;
+		BotSquad m_Squad;
+		Random m_BotRandom;
+		uint32_t m_BotNames = 0;
 		float m_Accumulator = 0.0f;
 		float m_PlayerListTimer = 0.0f;
+		uint32_t m_CardRevision = 0;
 		uint32_t m_StarvedTicks = 0;
 		std::vector<NetEvent> m_Events;
 		std::vector<NetMessage> m_Messages;

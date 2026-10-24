@@ -1,7 +1,9 @@
 #include "SettingsUi.h"
 #include "App/GameApp.h"
 #include "UI/Ui.h"
+#include "UI/UiAssets.h"
 #include <GameShared/Net/Transport.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iterator>
@@ -62,6 +64,20 @@ namespace Game
 			visuals = true;
 		}
 		visuals |= ui.Checkbox(Ui::MakeId("settings.fullscreen"), row("Display", 34.0f), "Fullscreen", settings.Fullscreen);
+		visuals |= ui.Checkbox(Ui::MakeId("settings.vsync"), row("Vsync", 34.0f), settings.Vsync ? "Synced to the monitor's refresh rate" : "Off, the frame cap below applies", settings.Vsync);
+		const UiRect cap = row("Frame cap");
+		if (settings.Vsync)
+			draw.TextAligned(cap, "Turn vsync off to cap the frame rate", Theme::Body(15.0f, Theme::Faint), { 0.0f, 0.5f });
+		else
+		{
+			float frames = float(settings.FrameCap);
+			std::snprintf(text, sizeof(text), "%u fps", unsigned(settings.FrameCap));
+			if (ui.Slider(Ui::MakeId("settings.framecap"), cap, frames, float(MinFrameCap), float(MaxFrameCap), text))
+			{
+				settings.FrameCap = uint32_t(std::lround(frames));
+				visuals = true;
+			}
+		}
 		visuals |= ui.Checkbox(Ui::MakeId("settings.controls"), row("Hints", 34.0f), "Show the controls in a corner", settings.ShowControls);
 		if (visuals)
 		{
@@ -70,8 +86,9 @@ namespace Game
 		}
 
 		area.CutTop(14.0f);
-		ui.Separator(area.CutTop(22.0f), "NETWORK TESTING");
+		ui.Separator(area.CutTop(22.0f), "DIAGNOSTICS");
 		area.CutTop(6.0f);
+		ui.Checkbox(Ui::MakeId("settings.performance"), row("Performance", 34.0f), "Show frame and GPU timings (F2)", settings.ShowPerformance);
 		bool network = false;
 		float lag = float(settings.Simulation.LagMs);
 		std::snprintf(text, sizeof(text), "%.0f ms", double(lag));
@@ -89,5 +106,36 @@ namespace Game
 		}
 		if (network)
 			NetLibrary::SetSimulation(settings.Simulation);
+	}
+
+	bool DrawHeadwearPicker(Ui& ui, UiRect row, Headwear& headwear)
+	{
+		UiDrawList& draw = ui.Draw();
+		constexpr float Gap = 12.0f;
+		const float count = float(std::size(Headwears));
+		const float width = (row.W - Gap * (count - 1.0f)) / count;
+		bool changed = false;
+		for (const HeadwearDef& def : Headwears)
+		{
+			const UiRect card = row.CutLeft(width);
+			row.CutLeft(Gap);
+			const UiId id = Ui::MakeId("headwear", uint64_t(def.Id));
+			const UiInteraction interaction = ui.Interact(id, card);
+			const bool selected = headwear == def.Id;
+			const float hover = ui.Animate(id, interaction.Hovered);
+			const float chosen = ui.Animate(id ^ 0x4EAD3EA7ull, selected, 10.0f);
+			if (interaction.Clicked && !selected)
+			{
+				headwear = def.Id;
+				changed = true;
+			}
+			ui.Card(card, hover, chosen, Theme::Gold);
+			const float lit = std::max(chosen, hover * 0.7f);
+			const UiColor tone = chosen > 0.5f ? Theme::Gold : Theme::Accent;
+			draw.Icon(IconFor(def.Id), { card.X + 12.0f, card.Center().y - 16.0f, 32.0f, 32.0f }, { .Color = glm::mix(Theme::Muted, chosen > 0.5f ? Theme::GoldLight : Theme::AccentLight, lit), .ColorBottom = glm::mix(Theme::Faint, tone, lit),
+				.ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .GlowColor = WithAlpha(tone, 0.35f * lit) });
+			draw.TextAligned({ card.X + 52.0f, card.Y, card.W - 56.0f, card.H }, def.Name, Theme::Caps(12.5f, glm::mix(Theme::Text, Theme::GoldLight, chosen), 1.0f), { 0.0f, 0.5f });
+		}
+		return changed;
 	}
 }

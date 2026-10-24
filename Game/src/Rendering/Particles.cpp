@@ -108,7 +108,7 @@ namespace Game
 		return m_Shaders.back().get();
 	}
 
-	std::unique_ptr<Rdn::Pipeline> ParticleSystem::CreateDraw(Rdn::Shader* vertex, Rdn::Shader* fragment, std::vector<Rdn::Format> formats, std::vector<Rdn::ColorComponent> masks, Rdn::BlendMode blend)
+	std::unique_ptr<Rdn::Pipeline> ParticleSystem::CreateDraw(Rdn::Shader* vertex, Rdn::Shader* fragment, std::vector<Rdn::Format> formats, std::vector<Rdn::ColorComponent> masks, Rdn::BlendMode blend, std::vector<Rdn::BlendMode> blends)
 	{
 		auto pipeline = std::make_unique<Rdn::Pipeline>();
 		m_Allocator.CreatePipeline(pipeline.get(), Rdn::PipelineDesc{
@@ -119,6 +119,7 @@ namespace Game
 			.Blend = blend,
 			.ColorAttachmentFormats = std::move(formats),
 			.ColorWriteMasks = std::move(masks),
+			.ColorBlendModes = std::move(blends),
 			.PushDescriptorSets = { 0 },
 		});
 		return pipeline;
@@ -143,7 +144,8 @@ namespace Game
 		m_SpriteDraw = CreateDraw(sprite, fragment, { SceneColorFormat, EmissionFormat });
 		m_LightDraw = CreateDraw(vertex, light, { ParticleLightFormat }, {}, Rdn::BlendMode::Additive);
 		m_SpriteLightDraw = CreateDraw(sprite, light, { ParticleLightFormat }, {}, Rdn::BlendMode::Additive);
-		m_DecalDraw = CreateDraw(decalVertex, decalFragment, { AlbedoFormat, SurfaceFormat, EmissionFormat }, { R | G | B, B | A, All });
+		using enum Rdn::BlendMode;
+		m_DecalDraw = CreateDraw(decalVertex, decalFragment, { AlbedoFormat, SurfaceFormat, EmissionFormat }, { R | G | B, B | A, All }, Premultiplied, { Premultiplied, Premultiplied, Max });
 		return true;
 	}
 

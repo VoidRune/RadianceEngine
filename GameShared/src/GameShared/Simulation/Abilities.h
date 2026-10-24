@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/Cards.h"
 #include "GameShared/Content/Traits.h"
 #include "GameShared/Entity/Components.h"
 
@@ -25,6 +26,10 @@ namespace Game
 		float CritMultiplier = 1.5f;
 		float LifeSteal = 0.0f;
 		float PvpScale = 1.0f;
+		float PushScale = 1.0f;
+		float RangeScale = 1.0f;
+		CardMask Cards = 0;
+		Vec2 Departure;
 	};
 
 	void ExecuteAbility(World& world, AbilityId id, const AbilityContext& context);

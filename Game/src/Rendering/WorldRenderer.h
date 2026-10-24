@@ -24,6 +24,15 @@ namespace Game
 	inline constexpr uint32_t MeshLayered = 4;
 	inline constexpr uint32_t MeshWet = 8;
 	inline constexpr uint32_t MeshVertexTint = 16;
+	inline constexpr uint32_t MeshLavaGlow = 32;
+	inline constexpr uint32_t MeshWater = 128;
+	inline constexpr uint32_t MeshGround = 256;
+	inline constexpr uint32_t MeshSplat = 512;
+	inline constexpr uint32_t MeshVeins = 1024;
+	inline constexpr uint32_t MeshAccentTrim = 2048;
+	inline constexpr uint32_t MeshAccentDye = 4096;
+	inline constexpr uint32_t MeshCrystal = 8192;
+	inline constexpr uint32_t MeshIce = 16384;
 
 	struct LevelMeshDesc
 	{
@@ -54,6 +63,7 @@ namespace Game
 		glm::vec4 Tint;
 		glm::vec4 Shading;
 		glm::uvec4 Info;
+		glm::vec4 Accent{ 0.0f };
 	};
 
 	class WorldRenderer
@@ -66,9 +76,12 @@ namespace Game
 
 		bool LoadModels(std::span<const ModelPack> packs, std::string& error);
 		const ModelLibrary& GetModels() const { return m_Models; }
-		uint32_t SetLevelGeometry(const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<LevelMeshDesc>& meshes);
+		uint32_t AddLevelGeometry(const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<LevelMeshDesc>& meshes);
+		void ClearLevelGeometry();
 		void SetSkyMask(uint32_t width, uint32_t height, const std::vector<uint8_t>& openness, glm::vec2 origin, glm::vec2 size);
 		std::optional<uint32_t> FindMaterialSlot(std::string_view name) const;
+		uint32_t GetPlainMaterial() const { return m_PlainMaterial; }
+		void SetFrozenLiquid(bool frozen) { m_FrozenLiquid = frozen; }
 		std::optional<int32_t> FindEnvironment(std::string_view name) const;
 		ParticleSystem& GetParticles() { return *m_Particles; }
 		PostProcess& GetPost() { return *m_Post; }
@@ -85,9 +98,9 @@ namespace Game
 		void DrawBox(const glm::vec3& center, const glm::vec3& halfExtents, const glm::vec3& color, float yaw = 0.0f, float emission = 0.0f, float ground = 0.0f, const BoxSurface& surface = {}) { Draw(MeshKind::Box, center, halfExtents, color, yaw, emission, ground, surface); }
 		void DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw = 0.0f);
 		void DrawLava(const glm::vec4& area, float height, float time);
-		uint32_t AddPalette(const JointMatrices& skin);
-		void DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f);
-		ModelInstance MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f) const;
+		uint32_t AddPalette(const JointMatrices& skin, uint32_t joints);
+		void DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0);
+		ModelInstance MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0) const;
 		void SubmitModel(uint32_t mesh, const ModelInstance& instance, bool shadowOnly = false);
 		void DrawSprite(const ParticleSprite& sprite) { m_Particles->DrawSprite(sprite); }
 		void DrawDecal(const GroundDecal& decal) { m_Particles->DrawDecal(decal); }
@@ -137,7 +150,10 @@ namespace Game
 		{
 			glm::mat4 ViewProjection;
 			glm::vec4 Focus;
+			glm::vec4 Eye{ 0.0f };
 		};
+
+		static constexpr uint32_t BaseConstantsSize = uint32_t(sizeof(glm::mat4) + sizeof(glm::vec4));
 
 		struct LavaConstants
 		{
@@ -184,6 +200,9 @@ namespace Game
 		std::unique_ptr<Rdn::Shader> m_LavaVertexShader;
 		std::unique_ptr<Rdn::Shader> m_LavaFragmentShader;
 		std::unique_ptr<Rdn::Pipeline> m_LavaPipeline;
+		std::unique_ptr<Rdn::Shader> m_IcewaterFragmentShader;
+		std::unique_ptr<Rdn::Pipeline> m_IcewaterPipeline;
+		bool m_FrozenLiquid = false;
 		std::unique_ptr<Rdn::GpuImage> m_LavaTexture;
 		std::vector<BoxInstance> m_LavaQuads;
 		std::pair<uint32_t, uint32_t> m_LavaRange{};
@@ -194,6 +213,8 @@ namespace Game
 		std::unique_ptr<Rdn::Shader> m_ModelShadowShader;
 		std::unique_ptr<Rdn::Shader> m_ModelBackShader;
 		std::unique_ptr<Rdn::Pipeline> m_ModelPipeline;
+		std::unique_ptr<Rdn::Shader> m_CrystalFragmentShader;
+		std::unique_ptr<Rdn::Pipeline> m_CrystalPipeline;
 		std::unique_ptr<Rdn::Pipeline> m_ModelAlphaShadowPipeline;
 		std::unique_ptr<Rdn::GpuBuffer> m_ModelVertices;
 		std::unique_ptr<Rdn::GpuBuffer> m_ModelIndices;
@@ -205,8 +226,11 @@ namespace Game
 		std::unique_ptr<Rdn::DescriptorSet> m_BackTextureSet;
 		std::vector<DrawMesh> m_DrawMeshes;
 		std::vector<MaterialGpu> m_Materials;
+		std::vector<ModelVertex> m_LevelVertices;
+		std::vector<uint32_t> m_LevelIndices;
 		uint32_t m_LibraryMeshes = 0;
 		uint32_t m_TilingMaterialBase = 0;
+		uint32_t m_PlainMaterial = 0;
 		std::vector<EnvironmentGpu> m_Environments;
 		std::unique_ptr<Rdn::GpuImage> m_BlackEnvironment;
 		std::unique_ptr<Rdn::GpuImage> m_SkyMask;

@@ -38,7 +38,7 @@ namespace Game
 		case Element::Cold:
 			return { 0.5f, 0.85f, 1.0f };
 		case Element::Lightning:
-			return { 1.0f, 0.95f, 0.4f };
+			return { 1.0f, 0.94f, 0.58f };
 		case Element::Poison:
 			return { 0.5f, 0.95f, 0.3f };
 		default:
@@ -48,14 +48,21 @@ namespace Game
 
 	glm::vec3 SkillColor(AbilityId ability)
 	{
+		ability = CreditOf(ability);
 		switch (ability)
 		{
+		case AbilityId::ChainHook:
+			return { 1.0f, 0.68f, 0.34f };
+		case AbilityId::SplittingBolt:
+			return { 1.0f, 0.3f, 0.48f };
+		case AbilityId::Firebomb:
+			return { 1.0f, 0.44f, 0.16f };
 		case AbilityId::Gust:
-			return { 0.72f, 0.95f, 1.0f };
+			return { 0.62f, 1.0f, 0.74f };
 		case AbilityId::GravityWell:
-			return { 0.62f, 0.36f, 1.0f };
+			return { 0.45f, 0.42f, 1.0f };
 		case AbilityId::Swap:
-			return { 0.98f, 0.42f, 0.95f };
+			return { 0.86f, 0.48f, 1.0f };
 		case AbilityId::MirrorWard:
 			return { 1.0f, 0.86f, 0.48f };
 		default:
@@ -112,8 +119,8 @@ namespace Game
 		switch (GetEquipSlot(base))
 		{
 		case EquipSlot::Weapon:
-			if (const std::optional<uint32_t> mesh = characters.WeaponMesh(base))
-				drawModels({ *mesh }, 0.62f, 0.95f);
+			if (const std::vector<uint32_t> meshes = characters.WeaponMeshes(base); !meshes.empty())
+				drawModels(meshes, 0.62f, 0.95f);
 			break;
 		case EquipSlot::Head:
 		case EquipSlot::Body:

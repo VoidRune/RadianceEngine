@@ -295,7 +295,7 @@ namespace Game
 			.Sky = glm::vec4(lighting.SkyColor, 0.0f),
 			.Ground = glm::vec4(lighting.GroundColor, 0.0f),
 			.Trace = glm::vec4(Thickness, NormalBias, EmitterRadius, HitBias),
-			.Shading = glm::vec4(fadeHeight, settings.Specular ? 1.0f : 0.0f, BaseInterval * float((2u << (cascades - 1)) - 1u), 0.0f),
+			.Shading = glm::vec4(fadeHeight, settings.Specular ? 1.0f : 0.0f, BaseInterval * float((2u << (cascades - 1)) - 1u), lighting.Floating ? lighting.FocusHeight : -1e9f),
 			.Options = glm::uvec4(uint32_t(view), 0u, 0u, 0u),
 			.SolidAngles = m_SolidAngles,
 			.LevelOffsets = levelOffsets,

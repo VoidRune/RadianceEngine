@@ -93,14 +93,14 @@ namespace Game
 	bool MatchDirector::CanRespawn() const
 	{
 		if (m_Mode == GameMode::Brawl)
-			return m_Phase != MatchPhase::Ended && (m_Brawl.Phase == BrawlPhase::Draft || m_Brawl.Phase == BrawlPhase::Shop);
+			return m_Phase != MatchPhase::Ended && (m_Brawl.Phase == BrawlPhase::Draft || m_Brawl.Phase == BrawlPhase::Pick);
 		return m_Phase == MatchPhase::Countdown || (m_Phase == MatchPhase::Fight && m_Mode == GameMode::Arena);
 	}
 
 	bool MatchDirector::IsFighting() const
 	{
 		if (m_Mode == GameMode::Brawl)
-			return m_Phase != MatchPhase::Ended && (m_Brawl.Phase == BrawlPhase::Draft || m_Brawl.Phase == BrawlPhase::Shop || m_Brawl.Phase == BrawlPhase::Fight);
+			return m_Phase != MatchPhase::Ended && (m_Brawl.Phase == BrawlPhase::Draft || m_Brawl.Phase == BrawlPhase::Pick || m_Brawl.Phase == BrawlPhase::Fight);
 		return m_Phase == MatchPhase::Fight;
 	}
 
@@ -261,6 +261,7 @@ namespace Game
 		if (m_Mode == GameMode::Brawl)
 		{
 			m_Brawlers[playerId] = {};
+			m_Ledgers[playerId] = {};
 			FitBrawlArena();
 		}
 	}

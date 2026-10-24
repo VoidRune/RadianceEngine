@@ -46,6 +46,12 @@ namespace Game
 		std::vector<uint8_t> Data;
 	};
 
+	struct LocalConnection
+	{
+		ConnectionId Server = InvalidConnection;
+		ConnectionId Client = InvalidConnection;
+	};
+
 	struct NetworkSimulation
 	{
 		int32_t LagMs = 0;
@@ -86,7 +92,7 @@ namespace Game
 		~NetServer() override;
 
 		bool Listen(uint16_t port);
-		ConnectionId OpenLocalConnection();
+		LocalConnection OpenLocalConnection();
 		void Shutdown();
 
 		void Send(ConnectionId connection, std::span<const uint8_t> data, SendMode mode);

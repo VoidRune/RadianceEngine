@@ -13,7 +13,7 @@
 #include <GameShared/Content/PropLibrary.h>
 #include <GameShared/Net/Transport.h>
 #include <RadianceEngine/Core/Log.h>
-#include <RadianceEngine/Core/Timer.h>
+#include <RadianceEngine/Window/Input.h>
 #include <algorithm>
 #include <charconv>
 #include <cstdlib>
@@ -34,6 +34,11 @@ namespace Game
 	{
 		constexpr uint32_t AudioCaptureRate = 48000;
 		constexpr const char* PreferencesPath = "Settings.ini";
+
+		Rdn::PresentMode PresentModeFor(bool vsync)
+		{
+			return vsync ? Rdn::PresentMode::Fifo : Rdn::PresentMode::Mailbox;
+		}
 
 		template<typename T>
 		bool ParseNumber(std::string_view text, T& value)
@@ -99,8 +104,16 @@ namespace Game
 				ParseName(value, GiQualityNames, m_Settings.Gi);
 			else if (key == "Fullscreen")
 				m_Settings.Fullscreen = value == "1";
+			else if (key == "Vsync")
+				m_Settings.Vsync = value == "1";
+			else if (uint32_t cap = 0; key == "FrameCap" && ParseNumber(value, cap))
+				m_Settings.FrameCap = std::clamp(cap, MinFrameCap, MaxFrameCap);
 			else if (key == "ShowControls")
 				m_Settings.ShowControls = value == "1";
+			else if (key == "Gpu")
+				m_GraphicsGpu = value;
+			else if (GraphicsTier tier{}; key == "GraphicsTier" && ParseName(value, GraphicsTierNames, tier))
+				m_GraphicsTier = tier;
 		}
 	}
 
@@ -118,6 +131,8 @@ namespace Game
 			m_Stored.Shadows = m_Settings.Shadows;
 			m_Stored.Gi = m_Settings.Gi;
 			m_Stored.Fullscreen = m_Settings.Fullscreen;
+			m_Stored.Vsync = m_Settings.Vsync;
+			m_Stored.FrameCap = m_Settings.FrameCap;
 			m_Stored.ShowControls = m_Settings.ShowControls;
 			break;
 		case SettingsGroup::Identity:
@@ -137,8 +152,12 @@ namespace Game
 		std::ofstream file(PreferencesPath);
 		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nKit=" << GetKit(m_Stored.Kit).Name
 			<< "\nVolume=" << m_Stored.Volume << "\nMusicVolume=" << m_Stored.MusicVolume << "\nEffectsVolume=" << m_Stored.EffectsVolume << "\nMuted=" << (m_Stored.Muted ? 1 : 0)
-			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0)
-			<< "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\n";
+			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0) << "\nVsync=" << (m_Stored.Vsync ? 1 : 0)
+			<< "\nFrameCap=" << m_Stored.FrameCap << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\n";
+		if (!m_GraphicsGpu.empty())
+			file << "Gpu=" << m_GraphicsGpu << "\n";
+		if (m_GraphicsTier)
+			file << "GraphicsTier=" << GraphicsTierNames[size_t(*m_GraphicsTier)] << "\n";
 		if (!file)
 			RDN_LOG_ERROR("Can't save the settings to {}", PreferencesPath);
 	}
@@ -170,6 +189,7 @@ namespace Game
 			m_Settings.Muted = true;
 		m_Settings.FirstWave = options.FirstWave;
 		m_Settings.Peaceful = options.Peaceful;
+		m_Settings.Leviathan = options.Leviathan;
 		m_Settings.LootRate = options.LootRate;
 		m_Settings.StartMode = options.StartMode;
 		m_Settings.Tier = options.Tier;
@@ -214,7 +234,18 @@ namespace Game
 		deviceConfig.FramesInFlight = 2;
 		deviceConfig.EnableValidation = options.Validation;
 		m_Device = std::make_unique<Rdn::Device>(deviceConfig);
-		m_PresentQueue = std::make_unique<Rdn::PresentQueue>(m_Device.get(), Rdn::PresentMode::Fifo);
+		const Rdn::DeviceProperties& gpu = m_Device->GetProperties();
+		m_RecommendedGraphics = RecommendGraphics(gpu);
+		RDN_LOG("{} is {} with {} MB of device memory, recommended graphics tier {}", gpu.Name, gpu.Discrete ? "a discrete GPU" : gpu.Integrated ? "an integrated GPU" : "not a GPU",
+			gpu.DeviceLocalMemory >> 20, GraphicsTierNames[size_t(m_RecommendedGraphics)]);
+		if (m_Settings.SaveProfiles && m_GraphicsGpu != gpu.Name)
+			AdoptGraphicsTier();
+		if (options.Vsync)
+			m_Settings.Vsync = *options.Vsync;
+		if (options.FrameCap)
+			m_Settings.FrameCap = *options.FrameCap;
+		m_Settings.ShowPerformance = options.ShowPerformance;
+		m_PresentQueue = std::make_unique<Rdn::PresentQueue>(m_Device.get(), PresentModeFor(m_Settings.Vsync));
 		m_Allocator = std::make_unique<Rdn::ResourceAllocator>(m_Device.get());
 		m_Graph = std::make_unique<Rdn::RenderGraph>(m_Device.get(), m_Allocator.get());
 		m_ProfileGpu = options.ProfileGpu;
@@ -255,6 +286,7 @@ namespace Game
 			std::exit(1);
 		}
 		m_Ui = std::make_unique<Ui>(*m_UiAssets, *m_Window);
+		m_Performance = std::make_unique<PerformanceWindow>();
 		m_WorldRenderer = std::make_unique<WorldRenderer>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
 		if (std::string modelError; !m_WorldRenderer->LoadModels(ModelPacks, modelError))
 		{
@@ -356,6 +388,37 @@ namespace Game
 		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
 		m_Window->SetFullscreen(m_Settings.Fullscreen);
+		m_PresentQueue->SetPresentMode(PresentModeFor(m_Settings.Vsync));
+	}
+
+	void GameApp::AdoptGraphicsTier()
+	{
+		const GraphicsPreset previous = m_GraphicsTier ? GraphicsPresets[size_t(*m_GraphicsTier)] : GraphicsPreset{};
+		const GraphicsPreset& next = GraphicsPresets[size_t(m_RecommendedGraphics)];
+		if (m_Settings.Shadows == previous.Shadows)
+			m_Settings.Shadows = next.Shadows;
+		if (m_Settings.Gi == previous.Gi)
+			m_Settings.Gi = next.Gi;
+		if (m_Settings.FrameCap == previous.FrameCap)
+			m_Settings.FrameCap = next.FrameCap;
+		m_Stored.Shadows = m_Settings.Shadows;
+		m_Stored.Gi = m_Settings.Gi;
+		m_Stored.FrameCap = m_Settings.FrameCap;
+		m_GraphicsGpu = m_Device->GetProperties().Name;
+		m_GraphicsTier = m_RecommendedGraphics;
+		m_PreferencesDirty = true;
+		m_PreferencesDelay = 0.0f;
+		RDN_LOG("Graphics for this GPU: indirect light {}, shadows {}, frame cap {}", GiQualityNames[size_t(m_Settings.Gi)], ShadowQualityNames[size_t(m_Settings.Shadows)], m_Settings.FrameCap);
+	}
+
+	void GameApp::ApplyRecommendedGraphics()
+	{
+		const GraphicsPreset& preset = GraphicsPresets[size_t(m_RecommendedGraphics)];
+		m_Settings.Shadows = preset.Shadows;
+		m_Settings.Gi = preset.Gi;
+		m_Settings.FrameCap = preset.FrameCap;
+		ApplyVisualSettings();
+		RememberSettings(SettingsGroup::Visuals);
 	}
 
 	void GameApp::ChangeState(std::unique_ptr<AppState> state)
@@ -365,23 +428,33 @@ namespace Game
 
 	int GameApp::Run()
 	{
-		Rdn::Timer timer;
-		double previous = timer.ElapsedSeconds();
+		m_Clock.Reset();
+		double previous = 0.0;
 		while (m_Running && !m_Window->IsClosed())
 		{
 			m_Window->PollEvents();
 			NetLibrary::RunCallbacks();
-			const double now = timer.ElapsedSeconds();
+			const double now = m_Clock.ElapsedSeconds();
 			m_Uptime = now;
-			const float dt = float(std::min(now - previous, 0.25));
+			const double interval = now - previous;
+			const float dt = float(std::min(interval, 0.25));
 			previous = now;
 
 			const bool minimized = m_Window->IsMinimized();
 			Frame(dt, minimized);
 			if (m_NextState)
 				m_State = std::move(m_NextState);
+			double slept = 0.0;
 			if (minimized)
 				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			else if (!m_Settings.Vsync)
+				slept = m_Limiter.Wait(double(m_Settings.FrameCap));
+			if (m_Settings.ShowPerformance && !minimized)
+			{
+				m_FrameTiming.Interval = float(interval * 1000.0);
+				m_FrameTiming.Sleep = float(slept * 1000.0);
+				m_Performance->Record(m_FrameTiming, m_Graph->GetPassTimings());
+			}
 		}
 		if (!m_AudioCapturePath.empty())
 			SaveAudioCapture();
@@ -466,11 +539,17 @@ namespace Game
 
 	void GameApp::Frame(float dt, bool minimized)
 	{
+		const double start = m_Clock.ElapsedSeconds();
+		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::F2) && !UiWantsKeyboard())
+			m_Settings.ShowPerformance = !m_Settings.ShowPerformance;
+		m_Graph->SetTimingEnabled(m_ProfileGpu || m_Settings.ShowPerformance);
 		const Rdn::Extent2D extent = m_PresentQueue->GetExtent();
 		m_DebugUi->BeginFrame(dt, extent);
 		m_Ui->BeginFrame(dt, glm::vec2(float(extent.Width), float(extent.Height)), !m_DebugUi->WantsMouse());
 		m_State->Update(dt);
 		m_State->DrawUi();
+		if (m_Settings.ShowPerformance)
+			m_Performance->Draw(*this, m_Settings.ShowPerformance);
 		m_Ui->EndFrame();
 		m_DebugUi->EndFrame();
 		if (m_Ui->TakeClicks() > 0)
@@ -483,6 +562,7 @@ namespace Game
 		m_Audio->Update();
 		if (!m_AudioCapturePath.empty())
 			CaptureAudio(dt);
+		m_FrameTiming.Update = float((m_Clock.ElapsedSeconds() - start) * 1000.0);
 		if (!minimized)
 			RenderFrame();
 	}
@@ -491,9 +571,11 @@ namespace Game
 	{
 		if (m_PresentQueue->NeedsRecreate() && !m_PresentQueue->Recreate())
 			return;
+		const double begin = m_Clock.ElapsedSeconds();
 		std::optional<Rdn::FrameContext> frame = m_PresentQueue->BeginFrame();
 		if (!frame)
 			return;
+		const double acquired = m_Clock.ElapsedSeconds();
 
 		m_Graph->Reset();
 		const Rdn::RGImage backbuffer = m_Graph->ImportBackbuffer(*frame);
@@ -506,7 +588,11 @@ namespace Game
 		if (capture)
 			CaptureFrame(backbuffer, frame->PresentExtent);
 		m_Graph->Execute(frame->Cmd, frame->FrameIndex);
+		const double recorded = m_Clock.ElapsedSeconds();
 		m_PresentQueue->Submit();
+		const double presented = m_Clock.ElapsedSeconds();
+		m_FrameTiming.Render = float((recorded - acquired) * 1000.0);
+		m_FrameTiming.Wait = float((acquired - begin + presented - recorded) * 1000.0);
 		if (m_ProfileGpu)
 			ProfileGpu();
 		if (capture && m_Captures.size() == m_ScreenshotBurst)

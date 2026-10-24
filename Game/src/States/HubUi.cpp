@@ -148,6 +148,15 @@ namespace Game
 		case StationKind::ProvingGrounds:
 			DrawProvingGrounds();
 			break;
+		case StationKind::Spellbook:
+			DrawSpellbook();
+			break;
+		case StationKind::CalderaGate:
+			DrawCalderaGate();
+			break;
+		case StationKind::Chess:
+			DrawChess();
+			break;
 		default:
 			break;
 		}
@@ -157,7 +166,7 @@ namespace Game
 	{
 		Ui& ui = m_App.GetUi();
 		bool open = true;
-		UiRect content = ui.Window(Ui::MakeId("proving"), "Proving Grounds", StationRect(ui, 1340.0f, 580.0f), &open);
+		UiRect content = ui.Window(Ui::MakeId("proving"), "Proving Grounds", StationRect(ui, 1340.0f, 708.0f), &open);
 		if (!open)
 		{
 			m_Station.reset();
@@ -165,8 +174,8 @@ namespace Game
 		}
 		UiDrawList& draw = ui.Draw();
 		const uint32_t players = std::max<uint32_t>(uint32_t(m_Client.GetPlayers().size()), 1u);
-		const std::string who = players == 1 ? "Nobody else is here yet, so a match now is practice." : Format("Fight the other %u player%s in this game.", unsigned(players - 1), players == 2 ? "" : "s");
-		draw.TextWrapped(content.CutTop(40.0f), who + " In the arena and the royale damage between players is scaled down, so fights last a while. Spellbrawl has no damage at all, only shoving and lava.", Theme::Body(14.5f, Theme::Muted));
+		const std::string who = players == 1 ? "Nobody else is here yet, so the arena and the royale are only practice, but bots can fill a Spellbrawl." : Format("Fight the other %u player%s in this game.", unsigned(players - 1), players == 2 ? "" : "s");
+		draw.TextWrapped(content.CutTop(40.0f), who + " In the arena and the royale damage between players is scaled down, so fights last a while. In Spellbrawl spells hurt and cost mana, or pick Knockback for pure shoving.", Theme::Body(14.5f, Theme::Muted));
 		content.CutTop(8.0f);
 		const float column = (content.W - 48.0f) / 3.0f;
 		UiRect left = content.CutLeft(column);
@@ -252,8 +261,9 @@ namespace Game
 			m_Station.reset();
 		}
 
-		heading(third, UiIcon::Whirlwind, "Spellbrawl", GetMapDef(MapKind::Caldera).Name);
-		third.CutTop(draw.TextWrapped(third, "Spells don't hurt here, they shove. Knock your friends off a crumbling disc of stone into the lava. The last mage standing takes the round.", Theme::Body(14.0f, Theme::Text)) + 10.0f);
+		heading(third, UiIcon::Whirlwind, "Spellbrawl", "The Caldera or the Frozen Lake");
+		const char* pitch = m_BrawlRules.Mode == BrawlMode::Damage ? "Spells hurt and cost mana. Wear your rivals down, and mind the lava and the ice. The last mage standing takes the round." : "Spells don't hurt here, they shove. Knock your rivals into the lava or through the ice. The last mage standing takes the round.";
+		third.CutTop(draw.TextWrapped(third, pitch, Theme::Body(14.0f, Theme::Text)) + 10.0f);
 		ui.Separator(third.CutTop(20.0f), "RULES");
 		third.CutTop(8.0f);
 		{
@@ -267,14 +277,17 @@ namespace Game
 				rounds++;
 			m_BrawlRules.Rounds = uint8_t(std::clamp(rounds, int(MinBrawlRounds), int(MaxBrawlRounds)));
 			third.CutTop(6.0f);
+			DrawModeChoice(third);
+			DrawArenaChoice(third);
+			DrawBotRules(third);
 		}
-		third.CutTop(draw.TextWrapped(third, "Everyone has 100 health and the same Ember Bolt. Pick three more spells at the start: Gust, Comet, Warp, Shockwave, Gravity Well, Arc Lightning, Swap, Mirror Ward or Frostbite. Between rounds you can swap them and take a small boon. Your gear only changes how you look.", Theme::Body(13.5f, Theme::Faint)) + 8.0f);
-		const MatchReward brawlReward = GetBrawlReward(true, std::max(players, 2u), 15);
+		third.CutTop(draw.TextWrapped(third, "Everyone has 100 health and the same Ember Bolt, plus three spells from their spellbook. Between rounds everyone but the winner picks a card. Your gear only changes how you look.", Theme::Body(13.5f, Theme::Faint)) + 8.0f);
+		const MatchReward brawlReward = GetBrawlReward(true, std::max(players + m_BrawlRules.Bots, 2u), 15);
 		draw.TextAligned(third.CutTop(22.0f), Format("Winning with 15 points pays about %u gold", unsigned(brawlReward.Gold)), Theme::Body(13.5f, Theme::Success), { 0.0f, 0.5f });
 		third.CutTop(6.0f);
-		if (ui.Button(Ui::MakeId("startbrawl"), third.CutTop(46.0f), "Enter the Caldera", ButtonKind::Primary, true, UiIcon::Whirlwind))
+		if (ui.Button(Ui::MakeId("startbrawl"), third.CutTop(46.0f), EnterLabel(), ButtonKind::Primary, true, UiIcon::Whirlwind))
 		{
-			m_Client.StartBrawl(MapKind::Caldera, m_BrawlRules);
+			m_Client.StartBrawl(ChosenArena(), m_BrawlRules);
 			m_Station.reset();
 		}
 	}
@@ -954,6 +967,21 @@ namespace Game
 			const std::string action = std::string("Press E to ") + def.Action;
 			if (label(Ui::MakeId("stationlabel", i), station.Position, 2.6f, IconFor(station.Kind), def.Name, near ? action.c_str() : nullptr, near) && near)
 				OpenStation(station.Kind);
+		}
+		if (const Landmark* observatory = level->FindLandmark(LandmarkKind::Observatory); observatory && m_AimPoint && m_Client.GetSession().Mode == GameMode::Hub && LengthSquared(self->Position - observatory->Position) <= observatory->Radius * observatory->Radius)
+			for (const Constellation& star : level->Constellations)
+			{
+				if (LengthSquared(Vec2(m_AimPoint->x, m_AimPoint->z) - star.Position) > star.Radius * star.Radius)
+					continue;
+				const bool lit = ((m_Client.GetProfile().Starlit >> size_t(star.Spell)) & 1u) != 0;
+				const std::string name = std::string(GetAbility(star.Spell).Name) + " constellation";
+				const std::string hint = lit ? std::string("It burns for you") : std::string("Cast ") + GetAbility(star.Spell).Name + " at it";
+				label(Ui::MakeId("starlabel", size_t(star.Spell)), star.Position, star.Height + 1.6f - GroundHeight(star.Position), IconFor(star.Spell), name, hint.c_str(), lit);
+			}
+		if (const Landmark* board = level->FindLandmark(LandmarkKind::FallBoard); board && m_Client.GetSession().Mode == GameMode::Hub && LengthSquared(board->Position - self->Position) <= board->Radius * board->Radius)
+		{
+			const std::string tally = Format("Falls today: %u", unsigned(m_Client.GetStatus().HubFalls));
+			label(Ui::MakeId("fallboard"), board->Position, 2.2f, UiIcon::SkullCrossedBones, "Days since someone fell off: 0", tally.c_str(), false);
 		}
 		for (const EntityState& entity : m_Client.GetEntities())
 		{

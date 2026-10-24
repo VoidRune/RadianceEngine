@@ -72,6 +72,8 @@ namespace Game
 				return AmbienceScene::Ashlands;
 			case MapKind::Caldera:
 				return AmbienceScene::Caldera;
+			case MapKind::FrozenLake:
+				return AmbienceScene::FrozenLake;
 			default:
 				return AmbienceScene::None;
 			}
@@ -144,6 +146,9 @@ namespace Game
 			break;
 		case AmbienceScene::Caldera:
 			space = { 1.7f, 0.45f, 0.03f, 0.55f };
+			break;
+		case AmbienceScene::FrozenLake:
+			space = { 1.3f, 0.55f, 0.02f, 0.4f };
 			break;
 		default:
 			break;
@@ -429,6 +434,10 @@ namespace Game
 		case StationKind::ProvingGrounds:
 			PlayUi(Cue::Unsheathe, 0.7f);
 			break;
+		case StationKind::WishingVoid:
+			PlayUi(Cue::Coins, 0.7f, 1.1f);
+			PlayUi(Cue::WhooshLight, 0.35f, 0.7f, 0.25f);
+			break;
 		default:
 			break;
 		}
@@ -493,11 +502,21 @@ namespace Game
 		case AudioEvent::RoundLost:
 			PlayFlat(Cue::Gong, m_Buses.Stingers, 0.6f, 0.85f);
 			break;
+		case AudioEvent::ApexClaimed:
+			PlayFlat(Cue::Gong, m_Buses.Stingers, 0.85f, 0.7f);
+			PlayUi(Cue::UiRift, 0.6f, 1.0f, 0.08f);
+			break;
 		}
 	}
 
-	void GameAudio::PlayCrumble(Vec2 position)
+	void GameAudio::PlayCrumble(Vec2 position, bool ice)
 	{
+		if (ice)
+		{
+			PlayAt(Cue::Glass, position, 0.35f, 0.55f + 0.2f * m_Random.Float());
+			PlayAt(Cue::IceImpact, position, 0.25f, 0.6f + 0.15f * m_Random.Float(), 0.04f);
+			return;
+		}
 		PlayAt(Cue::Rock, position, 0.45f, 0.65f + 0.2f * m_Random.Float());
 		PlayAt(Cue::FireImpact, position, 0.2f, 0.55f + 0.15f * m_Random.Float(), 0.05f);
 	}
@@ -576,6 +595,13 @@ namespace Game
 			}
 			if (Rose(before.Flags, entity.Flags, EntityFlags::Warded) && !dead)
 				PlayAt(Cue::Shield, entity.Position, self ? 0.75f : 0.5f, 1.2f);
+			if (Rose(before.Flags, entity.Flags, EntityFlags::Falling))
+				PlayAt(Cue::WhooshHeavy, entity.Position, self ? 0.8f : 0.5f, 0.7f);
+			if (Fell(before.Flags, entity.Flags, EntityFlags::Lifted))
+			{
+				PlayAt(Cue::WhooshLight, entity.Position, self ? 0.7f : 0.45f, 1.1f);
+				PlayAt(Cue::Soft, entity.Position, self ? 0.6f : 0.4f, 0.8f, 0.12f);
+			}
 			if (Rose(before.Flags, entity.Flags, EntityFlags::Attacking) || (entity.Has(EntityFlags::Attacking) && entity.Variant != before.Variant))
 				StartCast(entity, tracked, self);
 			else if (Fell(before.Flags, entity.Flags, EntityFlags::Attacking))
@@ -612,6 +638,19 @@ namespace Game
 			return;
 		}
 
+		if (entity.Kind == EntityKind::Dummy)
+		{
+			if (!Rose(before.Flags, entity.Flags, EntityFlags::Falling))
+				return;
+			if (DummyKind(entity.Variant) == DummyKind::Balloon)
+			{
+				PlayAt(Cue::GlassLight, entity.Position, 0.7f, 1.9f);
+				PlayAt(Cue::Crow, entity.Position, 0.45f, 1.7f, 0.12f);
+			}
+			else
+				PlayAt(Cue::WhooshLight, entity.Position, 0.6f, 0.8f);
+			return;
+		}
 		if (!IsEnemyKind(entity.Kind))
 			return;
 		if (Rose(before.Flags, entity.Flags, EntityFlags::Attacking))
@@ -735,6 +774,19 @@ namespace Game
 			PlayAt(Cue::ManaStart, at, 0.6f * loud, 1.35f);
 			PlayAt(Cue::WhooshLight, at, 0.4f * loud, 1.3f);
 			break;
+		case AbilityId::ChainHook:
+			PlayAt(Cue::WhooshLight, at, 0.6f * loud, 0.85f);
+			PlayAt(Cue::Coins, at, 0.35f * loud, 1.55f, 0.02f);
+			PlayAt(Cue::Latch, at, 0.4f * loud, 1.2f);
+			break;
+		case AbilityId::SplittingBolt:
+			PlayAt(Cue::ManaStart, at, 0.6f * loud, 0.7f);
+			PlayAt(Cue::ShockLaunch, at, 0.45f * loud, 0.65f);
+			break;
+		case AbilityId::BoltShard:
+			PlayAt(Cue::GlassLight, at, 0.6f * loud, 1.3f);
+			PlayAt(Cue::ShockHit, at, 0.4f * loud, 1.45f);
+			break;
 		default:
 			PlayAt(Cue::WhooshLight, at, 0.5f);
 			break;
@@ -761,6 +813,15 @@ namespace Game
 			break;
 		case AbilityId::ChainLightning:
 			PlayAt(Cue::ShockHit, at, 0.6f);
+			break;
+		case AbilityId::SplittingBolt:
+			PlayAt(Cue::ShockHit, at, 0.55f, 0.75f);
+			PlayAt(Cue::Glass, at, 0.3f);
+			break;
+		case AbilityId::BoltShard:
+			PlayAt(Cue::GlassLight, at, 0.4f, 1.4f);
+			break;
+		case AbilityId::ChainHook:
 			break;
 		case AbilityId::Arrow:
 		case AbilityId::Quarrel:
@@ -851,6 +912,35 @@ namespace Game
 		case AbilityId::Fireball:
 			PlayAt(Cue::FireImpact, at, 0.95f);
 			PlayAt(Cue::Explosion, at, 0.4f, 1.2f);
+			break;
+		case AbilityId::Firebomb:
+		case AbilityId::FirebombSkip:
+		case AbilityId::FirebombSkip2:
+			PlayAt(Cue::Explosion, at, 0.75f, ability == AbilityId::Firebomb ? 1.05f : 1.25f);
+			PlayAt(Cue::FireImpact, at, 0.7f, 1.1f);
+			break;
+		case AbilityId::FirebombFlame:
+			PlayAt(Cue::FireImpact, at, 0.3f, 1.35f);
+			break;
+		case AbilityId::StormStrike:
+			PlayAt(Cue::Thunder, at, 0.9f, 1.15f);
+			PlayAt(Cue::ShockHit, at, 0.8f, 0.9f);
+			break;
+		case AbilityId::StormJump:
+			PlayAt(Cue::ShockHit, at, 0.65f, 1.3f);
+			break;
+		case AbilityId::HookAnchor:
+			PlayAt(Cue::MetalHit, at, 0.45f, 0.8f);
+			PlayAt(Cue::Rock, at, 0.3f, 1.4f);
+			break;
+		case AbilityId::HookPull:
+			PlayAt(Cue::Latch, at, 0.6f, 0.9f);
+			PlayAt(Cue::Coins, at, 0.4f, 1.2f, 0.03f);
+			PlayAt(Cue::WhooshHeavy, at, 0.5f, 1.2f, 0.05f);
+			break;
+		case AbilityId::HookYank:
+			PlayAt(Cue::WhooshHeavy, at, 0.7f, 0.9f);
+			PlayAt(Cue::Coins, at, 0.35f, 1.0f, 0.02f);
 			break;
 		case AbilityId::Meteor:
 			PlayAt(Cue::Explosion, at, 1.0f, 0.85f);
@@ -959,6 +1049,12 @@ namespace Game
 			break;
 		case AbilityId::GravityWell:
 			tracked.Loop = PlayAt(Cue::ShockLoop, at, 0.5f, 0.55f);
+			break;
+		case AbilityId::Firebomb:
+			PlayAt(Cue::FireLaunch, at, 0.7f, 0.75f);
+			break;
+		case AbilityId::StormStrike:
+			PlayAt(Cue::ShockLaunch, at, 0.5f, 0.7f);
 			break;
 		case AbilityId::Firestrike:
 			tracked.Loop = PlayAt(Cue::FireLoop, at, 0.5f);

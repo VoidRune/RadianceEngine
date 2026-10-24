@@ -195,7 +195,7 @@ namespace Game
 
 		void TargetSize(const PbrBakeInput& input, uint32_t& width, uint32_t& height)
 		{
-			const RgbaImage* source = input.Albedo ? input.Albedo : input.Normal ? input.Normal : input.Surface;
+			const RgbaImage* source = input.Albedo ? input.Albedo : input.Normal ? input.Normal : input.Surface ? input.Surface : input.Emission;
 			width = source ? source->Width : 1;
 			height = source ? source->Height : 1;
 			while ((width > input.MaxSize || height > input.MaxSize) && width > 1 && height > 1)
@@ -306,13 +306,20 @@ namespace Game
 			output.Normal = Encode(input.Name + "_normal", levels, width, height, TextureFormat::Bc5, input.Repeat);
 		}
 
-		if (input.Surface)
+		if (input.Surface || input.Emission)
 		{
-			FloatImage level = Resample(*input.Surface, width, height);
+			FloatImage level = input.Surface ? Resample(*input.Surface, width, height) : FloatImage{ width, height, std::vector<glm::vec4>(size_t(width) * height, glm::vec4(1.0f)) };
 			for (glm::vec4& pixel : level.Pixels)
 			{
 				const float alpha = pixel.g * pixel.g;
 				pixel.g = alpha * alpha;
+				pixel.a = 1.0f;
+			}
+			if (input.Emission)
+			{
+				const FloatImage glow = Resample(*input.Emission, width, height);
+				for (size_t i = 0; i < level.Pixels.size(); i++)
+					level.Pixels[i].a = std::max({ glow.Pixels[i].r, glow.Pixels[i].g, glow.Pixels[i].b });
 			}
 			std::vector<std::vector<uint8_t>> levels;
 			for (uint32_t mip = 0; mip < mipCount; mip++)
@@ -327,7 +334,7 @@ namespace Game
 						const float length = std::clamp(glm::length(glm::vec3(normals[mip].Pixels[i])), 1e-4f, 1.0f);
 						alpha2 += 2.0f * (1.0f - length) / length;
 					}
-					return glm::vec4(p.r, std::sqrt(std::sqrt(std::min(alpha2, 1.0f))), p.b, 1.0f);
+					return glm::vec4(p.r, std::sqrt(std::sqrt(std::min(alpha2, 1.0f))), p.b, p.a);
 				}));
 			}
 			output.Surface = Encode(input.Name + "_surface", levels, width, height, TextureFormat::Bc7, input.Repeat);

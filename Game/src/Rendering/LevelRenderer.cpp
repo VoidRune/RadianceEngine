@@ -2,8 +2,11 @@
 #include "Rendering/Models.h"
 #include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
+#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <map>
 
 namespace Game
 {
@@ -91,80 +94,478 @@ namespace Game
 			renderer.DrawBox({ x, (top + bottom) * 0.5f, z }, { half.x, (top - bottom) * 0.5f, half.y }, color, yaw, 0.0f, ground);
 		}
 
-		constexpr float SlabBottom = -0.62f;
-		constexpr float SlabHalf = 0.485f;
+		constexpr float IslandBottom = -1.6f;
+		constexpr float ShoreDrop = 0.08f;
+		constexpr float ShoreFlare = 0.1f;
+		constexpr float BaseFlare = 0.34f;
+		constexpr float SinkDepth = 1.8f;
+		constexpr float MaxTilt = 0.35f;
 
-		void DrawBasaltCell(WorldRenderer& renderer, int32_t x, int32_t y, const LevelView& view, bool risen)
+		float SmoothStep(float edge0, float edge1, float x)
 		{
-			const TerrainDef& def = GetTerrain(TerrainId::Basalt);
-			const float cx = float(x) + 0.5f;
-			const float cz = float(y) + 0.5f;
-			float drop = 0.0f;
+			const float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+			return t * t * (3.0f - 2.0f * t);
+		}
+
+		float ValueNoise(Vec2 p, uint32_t salt)
+		{
+			const float fx = std::floor(p.x);
+			const float fy = std::floor(p.y);
+			const int32_t x = int32_t(fx);
+			const int32_t y = int32_t(fy);
+			const float u = SmoothStep(0.0f, 1.0f, p.x - fx);
+			const float v = SmoothStep(0.0f, 1.0f, p.y - fy);
+			const float bottom = std::lerp(CollapseNoise(x, y, salt), CollapseNoise(x + 1, y, salt), u);
+			const float top = std::lerp(CollapseNoise(x, y + 1, salt), CollapseNoise(x + 1, y + 1, salt), u);
+			return std::lerp(bottom, top, v);
+		}
+
+		float IslandSurface(Vec2 p, Vec2 center)
+		{
+			const float dome = 0.62f * (1.0f - SmoothStep(1.5f, 14.0f, Length(p - center)));
+			const float hills = 0.4f * (ValueNoise(p / 4.5f, 0xA11Cu) - 0.5f) + 0.1f * (ValueNoise(p / 1.6f, 0xB0B5u) - 0.5f);
+			return std::max(0.12f + dome + hills, 0.04f);
+		}
+
+		constexpr float IceTop = 0.06f;
+		constexpr float SnowRise = 0.24f;
+		constexpr float IceBottom = -0.75f;
+
+		float SnowAmount(const TileMap& map, Vec2 p)
+		{
+			const Vec2 q = p - Vec2(0.5f, 0.5f);
+			const int32_t x = int32_t(std::floor(q.x));
+			const int32_t y = int32_t(std::floor(q.y));
+			const float u = SmoothStep(0.0f, 1.0f, q.x - float(x));
+			const float v = SmoothStep(0.0f, 1.0f, q.y - float(y));
+			const auto snow = [&](int32_t tx, int32_t ty) { return map.GetTerrain(tx, ty) == TerrainId::Snow ? 1.0f : 0.0f; };
+			return std::lerp(std::lerp(snow(x, y), snow(x + 1, y), u), std::lerp(snow(x, y + 1), snow(x + 1, y + 1), u), v);
+		}
+
+		float IceHeight(const TileMap& map, Vec2 p)
+		{
+			return IceTop + SnowRise * SmoothStep(0.0f, 1.0f, SnowAmount(map, p));
+		}
+
+		glm::vec3 IceColor(const glm::vec3& centroid, float snow, float facet)
+		{
+			const Vec2 p(centroid.x, centroid.z);
+			const float clear = SmoothStep(0.45f, 0.75f, ValueNoise(p / 5.0f, 0x1CE5u));
+			glm::vec3 color = glm::mix(ToColor(0xB4D8EA), ToColor(0x5891B8), clear * 0.85f);
+			color = glm::mix(color, ToColor(0xD2E9F4), SmoothStep(0.55f, 0.8f, ValueNoise(p / 1.7f, 0xF125u)) * 0.5f * (1.0f - clear));
+			color = glm::mix(color, ToColor(0xDDE6EE), snow);
+			return color * (0.92f + 0.16f * facet);
+		}
+
+		struct PolygonVertex
+		{
+			double X = 0.0;
+			double Y = 0.0;
+			CellCoord Edge;
+			bool Frame = false;
+		};
+
+		std::vector<PolygonVertex> VoronoiPolygon(CellCoord cell)
+		{
+			const Vec2 seed = CellSeed(cell);
+			std::vector<PolygonVertex> polygon = {
+				{ double(cell.X - 1), double(cell.Y - 1), {}, true },
+				{ double(cell.X + 2), double(cell.Y - 1), {}, true },
+				{ double(cell.X + 2), double(cell.Y + 2), {}, true },
+				{ double(cell.X - 1), double(cell.Y + 2), {}, true },
+			};
+			std::vector<PolygonVertex> clipped;
+			for (int32_t dy = -2; dy <= 2; dy++)
+				for (int32_t dx = -2; dx <= 2; dx++)
+				{
+					if (dx == 0 && dy == 0)
+						continue;
+					const CellCoord other{ cell.X + dx, cell.Y + dy };
+					const Vec2 neighbour = CellSeed(other);
+					const double nx = double(neighbour.x) - double(seed.x);
+					const double ny = double(neighbour.y) - double(seed.y);
+					const double mx = 0.5 * (double(neighbour.x) + double(seed.x));
+					const double my = 0.5 * (double(neighbour.y) + double(seed.y));
+					clipped.clear();
+					for (size_t i = 0; i < polygon.size(); i++)
+					{
+						const PolygonVertex& a = polygon[i];
+						const PolygonVertex& b = polygon[(i + 1) % polygon.size()];
+						const double da = (a.X - mx) * nx + (a.Y - my) * ny;
+						const double db = (b.X - mx) * nx + (b.Y - my) * ny;
+						if (da <= 0.0)
+							clipped.push_back(a);
+						if ((da <= 0.0) == (db <= 0.0))
+							continue;
+						const double t = da / (da - db);
+						PolygonVertex cut{ a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, a.Edge, a.Frame };
+						if (da <= 0.0)
+						{
+							cut.Edge = other;
+							cut.Frame = false;
+						}
+						clipped.push_back(cut);
+					}
+					polygon.swap(clipped);
+				}
+			return polygon;
+		}
+
+		std::optional<Vec2> VoronoiCorner(CellCoord a, CellCoord b, CellCoord c)
+		{
+			std::array<CellCoord, 3> cells = { a, b, c };
+			std::sort(cells.begin(), cells.end(), [](CellCoord l, CellCoord r) { return l.X != r.X ? l.X < r.X : l.Y < r.Y; });
+			const Vec2 p = CellSeed(cells[0]);
+			const Vec2 q = CellSeed(cells[1]);
+			const Vec2 r = CellSeed(cells[2]);
+			const double ax = p.x, ay = p.y, bx = q.x, by = q.y, cx = r.x, cy = r.y;
+			const double d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+			if (std::abs(d) < 1e-12)
+				return std::nullopt;
+			const double a2 = ax * ax + ay * ay;
+			const double b2 = bx * bx + by * by;
+			const double c2 = cx * cx + cy * cy;
+			return Vec2(float((a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d), float((a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d));
+		}
+
+		std::pair<int64_t, int64_t> CornerKey(Vec2 position)
+		{
+			return { std::llround(double(position.x) * 8192.0), std::llround(double(position.y) * 8192.0) };
+		}
+
+		uint32_t PackColor(const glm::vec3& color, float alpha = 1.0f)
+		{
+			const glm::uvec3 c(glm::clamp(color, 0.0f, 1.0f) * 255.0f + 0.5f);
+			return c.r | (c.g << 8) | (c.b << 16) | (uint32_t(std::clamp(alpha, 0.0f, 1.0f) * 255.0f + 0.5f) << 24);
+		}
+
+		float VeinField(const glm::vec3& point)
+		{
+			const Vec2 p(point.x, point.z);
+			const float region = SmoothStep(0.45f, 0.7f, ValueNoise(p * 0.16f + Vec2(11.3f, 4.1f), 0x7E1Bu));
+			const float taper = SmoothStep(0.35f, 0.6f, ValueNoise(p * 0.55f + Vec2(19.0f, 2.3f), 0x3A5Fu));
+			return region * taper;
+		}
+
+		float CornerJitter(Vec2 position)
+		{
+			const auto [x, y] = CornerKey(position);
+			return CollapseNoise(int32_t(x), int32_t(y), 0x6A11u) - 0.5f;
+		}
+
+		glm::vec3 TopColor(const glm::vec3& centroid, const glm::vec3& normal, float facet)
+		{
+			const Vec2 p(centroid.x, centroid.z);
+			const float flat = SmoothStep(0.8f, 0.97f, normal.y);
+			glm::vec3 color = glm::mix(ToColor(0x3B4760), ToColor(0x637594), SmoothStep(0.1f, 0.8f, centroid.y));
+			color = glm::mix(color, ToColor(0x8190AA), SmoothStep(0.45f, 0.72f, ValueNoise(p / 2.2f, 0xC0DEu)) * 0.7f * flat);
+			color = glm::mix(color, ToColor(0x4F4C7C), SmoothStep(0.6f, 0.84f, ValueNoise(p / 3.4f, 0xFACEu)) * 0.5f);
+			color = glm::mix(color, ToColor(0x386673), SmoothStep(0.62f, 0.86f, ValueNoise(p / 2.9f, 0x7EA1u)) * 0.5f);
+			return color * (0.8f + 0.4f * facet);
+		}
+
+		struct IslandMesh
+		{
+			std::vector<ModelVertex>& Vertices;
+			std::vector<uint32_t>& Indices;
+			const TileMap* Snow = nullptr;
+
+			void Triangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec3& facing, const glm::vec3& color)
+			{
+				glm::vec3 normal = glm::cross(b - a, c - a);
+				const float length = glm::length(normal);
+				if (length < 1e-7f)
+					return;
+				if (glm::dot(normal, facing) < 0.0f)
+				{
+					std::swap(b, c);
+					normal = -normal;
+				}
+				normal /= length;
+				for (const glm::vec3& point : { a, b, c })
+				{
+					Indices.push_back(uint32_t(Vertices.size()));
+					Vertices.push_back({ .Position = point, .Normal = normal, .Color = PackColor(color, Snow ? SnowAmount(*Snow, Vec2(point.x, point.z)) : VeinField(point)) });
+				}
+			}
+
+			void Quad(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& d, const glm::vec3& facing, const glm::vec3& color)
+			{
+				Triangle(a, b, c, facing, color);
+				Triangle(a, c, d, facing, color);
+			}
+		};
+	}
+
+	void IslandArt::Clear()
+	{
+		m_Cells.clear();
+		m_Corners.clear();
+		m_Chunks.clear();
+		m_Lookup.clear();
+		m_Width = 0;
+		m_Height = 0;
+	}
+
+	void IslandArt::Build(WorldRenderer& renderer, const Level& level)
+	{
+		Clear();
+		const TileMap& map = level.Map;
+		m_Width = map.GetWidth();
+		m_Height = map.GetHeight();
+		m_Lookup.assign(size_t(m_Width) * size_t(m_Height), -1);
+		m_Frozen = level.Kind == MapKind::FrozenLake;
+		const Vec2 center = { float(m_Width) * 0.5f, float(m_Height) * 0.5f };
+		const auto surface = [&](Vec2 position, float jitter) { return m_Frozen ? IceHeight(map, position) + 0.012f * jitter : IslandSurface(position, center) + 0.1f * jitter; };
+		std::map<std::pair<int32_t, int32_t>, uint32_t> chunks;
+		for (int32_t y = 0; y < m_Height; y++)
+			for (int32_t x = 0; x < m_Width; x++)
+			{
+				if (!IsBrawlFloor(map.GetTerrain(x, y)))
+					continue;
+				const CellCoord coord{ x, y };
+				const CellCoord chunk = ChunkOf(coord);
+				const auto [found, added] = chunks.try_emplace({ chunk.X, chunk.Y }, uint32_t(m_Chunks.size()));
+				if (added)
+					m_Chunks.push_back({ .Coord = chunk, .Tile = uint32_t(y * m_Width + x) });
+				m_Chunks[found->second].Cells.push_back(uint32_t(m_Cells.size()));
+				m_Lookup[size_t(y) * size_t(m_Width) + size_t(x)] = int32_t(m_Cells.size());
+				const Vec2 seed = CellSeed(coord);
+				m_Cells.push_back({ .Coord = coord, .Seed = seed, .Peak = surface(seed, CollapseNoise(x, y, 0x2D7Fu) - 0.4f), .Chunk = found->second });
+			}
+		if (m_Cells.empty())
+			return;
+
+		std::vector<CellCoord> across;
+		std::vector<uint8_t> framed;
+		for (Cell& cell : m_Cells)
+		{
+			const std::vector<PolygonVertex> polygon = VoronoiPolygon(cell.Coord);
+			cell.FirstCorner = uint32_t(m_Corners.size());
+			cell.CornerCount = uint32_t(polygon.size());
+			for (size_t k = 0; k < polygon.size(); k++)
+			{
+				const PolygonVertex& previous = polygon[(k + polygon.size() - 1) % polygon.size()];
+				const PolygonVertex& vertex = polygon[k];
+				Vec2 position(float(vertex.X), float(vertex.Y));
+				if (!previous.Frame && !vertex.Frame)
+					position = VoronoiCorner(cell.Coord, previous.Edge, vertex.Edge).value_or(position);
+				m_Corners.push_back({ position, surface(position, CornerJitter(position)) });
+				across.push_back(vertex.Edge);
+				framed.push_back(vertex.Frame ? 1 : 0);
+			}
+		}
+
+		struct WallEdge
+		{
+			uint32_t A = 0;
+			uint32_t B = 0;
+			Vec2 Outward;
+		};
+		std::vector<ModelVertex> vertices;
+		std::vector<uint32_t> indices;
+		std::vector<LevelMeshDesc> meshes;
+		IslandMesh mesh{ vertices, indices, m_Frozen ? &map : nullptr };
+		const uint32_t material = renderer.GetPlainMaterial();
+		const uint32_t flags = m_Frozen ? MeshVertexTint | MeshIce : MeshVertexTint | MeshLavaGlow | MeshCrystal;
+		std::vector<WallEdge> walls;
+		std::map<std::pair<int64_t, int64_t>, Vec2> flare;
+		for (Chunk& chunk : m_Chunks)
+		{
+			const uint32_t firstIndex = uint32_t(indices.size());
+			walls.clear();
+			flare.clear();
+			glm::vec3 pivot(0.0f);
+			for (const uint32_t index : chunk.Cells)
+			{
+				const Cell& cell = m_Cells[index];
+				const glm::vec3 peak(cell.Seed.x, cell.Peak, cell.Seed.y);
+				pivot += peak;
+				for (uint32_t k = 0; k < cell.CornerCount; k++)
+				{
+					const uint32_t ia = cell.FirstCorner + k;
+					const uint32_t ib = cell.FirstCorner + (k + 1) % cell.CornerCount;
+					const Corner& a = m_Corners[ia];
+					const Corner& b = m_Corners[ib];
+					chunk.Min = { std::min(chunk.Min.x, a.Position.x), std::min(chunk.Min.y, a.Position.y) };
+					chunk.Max = { std::max(chunk.Max.x, a.Position.x), std::max(chunk.Max.y, a.Position.y) };
+					const glm::vec3 pa(a.Position.x, a.Height, a.Position.y);
+					const glm::vec3 pb(b.Position.x, b.Height, b.Position.y);
+					const glm::vec3 up(0.0f, 1.0f, 0.0f);
+					glm::vec3 normal = glm::cross(pa - peak, pb - peak);
+					const float area = glm::length(normal);
+					normal = area > 1e-7f ? normal * (normal.y < 0.0f ? -1.0f : 1.0f) / area : up;
+					const glm::vec3 centroid = (peak + pa + pb) / 3.0f;
+					const float facet = CollapseNoise(cell.Coord.X * 16 + int32_t(k), cell.Coord.Y, 0x51DEu);
+					mesh.Triangle(peak, pa, pb, up, m_Frozen ? IceColor(centroid, SnowAmount(map, Vec2(centroid.x, centroid.z)), facet) : TopColor(centroid, normal, facet));
+					const Cell* neighbour = framed[ia] ? nullptr : FindCell(across[ia]);
+					if (neighbour && neighbour->Chunk == cell.Chunk)
+						continue;
+					if (!neighbour)
+						chunk.Coast = true;
+					else if (std::find(chunk.Neighbours.begin(), chunk.Neighbours.end(), neighbour->Chunk) == chunk.Neighbours.end())
+						chunk.Neighbours.push_back(neighbour->Chunk);
+					Vec2 outward = Normalize(Vec2(b.Position.y - a.Position.y, a.Position.x - b.Position.x));
+					if (Dot(outward, (a.Position + b.Position) * 0.5f - cell.Seed) < 0.0f)
+						outward = -outward;
+					walls.push_back({ ia, ib, outward });
+					flare[CornerKey(a.Position)] += outward;
+					flare[CornerKey(b.Position)] += outward;
+				}
+			}
+			chunk.Pivot = pivot / float(chunk.Cells.size());
+			const uint32_t wallIndex = uint32_t(indices.size());
+			const auto ring = [&](uint32_t corner, float height, float spread)
+			{
+				const Vec2 position = m_Corners[corner].Position;
+				const Vec2 direction = Normalize(flare[CornerKey(position)]);
+				const float amount = spread * (0.6f + 0.8f * ValueNoise(position * 1.7f, 0x5EA5u));
+				return glm::vec3(position.x + direction.x * amount, height, position.y + direction.y * amount);
+			};
+			for (const WallEdge& wall : walls)
+			{
+				const Corner& a = m_Corners[wall.A];
+				const Corner& b = m_Corners[wall.B];
+				const glm::vec3 facing(wall.Outward.x, 0.0f, wall.Outward.y);
+				const glm::vec3 topA(a.Position.x, a.Height, a.Position.y);
+				const glm::vec3 topB(b.Position.x, b.Height, b.Position.y);
+				const glm::vec3 shoreA = ring(wall.A, LavaSurface - ShoreDrop, m_Frozen ? 0.02f : ShoreFlare);
+				const glm::vec3 shoreB = ring(wall.B, LavaSurface - ShoreDrop, m_Frozen ? 0.02f : ShoreFlare);
+				const float shade = ValueNoise((a.Position + b.Position) * 1.3f, 0xD1CEu);
+				const glm::vec3 edge = m_Frozen ? glm::mix(ToColor(0x7DB5D3), ToColor(0xB0D6E8), shade) : glm::mix(ToColor(0x1F2430), ToColor(0x343C4C), shade);
+				mesh.Quad(topA, topB, shoreB, shoreA, facing, edge);
+				const float bottom = m_Frozen ? IceBottom : IslandBottom;
+				const float flare = m_Frozen ? 0.06f : BaseFlare;
+				mesh.Quad(shoreA, shoreB, ring(wall.B, bottom, flare), ring(wall.A, bottom, flare), facing, m_Frozen ? ToColor(0x2A5B7C) : edge * 0.7f);
+			}
+			meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = wallIndex - firstIndex, .Material = material, .Layer = material, .Flags = flags });
+			meshes.push_back({ .FirstIndex = wallIndex, .IndexCount = uint32_t(indices.size()) - wallIndex, .Material = material, .Layer = material, .Flags = flags });
+		}
+		const uint32_t base = renderer.AddLevelGeometry(vertices, indices, meshes);
+		for (size_t i = 0; i < m_Chunks.size(); i++)
+			m_Chunks[i].Mesh = base + 2 * uint32_t(i);
+	}
+
+	const IslandArt::Cell* IslandArt::FindCell(CellCoord coord) const
+	{
+		if (coord.X < 0 || coord.Y < 0 || coord.X >= m_Width || coord.Y >= m_Height)
+			return nullptr;
+		const int32_t index = m_Lookup[size_t(coord.Y) * size_t(m_Width) + size_t(coord.X)];
+		return index >= 0 ? &m_Cells[size_t(index)] : nullptr;
+	}
+
+	float IslandArt::SurfaceHeight(const Cell& cell, Vec2 position) const
+	{
+		float best = -1e9f;
+		float height = cell.Peak;
+		const Vec2 p = position - cell.Seed;
+		for (uint32_t k = 0; k < cell.CornerCount; k++)
+		{
+			const Corner& a = m_Corners[cell.FirstCorner + k];
+			const Corner& b = m_Corners[cell.FirstCorner + (k + 1) % cell.CornerCount];
+			const Vec2 e0 = a.Position - cell.Seed;
+			const Vec2 e1 = b.Position - cell.Seed;
+			const float area = e0.x * e1.y - e0.y * e1.x;
+			if (std::abs(area) < 1e-8f)
+				continue;
+			const float u = (p.x * e1.y - p.y * e1.x) / area;
+			const float v = (e0.x * p.y - e0.y * p.x) / area;
+			const float inside = std::min({ u, v, 1.0f - u - v });
+			if (inside > best)
+			{
+				best = inside;
+				height = cell.Peak + u * (a.Height - cell.Peak) + v * (b.Height - cell.Peak);
+			}
+		}
+		return height;
+	}
+
+	std::optional<float> IslandArt::GroundHeight(const BrawlStatus* brawl, Vec2 position) const
+	{
+		const Cell* cell = FindCell(CellAt(position));
+		if (!cell)
+			return std::nullopt;
+		const float surface = SurfaceHeight(*cell, position);
+		const float since = brawl ? brawl->Clock - ChunkCollapseTime(brawl->Plan, m_Chunks[cell->Chunk].Coord) : 0.0f;
+		if (since <= 0.0f)
+			return surface;
+		const float fall = std::min(since / CollapseFallSeconds, 1.0f);
+		return std::max(surface - fall * fall * SinkDepth, LavaWading);
+	}
+
+	void IslandArt::Draw(WorldRenderer& renderer, const LevelView& view) const
+	{
+		m_Solid.assign(m_Chunks.size(), 1);
+		if (view.Brawl)
+			for (size_t i = 0; i < m_Chunks.size(); i++)
+			{
+				const Chunk& chunk = m_Chunks[i];
+				const bool rising = view.Risen && chunk.Tile < view.Risen->size() && (*view.Risen)[chunk.Tile] != 0 && view.Restore < 1.0f;
+				m_Solid[i] = !rising && view.Brawl->Clock < ChunkCollapseTime(view.Brawl->Plan, chunk.Coord) ? 1 : 0;
+			}
+		for (size_t i = 0; i < m_Chunks.size(); i++)
+		{
+			const Chunk& chunk = m_Chunks[i];
+			if (chunk.Max.x < view.Min.x || chunk.Min.x > view.Max.x || chunk.Max.y < view.Min.y || chunk.Min.y > view.Max.y)
+				continue;
 			float warn = 0.0f;
 			float fall = 0.0f;
+			Vec2 outward;
 			if (view.Brawl)
 			{
-				const float collapse = TileCollapseTime(view.Brawl->Plan, x, y);
-				const float since = view.Brawl->Clock - collapse;
+				const float since = view.Brawl->Clock - ChunkCollapseTime(view.Brawl->Plan, chunk.Coord);
 				if (since >= CollapseFallSeconds)
-					return;
+					continue;
 				warn = std::clamp((since + CollapseWarning) / CollapseWarning, 0.0f, 1.0f);
 				fall = std::max(since, 0.0f) / CollapseFallSeconds;
-				drop = fall * fall * 1.5f;
+				outward = Normalize(Vec2(chunk.Pivot.x, chunk.Pivot.z) - view.Brawl->Plan.Center);
 			}
-			if (risen && view.Restore < 1.0f)
+			float drop = fall * fall * SinkDepth;
+			if (view.Risen && chunk.Tile < view.Risen->size() && (*view.Risen)[chunk.Tile] != 0 && view.Restore < 1.0f)
 			{
 				const float rise = 1.0f - (1.0f - view.Restore) * (1.0f - view.Restore);
-				drop += (1.0f - rise) * 1.4f;
+				drop += (1.0f - rise) * SinkDepth;
 			}
-			const float shake = fall <= 0.0f && warn > 0.0f ? warn * warn * 0.03f : 0.0f;
-			const float jitterX = shake * std::sin(view.Time * 47.0f + float(x) * 3.1f + float(y) * 1.7f);
-			const float jitterZ = shake * std::cos(view.Time * 41.0f + float(x) * 2.3f - float(y) * 2.9f);
-			const float top = -drop;
-			const float bottom = SlabBottom - drop;
-			const float half = SlabHalf - 0.06f * fall;
-			const float shade = Hash(x, y, 4);
-			const glm::vec3 stone = glm::mix(ToColor(def.Color), ToColor(def.Accent), shade * 0.65f);
-			const float heat = std::min(fall * 0.9f + warn * warn * 0.12f, 1.0f);
-			const glm::vec3 color = glm::mix(stone, glm::vec3(1.5f, 0.34f, 0.06f), heat);
-			renderer.DrawBox({ cx + jitterX, (top + bottom) * 0.5f, cz + jitterZ }, { half, (top - bottom) * 0.5f, half }, color, (Hash(x, y, 6) - 0.5f) * 0.05f + fall * 0.35f, heat * 0.85f, top, { .Roughness = 0.9f });
+			const float shake = fall <= 0.0f && warn > 0.0f ? warn * warn * 0.035f : 0.0f;
+			const float phase = float(chunk.Coord.X) * 3.1f + float(chunk.Coord.Y) * 1.7f;
+			const glm::vec3 offset(shake * std::sin(view.Time * 47.0f + phase), -drop, shake * std::cos(view.Time * 41.0f - phase));
+			glm::mat4 transform = glm::translate(glm::mat4(1.0f), chunk.Pivot + offset);
+			if (fall > 0.0f && LengthSquared(outward) > 0.0f)
+				transform = glm::rotate(transform, fall * MaxTilt, glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(outward.x, 0.0f, outward.y)));
+			transform = glm::translate(transform, -chunk.Pivot);
+			const float heat = m_Frozen ? 0.0f : std::min(fall * 0.75f + warn * warn * 0.1f, 1.0f);
+			renderer.DrawModel(chunk.Mesh, transform, NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), heat, LavaSurface);
+			if (!m_Solid[i] || chunk.Coast || std::any_of(chunk.Neighbours.begin(), chunk.Neighbours.end(), [this](uint32_t other) { return m_Solid[other] == 0; }))
+				renderer.DrawModel(chunk.Mesh + 1, transform, NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), heat, LavaSurface);
 			if (warn <= 0.0f || fall > 0.0f)
-				return;
-			GroundDecal cracks;
-			cracks.Center = { cx, top, cz };
-			cracks.Extent = glm::vec2(0.5f);
-			cracks.Depth = 0.25f;
-			cracks.Shape = DecalShape::Fracture;
-			cracks.Color = glm::vec4(1.6f, 0.5f, 0.13f, 1.0f);
-			cracks.Tint = glm::vec4(0.02f, 0.016f, 0.014f, 1.0f);
-			cracks.Roughness = 0.9f;
-			cracks.Params = glm::vec4(warn, 0.0f, 0.0f, 0.0f);
-			renderer.DrawDecal(cracks);
+				continue;
+			for (const uint32_t index : chunk.Cells)
+			{
+				const Cell& cell = m_Cells[index];
+				GroundDecal cracks;
+				cracks.Center = { cell.Seed.x, cell.Peak, cell.Seed.y };
+				cracks.Extent = glm::vec2(0.6f);
+				cracks.Depth = 0.4f;
+				cracks.Shape = DecalShape::Fracture;
+				cracks.Color = m_Frozen ? glm::vec4(0.25f, 0.55f, 0.9f, 1.0f) : glm::vec4(1.6f, 0.5f, 0.13f, 1.0f);
+				cracks.Tint = m_Frozen ? glm::vec4(0.06f, 0.14f, 0.22f, 1.0f) : glm::vec4(0.02f, 0.016f, 0.014f, 1.0f);
+				cracks.Roughness = 0.9f;
+				cracks.Params = glm::vec4(warn, 0.0f, 0.0f, 0.0f);
+				renderer.DrawDecal(cracks);
+			}
 		}
 	}
 
-	float SlabDrop(const BrawlStatus& brawl, int32_t x, int32_t y)
+	float LevelRenderer::GroundHeight(const Level& level, const BrawlStatus* brawl, Vec2 position) const
 	{
-		const float since = brawl.Clock - TileCollapseTime(brawl.Plan, x, y);
-		if (since <= 0.0f)
-			return 0.0f;
-		const float fall = std::min(since / CollapseFallSeconds, 1.0f);
-		return fall * fall * 1.5f;
-	}
-
-	float BrawlGroundHeight(const Level& level, const BrawlStatus& brawl, Vec2 position)
-	{
-		const int32_t x = int32_t(std::floor(position.x));
-		const int32_t y = int32_t(std::floor(position.y));
-		switch (level.Map.GetTerrain(x, y))
-		{
-		case TerrainId::Lava:
+		if (m_Island.IsBuilt())
+			if (const std::optional<float> height = m_Island.GroundHeight(brawl, position))
+				return *height;
+		if (!m_LavaRuns.empty() && IsLavaTerrain(level, position))
 			return LavaWading;
-		case TerrainId::Basalt:
-			return std::max(-SlabDrop(brawl, x, y), LavaWading);
-		default:
-			return level.Map.GetHeight(position);
-		}
+		if (brawl)
+			return LavaWading;
+		return SampleGround(m_Scene, position).value_or(level.Map.GetHeight(position));
 	}
 
 	glm::vec3 ToColor(uint32_t rgb)
@@ -177,6 +578,7 @@ namespace Game
 	{
 		Prepare(renderer, level);
 		DrawTerrain(renderer, level, view);
+		m_Island.Draw(renderer, view);
 		DrawLava(renderer, view);
 		DrawWalls(renderer, level, view);
 		DrawProps(renderer, level, view);
@@ -190,16 +592,14 @@ namespace Game
 		if (key == m_Key)
 			return;
 		m_Key = key;
-		const bool hadGeometry = m_Scene.LevelGeometry;
+		renderer.ClearLevelGeometry();
 		if (level.Kind != MapKind::Abbey || !BuildAbbeyScene(level, renderer, m_Scene))
 		{
+			renderer.SetSkyMask(0, 0, {}, {}, {});
 			m_Scene = BuildLevelScene(level, renderer);
-			if (hadGeometry)
-			{
-				renderer.SetLevelGeometry({}, {}, {});
-				renderer.SetSkyMask(0, 0, {}, {}, {});
-			}
 		}
+		m_Island.Build(renderer, level);
+		renderer.SetFrozenLiquid(level.Kind == MapKind::FrozenLake);
 		const TileMap& map = level.Map;
 		m_LavaRuns.clear();
 		for (int32_t y = 0; y < map.GetHeight(); y++)
@@ -208,7 +608,7 @@ namespace Game
 			for (int32_t x = 0; x <= map.GetWidth(); x++)
 			{
 				const TerrainId terrain = x < map.GetWidth() ? map.GetTerrain(x, y) : TerrainId::Count;
-				const bool molten = terrain == TerrainId::Lava || terrain == TerrainId::Basalt;
+				const bool molten = terrain != TerrainId::Count && (IsHazardLiquid(terrain) || IsBrawlFloor(terrain));
 				if (molten && start < 0)
 					start = x;
 				else if (!molten && start >= 0)
@@ -251,25 +651,31 @@ namespace Game
 			{
 				if (item.Center.x + item.Reach < view.Min.x || item.Center.x - item.Reach > view.Max.x || item.Center.y + item.Reach < view.Min.y || item.Center.y - item.Reach > view.Max.y)
 					continue;
+				ModelInstance instance = item.Instance;
+				if (item.Bob > 0.0f)
+					instance.Rows[1].w += item.Bob * std::sin(view.Time * 0.55f + item.BobPhase);
 				if (item.Center.x + item.Reach < view.CameraMin.x || item.Center.x - item.Reach > view.CameraMax.x || item.Center.y + item.Reach < view.CameraMin.y || item.Center.y - item.Reach > view.CameraMax.y)
 				{
-					renderer.SubmitModel(item.Mesh, item.Instance, true);
+					renderer.SubmitModel(item.Mesh, instance, true);
 					continue;
 				}
 				float cut = 0.0f;
 				if (item.Cut)
 				{
-					const Vec2 toFocus = view.Focus - item.Center;
-					const float distance = Length(toFocus);
-					const Vec2 closest = distance > 1e-4f ? item.Center + toFocus * (std::min(distance, item.Reach) / distance) : item.Center;
+					const Vec2 closest = { std::clamp(view.Focus.x, item.Center.x - item.Extent.x, item.Center.x + item.Extent.x), std::clamp(view.Focus.y, item.Center.y - item.Extent.y, item.Center.y + item.Extent.y) };
 					cut = CutFactor(view, closest, item.Top);
+				}
+				if (cut <= 0.0f && (item.Instance.Info.w & MeshWater) != 0)
+				{
+					instance.Shading.z = view.Time;
+					renderer.SubmitModel(item.Mesh, instance);
+					continue;
 				}
 				if (cut <= 0.0f)
 				{
-					renderer.SubmitModel(item.Mesh, item.Instance);
+					renderer.SubmitModel(item.Mesh, instance);
 					continue;
 				}
-				ModelInstance instance = item.Instance;
 				instance.Shading.z = item.Base + CutHeight;
 				instance.Shading.w = 0.85f * cut;
 				renderer.SubmitModel(item.Mesh, instance);
@@ -327,11 +733,8 @@ namespace Game
 					continue;
 				if (def.Style == TerrainStyle::Molten)
 					continue;
-				if (cell.Terrain == TerrainId::Basalt)
-				{
-					DrawBasaltCell(renderer, x, y, view, view.Risen && index < view.Risen->size() && (*view.Risen)[index] != 0);
+				if (IsBrawlFloor(cell.Terrain))
 					continue;
-				}
 				const float height = float(cell.Level) * HeightUnit;
 				const float shade = Hash(x, y);
 				const float cx = float(x) + 0.5f;
@@ -530,7 +933,7 @@ namespace Game
 			const float distance = Length(portal.Position - view.Focus);
 			const bool hovered = int32_t(i) == view.HoveredPortal;
 			const bool reachable = int32_t(i) == view.ReachablePortal;
-			if (!hovered && !reachable && distance > 8.0f)
+			if ((!hovered && !reachable && distance > 8.0f) || (portal.Hidden && !reachable))
 				continue;
 			const float ground = level.Map.GetHeight(portal.Position);
 			const float pulse = 0.65f + 0.35f * std::sin(view.Time * 4.0f + float(i));

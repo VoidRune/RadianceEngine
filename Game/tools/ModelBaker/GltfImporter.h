@@ -3,6 +3,7 @@
 #include "Rendering/ModelSources.h"
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -35,17 +36,21 @@ namespace Game
 			uint32_t Surface = NoTexture;
 			uint32_t Normal = NoTexture;
 			glm::vec4 Color{ 1.0f };
+			glm::vec3 Emission{ 0.0f };
 			float Roughness = 1.0f;
 			float Metallic = 0.0f;
 			float AlphaCutoff = 0.0f;
+			bool DoubleSided = true;
+			bool Water = false;
 			bool Skip = false;
 		};
 
 		bool LoadModel(const std::filesystem::path& path, tinygltf::Model& model, std::string& error);
-		bool SetupSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin, std::string& error);
-		bool CheckSkin(const tinygltf::Model& model, const tinygltf::Skin& skin, const std::string& file, std::string& error);
+		bool SetupSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin, const std::string& name, uint32_t& index, std::string& error);
+		bool SharedSkeleton(const tinygltf::Model& model, uint32_t& index, std::string& error);
+		bool CheckSkin(const tinygltf::Model& model, const tinygltf::Skin& skin, uint32_t skeleton, const std::string& file, std::string& error);
 		bool ImportCharacter(const tinygltf::Model& model, const std::string& file, std::string& error);
-		bool ImportAnimations(const tinygltf::Model& model, const std::string& file, std::string& error);
+		bool ImportAnimations(const tinygltf::Model& model, const std::string& file, uint32_t skeleton, std::string& error);
 		bool ImportProp(const tinygltf::Model& model, const std::string& file, std::string& error);
 		bool ImportScan(const std::filesystem::path& folder, const ModelSource& source, std::string& error);
 		bool ImportMaterial(const std::filesystem::path& folder, const ModelSource& source, std::string& error);
@@ -57,7 +62,8 @@ namespace Game
 		void ApplyMaterial(const tinygltf::Model& model, int materialIndex, ModelMesh& mesh);
 		void AddMesh(ModelMesh mesh, std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices);
 		std::string UniqueMeshName(const std::string& name, const std::string& file);
-		int32_t FindJoint(const std::string& name) const;
+		int32_t FindJoint(uint32_t skeleton, const std::string& name) const;
+		std::optional<uint32_t> FindSkeleton(const std::string& name) const;
 
 		ModelLibraryData& m_Output;
 		std::unordered_map<uint64_t, uint32_t> m_TextureByHash;

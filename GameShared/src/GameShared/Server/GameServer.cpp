@@ -1,4 +1,5 @@
 #include "GameServer.h"
+#include "GameShared/Content/Hub.h"
 #include "GameShared/Content/PropLibrary.h"
 #include <RadianceEngine/Core/Log.h>
 #include <algorithm>
@@ -126,6 +127,7 @@ namespace Game
 			return true;
 		if (m_Config.MapSeed == 0)
 			m_Config.MapSeed = uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()) | 1u;
+		m_BotRandom.Seed(uint64_t(m_Config.MapSeed) * 0x9E3779B97F4A7C15ULL + 0xB07u);
 		if (m_Config.Listen && !m_Net.Listen(m_Config.Port))
 			return false;
 		MapKind map = m_Config.Map;
@@ -136,7 +138,7 @@ namespace Game
 		else if (m_Config.StartMode == GameMode::Royale && !IsRoyaleMap(map))
 			map = MapKind::Ashlands;
 		else if (m_Config.StartMode == GameMode::Brawl && !IsBrawlMap(map))
-			map = MapKind::Caldera;
+			map = map == RandomBrawlMap ? BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))] : MapKind::Caldera;
 		CreateWorld({
 			.Mode = m_Config.StartMode,
 			.Map = map,
@@ -249,6 +251,8 @@ namespace Game
 			owner->Rescued++;
 		});
 
+		m_Bots.clear();
+		m_Squad.Clear();
 		CreateWorld(next);
 		RDN_LOG("Travelled to {} ({}{})", GetMapDef(m_Session.Map).Name, m_Session.Mode == GameMode::Mission ? "mission tier " + std::to_string(m_Session.Tier) : std::string(DescribeMode(m_Session.Mode)), m_Session.Modifiers ? ", " + std::to_string(CountModifiers(m_Session.Modifiers)) + " modifiers" : "");
 		const bool resetScores = IsPvpMode(previous) || IsPvpMode(m_Session.Mode);
@@ -274,10 +278,12 @@ namespace Game
 			Send(client, travel, SendMode::Reliable);
 			SendInventory(client);
 			SendStash(client);
+			SendChess(client);
 			if (carry != carried.end() && carry->Rescued > 0)
 				SendNotice(client, std::to_string(carry->Rescued) + (carry->Rescued == 1 ? " item you left behind was" : " items you left behind were") + " sent to your stash", true);
 			SendNotice(client, reward, true);
 		}
+		FillBots();
 		m_World->TakeEvents();
 		m_World->TakeNotices();
 		BroadcastPlayerList();
@@ -304,6 +310,8 @@ namespace Game
 			return;
 		m_Net.Shutdown();
 		m_Clients.clear();
+		m_Bots.clear();
+		m_Squad.Clear();
 		m_World.reset();
 		RDN_LOG("Server stopped");
 	}
@@ -312,8 +320,9 @@ namespace Game
 	{
 		if (!m_World)
 			return InvalidConnection;
-		m_LocalConnection = m_Net.OpenLocalConnection();
-		return m_LocalConnection;
+		const LocalConnection local = m_Net.OpenLocalConnection();
+		m_LocalConnection = local.Server;
+		return local.Client;
 	}
 
 	uint32_t GameServer::GetPlayerCount() const
@@ -354,6 +363,11 @@ namespace Game
 		}
 
 		m_PlayerListTimer += dt;
+		if (const uint32_t revision = m_World->GetMatch().GetCardRevision(); revision != m_CardRevision)
+		{
+			m_CardRevision = revision;
+			m_PlayerListTimer = PlayerListInterval;
+		}
 		if (m_PlayerListTimer >= PlayerListInterval)
 			BroadcastPlayerList();
 	}
@@ -407,12 +421,16 @@ namespace Game
 		if (hello.Version != ProtocolVersion)
 			return reject("The server runs a different version of the game");
 		uint32_t playerId = 0;
+		if (!AllocatePlayerId(playerId) && !m_Bots.empty())
+			DropBot();
 		if (!AllocatePlayerId(playerId))
 			return reject("The server is full");
 
 		client.Joined = true;
 		client.PlayerId = playerId;
 		client.Name = hello.Name.empty() ? "Player " + std::to_string(playerId + 1) : hello.Name.substr(0, 24);
+		client.Honors = hello.Honors & AllHonors;
+		client.Style = SanitizeCosmetics(hello.Style);
 		const StarterKit kit = hello.Kit < uint8_t(StarterKit::Count) ? StarterKit(hello.Kit) : StarterKit::Arcanist;
 		client.Host = client.Connection == m_LocalConnection;
 		if (client.Host)
@@ -430,8 +448,10 @@ namespace Game
 		Send(client, welcome, SendMode::Reliable);
 		SendInventory(client);
 		SendStash(client);
+		SendChess(client);
 		const Inventory* inventory = m_World->GetEntities().TryGet<Inventory>(client.Player);
 		RDN_LOG("{} joined as player {} with a {}", client.Name, playerId + 1, inventory ? GetItemName(inventory->Gear[size_t(GearSlot::Weapon)]) : "weapon");
+		FillBots();
 		BroadcastPlayerList();
 	}
 
@@ -494,7 +514,9 @@ namespace Game
 			if (m_World->IsHub())
 			{
 				const GameMode mode = GameMode(std::min<uint32_t>(action.Value, uint32_t(GameMode::Count)));
-				const MapKind map = MapKind(std::min<uint32_t>(action.Target, uint32_t(MapKind::Count)));
+				MapKind map = MapKind(std::min<uint32_t>(action.Target, uint32_t(MapKind::Count)));
+				if (mode == GameMode::Brawl && map == RandomBrawlMap)
+					map = BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))];
 				if ((mode == GameMode::Arena && IsArenaMap(map)) || (mode == GameMode::Royale && IsRoyaleMap(map)) || (mode == GameMode::Brawl && IsBrawlMap(map)))
 				{
 					const MatchRules rules = DecodeRules(action.Extra);
@@ -509,8 +531,28 @@ namespace Game
 		case ActionType::BrawlSpell:
 			m_World->PickBrawlSpell(client.Player, action.Value, AbilityId(std::min<uint32_t>(action.Target, uint32_t(AbilityId::Count))));
 			break;
-		case ActionType::BrawlBoon:
-			m_World->ChooseBoon(client.Player, action.Value);
+		case ActionType::BrawlCard:
+			m_World->ChooseCard(client.Player, action.Value);
+			break;
+		case ActionType::Wish:
+			m_World->MakeWish(client.Player);
+			break;
+		case ActionType::Chess:
+			changed = m_World->PlayChess(client.Player, Chess::Command(std::min<uint32_t>(action.Value, uint32_t(Chess::Command::Count))), action.Target, action.Extra);
+			break;
+		case ActionType::SetHonors:
+			if (client.Honors != (action.Value & AllHonors))
+			{
+				client.Honors = uint8_t(action.Value & AllHonors);
+				BroadcastPlayerList();
+			}
+			break;
+		case ActionType::SetCosmetics:
+			if (const Cosmetics style = UnpackCosmetics(action.Value); style != client.Style)
+			{
+				client.Style = style;
+				BroadcastPlayerList();
+			}
 			break;
 		case ActionType::BrawlReady:
 			m_World->SetBrawlReady(client.Player, action.Value != 0);
@@ -551,6 +593,14 @@ namespace Game
 			Send(client, ServerStash{ .Stash = inventory->Stash }, SendMode::Reliable);
 	}
 
+	void GameServer::SendChess(const Client& client)
+	{
+		if (m_Session.Mode != GameMode::Hub)
+			return;
+		const Chess::Match& match = m_World->GetChess();
+		Send(client, ServerChess{ .Revision = match.Revision, .Seats = match.Seats, .Result = match.Result, .Winner = match.Winner, .DrawOffer = match.DrawOffer, .Moves = match.Moves }, SendMode::Reliable);
+	}
+
 	void GameServer::SendNotice(const Client& client, const std::string& text, bool success)
 	{
 		if (!text.empty())
@@ -587,6 +637,11 @@ namespace Game
 		if (joined)
 			m_World->RemovePlayer(it->Player);
 		m_Clients.erase(it);
+		if (joined && GetPlayerCount() == 0)
+			while (!m_Bots.empty())
+				DropBot();
+		else if (joined)
+			FillBots();
 		if (joined)
 			BroadcastPlayerList();
 	}
@@ -609,6 +664,7 @@ namespace Game
 		for (Client& client : m_Clients)
 			if (client.Joined)
 				ProcessInputs(client);
+		m_Squad.Update(*m_World);
 		m_World->Step();
 		HandleWorldEvents();
 		FlushNotices();
@@ -685,8 +741,8 @@ namespace Game
 			case WorldEventType::MatchEnded:
 				if (event.Detail != NoTeam)
 					RDN_LOG("The match is over, the {} team wins", GetTeamName(event.Detail));
-				else if (client)
-					RDN_LOG("The match is over, {} wins", client->Name);
+				else if (event.PlayerId != NoPlayer)
+					RDN_LOG("The match is over, {} wins", NameOf(event.PlayerId));
 				else
 					RDN_LOG("The match is over without a winner");
 				statsChanged = true;
@@ -698,8 +754,8 @@ namespace Game
 				RDN_LOG("Round {} of {} begins with {} players", event.Detail, m_World->GetMatch().GetBrawl().Rounds, m_World->GetMatch().GetEntrants());
 				break;
 			case WorldEventType::RoundEnded:
-				if (client)
-					RDN_LOG("{} wins round {}", client->Name, event.Detail);
+				if (event.PlayerId != NoPlayer)
+					RDN_LOG("{} wins round {}", NameOf(event.PlayerId), event.Detail);
 				else
 					RDN_LOG("Round {} ends without a winner", event.Detail);
 				statsChanged = true;
@@ -717,6 +773,11 @@ namespace Game
 			case WorldEventType::StashChanged:
 				if (client)
 					SendStash(*client);
+				break;
+			case WorldEventType::ChessChanged:
+				for (const Client& watcher : m_Clients)
+					if (watcher.Joined)
+						SendChess(watcher);
 				break;
 			case WorldEventType::MaterialsChanged:
 			case WorldEventType::ChestOpened:
@@ -755,12 +816,10 @@ namespace Game
 		{
 			for (const KillRecord& kill : kills)
 			{
-				const Client* victim = FindClientByPlayer(kill.Victim);
-				const Client* killer = FindClientByPlayer(kill.Killer);
-				if (victim && killer)
-					RDN_LOG("{} slew {}", killer->Name, victim->Name);
-				else if (victim)
-					RDN_LOG("{} fell", victim->Name);
+				if (kill.Killer != NoPlayer)
+					RDN_LOG("{} slew {}", NameOf(kill.Killer), NameOf(kill.Victim));
+				else
+					RDN_LOG("{} fell", NameOf(kill.Victim));
 			}
 			const ServerKillFeed feed{ .Kills = std::move(kills) };
 			for (const Client& client : m_Clients)
@@ -807,18 +866,39 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Chilled);
 				if (controller->State.Stun > 0.0f)
 					state.Flags |= uint16_t(EntityFlags::Stunned);
+				if (controller->State.Static > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Static);
 				if (controller->State.Ward > 0.0f)
 					state.Flags |= uint16_t(EntityFlags::Warded);
 				if (m_World->GetMatch().IsBurning(controller->PlayerId) && m_Session.Mode == GameMode::Brawl)
 					state.Flags |= uint16_t(EntityFlags::Burning);
+				if (m_World->GetMatch().IsIgnited(controller->PlayerId))
+					state.Flags |= uint16_t(EntityFlags::Ignited);
+				if (m_World->GetMatch().GetMarkedBy(controller->PlayerId) != NoPlayer)
+					state.Flags |= uint16_t(EntityFlags::Marked);
+				if (m_World->GetMatch().GetShield(controller->PlayerId) > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Barrier);
+				if (controller->State.Still >= LeylineSeconds && m_World->GetMatch().HasPlayerCard(controller->PlayerId, CardId::Leyline))
+					state.Flags |= uint32_t(EntityFlags::Leyline);
 				if (LengthSquared(controller->State.Push) > FlungSpeed * FlungSpeed)
 					state.Flags |= uint16_t(EntityFlags::Flung);
+				if (controller->State.IsFalling())
+					state.Flags |= uint16_t(controller->State.Fall < FallSeconds ? EntityFlags::Falling : EntityFlags::Lifted);
 				state.Variant = uint8_t(AbilityId::Count);
 				if (controller->State.CastSlot >= 0)
 				{
 					state.Flags |= uint16_t(EntityFlags::Attacking);
 					state.Variant = uint8_t(controller->Traits.Skills[size_t(controller->State.CastSlot)].Ability);
 				}
+			}
+			if (const Dummy* dummy = entities.TryGet<Dummy>(entity))
+			{
+				if (dummy->Burning)
+					state.Flags |= uint16_t(EntityFlags::Burning);
+				if (LengthSquared(dummy->Push) > FlungSpeed * FlungSpeed && dummy->Fall <= 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Flung);
+				if (dummy->Fall > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Falling);
 			}
 			if (const Enemy* enemy = entities.TryGet<Enemy>(entity))
 			{
@@ -914,7 +994,12 @@ namespace Game
 		local.Watching = controller->Watching;
 		local.KilledBy = controller->KilledBy;
 		if (m_Session.Mode == GameMode::Brawl)
+		{
 			local.Brawl = m_World->GetMatch().GetLoadout(client.PlayerId);
+			local.Shield = uint8_t(std::clamp(std::ceil(m_World->GetMatch().GetShield(client.PlayerId)), 0.0f, 255.0f));
+		}
+		if (m_Session.Mode == GameMode::Hub)
+			local.Starlit = m_World->GetStarlit(client.PlayerId);
 		return local;
 	}
 
@@ -923,13 +1008,13 @@ namespace Game
 		m_PlayerListTimer = 0.0f;
 		ServerPlayerList list;
 		const EntityRegistry& entities = m_World->GetEntities();
-		for (const Client& client : m_Clients)
+		const bool pvp = m_World->IsPvp();
+		const auto describe = [&](uint32_t playerId, const std::string& name, Entity player, const Cosmetics& style)
 		{
-			if (!client.Joined)
-				continue;
-			const PlayerController* controller = entities.TryGet<PlayerController>(client.Player);
-			const Inventory* inventory = entities.TryGet<Inventory>(client.Player);
+			const PlayerController* controller = entities.TryGet<PlayerController>(player);
+			const Inventory* inventory = entities.TryGet<Inventory>(player);
 			PlayerLook look;
+			look.Style = style;
 			if (inventory)
 			{
 				const Item& weapon = inventory->Gear[size_t(GearSlot::Weapon)];
@@ -939,22 +1024,45 @@ namespace Game
 				look.Body = LookOf(inventory->Gear[size_t(GearSlot::Body)]);
 				look.Feet = LookOf(inventory->Gear[size_t(GearSlot::Feet)]);
 			}
-			const bool pvp = m_World->IsPvp();
-			const MatchScore& score = m_World->GetMatch().GetScore(client.PlayerId);
-			list.Players.push_back({
-				.PlayerId = client.PlayerId,
-				.Name = client.Name,
-				.Kills = pvp ? score.Kills : client.Kills,
-				.Deaths = pvp ? score.Deaths : client.Deaths,
-				.Ping = m_Net.GetPing(client.Connection),
+			const MatchScore& score = m_World->GetMatch().GetScore(playerId);
+			return PlayerInfo{
+				.PlayerId = playerId,
+				.Name = name,
+				.Kills = score.Kills,
+				.Deaths = score.Deaths,
+				.Assists = score.Assists,
+				.Damage = score.Damage,
 				.Buffs = controller ? controller->Buffs : BuffStacks{},
 				.Look = look,
-				.Team = m_World->GetTeam(client.PlayerId),
+				.Team = m_World->GetTeam(playerId),
 				.Placement = pvp ? score.Placement : uint8_t(0),
-				.Host = client.Host,
-				.Score = m_World->GetMatch().GetPoints(client.PlayerId),
-				.Rounds = m_World->GetMatch().GetRoundWins(client.PlayerId),
-			});
+				.Score = m_World->GetMatch().GetPoints(playerId),
+				.Rounds = m_World->GetMatch().GetRoundWins(playerId),
+				.Cards = m_World->GetCards(playerId),
+				.Choosing = m_Session.Mode == GameMode::Brawl && m_World->GetMatch().GetLoadout(playerId).OfferPending,
+			};
+		};
+		for (const Client& client : m_Clients)
+		{
+			if (!client.Joined)
+				continue;
+			PlayerInfo info = describe(client.PlayerId, client.Name, client.Player, client.Style);
+			if (!pvp)
+			{
+				info.Kills = client.Kills;
+				info.Deaths = client.Deaths;
+			}
+			info.Ping = m_Net.GetPing(client.Connection);
+			info.Host = client.Host;
+			info.Honors = client.Honors;
+			list.Players.push_back(info);
+		}
+		for (const Bot& bot : m_Bots)
+		{
+			PlayerInfo info = describe(bot.PlayerId, bot.Name, m_World->FindPlayer(bot.PlayerId), bot.Style);
+			info.Ping = 0;
+			info.Bot = true;
+			list.Players.push_back(info);
 		}
 		std::sort(list.Players.begin(), list.Players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.PlayerId < b.PlayerId; });
 		for (const Client& client : m_Clients)
@@ -977,8 +1085,73 @@ namespace Game
 	bool GameServer::AllocatePlayerId(uint32_t& playerId) const
 	{
 		for (playerId = 0; playerId < m_Config.MaxPlayers; playerId++)
-			if (std::none_of(m_Clients.begin(), m_Clients.end(), [&](const Client& client) { return client.Joined && client.PlayerId == playerId; }))
+			if (std::none_of(m_Clients.begin(), m_Clients.end(), [&](const Client& client) { return client.Joined && client.PlayerId == playerId; }) && std::none_of(m_Bots.begin(), m_Bots.end(), [&](const Bot& bot) { return bot.PlayerId == playerId; }))
 				return true;
 		return false;
+	}
+
+	void GameServer::FillBots()
+	{
+		if (!m_World || m_Session.Mode != GameMode::Brawl || GetPlayerCount() == 0)
+			return;
+		const BotSkill skill = BotSkill(std::min<uint32_t>(m_Session.Rules.BotLevel, uint32_t(BotSkill::Count) - 1));
+		while (m_Bots.size() < m_Session.Rules.Bots)
+		{
+			uint32_t playerId = 0;
+			if (!AllocatePlayerId(playerId))
+				break;
+			Bot bot{ .PlayerId = playerId };
+			for (uint32_t attempt = 0; attempt < 32 && bot.Name.empty(); attempt++)
+			{
+				const std::string name = PickBotName(m_BotNames++);
+				const auto taken = [&](const std::string& other) { return other == name; };
+				if (std::none_of(m_Clients.begin(), m_Clients.end(), [&](const Client& client) { return client.Joined && taken(client.Name); }) && std::none_of(m_Bots.begin(), m_Bots.end(), [&](const Bot& other) { return taken(other.Name); }))
+					bot.Name = name;
+			}
+			if (bot.Name.empty())
+				bot.Name = "Bot " + std::to_string(playerId + 1);
+			bot.Style.Head = Headwear(m_BotRandom.Below(uint32_t(Headwear::Count)));
+			const uint32_t first = m_BotRandom.Below(uint32_t(BotStyle::Count));
+			size_t fewest = m_Bots.size() + 1;
+			for (uint32_t i = 0; i < uint32_t(BotStyle::Count); i++)
+			{
+				const BotStyle style = BotStyle((first + i) % uint32_t(BotStyle::Count));
+				const size_t count = size_t(std::count_if(m_Bots.begin(), m_Bots.end(), [&](const Bot& other) { return other.Personality == style; }));
+				if (count < fewest)
+				{
+					fewest = count;
+					bot.Personality = style;
+				}
+			}
+			const BotStyle style = bot.Personality;
+			m_World->SpawnPlayer(playerId, ToInventory(MakeStarterGear(StarterKit::Arcanist)));
+			m_Squad.Add(playerId, BotProfile{ .Skill = skill, .Style = style, .Seed = m_BotRandom.Next() });
+			m_Bots.push_back(bot);
+			RDN_LOG("{} joined as a {} {} bot", bot.Name, BotSkillNames[size_t(skill)], BotStyleNames[size_t(style)]);
+		}
+	}
+
+	void GameServer::DropBot()
+	{
+		if (m_Bots.empty())
+			return;
+		const Bot bot = m_Bots.back();
+		m_Bots.pop_back();
+		m_Squad.Remove(bot.PlayerId);
+		if (m_World)
+			if (const Entity player = m_World->FindPlayer(bot.PlayerId); player.IsValid())
+				m_World->RemovePlayer(player);
+		RDN_LOG("{} left", bot.Name);
+	}
+
+	std::string GameServer::NameOf(uint32_t playerId) const
+	{
+		for (const Client& client : m_Clients)
+			if (client.Joined && client.PlayerId == playerId)
+				return client.Name;
+		for (const Bot& bot : m_Bots)
+			if (bot.PlayerId == playerId)
+				return bot.Name;
+		return "Someone";
 	}
 }

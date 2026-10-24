@@ -75,5 +75,6 @@ namespace Rdn
 		std::vector<ImageViewHandle> m_ImageViews;
 		std::vector<SemaphoreHandle> m_PresentSemaphores;
 		bool m_NeedsRecreate = false;
+		bool m_PresentModeChanged = false;
 	};
 }

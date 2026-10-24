@@ -1,4 +1,5 @@
 #include "LaunchOptions.h"
+#include "App/GraphicsTier.h"
 #include "Rendering/Lighting.h"
 #include "Rendering/PostProcess.h"
 #include <GameShared/Net/Protocol.h>
@@ -83,7 +84,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -165,7 +166,8 @@ namespace Game
 			else if (argument == "--brawl")
 			{
 				options.StartMode = GameMode::Brawl;
-				options.Map = MapKind::Caldera;
+				if (!options.Map || (!IsBrawlMap(*options.Map) && *options.Map != RandomBrawlMap))
+					options.Map = MapKind::Caldera;
 				uint32_t rounds = 0;
 				if (hasValue && ParseNumber(value, rounds))
 				{
@@ -174,6 +176,38 @@ namespace Game
 						options.Rules.Rounds = uint8_t(rounds);
 					i++;
 				}
+			}
+			else if (argument == "--brawl-map" && hasValue)
+			{
+				valid = value == "caldera" || value == "lake" || value == "random";
+				if (valid)
+					options.Map = value == "caldera" ? MapKind::Caldera : value == "lake" ? MapKind::FrozenLake : RandomBrawlMap;
+				i++;
+			}
+			else if (argument == "--brawl-mode" && hasValue)
+			{
+				const auto mode = std::find(std::begin(BrawlModeNames), std::end(BrawlModeNames), value);
+				valid = mode != std::end(BrawlModeNames);
+				if (valid)
+					options.Rules.Mode = BrawlMode(mode - std::begin(BrawlModeNames));
+				i++;
+			}
+			else if (argument == "--bots" && hasValue)
+			{
+				uint32_t bots = 0;
+				valid = ParseNumber(value, bots) && bots <= MaxBots;
+				if (valid)
+					options.Rules.Bots = uint8_t(bots);
+				i++;
+			}
+			else if (argument == "--bot-skill" && hasValue)
+			{
+				constexpr std::string_view Levels[] = { "easy", "normal", "hard" };
+				const auto level = std::find(std::begin(Levels), std::end(Levels), value);
+				valid = level != std::end(Levels);
+				if (valid)
+					options.Rules.BotLevel = uint8_t(level - std::begin(Levels));
+				i++;
 			}
 			else if (argument == "--goal" && hasValue)
 			{
@@ -313,6 +347,23 @@ namespace Game
 					options.Gi = uint8_t(it - std::begin(GiQualityNames));
 				i++;
 			}
+			else if (argument == "--vsync" && hasValue)
+			{
+				valid = SameText("on", value) || SameText("off", value);
+				if (valid)
+					options.Vsync = SameText("on", value);
+				i++;
+			}
+			else if (argument == "--frame-cap" && hasValue)
+			{
+				uint32_t cap = 0;
+				valid = ParseNumber(value, cap) && cap >= MinFrameCap && cap <= MaxFrameCap;
+				if (valid)
+					options.FrameCap = cap;
+				i++;
+			}
+			else if (argument == "--performance")
+				options.ShowPerformance = true;
 			else if (argument == "--exposure" && hasValue)
 			{
 				float exposure = 1.0f;
@@ -330,6 +381,8 @@ namespace Game
 				options.PbrTest = std::string(value);
 				i++;
 			}
+			else if (argument == "--leviathan")
+				options.Leviathan = true;
 			else if (argument == "--profile-gpu")
 				options.ProfileGpu = true;
 			else

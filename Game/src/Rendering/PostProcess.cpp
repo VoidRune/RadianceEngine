@@ -4,6 +4,7 @@
 #include <glm/gtc/packing.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -44,9 +45,15 @@ namespace Game
 
 		glm::vec3 ApplyGrade(const ColorGrade& grade, const glm::vec3& color)
 		{
-			const glm::vec3 graded = glm::pow(glm::max(color * grade.Slope + grade.Offset, glm::vec3(0.0f)), grade.Power);
-			const float luma = glm::dot(graded, glm::vec3(0.2126f, 0.7152f, 0.0722f));
-			return glm::clamp(glm::vec3(luma) + grade.Saturation * (graded - glm::vec3(luma)), 0.0f, 1.0f);
+			constexpr glm::vec3 Rec709{ 0.2126f, 0.7152f, 0.0722f };
+			glm::vec3 graded = glm::pow(glm::max(color * grade.Slope + grade.Offset, glm::vec3(0.0f)), grade.Power);
+			const float tone = glm::clamp(glm::dot(graded, Rec709), 0.0f, 1.0f);
+			const float shadow = 1.0f - glm::smoothstep(0.0f, 0.5f, tone);
+			const float highlight = glm::smoothstep(0.5f, 1.0f, tone);
+			graded *= glm::mix(glm::vec3(1.0f), grade.Shadows, shadow) * glm::mix(glm::vec3(1.0f), grade.Highlights, highlight);
+			const float luma = glm::dot(graded, Rec709);
+			const float saturation = grade.Saturation + grade.MidSaturation * (1.0f - std::abs(2.0f * tone - 1.0f));
+			return glm::clamp(glm::vec3(luma) + saturation * (graded - glm::vec3(luma)), 0.0f, 1.0f);
 		}
 	}
 
@@ -174,6 +181,7 @@ namespace Game
 			return false;
 		}
 		UploadGradingLut(size, colors);
+		m_CustomLut = true;
 		return true;
 	}
 

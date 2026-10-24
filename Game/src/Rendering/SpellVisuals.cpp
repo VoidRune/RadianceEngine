@@ -74,9 +74,10 @@ namespace Game
 		renderer.DrawDecal(decal);
 	}
 
-	void DrawGroundRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float intensity, float thickness, float dashes, float spin)
+	void DrawGroundRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float intensity, float thickness, float dashes, float spin, uint32_t pattern)
 	{
 		GroundDecal decal;
+		decal.Seed = pattern;
 		decal.Center = center;
 		const float extent = RingExtent(radius, thickness);
 		decal.Extent = glm::vec2(extent);
@@ -158,9 +159,11 @@ namespace Game
 		renderer.DrawSprite(sprite);
 	}
 
-	void DrawBeam(WorldRenderer& renderer, const glm::vec3& base, float height, float width, const glm::vec3& color)
+	void DrawBeam(WorldRenderer& renderer, const glm::vec3& base, float height, float width, const glm::vec3& color, float emission)
 	{
-		renderer.DrawSprite(Stretched(ParticleShape::Beam, base + Up * height, base, width, color));
+		ParticleSprite sprite = Stretched(ParticleShape::Beam, base + Up * height, base, width, color);
+		sprite.Emission = emission;
+		renderer.DrawSprite(sprite);
 	}
 
 	void DrawStreak(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float width, const glm::vec3& color)
@@ -178,23 +181,27 @@ namespace Game
 		renderer.DrawSprite(sprite);
 	}
 
-	void DrawProjectileVisual(WorldRenderer& renderer, AbilityId ability, const glm::vec3& center, float facing, const glm::vec3& color, float time, uint32_t seed)
+	void DrawProjectileVisual(WorldRenderer& renderer, AbilityId ability, const glm::vec3& center, float facing, const glm::vec3& color, float time, uint32_t seed, const glm::vec3& owner)
 	{
 		const glm::vec3 forward = Heading(facing);
+		const bool marked = owner != glm::vec3(0.0f);
+		const glm::vec3 heart = glm::mix(owner, glm::vec3(1.0f), 0.3f) * 1.7f;
 		switch (ability)
 		{
 		case AbilityId::Swap:
 		{
-			DrawGlow(renderer, center, 0.6f, { 0.35f, 0.08f, 0.32f });
-			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.2f, { 1.6f, 0.55f, 1.5f });
+			DrawGlow(renderer, center, 0.6f, { 0.24f, 0.1f, 0.38f });
+			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.2f, { 1.3f, 0.65f, 1.8f });
 			core.Seed = seed;
 			renderer.DrawSprite(core);
 			for (uint32_t i = 0; i < 2; i++)
 			{
 				const float angle = time * 7.0f + float(i) * 3.1416f;
-				DrawStar(renderer, center + Heading(angle) * 0.32f + Up * (0.08f * std::sin(time * 9.0f + float(i))), 0.12f, { 1.8f, 0.7f, 1.9f }, angle);
+				DrawStar(renderer, center + Heading(angle) * 0.32f + Up * (0.08f * std::sin(time * 9.0f + float(i))), 0.12f, { 1.5f, 0.85f, 2.0f }, angle);
 			}
-			renderer.DrawSprite(RingSprite(center, 0.3f, 0.03f, { 1.1f, 0.35f, 1.2f }));
+			renderer.DrawSprite(RingSprite(center, 0.3f, 0.03f, marked ? owner * 1.3f : glm::vec3(0.85f, 0.42f, 1.25f)));
+			if (marked)
+				DrawGlow(renderer, center, 0.1f, heart);
 			break;
 		}
 		case AbilityId::EmberBolt:
@@ -205,7 +212,7 @@ namespace Game
 			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.26f, { 1.4f, 0.65f, 0.18f });
 			core.Seed = seed;
 			renderer.DrawSprite(core);
-			DrawGlow(renderer, center, 0.08f, { 1.2f, 1.0f, 0.7f });
+			DrawGlow(renderer, center, marked ? 0.13f : 0.08f, marked ? heart : glm::vec3(1.2f, 1.0f, 0.7f));
 			break;
 		}
 		case AbilityId::Orb:
@@ -244,6 +251,8 @@ namespace Game
 			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.13f * scale, { 1.2f, 1.4f, 2.1f });
 			core.Seed = seed;
 			renderer.DrawSprite(core);
+			if (marked)
+				DrawGlow(renderer, center, 0.1f * scale, heart);
 			break;
 		}
 		case AbilityId::IceSpear:
@@ -258,6 +267,8 @@ namespace Game
 			body.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
 			renderer.DrawSprite(body);
 			DrawStar(renderer, center + forward * (length + 0.05f), 0.16f, { 2.0f, 2.6f, 3.4f });
+			if (marked)
+				DrawGlow(renderer, center, 0.12f, heart);
 			break;
 		}
 		case AbilityId::TomeVolley:
@@ -295,6 +306,52 @@ namespace Game
 			DrawStreak(renderer, center - forward * 1.1f, center, 0.07f, { 0.6f, 1.8f, 0.5f });
 			DrawGlow(renderer, center, 0.25f, { 0.4f, 1.2f, 0.35f });
 			break;
+		case AbilityId::SplittingBolt:
+		{
+			DrawGlow(renderer, center, 0.75f, { 0.45f, 0.06f, 0.16f });
+			renderer.DrawSprite(Stretched(ParticleShape::Beam, center - forward * 0.9f, center, 0.26f, { 1.05f, 0.2f, 0.4f }));
+			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.32f, { 1.3f, 0.28f, 0.52f });
+			core.Seed = seed;
+			renderer.DrawSprite(core);
+			for (uint32_t i = 0; i < 3; i++)
+			{
+				const float angle = time * 5.5f + float(i) * 2.0944f;
+				DrawStar(renderer, center + Heading(angle) * 0.42f + Up * (0.08f * std::sin(time * 6.0f + float(i) * 2.0f)), 0.09f, { 1.0f, 0.28f, 0.52f }, angle);
+			}
+			DrawGlow(renderer, center, marked ? 0.12f : 0.09f, marked ? heart : glm::vec3(1.2f, 0.8f, 0.9f));
+			break;
+		}
+		case AbilityId::BoltShard:
+		{
+			DrawGlow(renderer, center, 0.4f, { 0.42f, 0.05f, 0.14f });
+			ParticleSprite body = Stretched(ParticleShape::Shard, center + forward * 0.3f, center - forward * 0.3f, 0.09f, { 2.2f, 0.5f, 0.9f });
+			body.Additive = 0.5f;
+			body.Emission = 0.8f;
+			body.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+			renderer.DrawSprite(body);
+			DrawStar(renderer, center + forward * 0.34f, 0.13f, { 2.6f, 1.1f, 1.5f });
+			break;
+		}
+		case AbilityId::ChainHook:
+		{
+			DrawGlow(renderer, center, 0.5f, { 0.32f, 0.18f, 0.07f });
+			ParticleSprite tip = Stretched(ParticleShape::Shard, center + forward * 0.36f, center - forward * 0.14f, 0.12f, { 1.7f, 1.25f, 0.8f });
+			tip.Additive = 0.25f;
+			tip.Emission = 0.45f;
+			tip.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+			renderer.DrawSprite(tip);
+			for (const float side : { -1.0f, 1.0f })
+			{
+				const glm::vec3 across = Heading(facing + 1.5708f * side);
+				ParticleSprite barb = Stretched(ParticleShape::Shard, center - forward * 0.06f + across * 0.18f, center + forward * 0.12f, 0.06f, { 1.5f, 1.05f, 0.65f });
+				barb.Additive = 0.25f;
+				barb.Emission = 0.45f;
+				barb.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+				renderer.DrawSprite(barb);
+			}
+			DrawStar(renderer, center + forward * 0.38f, 0.15f, marked ? heart : glm::vec3(2.3f, 2.0f, 1.5f), time * 4.0f);
+			break;
+		}
 		case AbilityId::Arrow:
 		case AbilityId::Volley:
 		case AbilityId::Quarrel:
@@ -307,6 +364,61 @@ namespace Game
 			renderer.DrawSprite(core);
 			break;
 		}
+		}
+	}
+
+	void DrawChain(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float sag, float glow)
+	{
+		constexpr float LinkSpacing = 0.2f;
+		const float length = glm::length(to - from);
+		const uint32_t links = std::max(2u, uint32_t(length / LinkSpacing));
+		const auto at = [&](float t) { return glm::mix(from, to, t) - Up * (sag * 4.0f * t * (1.0f - t)); };
+		for (uint32_t i = 0; i < links; i++)
+		{
+			const float t0 = float(i) / float(links);
+			const float t1 = float(i + 1) / float(links);
+			const glm::vec3 a = at(t0);
+			const glm::vec3 b = at(t1);
+			ParticleSprite link = (i % 2 == 0) ? RingSprite((a + b) * 0.5f, 0.065f, 0.024f, { 0.36f, 0.27f, 0.17f }) : Stretched(ParticleShape::Beam, a, b, 0.045f, { 0.3f, 0.22f, 0.14f });
+			link.Additive = 0.0f;
+			link.Emission = 0.12f + 0.3f * glow;
+			link.Softness = 0.05f;
+			renderer.DrawSprite(link);
+			if (i % 4 == 1)
+				DrawGlow(renderer, (a + b) * 0.5f + Up * 0.02f, 0.07f, glm::vec3(0.9f, 0.7f, 0.45f) * (0.35f + 1.2f * glow), 0.1f);
+		}
+	}
+
+	void DrawBolt(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float jitter, float width, const glm::vec3& color, float emission)
+	{
+		const auto beam = [&](const glm::vec3& a, const glm::vec3& b, float size, const glm::vec3& tint)
+		{
+			ParticleSprite sprite = Stretched(ParticleShape::Beam, a, b, size, tint);
+			sprite.Emission = emission;
+			renderer.DrawSprite(sprite);
+		};
+		const glm::vec3 span = to - from;
+		const float length = glm::length(span);
+		if (length < 1e-3f)
+			return;
+		const glm::vec3 axis = span / length;
+		const glm::vec3 side = glm::normalize(std::abs(axis.y) > 0.9f ? glm::cross(axis, glm::vec3(1.0f, 0.0f, 0.0f)) : glm::cross(axis, Up));
+		const glm::vec3 lift = glm::cross(side, axis);
+		const uint32_t segments = std::clamp(uint32_t(length / 0.6f), 3u, 14u);
+		glm::vec3 previous = from;
+		for (uint32_t i = 1; i <= segments; i++)
+		{
+			const float t = float(i) / float(segments);
+			const float swing = i == segments ? 0.0f : jitter * std::sin(t * 3.1416f);
+			const glm::vec3 point = from + span * t + side * ((Unit(Mix(seed, i * 2u)) - 0.5f) * 2.0f * swing) + lift * ((Unit(Mix(seed, i * 2u + 1u)) - 0.5f) * swing);
+			beam(previous, point, width * 2.2f, color * 0.2f);
+			beam(previous, point, width, color);
+			if (i % 3 == 1)
+			{
+				const glm::vec3 fork = point + side * ((Unit(Mix(seed, i * 7u)) - 0.5f) * jitter * 2.0f) - axis * (0.15f * length / float(segments));
+				beam(point, fork, width * 0.6f, color * 0.7f);
+			}
+			previous = point;
 		}
 	}
 }

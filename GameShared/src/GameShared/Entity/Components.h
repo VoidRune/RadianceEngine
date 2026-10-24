@@ -1,6 +1,7 @@
 #pragma once
 #include "GameShared/Core/Math.h"
 #include "GameShared/Entity/EntityRegistry.h"
+#include "GameShared/World/TileMap.h"
 #include <array>
 #include <cstdint>
 
@@ -11,6 +12,7 @@ namespace Game
 	constexpr uint8_t NoTeam = 255;
 	constexpr uint32_t HistoryLength = 32;
 	constexpr float MaxRewindTicks = 28.0f;
+	constexpr float MaxPlayerRewindTicks = 8.0f;
 	constexpr uint32_t SkillSlots = 3;
 	constexpr uint32_t AbilitySlots = SkillSlots + 1;
 
@@ -28,6 +30,7 @@ namespace Game
 		Loot,
 		Chest,
 		Gateway,
+		Dummy,
 		Count,
 	};
 
@@ -108,13 +111,30 @@ namespace Game
 		float CastTimer = 0.0f;
 		float Stun = 0.0f;
 		float Chill = 0.0f;
+		float Slick = 0.0f;
 		float StunGuard = 0.0f;
+		float Fall = 0.0f;
+		Vec2 Ledge;
+		float Footing = 0.0f;
 		int8_t CastSlot = -1;
 		uint8_t HeldButtons = 0;
+		int8_t RecastSlot = -1;
+		float RecastTimer = 0.0f;
+		float RecastAge = 0.0f;
+		Vec2 RecastOrigin;
+		Vec2 RecastAim;
+		float RecastReach = 0.0f;
+		float Static = 0.0f;
+		uint8_t Overload = 0;
+		uint8_t RecastAbility = UINT8_MAX;
+		float ManaStall = 0.0f;
+		float Still = 0.0f;
 		bool Alive = true;
+		bool Airborne = false;
 
 		bool IsCasting() const { return CastSlot >= 0; }
 		bool IsStunned() const { return Stun > 0.0f; }
+		bool IsFalling() const { return Fall > 0.0f; }
 	};
 
 	struct Enemy
@@ -143,6 +163,32 @@ namespace Game
 		uint8_t ExtraProjectiles = 0;
 	};
 
+	enum class DummyKind : uint8_t
+	{
+		Straw,
+		Golden,
+		Duck,
+		Balloon,
+	};
+
+	struct Dummy
+	{
+		uint32_t Spot = 0;
+		DummyKind Kind = DummyKind::Straw;
+		Vec2 Home;
+		Vec2 Patrol;
+		Vec2 Push;
+		float Phase = 0.0f;
+		float Idle = 0.0f;
+		float Away = 0.0f;
+		float LavaBank = 0.0f;
+		float MendBank = 0.0f;
+		float SinceHurt = 0.0f;
+		float Fall = 0.0f;
+		bool Burning = false;
+		uint32_t LastAttacker = NoPlayer;
+	};
+
 	struct Projectile
 	{
 		Vec2 Velocity;
@@ -167,6 +213,8 @@ namespace Game
 		Element Damages = Element::Physical;
 		uint8_t Ability = 0;
 		Entity Source;
+		float Floor = NoFloor;
+		uint8_t Perks = 0;
 	};
 
 	struct Effect
@@ -204,6 +252,7 @@ namespace Game
 		float PvpScale = 1.0f;
 		float Push = 0.0f;
 		uint8_t Ability = 0;
+		uint8_t Perks = 0;
 	};
 
 	struct Boss

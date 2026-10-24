@@ -2,6 +2,7 @@
 #include "UI/UiTypes.h"
 #include "UI/VectorAtlas.h"
 #include <GameShared/Content/Brawl.h>
+#include <GameShared/Content/Cosmetics.h>
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/Content/Items.h>
 #include <GameShared/Content/Upgrades.h>
@@ -110,6 +111,35 @@ namespace Game
 		Chest,
 		SpearHook,
 		Fencer,
+		ChessKing,
+		ChessQueen,
+		ChessRook,
+		ChessBishop,
+		ChessKnight,
+		ChessPawn,
+		PotionBall,
+		Cycle,
+		Vortex,
+		FizzingFlask,
+		BleedingHeart,
+		BrokenShield,
+		Heartburn,
+		BurningEmbers,
+		FireRing,
+		FrozenBlock,
+		IceBolt,
+		LightningHelix,
+		PowerLightning,
+		EnergyShield,
+		HeartBottle,
+		OnTarget,
+		StarSwirl,
+		Sunbeams,
+		PsychicWaves,
+		DrippingBlade,
+		EchoRipples,
+		UnstableOrb,
+		Meditation,
 		Count,
 	};
 
@@ -153,11 +183,12 @@ namespace Game
 	UiIcon IconFor(ItemBase base);
 	UiIcon IconFor(AbilityId ability);
 	UiIcon IconFor(UpgradeId upgrade);
-	UiIcon IconFor(BoonId boon);
+	UiIcon IconFor(CardId card);
 	UiIcon IconFor(LootKind loot);
 	UiIcon IconFor(GearSlot slot);
 	UiIcon IconFor(StarterKit kit);
 	UiIcon IconFor(Material material);
 	UiIcon IconFor(StationKind station);
+	UiIcon IconFor(Headwear headwear);
 	const UiImage* RarityGem(Rarity rarity);
 }

@@ -169,6 +169,13 @@ namespace Rdn
 		}
 
 		m_Device->WaitIdle();
+		if (m_PresentModeChanged && m_Swapchain)
+		{
+			DestroySwapchainResources();
+			vkDestroySwapchainKHR(toVk(m_LogicalDevice), toVk(m_Swapchain), nullptr);
+			m_Swapchain = {};
+		}
+		m_PresentModeChanged = false;
 		if (!CreateSwapchain())
 			return false;
 
@@ -181,6 +188,7 @@ namespace Rdn
 		if (presentMode == m_RequestedPresentMode)
 			return;
 		m_RequestedPresentMode = presentMode;
+		m_PresentModeChanged = true;
 		m_NeedsRecreate = true;
 	}
 

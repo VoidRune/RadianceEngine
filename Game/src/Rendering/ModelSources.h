@@ -26,6 +26,7 @@ namespace Game
 		uint32_t TextureSize = 0;
 		float Size = 0.0f;
 		bool SplitNodes = false;
+		bool KeepOrigin = false;
 	};
 
 	struct ModelPack
@@ -114,8 +115,33 @@ namespace Game
 		{ .Path = "PolyHaven/HDRIs/kiara_8_sunset_2k.hdr", .Kind = ModelSourceKind::Environment, .TextureSize = 512 },
 	};
 
+	inline constexpr ModelSource OriginalSources[] = {
+		{ .Path = "Original/ObsidianCluster", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
+		{ .Path = "Original/Fountain", .Kind = ModelSourceKind::Scan, .TextureSize = 1024 },
+		{ .Path = "Original/Critters", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
+		{ .Path = "Original/HubProps", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
+		{ .Path = "Original/Stations", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
+		{ .Path = "Original/Arcana", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
+		{ .Path = "Original/Nature", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
+		{ .Path = "Original/Emberhold", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
+		{ .Path = "Original/Market", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
+		{ .Path = "Original/Chess", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
+		{ .Path = "Original/Hero", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
+		{ .Path = "Original/Armory", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true, .KeepOrigin = true },
+		{ .Path = "Original/Glacier", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
+		{ .Path = "Original/Materials/PavingStone", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
+		{ .Path = "Original/Materials/PavingBed", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
+		{ .Path = "Original/Materials/GroundGrass", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
+		{ .Path = "Original/Materials/GroundDirt", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
+		{ .Path = "Original/Materials/GroundRock", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 3.0f },
+		{ .Path = "Original/Materials/GroundSand", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 2.0f },
+		{ .Path = "Original/Materials/GroundSnow", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
+		{ .Path = "Original/Materials/GroundWater", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 2.0f },
+	};
+
 	inline constexpr ModelPack ModelPacks[] = {
 		{ ModelLibraryPath, CharacterSources },
+		{ "res/Models/Original.bin", OriginalSources },
 		{ "res/Models/Abbey.bin", AbbeySources, false },
 	};
 }

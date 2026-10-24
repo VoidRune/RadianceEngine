@@ -4,6 +4,7 @@
 #include <GameShared/World/Level.h>
 #include <glm/glm.hpp>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace Game
@@ -36,13 +37,63 @@ namespace Game
 		float Restore = 1.0f;
 	};
 
-	float SlabDrop(const BrawlStatus& brawl, int32_t x, int32_t y);
-	float BrawlGroundHeight(const Level& level, const BrawlStatus& brawl, Vec2 position);
+	class IslandArt
+	{
+	public:
+		void Build(WorldRenderer& renderer, const Level& level);
+		void Clear();
+		bool IsBuilt() const { return !m_Chunks.empty(); }
+		void Draw(WorldRenderer& renderer, const LevelView& view) const;
+		std::optional<float> GroundHeight(const BrawlStatus* brawl, Vec2 position) const;
+
+	private:
+		struct Corner
+		{
+			Vec2 Position;
+			float Height = 0.0f;
+		};
+
+		struct Cell
+		{
+			CellCoord Coord;
+			Vec2 Seed;
+			float Peak = 0.0f;
+			uint32_t Chunk = 0;
+			uint32_t FirstCorner = 0;
+			uint32_t CornerCount = 0;
+		};
+
+		struct Chunk
+		{
+			CellCoord Coord;
+			glm::vec3 Pivot{ 0.0f };
+			Vec2 Min{ 1e9f, 1e9f };
+			Vec2 Max{ -1e9f, -1e9f };
+			uint32_t Mesh = 0;
+			uint32_t Tile = 0;
+			bool Coast = false;
+			std::vector<uint32_t> Cells;
+			std::vector<uint32_t> Neighbours;
+		};
+
+		const Cell* FindCell(CellCoord coord) const;
+		float SurfaceHeight(const Cell& cell, Vec2 position) const;
+
+		std::vector<Cell> m_Cells;
+		std::vector<Corner> m_Corners;
+		std::vector<Chunk> m_Chunks;
+		std::vector<int32_t> m_Lookup;
+		mutable std::vector<uint8_t> m_Solid;
+		int32_t m_Width = 0;
+		bool m_Frozen = false;
+		int32_t m_Height = 0;
+	};
 
 	class LevelRenderer
 	{
 	public:
 		void Draw(WorldRenderer& renderer, const Level& level, const LevelView& view);
+		float GroundHeight(const Level& level, const BrawlStatus* brawl, Vec2 position) const;
 		const std::vector<LevelFire>& GetFires() const { return m_Scene.Fires; }
 
 	private:
@@ -67,6 +118,7 @@ namespace Game
 
 		SceneKey m_Key;
 		LevelScene m_Scene;
+		IslandArt m_Island;
 		std::vector<float> m_PropReach;
 		std::vector<float> m_PropTop;
 		std::vector<glm::vec4> m_LavaRuns;

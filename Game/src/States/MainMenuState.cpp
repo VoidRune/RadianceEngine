@@ -23,6 +23,7 @@ namespace Game
 		constexpr float PageWidth = 560.0f;
 		constexpr float PageTop = 112.0f;
 		constexpr float PageHeight = 676.0f;
+		constexpr float SettingsPageHeight = 742.0f;
 		constexpr uint32_t Motes = 44;
 
 		bool NameCharacter(uint32_t codepoint)
@@ -95,6 +96,7 @@ namespace Game
 		{
 			m_HasSave = true;
 			m_SaveSummary = DescribeProfile(*profile);
+			m_Style = profile->Style;
 		}
 	}
 
@@ -209,7 +211,7 @@ namespace Game
 			{ Page::Host, "Open a Rift", "Host a game for your party" },
 			{ Page::Join, "Follow a Rift", "Join a game someone is hosting" },
 			{ Page::Character, "The Wanderer", wanderer },
-			{ Page::Settings, "Attunement", "Sound, visuals and network" },
+			{ Page::Settings, "Attunement", "Sound, visuals and diagnostics" },
 		};
 		const auto reveal = [&](size_t index, const UiRect& rect)
 		{
@@ -250,7 +252,7 @@ namespace Game
 	void MainMenuState::DrawPage(Ui& ui)
 	{
 		const float ease = 1.0f - std::pow(1.0f - m_Reveal, 3.0f);
-		const UiRect panel{ PageX, PageTop, PageWidth, std::min(PageHeight, ui.GetSize().y - PageTop - 24.0f) };
+		const UiRect panel{ PageX, PageTop, PageWidth, std::min(m_Page == Page::Settings ? SettingsPageHeight : PageHeight, ui.GetSize().y - PageTop - 24.0f) };
 		const float height = panel.H * ease;
 		UiDrawList& draw = ui.Draw();
 		draw.PushClip({ panel.X - 40.0f, panel.Center().y - height * 0.5f - 40.0f, panel.W + 80.0f, height + 80.0f });
@@ -326,6 +328,9 @@ namespace Game
 		FieldLabel(ui, area, "NAME");
 		ui.TextField(Ui::MakeId("name"), area.CutTop(44.0f), m_Name, 24, "Your name", NameCharacter);
 		area.CutTop(18.0f);
+		FieldLabel(ui, area, "HEADWEAR");
+		DrawHeadwearPicker(ui, area.CutTop(58.0f), m_Style.Head);
+		area.CutTop(18.0f);
 		if (m_HasSave)
 		{
 			const UiRect status = area.CutTop(26.0f);
@@ -392,6 +397,12 @@ namespace Game
 		config.Map = settings.Map;
 		config.StartMode = GameMode::Hub;
 		config.Profile = m_App.LoadCharacter(settings.PlayerName, settings.Kit, m_HasSave && m_Fresh);
+		if (config.Profile.Style != m_Style)
+		{
+			config.Profile.Style = m_Style;
+			if (m_HasSave && !m_Fresh)
+				m_App.SaveCharacter(config.Profile);
+		}
 		m_App.GetGameAudio().PlayUi(Cue::UiRift, 0.9f);
 		m_App.ChangeState(std::make_unique<SessionState>(m_App, config));
 	}

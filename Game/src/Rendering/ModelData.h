@@ -10,6 +10,8 @@ namespace Game
 {
 	inline constexpr uint32_t NoTexture = UINT32_MAX;
 	inline constexpr uint32_t MaxModelJoints = 32;
+	inline constexpr uint32_t NoSkeleton = UINT32_MAX;
+	inline constexpr const char* SharedSkeletonName = "Rig_Medium";
 
 	struct ModelVertex
 	{
@@ -56,12 +58,16 @@ namespace Game
 		uint32_t Normal = NoTexture;
 		glm::vec4 Color{ 1.0f };
 		glm::vec3 Emissive{ 0.0f };
+		glm::vec3 Emission{ 0.0f };
 		float Roughness = 1.0f;
 		float Metallic = 0.0f;
 		float AlphaCutoff = 0.0f;
 		glm::vec3 Min{ 0.0f };
 		glm::vec3 Max{ 0.0f };
+		uint32_t Skeleton = NoSkeleton;
 		bool Skinned = false;
+		bool DoubleSided = true;
+		bool Water = false;
 	};
 
 	struct ModelMaterial
@@ -94,6 +100,7 @@ namespace Game
 
 	struct ModelSkeleton
 	{
+		std::string Name;
 		std::vector<std::string> Names;
 		std::vector<int32_t> Parents;
 		std::vector<JointPose> Rest;
@@ -105,6 +112,7 @@ namespace Game
 	struct ModelClip
 	{
 		std::string Name;
+		uint32_t Skeleton = 0;
 		float FrameRate = 30.0f;
 		uint32_t FrameCount = 0;
 		std::vector<JointPose> Frames;
@@ -115,7 +123,7 @@ namespace Game
 	struct ModelLibraryData
 	{
 		uint64_t SourceHash = 0;
-		ModelSkeleton Skeleton;
+		std::vector<ModelSkeleton> Skeletons;
 		std::vector<ModelTexture> Textures;
 		std::vector<ModelVertex> Vertices;
 		std::vector<uint32_t> Indices;

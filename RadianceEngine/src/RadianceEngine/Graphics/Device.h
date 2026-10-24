@@ -27,6 +27,7 @@ namespace Rdn
 		std::string Driver;
 		uint32_t ApiVersion = 0;
 		bool Integrated = false;
+		bool Discrete = false;
 		uint64_t DeviceLocalMemory = 0;
 		uint64_t MinUniformBufferOffsetAlignment = 1;
 		uint64_t MinStorageBufferOffsetAlignment = 1;

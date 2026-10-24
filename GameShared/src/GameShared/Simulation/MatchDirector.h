@@ -12,11 +12,15 @@
 namespace Game
 {
 	class World;
+	struct PlayerController;
+	struct PlayerState;
 
 	struct MatchScore
 	{
 		uint16_t Kills = 0;
 		uint16_t Deaths = 0;
+		uint16_t Assists = 0;
+		uint32_t Damage = 0;
 		uint8_t Placement = 0;
 		bool Entered = false;
 		bool Out = false;
@@ -38,7 +42,12 @@ namespace Game
 		void Describe(const World& world, GameStatus& status) const;
 		void Watch(World& world, Entity player, int32_t direction);
 		bool PickSpell(World& world, Entity player, uint32_t playerId, uint32_t slot, AbilityId spell);
-		bool ChooseBoon(World& world, Entity player, uint32_t playerId, uint32_t choice);
+		bool ChooseCard(World& world, Entity player, uint32_t playerId, uint32_t choice);
+		bool GrantCard(World& world, Entity player, uint32_t playerId, CardId card);
+		bool PresentCards(uint32_t playerId, const CardOffer& offer);
+		void AddCrater(Vec2 center, float radius);
+		void ArmEcho(uint32_t playerId);
+		bool ConsumeEcho(uint32_t playerId);
 		bool SetReady(uint32_t playerId, bool ready);
 
 		MatchPhase GetPhase() const { return m_Phase; }
@@ -55,9 +64,24 @@ namespace Game
 		const std::vector<Vec2>& GetSpawnPoints() const { return m_SpawnPoints; }
 		const BrawlStatus& GetBrawl() const { return m_Brawl; }
 		const BrawlLoadout& GetLoadout(uint32_t playerId) const { return m_Brawlers[playerId < MaxPlayers ? playerId : 0].Loadout; }
-		PlayerTraits GetBrawlTraits(uint32_t playerId) const { return MakeBrawlTraits(GetLoadout(playerId)); }
-		float GetKnockbackScale(uint32_t attacker, uint32_t victim, float healthFraction) const;
+		PlayerTraits GetBrawlTraits(uint32_t playerId) const;
+		void RollArcana(World& world, uint32_t playerId, int32_t slot);
+		BrawlMode GetBrawlMode() const { return m_Rules.Mode; }
+		bool IsDamageMode() const { return m_Mode == GameMode::Brawl && m_Rules.Mode == BrawlMode::Damage; }
+		CardMask GetCards(uint32_t playerId) const;
+		bool HasPlayerCard(uint32_t playerId, CardId id) const { return HasCard(GetCards(playerId), id); }
+		uint32_t GetCardRevision() const { return m_CardRevision; }
+		float GetKnockbackScale(uint32_t attacker, uint32_t victim, float healthFraction, bool pull = false) const;
+		void RecordDamage(uint32_t victim, uint32_t attacker, int32_t amount, uint8_t ability);
+		uint32_t CreditKill(uint32_t victim, uint8_t& ability) const;
 		bool IsBurning(uint32_t playerId) const { return playerId < MaxPlayers && m_Brawlers[playerId].Burning; }
+		bool IsIgnited(uint32_t playerId) const { return playerId < MaxPlayers && m_Brawlers[playerId].IgniteLeft > 0.0f; }
+		uint32_t GetMarkedBy(uint32_t playerId) const { return playerId < MaxPlayers && m_Brawlers[playerId].MarkTime > 0.0f ? m_Brawlers[playerId].MarkedBy : NoPlayer; }
+		float GetShield(uint32_t playerId) const { return playerId < MaxPlayers ? m_Brawlers[playerId].Shield : 0.0f; }
+		float CastDamageScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float still) const;
+		int32_t ShapeDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount);
+		void AfterDamage(World& world, Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt);
+		void NoteDeath(uint32_t victim, uint32_t killer, Vec2 position, bool chilled);
 		uint16_t GetPoints(uint32_t playerId) const { return playerId < MaxPlayers ? m_Brawlers[playerId].Points : uint16_t(0); }
 		uint8_t GetRoundWins(uint32_t playerId) const { return playerId < MaxPlayers ? m_Brawlers[playerId].RoundWins : uint8_t(0); }
 
@@ -69,6 +93,22 @@ namespace Game
 			float Timer = 0.0f;
 		};
 
+		struct DamageEntry
+		{
+			uint32_t Attacker = NoPlayer;
+			float Amount = 0.0f;
+			float Time = 0.0f;
+			uint8_t Ability = uint8_t(AbilityId::Count);
+		};
+
+		static constexpr size_t LedgerSize = 32;
+
+		struct DamageLedger
+		{
+			std::array<DamageEntry, LedgerSize> Entries{};
+			uint32_t Next = 0;
+		};
+
 		struct Brawler
 		{
 			BrawlLoadout Loadout;
@@ -77,6 +117,25 @@ namespace Game
 			float Afterburn = 0.0f;
 			float LavaBank = 0.0f;
 			bool Burning = false;
+			float FeatherGrace = 0.0f;
+			bool FeatherUsed = false;
+			bool EchoArmed = false;
+			float Shield = 0.0f;
+			float IgniteLeft = 0.0f;
+			float IgniteRate = 0.0f;
+			float IgniteBank = 0.0f;
+			uint32_t IgniteBy = NoPlayer;
+			float MarkTime = 0.0f;
+			uint32_t MarkedBy = NoPlayer;
+			bool SecondWindUsed = false;
+			BrawlSpells Arcana{ AbilityId::Count, AbilityId::Count, AbilityId::Count };
+		};
+
+		struct Burst
+		{
+			Vec2 Center;
+			uint32_t Owner = NoPlayer;
+			CardId Card = CardId::Count;
 		};
 
 		void BeginArena(World& world);
@@ -103,11 +162,16 @@ namespace Game
 		void StartBrawlCountdown(World& world);
 		void StartBrawlRound(World& world);
 		void EndBrawlRound(World& world);
-		void OpenBrawlShop(World& world);
+		void OpenBrawlPick(World& world);
 		void FinishBrawl(World& world);
 		void UpdateLava(World& world, float dt);
-		void OfferBoons(World& world, uint32_t playerId);
+		void UpdateCards(World& world, float dt);
+		void Ignite(uint32_t victim, uint32_t attacker, float damage, float seconds);
+		void OfferCards(World& world, uint32_t playerId);
+		bool Featherfall(World& world, PlayerController& controller, Vec2 position);
 		void OnBrawlerKilled(World& world, Entity player, uint32_t victim, uint32_t killer);
+		void AwardAssists(uint32_t victim, uint32_t killer);
+		void AwardPlacements(uint32_t alive);
 		uint32_t CountPresent() const;
 		bool AllBrawlersReady() const;
 
@@ -136,7 +200,11 @@ namespace Game
 		uint32_t m_SpawnCounter = 0;
 		bool m_Deferring = false;
 		std::array<Brawler, MaxPlayers> m_Brawlers{};
+		std::array<DamageLedger, MaxPlayers> m_Ledgers{};
+		std::vector<Burst> m_Bursts;
+		float m_IgniteTick = 0.0f;
 		BrawlStatus m_Brawl;
 		float m_LavaTick = 0.0f;
+		uint32_t m_CardRevision = 0;
 	};
 }

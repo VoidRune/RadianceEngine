@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/Chess.h"
 #include "GameShared/Content/Crafting.h"
 #include "GameShared/Content/Definitions.h"
 #include "GameShared/Content/Items.h"
@@ -71,6 +72,7 @@ namespace Game
 		CacheDropped,
 		RoundStarted,
 		RoundEnded,
+		ChessChanged,
 	};
 
 	struct WorldEvent
@@ -106,10 +108,16 @@ namespace Game
 		Entity SpawnEnemy(EntityKind kind, Vec2 position, const EnemyScaling& scaling = {});
 		Entity SpawnBoss(EntityKind kind, Vec2 position, uint32_t level);
 		Entity SpawnProjectile(const AbilityDef& ability, const ProjectilePattern& pattern, Vec2 position, Vec2 direction, int32_t damage, const AbilityContext& context);
-		Entity SpawnProjectileCopy(const Projectile& projectile, Vec2 position, uint32_t owner);
+		Entity SpawnProjectileCopy(const Projectile& projectile, Vec2 position, uint32_t owner, float scale = 1.0f, uint16_t tag = 0);
 		Entity SpawnEffect(const AbilityDef& ability, const AbilityContext& context, Vec2 position, uint16_t tag);
 		Entity SpawnEffect(AbilityId ability, Vec2 position, float facing, uint32_t owner, uint16_t tag, float scale);
 		Entity SpawnPendingStrike(const AbilityDef& ability, Vec2 position, int32_t damage, const AbilityContext& context);
+		Entity SpawnCardStrike(AbilityId visual, Vec2 position, float facing, float delay, float radius, float push, uint8_t perks, bool visible, const AbilityContext& context);
+		void AddCrater(Vec2 center, float radius) { m_Match.AddCrater(center, radius); }
+		void RecordDamage(uint32_t victim, uint32_t attacker, int32_t amount, uint8_t ability) { m_Match.RecordDamage(victim, attacker, amount, ability); }
+		int32_t ShapeBrawlDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount) { return m_Match.ShapeDamage(state, victim, attacker, ability, unmitigated, chilled, amount); }
+		void AfterBrawlDamage(Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt) { m_Match.AfterDamage(*this, target, victim, attacker, ability, dealt); }
+		CardMask GetCards(uint32_t playerId) const { return m_Match.GetCards(playerId); }
 		Entity SpawnLoot(LootKind kind, Vec2 position);
 		Entity SpawnItem(const Item& item, Vec2 position, uint32_t blockedPlayer, uint32_t forPlayer = NoPlayer);
 		Entity SpawnChest(Vec2 position, const Chest& chest);
@@ -130,8 +138,18 @@ namespace Game
 		bool OpenChest(Entity player);
 		void Spectate(Entity player, int32_t direction);
 		bool PickBrawlSpell(Entity player, uint32_t slot, AbilityId spell);
-		bool ChooseBoon(Entity player, uint32_t choice);
+		bool ChooseCard(Entity player, uint32_t choice);
+		bool GrantCard(Entity player, CardId card);
+		bool PresentCards(Entity player, const CardOffer& offer);
 		bool SetBrawlReady(Entity player, bool ready);
+		void OnDummyShoved(const Dummy& dummy, uint32_t attacker);
+		void PopBalloon(Dummy& dummy, uint32_t attacker);
+		void LaunchBalloon(uint32_t lane);
+		bool MakeWish(Entity player);
+		bool PlayChess(Entity player, Chess::Command command, uint32_t argument, uint32_t revision);
+		bool LeaveChess(uint32_t playerId);
+		const Chess::Match& GetChess() const { return m_Chess; }
+		uint16_t GetStarlit(uint32_t playerId) const { return playerId < MaxPlayers ? m_Starlit[playerId] : uint16_t(0); }
 		bool IsNearGateway(Entity player) const;
 		bool IsNearStation(Entity player, StationKind kind) const;
 		void GrantMaterials(Entity player, const MaterialStock& materials);
@@ -171,6 +189,8 @@ namespace Game
 		GameMode GetMode() const { return m_Settings.Mode; }
 		bool IsHub() const { return m_Settings.Mode == GameMode::Hub; }
 		bool IsPvp() const { return IsPvpMode(m_Settings.Mode); }
+		bool IsDamageBrawl() const { return m_Settings.Mode == GameMode::Brawl && m_Settings.Rules.Mode == BrawlMode::Damage; }
+		bool UsesBrawlDamage() const { return IsDamageBrawl() || IsHub(); }
 		bool AreRivals(uint32_t a, uint32_t b) const;
 		uint8_t GetTeam(uint32_t playerId) const { return IsPvp() ? m_Match.GetTeam(playerId) : NoTeam; }
 		const MatchDirector& GetMatch() const { return m_Match; }
@@ -196,6 +216,12 @@ namespace Game
 		void AutoEquip(Entity player, uint32_t packSlot);
 		void OpenMatchChest(Entity player, const Chest& chest, Vec2 origin);
 		Item* ResolveItem(Inventory& inventory, ItemRef ref);
+		void SpawnDummy(uint32_t spot, DummyKind kind);
+		void UpdateHub(float dt);
+		void UpdateBalloon(float dt);
+		void UpdateEchoes(float dt);
+		void StargazeAt(const PlayerController& controller, Vec2 origin, const PlayerActions& actions);
+		PlayerTraits HubTraits(uint32_t playerId) const;
 		bool PayFor(Inventory& inventory, const MaterialStock& cost);
 		void InventoryChanged(Entity player);
 		void UpdateNavigation(float dt);
@@ -219,6 +245,26 @@ namespace Game
 		std::vector<KillRecord> m_Kills;
 		std::vector<Notice> m_Notices;
 		std::vector<BodyCircle> m_Bodies;
+		struct EchoCast
+		{
+			Entity Caster;
+			AbilityId Ability = AbilityId::Count;
+			AbilityContext Context;
+			float Remaining = 0.0f;
+			float Strength = EchoPushScale;
+			bool Reaim = false;
+		};
+		std::vector<EchoCast> m_Echoes;
+		std::array<BrawlSpells, MaxPlayers> m_HubSpells;
+		std::vector<std::pair<uint32_t, float>> m_DummyRespawns;
+		uint32_t m_ShrineVisitors = 0;
+		uint32_t m_DuckFans = 0;
+		uint32_t m_HubFalls = 0;
+		std::array<uint16_t, MaxPlayers> m_Starlit{};
+		std::array<float, MaxPlayers> m_WishCooldowns{};
+		Chess::Match m_Chess;
+		float m_BalloonTimer = 0.0f;
+		uint32_t m_BalloonLane = 0;
 		float m_NavigationTimer = 0.0f;
 		uint32_t m_Tick = 0;
 		uint32_t m_NextNetId = 1;

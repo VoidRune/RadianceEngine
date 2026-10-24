@@ -1,4 +1,6 @@
 #pragma once
+#include "GameShared/Content/Chess.h"
+#include "GameShared/Content/Definitions.h"
 #include "GameShared/Content/Props.h"
 #include "GameShared/Content/Terrain.h"
 #include "GameShared/World/Shapes.h"
@@ -6,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +23,7 @@ namespace Game
 		Ashlands,
 		Abbey,
 		Caldera,
+		FrozenLake,
 		Count,
 	};
 
@@ -38,8 +42,12 @@ namespace Game
 		{ MapKind::Ashlands, "The Ashlands", "A burned island: a ruined village, a drowned chapel, a walled graveyard, crystal hollows, a sunken library, farmland and the watchtower hill. Chests everywhere, and the ash storm closes in." },
 		{ MapKind::Abbey, "Vesper Abbey", "A rain-soaked abbey courtyard at dusk, with a walled garden, a storage yard and a candlelit crypt." },
 		{ MapKind::Caldera, "The Caldera", "A disc of basalt floating on a lake of lava inside a volcano. It crumbles from the edge inward every round." },
+		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes." },
 	};
 	static_assert(std::size(Maps) == size_t(MapKind::Count));
+
+	inline constexpr MapKind BrawlMaps[] = { MapKind::Caldera, MapKind::FrozenLake };
+	inline constexpr MapKind RandomBrawlMap = MapKind::Count;
 
 	inline const MapDef& GetMapDef(MapKind kind)
 	{
@@ -63,7 +71,7 @@ namespace Game
 
 	inline bool IsBrawlMap(MapKind kind)
 	{
-		return kind == MapKind::Caldera;
+		return kind == MapKind::Caldera || kind == MapKind::FrozenLake;
 	}
 
 	enum class StationKind : uint8_t
@@ -73,6 +81,10 @@ namespace Game
 		Lapidary,
 		MissionBoard,
 		ProvingGrounds,
+		Spellbook,
+		CalderaGate,
+		WishingVoid,
+		Chess,
 		Count,
 	};
 
@@ -89,6 +101,10 @@ namespace Game
 		{ StationKind::Lapidary, "Lapidary", "cut and corrupt gems" },
 		{ StationKind::MissionBoard, "Mission Board", "choose a mission" },
 		{ StationKind::ProvingGrounds, "Proving Grounds", "fight other players" },
+		{ StationKind::Spellbook, "Spellbook", "choose your spells" },
+		{ StationKind::CalderaGate, "Caldera Gate", "start a Spellbrawl" },
+		{ StationKind::WishingVoid, "Wishing Void", "toss a gold coin into the void" },
+		{ StationKind::Chess, "Chess Table", "play chess" },
 	};
 	static_assert(std::size(Stations) == size_t(StationKind::Count));
 
@@ -128,6 +144,7 @@ namespace Game
 		float DestinationFacing = 0.0f;
 		float Radius = 1.6f;
 		std::string Label;
+		bool Hidden = false;
 	};
 
 	struct Region
@@ -169,6 +186,91 @@ namespace Game
 		float Height = 3.0f;
 	};
 
+	struct DummySpot
+	{
+		Vec2 Position;
+		Vec2 Patrol;
+		bool Duck = false;
+	};
+
+	enum class LandmarkKind : uint8_t
+	{
+		FallBoard,
+		Observatory,
+		CatIslet,
+	};
+
+	struct Landmark
+	{
+		LandmarkKind Kind = LandmarkKind::FallBoard;
+		Vec2 Position;
+		float Radius = 2.0f;
+	};
+
+	struct Constellation
+	{
+		AbilityId Spell = AbilityId::EmberBolt;
+		Vec2 Position;
+		float Height = 0.0f;
+		float Radius = 1.3f;
+	};
+
+	struct DriftLane
+	{
+		Vec2 From;
+		Vec2 To;
+	};
+
+	struct Tether
+	{
+		Vec2 From;
+		Vec2 To;
+		float Sag = 0.5f;
+		float Lift = 0.3f;
+		float Scale = 1.0f;
+	};
+
+	struct ChessSpot
+	{
+		Vec2 Center;
+		float Yaw = 0.0f;
+	};
+
+	inline Vec2 ChessSquareCenter(const ChessSpot& spot, int32_t file, int32_t rank)
+	{
+		const Vec2 ranks = FromAngle(spot.Yaw);
+		return spot.Center + ranks * ((float(rank) - 3.5f) * Chess::SquareSize) + Vec2(ranks.y, -ranks.x) * ((float(file) - 3.5f) * Chess::SquareSize);
+	}
+
+	enum class BoundaryKind : uint8_t
+	{
+		Ledge,
+		Void,
+		Blocked,
+	};
+
+	struct Boundary
+	{
+		Vec2 From;
+		Vec2 To;
+		Vec2 Inside;
+		BoundaryKind Kind = BoundaryKind::Ledge;
+	};
+
+	struct TileRect
+	{
+		int32_t X = 0;
+		int32_t Y = 0;
+		int32_t Width = 0;
+		int32_t Height = 0;
+
+		int32_t Right() const { return X + Width; }
+		int32_t Top() const { return Y + Height; }
+		Vec2 GetCenter() const { return { float(X) + float(Width) * 0.5f, float(Y) + float(Height) * 0.5f }; }
+		bool Contains(int32_t x, int32_t y) const { return x >= X && y >= Y && x < Right() && y < Top(); }
+		TileRect Shrink(int32_t amount) const { return { X + amount, Y + amount, Width - 2 * amount, Height - 2 * amount }; }
+	};
+
 	struct Level
 	{
 		MapKind Kind = MapKind::Caves;
@@ -183,6 +285,17 @@ namespace Game
 		std::vector<LootSpot> LootSpots;
 		std::vector<PickupPad> Pads;
 		std::vector<Roof> Roofs;
+		std::vector<DummySpot> Dummies;
+		std::vector<Landmark> Landmarks;
+		std::vector<Constellation> Constellations;
+		std::vector<DriftLane> DriftLanes;
+		std::vector<Tether> Tethers;
+		std::vector<TileRect> Railings;
+		std::optional<ChessSpot> ChessTable;
+		std::vector<Boundary> Boundaries;
+		bool Rounded = false;
+		bool Floating = false;
+		bool Bouncy = false;
 		Vec2 PlayerSpawn;
 		Vec2 MissionStart;
 		Vec2 BossArena;
@@ -198,6 +311,13 @@ namespace Game
 			for (const Station& station : Stations)
 				if (station.Kind == kind)
 					return &station;
+			return nullptr;
+		}
+		const Landmark* FindLandmark(LandmarkKind kind) const
+		{
+			for (const Landmark& landmark : Landmarks)
+				if (landmark.Kind == kind)
+					return &landmark;
 			return nullptr;
 		}
 		const Region* FindRegion(Vec2 position) const
@@ -235,4 +355,5 @@ namespace Game
 	Level BuildAshlandsLevel(uint32_t seed);
 	Level BuildAbbeyLevel(uint32_t seed);
 	Level BuildCalderaLevel(uint32_t seed);
+	Level BuildFrozenLakeLevel(uint32_t seed);
 }

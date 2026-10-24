@@ -217,7 +217,7 @@ namespace Game
 		GraphBuffers ImportBuffers(Rdn::RenderGraph& graph) const;
 		std::unique_ptr<Rdn::ComputePipeline> CreateCompute(const char* path);
 		Rdn::Shader* CompileShader(const char* path);
-		std::unique_ptr<Rdn::Pipeline> CreateDraw(Rdn::Shader* vertex, Rdn::Shader* fragment, std::vector<Rdn::Format> formats, std::vector<Rdn::ColorComponent> masks = {}, Rdn::BlendMode blend = Rdn::BlendMode::Premultiplied);
+		std::unique_ptr<Rdn::Pipeline> CreateDraw(Rdn::Shader* vertex, Rdn::Shader* fragment, std::vector<Rdn::Format> formats, std::vector<Rdn::ColorComponent> masks = {}, Rdn::BlendMode blend = Rdn::BlendMode::Premultiplied, std::vector<Rdn::BlendMode> blends = {});
 		void RecordDraws(Rdn::CommandBuffer& cmd, const Rdn::PassContext& context, Rdn::RGImage depth, const Rdn::Pipeline& particles, const Rdn::Pipeline& sprites, bool light, uint32_t spriteCount, uint32_t frameIndex) const;
 
 		Rdn::Device& m_Device;

@@ -8,6 +8,7 @@ struct ModelInstance
 	vec4 Tint;
 	vec4 Shading;
 	uvec4 Info;
+	vec4 Accent;
 };
 
 struct ModelVertex
@@ -36,6 +37,8 @@ layout(location = 5) flat out vec2 outCut;
 layout(location = 6) flat out uint outMirrored;
 layout(location = 7) out vec4 outTangent;
 layout(location = 8) out vec4 outColor;
+layout(location = 9) out vec3 outWorld;
+layout(location = 10) flat out vec4 outAccent;
 
 const uint NoPalette = 0xFFFFFFFFu;
 
@@ -84,5 +87,7 @@ void main()
 	outCut = instance.Shading.zw;
 	outMirrored = mirrored ? 1u : 0u;
 	outColor = unpackUnorm4x8(vertex.Skin.w);
+	outWorld = world;
+	outAccent = instance.Accent;
 	gl_Position = pc.ViewProjection * vec4(world, 1.0);
 }

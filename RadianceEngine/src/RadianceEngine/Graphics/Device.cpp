@@ -31,6 +31,7 @@ namespace Rdn
 			result.Driver = std::format("{} {}", driverProperties.driverName, driverProperties.driverInfo);
 			result.ApiVersion = properties.properties.apiVersion;
 			result.Integrated = properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+			result.Discrete = properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
 			for (uint32_t i = 0; i < memoryProperties.memoryHeapCount; i++)
 			{
 				if (memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)

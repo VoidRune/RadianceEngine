@@ -45,9 +45,79 @@ namespace Game
 
 	float TileMap::GetHeight(Vec2 position) const
 	{
+		const TileCoord cell = CellAt(position);
+		return GetHeightAt(cell.X, cell.Y, position.x - float(cell.X), position.y - float(cell.Y));
+	}
+
+	TileCoord TileMap::CellAt(Vec2 position) const
+	{
 		const int32_t x = int32_t(std::floor(position.x));
 		const int32_t y = int32_t(std::floor(position.y));
-		return GetHeightAt(x, y, position.x - float(x), position.y - float(y));
+		const uint8_t cuts = GetCuts(x, y);
+		if (cuts == 0)
+			return { x, y };
+		const float u = position.x - float(x);
+		const float v = position.y - float(y);
+		const bool east = u >= 0.5f;
+		const bool north = v >= 0.5f;
+		const uint8_t corner = north ? (east ? CornerNorthEast : CornerNorthWest) : (east ? CornerSouthEast : CornerSouthWest);
+		const float across = east ? 1.0f - u : u;
+		const float along = north ? 1.0f - v : v;
+		if ((cuts & corner) == 0 || across + along >= 0.5f)
+			return { x, y };
+		return across < along ? TileCoord{ x + (east ? 1 : -1), y } : TileCoord{ x, y + (north ? 1 : -1) };
+	}
+
+	bool TileMap::IsWalkableAt(Vec2 position) const
+	{
+		const TileCoord cell = CellAt(position);
+		return IsWalkable(cell.X, cell.Y);
+	}
+
+	bool TileMap::IsAbyssAt(Vec2 position) const
+	{
+		const TileCoord cell = CellAt(position);
+		return IsAbyss(cell.X, cell.Y);
+	}
+
+	bool TileMap::Joins(int32_t x, int32_t y, Direction side) const
+	{
+		int32_t nx = x;
+		int32_t ny = y;
+		Step(side, nx, ny);
+		const bool walkable = IsWalkable(x, y);
+		if (walkable != IsWalkable(nx, ny))
+			return false;
+		return !walkable || IsConnected(x, y, side);
+	}
+
+	bool TileMap::IsCutVertex(int32_t x, int32_t y) const
+	{
+		return (GetCuts(x - 1, y - 1) & CornerNorthEast) || (GetCuts(x, y - 1) & CornerNorthWest) || (GetCuts(x, y) & CornerSouthWest) || (GetCuts(x - 1, y) & CornerSouthEast);
+	}
+
+	void TileMap::RoundCorners()
+	{
+		std::vector<uint8_t> cuts(m_Cells.size(), 0);
+		for (int32_t y = 1; y < m_Height; y++)
+			for (int32_t x = 1; x < m_Width; x++)
+			{
+				if (Get(x - 1, y - 1).Slope != Direction::None || Get(x, y - 1).Slope != Direction::None || Get(x, y).Slope != Direction::None || Get(x - 1, y).Slope != Direction::None)
+					continue;
+				const bool bottom = Joins(x - 1, y - 1, Direction::East);
+				const bool right = Joins(x, y - 1, Direction::North);
+				const bool top = Joins(x - 1, y, Direction::East);
+				const bool left = Joins(x - 1, y - 1, Direction::North);
+				if (!bottom && !left && right && top)
+					cuts[size_t(y - 1) * m_Width + size_t(x - 1)] |= CornerNorthEast;
+				else if (!bottom && !right && left && top)
+					cuts[size_t(y - 1) * m_Width + size_t(x)] |= CornerNorthWest;
+				else if (!right && !top && bottom && left)
+					cuts[size_t(y) * m_Width + size_t(x)] |= CornerSouthWest;
+				else if (!top && !left && bottom && right)
+					cuts[size_t(y) * m_Width + size_t(x - 1)] |= CornerSouthEast;
+			}
+		m_Cuts = std::move(cuts);
 	}
 
 	float TileMap::GetTopHeight(int32_t x, int32_t y) const

@@ -19,6 +19,16 @@ const uint MaterialPbr = 2u;
 const uint MeshLayered = 4u;
 const uint MeshWet = 8u;
 const uint MeshVertexTint = 16u;
+const uint MeshLavaGlow = 32u;
+const uint MaterialSingleSided = 64u;
+const uint MeshWater = 128u;
+const uint MeshGround = 256u;
+const uint MeshSplat = 512u;
+const uint MeshVeins = 1024u;
+const uint MeshAccentTrim = 2048u;
+const uint MeshAccentDye = 4096u;
+const uint MeshCrystal = 8192u;
+const uint MeshIce = 16384u;
 
 vec4 SampleAlbedo(Material m, vec2 uv)
 {

@@ -1,4 +1,5 @@
 # Folders
+bin/
 build/
 bin/windows-x86_64/RadianceEngine/
 bin/windows-x86_64/Timbre/

@@ -121,6 +121,17 @@ namespace Game
 		CryptPillar,
 		MarbleBust,
 		FireBowl,
+		CalderaGate,
+		ObsidianCluster,
+		NoticeBoard,
+		OfferingBowl,
+		Telescope,
+		MageTower,
+		PierPost,
+		ChainAnchor,
+		ChessTable,
+		IcePillar,
+		SnowRock,
 		Count,
 	};
 
@@ -736,6 +747,97 @@ namespace Game
 			Cylinder({}, 0.86f, { 0.34f, 0.34f }, 0.16f, Stone),
 			Cone({}, 0.98f, { 0.2f, 0.2f }, 0.4f, Flame, 0.0f, 1.0f),
 		};
+
+		inline constexpr uint32_t Basalt = 0x2E2724;
+		inline constexpr uint32_t BasaltEdge = 0x4A3F38;
+		inline constexpr uint32_t Ember = 0xFF6A1F;
+
+		inline constexpr PropCollider CalderaGateColliders[] = { Rect({ 1.75f, 0.42f }) };
+		inline constexpr PropPart CalderaGateParts[] = {
+			Box({}, 0.0f, { 2.05f, 0.7f }, 0.16f, StoneDark),
+			Box({ -1.38f, 0.0f }, 0.16f, { 0.34f, 0.34f }, 2.9f, Basalt),
+			Box({ 1.38f, 0.0f }, 0.16f, { 0.34f, 0.34f }, 2.9f, Basalt),
+			Box({ -1.38f, 0.0f }, 0.16f, { 0.4f, 0.4f }, 0.3f, BasaltEdge),
+			Box({ 1.38f, 0.0f }, 0.16f, { 0.4f, 0.4f }, 0.3f, BasaltEdge),
+			Box({}, 3.06f, { 1.95f, 0.44f }, 0.46f, Basalt),
+			Box({}, 3.52f, { 1.6f, 0.36f }, 0.12f, BasaltEdge),
+			Box({}, 0.16f, { 1.04f, 0.06f }, 2.9f, Ember, 0.0f, 0.75f),
+			Box({ 0.0f, -0.08f }, 0.16f, { 0.86f, 0.02f }, 2.6f, Flame, 0.0f, 1.0f),
+			Sphere({}, 3.64f, { 0.22f, 0.22f }, 0.4f, Flame, 0.0f, 1.0f),
+			Cone({ -1.25f, 0.0f }, 3.64f, { 0.13f, 0.13f }, 0.32f, Ember, 0.0f, 0.9f),
+			Cone({ 1.25f, 0.0f }, 3.64f, { 0.13f, 0.13f }, 0.32f, Ember, 0.0f, 0.9f),
+		};
+
+		inline constexpr uint32_t Obsidian = 0x17141B;
+
+		inline constexpr PropCollider ObsidianClusterColliders[] = { Circle(0.8f) };
+		inline constexpr PropPart ObsidianClusterParts[] = {
+			Cone({}, 0.0f, { 0.36f, 0.36f }, 2.9f, Obsidian),
+			Cone({ 0.45f, 0.18f }, 0.0f, { 0.26f, 0.26f }, 1.8f, Obsidian, 0.4f),
+			Cone({ -0.4f, 0.3f }, 0.0f, { 0.22f, 0.22f }, 1.4f, Obsidian, 0.2f),
+			Cone({ 0.08f, -0.48f }, 0.0f, { 0.18f, 0.18f }, 1.0f, Obsidian, 0.7f),
+		};
+
+		inline constexpr PropCollider NoticeBoardColliders[] = { Rect({ 0.76f, 0.1f }) };
+		inline constexpr PropPart NoticeBoardParts[] = {
+			Box({ -0.68f, 0.0f }, 0.0f, { 0.05f, 0.05f }, 2.15f, WoodDark),
+			Box({ 0.68f, 0.0f }, 0.0f, { 0.05f, 0.05f }, 2.15f, WoodDark),
+			Box({}, 0.88f, { 0.7f, 0.04f }, 1.0f, WoodMid),
+			Roof({}, 2.15f, { 0.82f, 0.36f }, 0.2f, WoodDark),
+		};
+
+		inline constexpr PropCollider OfferingBowlColliders[] = { Circle(0.34f) };
+		inline constexpr PropPart OfferingBowlParts[] = {
+			Box({}, 0.0f, { 0.29f, 0.29f }, 0.14f, Stone),
+			Cylinder({}, 0.14f, { 0.14f, 0.14f }, 0.36f, Stone),
+			Cylinder({}, 0.5f, { 0.34f, 0.34f }, 0.22f, Stone),
+		};
+
+		inline constexpr PropCollider TelescopeColliders[] = { Circle(0.42f) };
+		inline constexpr PropPart TelescopeParts[] = {
+			Cone({}, 0.0f, { 0.45f, 0.45f }, 1.25f, WoodDark),
+			CylinderX({ 0.0f, 0.1f }, 1.3f, { 0.4f, 0.06f }, 0.12f, Gold),
+		};
+
+		inline constexpr PropCollider MageTowerColliders[] = { Circle(1.95f) };
+		inline constexpr PropPart MageTowerParts[] = {
+			Cylinder({}, 0.0f, { 1.9f, 1.9f }, 0.38f, StoneDark),
+			Cylinder({}, 0.38f, { 1.55f, 1.55f }, 5.5f, Stone),
+			Cone({}, 5.88f, { 1.95f, 1.95f }, 2.95f, RoofSlate),
+		};
+
+		inline constexpr PropCollider PierPostColliders[] = { Circle(0.17f) };
+		inline constexpr PropPart PierPostParts[] = {
+			Cylinder({}, 0.0f, { 0.15f, 0.15f }, 0.95f, StoneDark),
+			Cylinder({}, 0.95f, { 0.17f, 0.17f }, 0.12f, Stone),
+		};
+
+		inline constexpr PropCollider ChainAnchorColliders[] = { Rect({ 0.29f, 0.25f }) };
+		inline constexpr PropPart ChainAnchorParts[] = {
+			Box({}, 0.0f, { 0.29f, 0.25f }, 0.34f, Basalt),
+		};
+
+		inline constexpr PropCollider ChessTableColliders[] = { Rect({ 0.98f, 0.98f }), Circle(0.2f, Block::Movement, { 1.4f, 0.0f }), Circle(0.2f, Block::Movement, { -1.4f, 0.0f }) };
+		inline constexpr PropPart ChessTableParts[] = {
+			Cylinder({}, 0.0f, { 0.4f, 0.4f }, 0.54f, Stone),
+			Box({}, 0.54f, { 0.98f, 0.98f }, 0.08f, Marble),
+			Cylinder({ 1.4f, 0.0f }, 0.0f, { 0.18f, 0.18f }, 0.44f, StoneDark),
+			Cylinder({ -1.4f, 0.0f }, 0.0f, { 0.18f, 0.18f }, 0.44f, Stone),
+		};
+
+		inline constexpr uint32_t GlacierIce = 0xA9DDF2;
+
+		inline constexpr PropCollider IcePillarColliders[] = { Circle(0.55f) };
+		inline constexpr PropPart IcePillarParts[] = {
+			Cone({}, 0.0f, { 0.55f, 0.55f }, 2.6f, GlacierIce, 0.0f, 0.12f),
+			Cone({ 0.3f, 0.22f }, 0.0f, { 0.28f, 0.28f }, 1.5f, GlacierIce, 0.5f, 0.12f),
+		};
+
+		inline constexpr PropCollider SnowRockColliders[] = { Circle(0.7f) };
+		inline constexpr PropPart SnowRockParts[] = {
+			Sphere({}, 0.0f, { 0.75f, 0.75f }, 0.6f, StoneDark),
+			Sphere({}, 0.38f, { 0.62f, 0.62f }, 0.24f, 0xE8F0F6),
+		};
 	}
 
 	inline constexpr PropDef Props[] = {
@@ -818,6 +920,17 @@ namespace Game
 		{ PropId::CryptPillar, "Crypt pillar", PropData::CryptPillarColliders, PropData::CryptPillarParts, true },
 		{ PropId::MarbleBust, "Marble bust", PropData::MarbleBustColliders, PropData::MarbleBustParts },
 		{ PropId::FireBowl, "Fire bowl", PropData::FireBowlColliders, PropData::FireBowlParts },
+		{ PropId::CalderaGate, "Caldera gate", PropData::CalderaGateColliders, PropData::CalderaGateParts, true },
+		{ PropId::ObsidianCluster, "Obsidian cluster", PropData::ObsidianClusterColliders, PropData::ObsidianClusterParts },
+		{ PropId::NoticeBoard, "Notice board", PropData::NoticeBoardColliders, PropData::NoticeBoardParts, true },
+		{ PropId::OfferingBowl, "Offering bowl", PropData::OfferingBowlColliders, PropData::OfferingBowlParts },
+		{ PropId::Telescope, "Telescope", PropData::TelescopeColliders, PropData::TelescopeParts },
+		{ PropId::MageTower, "Mage tower", PropData::MageTowerColliders, PropData::MageTowerParts, true },
+		{ PropId::PierPost, "Pier post", PropData::PierPostColliders, PropData::PierPostParts },
+		{ PropId::ChainAnchor, "Chain anchor", PropData::ChainAnchorColliders, PropData::ChainAnchorParts },
+		{ PropId::ChessTable, "Chess table", PropData::ChessTableColliders, PropData::ChessTableParts },
+		{ PropId::IcePillar, "Ice pillar", PropData::IcePillarColliders, PropData::IcePillarParts, true },
+		{ PropId::SnowRock, "Snowy rock", PropData::SnowRockColliders, PropData::SnowRockParts },
 	};
 
 	constexpr bool PropsMatchIds()

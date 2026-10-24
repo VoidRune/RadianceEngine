@@ -2,6 +2,7 @@
 #include "Rendering/WorldRenderer.h"
 #include <GameShared/World/Level.h>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace Game
@@ -12,9 +13,12 @@ namespace Game
 		ModelInstance Instance{};
 		Vec2 Center;
 		float Reach = 0.0f;
+		Vec2 Extent;
 		float Base = 0.0f;
 		float Top = 0.0f;
 		bool Cut = false;
+		float Bob = 0.0f;
+		float BobPhase = 0.0f;
 	};
 
 	struct SceneBox
@@ -57,6 +61,14 @@ namespace Game
 	{
 		CellTop = 1 << 0,
 		CellSides = 1 << 1,
+		CellGround = 1 << 2,
+	};
+
+	struct GroundField
+	{
+		std::vector<float> Heights;
+		int32_t Columns = 0;
+		int32_t Rows = 0;
 	};
 
 	struct LevelScene
@@ -66,12 +78,14 @@ namespace Game
 		std::vector<uint8_t> PropDrawn;
 		std::vector<uint8_t> WallDrawn;
 		std::vector<LevelFire> Fires;
-		bool LevelGeometry = false;
+		GroundField Ground;
+		int32_t Width = 0;
 	};
 
 	inline constexpr float FloorTop = 0.025f;
 	inline constexpr float FloorBottom = 0.075f;
 
-	LevelScene BuildLevelScene(const Level& level, const WorldRenderer& renderer);
+	LevelScene BuildLevelScene(const Level& level, WorldRenderer& renderer);
 	bool BuildAbbeyScene(const Level& level, WorldRenderer& renderer, LevelScene& scene);
+	std::optional<float> SampleGround(const LevelScene& scene, Vec2 position);
 }

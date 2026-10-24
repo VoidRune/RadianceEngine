@@ -7,20 +7,6 @@
 
 namespace Game
 {
-	struct TileRect
-	{
-		int32_t X = 0;
-		int32_t Y = 0;
-		int32_t Width = 0;
-		int32_t Height = 0;
-
-		int32_t Right() const { return X + Width; }
-		int32_t Top() const { return Y + Height; }
-		Vec2 GetCenter() const { return { float(X) + float(Width) * 0.5f, float(Y) + float(Height) * 0.5f }; }
-		bool Contains(int32_t x, int32_t y) const { return x >= X && y >= Y && x < Right() && y < Top(); }
-		TileRect Shrink(int32_t amount) const { return { X + amount, Y + amount, Width - 2 * amount, Height - 2 * amount }; }
-	};
-
 	class LevelBuilder
 	{
 	public:
@@ -41,16 +27,18 @@ namespace Game
 		void Prop(PropId id, Vec2 position, float yaw = 0.0f);
 		bool TryProp(PropId id, Vec2 position, float yaw = 0.0f, float spacing = 0.2f);
 		void Wall(WallId style, Vec2 from, Vec2 to);
-		int32_t Portal(Vec2 position, Vec2 destination, float destinationFacing, std::string label);
+		int32_t Portal(Vec2 position, Vec2 destination, float destinationFacing, std::string label, bool hidden = false);
 		void Region(std::string name, const TileRect& area, bool enemySpawns = true);
 		void SetPlayerSpawn(Vec2 position);
 		void SetMissionStart(Vec2 position);
 		void SetBossArena(Vec2 center, float radius);
 		void Station(StationKind kind, Vec2 position, float radius = 2.4f);
+		void Dummy(Vec2 position, Vec2 patrol, bool duck = false);
 		void SpawnPoint(Vec2 position);
 		void LootSpot(Vec2 position, bool vault = false);
 		void Pad(Vec2 position, PadKind kind);
 		void Roof(const TileRect& area, float height);
+		void SetRounded();
 		const Level& GetLevel() const { return m_Level; }
 		Level Finish();
 

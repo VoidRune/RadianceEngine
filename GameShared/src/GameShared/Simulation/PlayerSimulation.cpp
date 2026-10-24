@@ -12,6 +12,13 @@ namespace Game
 		constexpr float ReadyEpsilon = 1e-4f;
 		constexpr float LungeStandoff = 0.75f;
 		constexpr uint32_t CastPriority[] = { 1, 2, 3, 0 };
+		constexpr float ShoveOverVoid = 1.5f;
+		constexpr float LedgeClearance = 0.8f;
+		constexpr float FallDrag = 1.1f;
+		constexpr float DashCarry = 0.35f;
+		constexpr float FootingStep = 0.75f;
+		constexpr float LiftRate = 7.5f;
+		constexpr float LandingGrace = 0.4f;
 
 		void Cool(float& timer, float dt)
 		{
@@ -23,20 +30,102 @@ namespace Game
 			return 1.0f - std::min(Length(state.Push) / PushControlSpeed, PushControlLoss);
 		}
 
-		void DecayPush(PlayerState& state, float dt)
+		void DecayPush(const Level& level, Vec2 position, PlayerState& state, float dt)
 		{
-			state.Push *= std::exp(-PushFriction * dt);
+			state.Push *= std::exp(-PushFriction * SurfaceFriction(level, position) * (state.Slick > 0.0f ? BlackIceFriction : 1.0f) * dt);
 			if (LengthSquared(state.Push) < PushStop * PushStop)
 				state.Push = {};
 		}
 
 		Vec2 MoveAndBrake(const Level& level, PlayerState& state, Vec2 position, Vec2 delta, std::span<const BodyCircle> bodies)
 		{
-			const Vec2 moved = MoveCircle(level, position, PlayerRadius, delta, bodies);
+			const bool shoved = level.Floating && LengthSquared(state.Push) > ShoveOverVoid * ShoveOverVoid;
+			const Vec2 moved = MoveCircle(level, position, PlayerRadius, delta, bodies, shoved);
 			const float wanted = LengthSquared(delta);
-			if (wanted > 1e-10f && LengthSquared(state.Push) > 0.0f)
-				state.Push *= std::clamp(Dot(moved - position, delta) / wanted, 0.0f, 1.0f);
+			if (wanted <= 1e-10f || LengthSquared(state.Push) <= 0.0f)
+				return moved;
+			const Vec2 blocked = position + delta - moved;
+			if (level.Bouncy && LengthSquared(blocked) > 1e-8f && LengthSquared(state.Push) > BounceSpeed * BounceSpeed)
+			{
+				const Vec2 normal = Normalize(blocked);
+				if (const float into = Dot(state.Push, normal); into > 0.0f)
+				{
+					state.Push -= normal * (into * (1.0f + IceBounce));
+					return moved;
+				}
+			}
+			state.Push *= std::clamp(Dot(moved - position, delta) / wanted, 0.0f, 1.0f);
 			return moved;
+		}
+
+		void DashStep(const Level& level, Transform& transform, PlayerState& state, Vec2 delta)
+		{
+			const Vec2 from = transform.Position;
+			transform.Position = MoveCircle(level, from, PlayerRadius, delta, {}, level.Floating);
+			if (CrossesVoid(level, from, transform.Position))
+				state.Airborne = true;
+		}
+
+		void Topple(PlayerState& state, PlayerActions& actions, bool dashed)
+		{
+			if (dashed)
+				state.Push += state.DashDirection * (state.DashSpeed * DashCarry);
+			state.Fall = ReadyEpsilon;
+			state.DashDistance = 0.0f;
+			state.Airborne = false;
+			state.CastSlot = -1;
+			state.CastTimer = 0.0f;
+			actions.Fell = true;
+		}
+
+		void Footing(const Level& level, const Transform& transform, PlayerState& state, PlayerActions& actions, bool dashed)
+		{
+			if (!level.Floating)
+				return;
+			if (IsOverVoid(level, transform.Position))
+			{
+				if (state.DashDistance > 0.0f)
+					state.Airborne = true;
+				else
+					Topple(state, actions, dashed);
+				return;
+			}
+			const float height = level.Map.GetHeight(transform.Position);
+			if (state.Airborne && std::abs(height - state.Footing) > FootingStep)
+			{
+				Topple(state, actions, true);
+				return;
+			}
+			state.Airborne = false;
+			state.Footing = height;
+			if (state.DashDistance <= 0.0f && GetVoidClearance(level, transform.Position, LedgeClearance) >= LedgeClearance)
+				state.Ledge = transform.Position;
+		}
+
+		void Plunge(const Level& level, Transform& transform, PlayerState& state, PlayerActions& actions, float dt)
+		{
+			state.Fall += dt;
+			state.CastSlot = -1;
+			state.CastTimer = 0.0f;
+			state.DashDistance = 0.0f;
+			if (state.Fall < FallSeconds)
+			{
+				const Vec2 drifted = transform.Position + state.Push * dt;
+				transform.Position = { std::clamp(drifted.x, 0.5f, float(level.Map.GetWidth()) - 0.5f), std::clamp(drifted.y, 0.5f, float(level.Map.GetHeight()) - 0.5f) };
+				state.Push *= std::exp(-FallDrag * dt);
+				return;
+			}
+			state.Push = {};
+			const Vec2 ledge = state.Ledge;
+			const Vec2 home = level.Map.IsWalkableAt(ledge) ? ledge : level.PlayerSpawn;
+			transform.Position += (home - transform.Position) * (1.0f - std::exp(-LiftRate * dt));
+			if (state.Fall < FallSeconds + LiftSeconds)
+				return;
+			transform.Position = home;
+			state.Ledge = home;
+			state.Fall = 0.0f;
+			state.Invulnerable = std::max(state.Invulnerable, LandingGrace);
+			actions.Landed = true;
 		}
 
 		void StartDash(PlayerState& state, const AbilityDef& ability, Vec2 direction, float distance)
@@ -56,21 +145,55 @@ namespace Game
 			return aim * std::min(lunge * elapsed / skill.CastTime, std::max(aimDistance - LungeStandoff, 0.0f));
 		}
 
-		void Release(PlayerState& state, PlayerActions& actions, const PlayerTraits& traits, uint32_t slot, Vec2 aim, float aimDistance)
+		bool CaughtByStars(const Level& level, Vec2 origin, AbilityId spell, Vec2 aim, float aimDistance)
+		{
+			const Landmark* observatory = level.FindLandmark(LandmarkKind::Observatory);
+			if (!observatory || LengthSquared(origin - observatory->Position) > observatory->Radius * observatory->Radius)
+				return false;
+			const Vec2 target = origin + aim * aimDistance;
+			return std::any_of(level.Constellations.begin(), level.Constellations.end(), [&](const Constellation& constellation) { return constellation.Spell == spell && LengthSquared(target - constellation.Position) <= constellation.Radius * constellation.Radius; });
+		}
+
+		void Release(const Level& level, Vec2 origin, PlayerState& state, PlayerActions& actions, const PlayerTraits& traits, uint32_t slot, Vec2 aim, float aimDistance)
 		{
 			const SkillTraits& skill = traits.Skills[slot];
 			state.CastSlot = -1;
 			state.CastTimer = 0.0f;
-			if (skill.IsEmpty() || !skill.Usable || state.Mana + ReadyEpsilon < skill.ManaCost)
+			if (skill.IsEmpty() || !skill.Usable)
 				return;
-			state.Mana = std::max(state.Mana - skill.ManaCost, 0.0f);
+			const bool overloaded = IsOverloaded(state, traits, slot);
+			const float cost = overloaded ? 0.0f : skill.ManaCost;
+			if (state.Mana + ReadyEpsilon < cost && traits.BloodRate <= 0.0f)
+				return;
+			actions.ManaBefore = state.Mana;
+			if (state.Mana + ReadyEpsilon < cost)
+				actions.BloodCost += (cost - state.Mana) * traits.BloodRate;
+			state.Mana = std::max(state.Mana - cost, 0.0f);
+			if (traits.OverloadEvery > 0)
+				state.Overload = overloaded ? 0 : uint8_t(state.Overload + 1);
+			if (overloaded)
+				actions.Overloaded |= uint8_t(1u << slot);
 			state.Cooldowns[slot] = skill.Cooldown;
 			actions.Released |= uint8_t(1u << slot);
 			const AbilityDef& ability = GetAbility(skill.Ability);
+			if (IsRecastable(skill.Ability) && ability.ProjectileSpeed > 0.0f)
+			{
+				const float range = ability.ProjectileRange * skill.RangeScale;
+				state.RecastSlot = int8_t(slot);
+				state.RecastAbility = uint8_t(skill.Ability);
+				state.RecastAge = 0.0f;
+				state.RecastOrigin = origin + aim * ability.SpawnOffset;
+				state.RecastAim = aim;
+				state.RecastReach = range * std::clamp(CastSegment(level, state.RecastOrigin, state.RecastOrigin + aim * range, Block::Projectiles), 0.0f, 1.0f);
+				state.RecastTimer = range / ability.ProjectileSpeed + (skill.Ability == AbilityId::ChainHook ? HookAnchorSeconds : 0.0f);
+			}
 			if (ability.Kind == AbilityKind::Dash)
 			{
-				StartDash(state, ability, aim, ability.Range > 0.0f ? std::clamp(aimDistance, 1.0f, ability.Range) : ability.DashDistance);
-				state.Push = {};
+				if (!CaughtByStars(level, origin, skill.Ability, aim, aimDistance))
+				{
+					StartDash(state, ability, aim, ability.Range > 0.0f ? std::clamp(aimDistance, 1.0f, ability.Range) : ability.DashDistance);
+					state.Push = {};
+				}
 			}
 			else if (ability.Kind == AbilityKind::Ward)
 				state.Ward = ability.Ward;
@@ -86,7 +209,22 @@ namespace Game
 	bool CanCast(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
 	{
 		const SkillTraits& skill = traits.Skills[slot];
-		return !skill.IsEmpty() && skill.Usable && state.Cooldowns[slot] <= ReadyEpsilon && state.Mana + ReadyEpsilon >= skill.ManaCost;
+		return !skill.IsEmpty() && skill.Usable && state.Cooldowns[slot] <= ReadyEpsilon && (state.Mana + ReadyEpsilon >= skill.ManaCost || traits.BloodRate > 0.0f || IsOverloaded(state, traits, slot));
+	}
+
+	bool IsOverloaded(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
+	{
+		return traits.OverloadEvery > 0 && slot < AbilitySlots && traits.Skills[slot].ManaCost > 0.0f && state.Overload + 1u >= traits.OverloadEvery;
+	}
+
+	bool IsRecastable(AbilityId ability)
+	{
+		return ability == AbilityId::ChainHook || ability == AbilityId::SplittingBolt;
+	}
+
+	Vec2 GetHookPoint(const PlayerState& state)
+	{
+		return state.RecastOrigin + state.RecastAim * std::min(state.RecastAge * GetAbility(AbilityId::ChainHook).ProjectileSpeed, state.RecastReach);
 	}
 
 	Vec2 GetGroundTarget(const Level& level, Vec2 origin, Vec2 direction, float aimDistance, float range)
@@ -108,22 +246,45 @@ namespace Game
 		Cool(state.PortalCooldown, dt);
 		Cool(state.Stun, dt);
 		Cool(state.Chill, dt);
+		Cool(state.Slick, dt);
 		Cool(state.StunGuard, dt);
 		Cool(state.Ward, dt);
+		Cool(state.Static, dt);
+		Cool(state.ManaStall, dt);
+		if (state.RecastTimer > 0.0f)
+		{
+			state.RecastAge += dt;
+			Cool(state.RecastTimer, dt);
+		}
+		if (state.RecastTimer <= 0.0f)
+		{
+			state.RecastSlot = -1;
+			state.RecastAbility = UINT8_MAX;
+		}
 		if (!state.Alive)
 		{
 			state.DashDistance = 0.0f;
 			state.CastSlot = -1;
 			state.CastTimer = 0.0f;
 			state.Push = {};
+			state.Fall = 0.0f;
+			state.Still = 0.0f;
 			return actions;
 		}
-		state.Mana = std::min(traits.MaxMana, state.Mana + traits.ManaRegen * dt);
+		if (state.IsFalling())
+		{
+			state.Still = 0.0f;
+			Plunge(level, transform, state, actions, dt);
+			return actions;
+		}
+		if (state.ManaStall <= 0.0f)
+			state.Mana = std::min(traits.MaxMana, state.Mana + traits.ManaRegen * dt);
 
 		const Vec2 aim = FromAngle(input.Aim);
 		const Vec2 move = ClampLength(input.Move, 1.0f);
 		actions.Direction = aim;
 		actions.AimDistance = input.AimDistance;
+		const bool dashed = state.DashDistance > 0.0f;
 		if (state.IsStunned())
 		{
 			state.CastSlot = -1;
@@ -132,11 +293,12 @@ namespace Game
 			{
 				const float step = state.DashSpeed > 0.0f ? std::min(state.DashDistance, state.DashSpeed * dt) : state.DashDistance;
 				state.DashDistance = state.DashDistance - step > 1e-5f ? state.DashDistance - step : 0.0f;
-				transform.Position = MoveCircle(level, transform.Position, PlayerRadius, state.DashDirection * step);
+				DashStep(level, transform, state, state.DashDirection * step);
 			}
 			else if (LengthSquared(state.Push) > 0.0f)
 				transform.Position = MoveAndBrake(level, state, transform.Position, state.Push * dt, {});
-			DecayPush(state, dt);
+			DecayPush(level, transform.Position, state, dt);
+			Footing(level, transform, state, actions, dashed);
 			return actions;
 		}
 		transform.Facing = input.Aim;
@@ -163,6 +325,31 @@ namespace Game
 			actions.Dodged = true;
 		}
 
+		if (state.RecastSlot >= 0 && state.DashDistance <= 0.0f && (pressed & uint8_t(SlotButton(uint32_t(state.RecastSlot)))) != 0)
+		{
+			const uint32_t slot = uint32_t(state.RecastSlot);
+			actions.Recast |= uint8_t(1u << slot);
+			actions.RecastPoint = GetHookPoint(state);
+			actions.RecastAbility = AbilityId(state.RecastAbility);
+			if (actions.RecastAbility == AbilityId::ChainHook)
+			{
+				const Vec2 offset = actions.RecastPoint - transform.Position;
+				const float distance = Length(offset);
+				if (distance > HookYankStop + 0.05f)
+				{
+					state.CastSlot = -1;
+					state.CastTimer = 0.0f;
+					state.DashDirection = offset / distance;
+					state.DashDistance = distance - HookYankStop;
+					state.DashSpeed = HookYankSpeed;
+					state.Push = {};
+				}
+			}
+			state.RecastTimer = 0.0f;
+			state.RecastSlot = -1;
+			state.RecastAbility = UINT8_MAX;
+		}
+
 		int32_t castingSlot = -1;
 		Vec2 lunge;
 		if (state.DashDistance <= 0.0f)
@@ -174,7 +361,7 @@ namespace Game
 				state.CastTimer -= dt;
 				lunge = LungeStep(traits.Skills[size_t(castingSlot)], aim, input.AimDistance, before, state.CastTimer);
 				if (state.CastTimer <= ReadyEpsilon)
-					Release(state, actions, traits, uint32_t(state.CastSlot), aim, input.AimDistance);
+					Release(level, transform.Position, state, actions, traits, uint32_t(state.CastSlot), aim, input.AimDistance);
 			}
 			else
 			{
@@ -183,7 +370,7 @@ namespace Game
 					if (!input.IsDown(SlotButton(slot)) || !CanCast(state, traits, slot))
 						continue;
 					if (traits.Skills[slot].CastTime <= ReadyEpsilon)
-						Release(state, actions, traits, slot, aim, input.AimDistance);
+						Release(level, transform.Position, state, actions, traits, slot, aim, input.AimDistance);
 					else
 					{
 						state.CastSlot = int8_t(slot);
@@ -203,11 +390,16 @@ namespace Game
 			const float step = state.DashSpeed > 0.0f ? std::min(state.DashDistance, state.DashSpeed * dt) : state.DashDistance;
 			delta = state.DashDirection * step;
 			state.DashDistance = state.DashDistance - step > 1e-5f ? state.DashDistance - step : 0.0f;
-			transform.Position = MoveCircle(level, transform.Position, PlayerRadius, delta);
+			DashStep(level, transform, state, delta);
 		}
 		else
 			transform.Position = MoveAndBrake(level, state, transform.Position, delta, bodies);
-		DecayPush(state, dt);
+		DecayPush(level, transform.Position, state, dt);
+		Footing(level, transform, state, actions, dashed || dashing);
+		if (LengthSquared(move) <= 1e-4f && !dashed && !dashing)
+			state.Still = std::min(state.Still + dt, LeylineSeconds + LeylineLinger);
+		else
+			state.Still = state.Still > LeylineSeconds ? state.Still - dt : 0.0f;
 		return actions;
 	}
 }

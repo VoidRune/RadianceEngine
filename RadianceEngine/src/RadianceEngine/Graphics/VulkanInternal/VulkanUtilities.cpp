@@ -313,7 +313,11 @@ namespace Rdn
             std::vector<VkPresentModeKHR> presentModes(presentModeCount);
             VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes.data()));
 
-            return std::ranges::find(presentModes, preferredMode) != presentModes.end() ? preferredMode : VK_PRESENT_MODE_FIFO_KHR;
+            if (std::ranges::find(presentModes, preferredMode) != presentModes.end())
+                return preferredMode;
+            if (preferredMode == VK_PRESENT_MODE_MAILBOX_KHR && std::ranges::find(presentModes, VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end())
+                return VK_PRESENT_MODE_IMMEDIATE_KHR;
+            return VK_PRESENT_MODE_FIFO_KHR;
         }
 
         VkExtent2D FindSurfaceExtent(const VkSurfaceCapabilitiesKHR& capabilities, VkExtent2D fallback)

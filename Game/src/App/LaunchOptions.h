@@ -45,11 +45,15 @@ namespace Game
 		std::optional<uint8_t> Tonemap;
 		std::optional<uint8_t> Shadows;
 		std::optional<uint8_t> Gi;
+		std::optional<bool> Vsync;
+		std::optional<uint32_t> FrameCap;
+		bool ShowPerformance = false;
 		std::optional<float> Exposure;
 		bool Grading = true;
 		bool LightingTest = false;
 		std::string PbrTest;
 		bool ProfileGpu = false;
+		bool Leviathan = false;
 	};
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv);

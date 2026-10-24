@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/Cosmetics.h"
 #include "GameShared/Content/Crafting.h"
 #include "GameShared/Content/Items.h"
 #include "GameShared/Content/Missions.h"
@@ -18,7 +19,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 12;
+	constexpr uint32_t ProtocolVersion = 30;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -36,10 +37,11 @@ namespace Game
 		ServerStash,
 		ServerNotice,
 		ServerKillFeed,
+		ServerChess,
 		Count,
 	};
 
-	enum class EntityFlags : uint16_t
+	enum class EntityFlags : uint32_t
 	{
 		None = 0,
 		Dead = 1 << 0,
@@ -52,6 +54,13 @@ namespace Game
 		Warded = 1 << 7,
 		Burning = 1 << 8,
 		Flung = 1 << 9,
+		Falling = 1 << 10,
+		Lifted = 1 << 11,
+		Static = 1 << 12,
+		Ignited = 1 << 13,
+		Marked = 1 << 14,
+		Barrier = 1 << 15,
+		Leyline = 1u << 16,
 	};
 
 	enum class ActionType : uint8_t
@@ -75,8 +84,12 @@ namespace Game
 		StartMatch,
 		Spectate,
 		BrawlSpell,
-		BrawlBoon,
+		BrawlCard,
 		BrawlReady,
+		Wish,
+		SetHonors,
+		Chess,
+		SetCosmetics,
 		Count,
 	};
 
@@ -86,6 +99,8 @@ namespace Game
 		uint32_t Version = ProtocolVersion;
 		std::string Name;
 		uint8_t Kit = 0;
+		uint8_t Honors = 0;
+		Cosmetics Style;
 		bool HasGear = false;
 		GearSet Gear;
 	};
@@ -162,6 +177,17 @@ namespace Game
 		bool Success = true;
 	};
 
+	struct ServerChess
+	{
+		static constexpr MessageType Type = MessageType::ServerChess;
+		uint32_t Revision = 0;
+		std::array<uint8_t, 2> Seats{ Chess::NoSeat, Chess::NoSeat };
+		Chess::Verdict Result = Chess::Verdict::Playing;
+		uint8_t Winner = Chess::NoWinner;
+		uint8_t DrawOffer = 0;
+		std::vector<uint16_t> Moves;
+	};
+
 	struct ServerReject
 	{
 		static constexpr MessageType Type = MessageType::ServerReject;
@@ -181,6 +207,7 @@ namespace Game
 		ItemBase Body = ItemBase::Count;
 		ItemBase Feet = ItemBase::Count;
 		Rarity WeaponQuality = Rarity::Common;
+		Cosmetics Style;
 	};
 
 	struct PlayerInfo
@@ -189,6 +216,8 @@ namespace Game
 		std::string Name;
 		uint32_t Kills = 0;
 		uint32_t Deaths = 0;
+		uint16_t Assists = 0;
+		uint32_t Damage = 0;
 		int32_t Ping = -1;
 		BuffStacks Buffs{};
 		PlayerLook Look;
@@ -197,6 +226,10 @@ namespace Game
 		bool Host = false;
 		uint16_t Score = 0;
 		uint8_t Rounds = 0;
+		uint8_t Honors = 0;
+		CardMask Cards = 0;
+		bool Choosing = false;
+		bool Bot = false;
 	};
 
 	struct ServerPlayerList
@@ -216,9 +249,9 @@ namespace Game
 		uint8_t Variant = 0;
 		uint8_t Scale = 16;
 		uint8_t Health = 255;
-		uint16_t Flags = 0;
+		uint32_t Flags = 0;
 
-		bool Has(EntityFlags flag) const { return (Flags & uint16_t(flag)) != 0; }
+		bool Has(EntityFlags flag) const { return (Flags & uint32_t(flag)) != 0; }
 		float GetScale() const { return float(Scale) / 16.0f; }
 	};
 
@@ -239,6 +272,8 @@ namespace Game
 		uint32_t Watching = NoPlayer;
 		uint32_t KilledBy = NoPlayer;
 		BrawlLoadout Brawl;
+		uint16_t Starlit = 0;
+		uint8_t Shield = 0;
 	};
 
 	struct ServerSnapshot
@@ -277,6 +312,7 @@ namespace Game
 	void Write(ByteWriter& writer, const ServerStash& message);
 	void Write(ByteWriter& writer, const ServerNotice& message);
 	void Write(ByteWriter& writer, const ServerKillFeed& message);
+	void Write(ByteWriter& writer, const ServerChess& message);
 
 	bool Read(ByteReader& reader, ClientHello& message);
 	bool Read(ByteReader& reader, ClientInput& message);
@@ -290,6 +326,7 @@ namespace Game
 	bool Read(ByteReader& reader, ServerStash& message);
 	bool Read(ByteReader& reader, ServerNotice& message);
 	bool Read(ByteReader& reader, ServerKillFeed& message);
+	bool Read(ByteReader& reader, ServerChess& message);
 
 	template<typename T>
 	std::vector<uint8_t> Encode(const T& message)

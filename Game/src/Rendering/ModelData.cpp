@@ -10,7 +10,7 @@ namespace Game
 	namespace
 	{
 		constexpr uint32_t FileMagic = 0x4C444F4D;
-		constexpr uint32_t FileVersion = 3;
+		constexpr uint32_t FileVersion = 5;
 		constexpr uint64_t MaxElements = 1ull << 28;
 		constexpr uint32_t MaxTextures = 4096;
 		constexpr uint32_t MaxTextureSize = 8192;
@@ -163,13 +163,17 @@ namespace Game
 			out.Value(FileVersion);
 			out.Value(data.SourceHash);
 
-			const ModelSkeleton& skeleton = data.Skeleton;
-			out.Value(uint32_t(skeleton.Names.size()));
-			for (const std::string& name : skeleton.Names)
-				out.String(name);
-			out.Array(skeleton.Parents);
-			out.Array(skeleton.Rest);
-			out.Array(skeleton.InverseBind);
+			out.Value(uint32_t(data.Skeletons.size()));
+			for (const ModelSkeleton& skeleton : data.Skeletons)
+			{
+				out.String(skeleton.Name);
+				out.Value(uint32_t(skeleton.Names.size()));
+				for (const std::string& name : skeleton.Names)
+					out.String(name);
+				out.Array(skeleton.Parents);
+				out.Array(skeleton.Rest);
+				out.Array(skeleton.InverseBind);
+			}
 
 			WriteTextures(out, data.Textures);
 
@@ -187,18 +191,21 @@ namespace Game
 				out.Value(mesh.Normal);
 				out.Value(mesh.Color);
 				out.Value(mesh.Emissive);
+				out.Value(mesh.Emission);
 				out.Value(mesh.Roughness);
 				out.Value(mesh.Metallic);
 				out.Value(mesh.AlphaCutoff);
 				out.Value(mesh.Min);
 				out.Value(mesh.Max);
-				out.Value(uint8_t(mesh.Skinned ? 1 : 0));
+				out.Value(uint8_t((mesh.Skinned ? 1 : 0) | (mesh.DoubleSided ? 0 : 2) | (mesh.Water ? 4 : 0)));
+				out.Value(mesh.Skeleton);
 			}
 
 			out.Value(uint32_t(data.Clips.size()));
 			for (const ModelClip& clip : data.Clips)
 			{
 				out.String(clip.Name);
+				out.Value(clip.Skeleton);
 				out.Value(clip.FrameRate);
 				out.Value(clip.FrameCount);
 				out.Array(clip.Frames);
@@ -253,18 +260,27 @@ namespace Game
 		if (!in.Value(magic) || magic != FileMagic || !in.Value(version) || version != FileVersion || !in.Value(data.SourceHash))
 			return false;
 
-		ModelSkeleton& skeleton = data.Skeleton;
-		uint32_t joints = 0;
-		if (!in.Value(joints) || joints > MaxModelJoints)
+		uint32_t skeletons = 0;
+		if (!in.Value(skeletons) || skeletons > 64)
 			return false;
-		skeleton.Names.resize(joints);
-		for (std::string& name : skeleton.Names)
-			if (!in.String(name))
+		data.Skeletons.resize(skeletons);
+		for (ModelSkeleton& skeleton : data.Skeletons)
+		{
+			uint32_t joints = 0;
+			if (!in.String(skeleton.Name) || !in.Value(joints) || joints > MaxModelJoints)
 				return false;
-		if (!in.Array(skeleton.Parents) || !in.Array(skeleton.Rest) || !in.Array(skeleton.InverseBind))
-			return false;
-		if (skeleton.Parents.size() != joints || skeleton.Rest.size() != joints || skeleton.InverseBind.size() != joints)
-			return false;
+			skeleton.Names.resize(joints);
+			for (std::string& name : skeleton.Names)
+				if (!in.String(name))
+					return false;
+			if (!in.Array(skeleton.Parents) || !in.Array(skeleton.Rest) || !in.Array(skeleton.InverseBind))
+				return false;
+			if (skeleton.Parents.size() != joints || skeleton.Rest.size() != joints || skeleton.InverseBind.size() != joints)
+				return false;
+			for (uint32_t joint = 0; joint < joints; joint++)
+				if (skeleton.Parents[joint] >= int32_t(joint))
+					return false;
+		}
 
 		if (!ReadTextures(in, data.Textures))
 			return false;
@@ -278,12 +294,16 @@ namespace Game
 		const size_t textures = data.Textures.size();
 		for (ModelMesh& mesh : data.Meshes)
 		{
-			uint8_t skinned = 0;
+			uint8_t flags = 0;
 			if (!in.String(mesh.Name) || !in.Value(mesh.FirstIndex) || !in.Value(mesh.IndexCount) || !in.Value(mesh.Texture) || !in.Value(mesh.Surface) || !in.Value(mesh.Normal) || !in.Value(mesh.Color) || !in.Value(mesh.Emissive)
-				|| !in.Value(mesh.Roughness) || !in.Value(mesh.Metallic) || !in.Value(mesh.AlphaCutoff) || !in.Value(mesh.Min) || !in.Value(mesh.Max) || !in.Value(skinned))
+				|| !in.Value(mesh.Emission) || !in.Value(mesh.Roughness) || !in.Value(mesh.Metallic) || !in.Value(mesh.AlphaCutoff) || !in.Value(mesh.Min) || !in.Value(mesh.Max) || !in.Value(flags) || !in.Value(mesh.Skeleton))
 				return false;
-			mesh.Skinned = skinned != 0;
+			mesh.Skinned = (flags & 1) != 0;
+			mesh.DoubleSided = (flags & 2) == 0;
+			mesh.Water = (flags & 4) != 0;
 			if (uint64_t(mesh.FirstIndex) + mesh.IndexCount > data.Indices.size() || !ValidTexture(mesh.Texture, textures) || !ValidTexture(mesh.Surface, textures) || !ValidTexture(mesh.Normal, textures))
+				return false;
+			if (mesh.Skinned ? mesh.Skeleton >= skeletons : mesh.Skeleton != NoSkeleton)
 				return false;
 		}
 
@@ -292,7 +312,8 @@ namespace Game
 			return false;
 		data.Clips.resize(clips);
 		for (ModelClip& clip : data.Clips)
-			if (!in.String(clip.Name) || !in.Value(clip.FrameRate) || !in.Value(clip.FrameCount) || !in.Array(clip.Frames) || clip.Frames.size() != size_t(clip.FrameCount) * joints || clip.FrameCount == 0 || clip.FrameRate <= 0.0f)
+			if (!in.String(clip.Name) || !in.Value(clip.Skeleton) || clip.Skeleton >= skeletons || !in.Value(clip.FrameRate) || !in.Value(clip.FrameCount) || !in.Array(clip.Frames)
+				|| clip.Frames.size() != size_t(clip.FrameCount) * data.Skeletons[clip.Skeleton].JointCount() || clip.FrameCount == 0 || clip.FrameRate <= 0.0f)
 				return false;
 
 		uint32_t materials = 0;
@@ -326,8 +347,8 @@ namespace Game
 		const uint32_t vertexBase = uint32_t(target.Vertices.size());
 		const uint32_t indexBase = uint32_t(target.Indices.size());
 		const auto offset = [&](uint32_t index) { return index == NoTexture ? NoTexture : index + textureBase; };
-		if (target.Skeleton.Names.empty())
-			target.Skeleton = std::move(pack.Skeleton);
+		const uint32_t skeletonBase = uint32_t(target.Skeletons.size());
+		std::move(pack.Skeletons.begin(), pack.Skeletons.end(), std::back_inserter(target.Skeletons));
 		std::move(pack.Textures.begin(), pack.Textures.end(), std::back_inserter(target.Textures));
 		target.Vertices.insert(target.Vertices.end(), pack.Vertices.begin(), pack.Vertices.end());
 		for (const uint32_t index : pack.Indices)
@@ -338,9 +359,15 @@ namespace Game
 			mesh.Texture = offset(mesh.Texture);
 			mesh.Surface = offset(mesh.Surface);
 			mesh.Normal = offset(mesh.Normal);
+			if (mesh.Skeleton != NoSkeleton)
+				mesh.Skeleton += skeletonBase;
 			target.Meshes.push_back(std::move(mesh));
 		}
-		std::move(pack.Clips.begin(), pack.Clips.end(), std::back_inserter(target.Clips));
+		for (ModelClip& clip : pack.Clips)
+		{
+			clip.Skeleton += skeletonBase;
+			target.Clips.push_back(std::move(clip));
+		}
 		for (ModelMaterial& material : pack.Materials)
 		{
 			material.Albedo = offset(material.Albedo);

@@ -31,6 +31,11 @@ namespace Game
 		glm::vec3 Offset{ 0.0f };
 		glm::vec3 Power{ 1.0f };
 		float Saturation = 1.0f;
+		float MidSaturation = 0.0f;
+		glm::vec3 Shadows{ 1.0f };
+		glm::vec3 Highlights{ 1.0f };
+
+		bool operator==(const ColorGrade&) const = default;
 	};
 
 	class PostProcess
@@ -45,6 +50,7 @@ namespace Game
 		void SetGrade(const ColorGrade& grade);
 		bool LoadGradingLut(const char* path, std::string& error);
 		const ColorGrade& GetGrade() const { return m_Grade; }
+		bool HasCustomLut() const { return m_CustomLut; }
 		bool IsReady() const { return m_Composite != nullptr; }
 
 		float BloomStrength = 0.3f;
@@ -66,5 +72,6 @@ namespace Game
 		std::unique_ptr<Rdn::Sampler> m_Sampler;
 		std::unique_ptr<Rdn::GpuImage> m_GradingLut;
 		ColorGrade m_Grade;
+		bool m_CustomLut = false;
 	};
 }

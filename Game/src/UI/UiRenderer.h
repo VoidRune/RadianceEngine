@@ -37,11 +37,18 @@ namespace Game
 			float Time;
 		};
 
+		enum class Program : uint8_t
+		{
+			Main,
+			Sigil,
+			Card,
+		};
+
 		struct Run
 		{
 			uint32_t First = 0;
 			uint32_t Count = 0;
-			bool Sigil = false;
+			Program Kind = Program::Main;
 		};
 
 		Rdn::Device& m_Device;
@@ -49,8 +56,10 @@ namespace Game
 		std::unique_ptr<Rdn::Shader> m_VertexShader;
 		std::unique_ptr<Rdn::Shader> m_FragmentShader;
 		std::unique_ptr<Rdn::Shader> m_SigilShader;
+		std::unique_ptr<Rdn::Shader> m_CardShader;
 		std::unique_ptr<Rdn::Pipeline> m_Pipeline;
 		std::unique_ptr<Rdn::Pipeline> m_SigilPipeline;
+		std::unique_ptr<Rdn::Pipeline> m_CardPipeline;
 		std::vector<Run> m_Runs;
 		std::unique_ptr<Rdn::Sampler> m_Sampler;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_Buffer;

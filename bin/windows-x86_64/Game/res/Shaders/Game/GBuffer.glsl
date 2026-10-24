@@ -35,3 +35,8 @@ float DepthFade(float focusHeight, float worldHeight)
 {
 	return clamp((focusHeight - worldHeight - 1.6) / 2.5, 0.0, 0.88);
 }
+
+float Haze(float focusHeight, float worldHeight)
+{
+	return 0.92 * (1.0 - exp(-max(focusHeight - worldHeight - 2.5, 0.0) / 15.0));
+}

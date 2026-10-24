@@ -1173,15 +1173,16 @@ namespace Rdn
 
         for (size_t i = 0; i < desc.ColorAttachmentFormats.size(); i++)
         {
+            const BlendMode blend = i < desc.ColorBlendModes.size() ? desc.ColorBlendModes[i] : desc.Blend;
             VkPipelineColorBlendAttachmentState att{};
             att.colorWriteMask = static_cast<VkColorComponentFlags>(i < desc.ColorWriteMasks.size() ? desc.ColorWriteMasks[i] : ColorComponent::All);
-            att.blendEnable = desc.Blend != BlendMode::Opaque ? VK_TRUE : VK_FALSE;
-            att.srcColorBlendFactor = desc.Blend == BlendMode::Alpha ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
-            att.dstColorBlendFactor = desc.Blend == BlendMode::Additive ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-            att.colorBlendOp = VK_BLEND_OP_ADD;
+            att.blendEnable = blend != BlendMode::Opaque ? VK_TRUE : VK_FALSE;
+            att.srcColorBlendFactor = blend == BlendMode::Alpha ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
+            att.dstColorBlendFactor = blend == BlendMode::Additive || blend == BlendMode::Max ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            att.colorBlendOp = blend == BlendMode::Max ? VK_BLEND_OP_MAX : VK_BLEND_OP_ADD;
             att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-            att.dstAlphaBlendFactor = desc.Blend == BlendMode::Additive ? VK_BLEND_FACTOR_ONE : desc.Blend == BlendMode::Alpha ? VK_BLEND_FACTOR_ZERO : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-            att.alphaBlendOp = VK_BLEND_OP_ADD;
+            att.dstAlphaBlendFactor = blend == BlendMode::Additive || blend == BlendMode::Max ? VK_BLEND_FACTOR_ONE : blend == BlendMode::Alpha ? VK_BLEND_FACTOR_ZERO : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            att.alphaBlendOp = blend == BlendMode::Max ? VK_BLEND_OP_MAX : VK_BLEND_OP_ADD;
             blendAttachments.push_back(att);
         }
 
@@ -1585,5 +1586,26 @@ namespace Rdn
             out += "\n";
         }
         return out;
+    }
+
+    MemoryUsage ResourceAllocator::GetDeviceLocalUsage() const
+    {
+        const VkPhysicalDeviceMemoryProperties* memoryProperties = nullptr;
+        vmaGetMemoryProperties(toVk(m_Allocator), &memoryProperties);
+
+        std::vector<VmaBudget> budgets(memoryProperties->memoryHeapCount);
+        vmaGetHeapBudgets(toVk(m_Allocator), budgets.data());
+
+        const bool driverBudget = m_Device->IsExtensionEnabled(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+        MemoryUsage usage;
+        for (uint32_t heap = 0; heap < memoryProperties->memoryHeapCount; heap++)
+        {
+            if (!(memoryProperties->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT))
+                continue;
+            usage.Allocated += budgets[heap].statistics.allocationBytes;
+            usage.Used += driverBudget ? budgets[heap].usage : budgets[heap].statistics.blockBytes;
+            usage.Budget += budgets[heap].budget;
+        }
+        return usage;
     }
 }

@@ -1,0 +1,621 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v4.5.49",
+  "version": "2.0"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "name": "Scene",
+   "nodes": [
+    0,
+    1,
+    2
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "ObsidianCluster_A"
+  },
+  {
+   "mesh": 1,
+   "name": "ObsidianCluster_B",
+   "translation": [
+    3.5,
+    0,
+    0
+   ]
+  },
+  {
+   "mesh": 2,
+   "name": "ObsidianCluster_C",
+   "translation": [
+    7,
+    0,
+    0
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "emissiveFactor": [
+    1.0,
+    0.3,
+    0.06
+   ],
+   "emissiveTexture": {
+    "index": 0
+   },
+   "name": "Basalt",
+   "normalTexture": {
+    "index": 1
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 2
+    },
+    "metallicRoughnessTexture": {
+     "index": 3
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 3
+   },
+   "extensions": {
+    "KHR_materials_emissive_strength": {
+     "emissiveStrength": 1.6
+    }
+   }
+  },
+  {
+   "emissiveFactor": [
+    1.0,
+    0.38,
+    0.08
+   ],
+   "emissiveTexture": {
+    "index": 4
+   },
+   "name": "Obsidian",
+   "normalTexture": {
+    "index": 5
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 6
+    },
+    "metallicRoughnessTexture": {
+     "index": 7
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 7
+   },
+   "extensions": {
+    "KHR_materials_emissive_strength": {
+     "emissiveStrength": 3.5
+    }
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "ObsidianCluster_A",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    },
+    {
+     "attributes": {
+      "POSITION": 4,
+      "NORMAL": 5,
+      "TEXCOORD_0": 6
+     },
+     "indices": 7,
+     "material": 1
+    }
+   ]
+  },
+  {
+   "name": "ObsidianCluster_B",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 8,
+      "NORMAL": 9,
+      "TEXCOORD_0": 10
+     },
+     "indices": 11,
+     "material": 0
+    },
+    {
+     "attributes": {
+      "POSITION": 12,
+      "NORMAL": 13,
+      "TEXCOORD_0": 14
+     },
+     "indices": 15,
+     "material": 1
+    }
+   ]
+  },
+  {
+   "name": "ObsidianCluster_C",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 16,
+      "NORMAL": 17,
+      "TEXCOORD_0": 18
+     },
+     "indices": 19,
+     "material": 0
+    },
+    {
+     "attributes": {
+      "POSITION": 20,
+      "NORMAL": 21,
+      "TEXCOORD_0": 22
+     },
+     "indices": 23,
+     "material": 1
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  },
+  {
+   "sampler": 0,
+   "source": 1
+  },
+  {
+   "sampler": 0,
+   "source": 2
+  },
+  {
+   "sampler": 0,
+   "source": 3
+  },
+  {
+   "sampler": 0,
+   "source": 4
+  },
+  {
+   "sampler": 0,
+   "source": 5
+  },
+  {
+   "sampler": 0,
+   "source": 6
+  },
+  {
+   "sampler": 0,
+   "source": 7
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/png",
+   "name": "ObsidianCluster_Basalt_emit.png",
+   "uri": "ObsidianCluster_Basalt_emit.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "ObsidianCluster_Basalt_normal.png",
+   "uri": "ObsidianCluster_Basalt_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "ObsidianCluster_Basalt_albedo.png",
+   "uri": "ObsidianCluster_Basalt_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "ObsidianCluster_Basalt_orm.png",
+   "uri": "ObsidianCluster_Basalt_orm.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "ObsidianCluster_Obsidian_emit.png",
+   "uri": "ObsidianCluster_Obsidian_emit.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "ObsidianCluster_Obsidian_normal.png",
+   "uri": "ObsidianCluster_Obsidian_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "ObsidianCluster_Obsidian_albedo.png",
+   "uri": "ObsidianCluster_Obsidian_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "ObsidianCluster_Obsidian_orm.png",
+   "uri": "ObsidianCluster_Obsidian_orm.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 1392,
+   "max": [
+    0.6765857934951782,
+    0.17125160992145538,
+    0.6764360666275024
+   ],
+   "min": [
+    -0.7016520500183105,
+    -0.44999998807907104,
+    -0.7065517902374268
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 1392,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 1392,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 4242,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5126,
+   "count": 1903,
+   "max": [
+    0.5689567923545837,
+    2.176152467727661,
+    0.6106935739517212
+   ],
+   "min": [
+    -0.7404329180717468,
+    -0.23251964151859283,
+    -0.6477358341217041
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 1903,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 1903,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5123,
+   "count": 6000,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 1433,
+   "max": [
+    0.7652233839035034,
+    0.1665072739124298,
+    0.6102567315101624
+   ],
+   "min": [
+    -0.7606610059738159,
+    -0.44999998807907104,
+    -0.7296780943870544
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5126,
+   "count": 1433,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 10,
+   "componentType": 5126,
+   "count": 1433,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 11,
+   "componentType": 5123,
+   "count": 4380,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 12,
+   "componentType": 5126,
+   "count": 1693,
+   "max": [
+    0.6535170078277588,
+    1.4502042531967163,
+    0.5761431455612183
+   ],
+   "min": [
+    -0.6385090351104736,
+    -0.23423169553279877,
+    -0.5963867902755737
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 13,
+   "componentType": 5126,
+   "count": 1693,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 14,
+   "componentType": 5126,
+   "count": 1693,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 15,
+   "componentType": 5123,
+   "count": 5322,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 16,
+   "componentType": 5126,
+   "count": 1287,
+   "max": [
+    0.7361116409301758,
+    0.14316809177398682,
+    0.6995477676391602
+   ],
+   "min": [
+    -0.6497316956520081,
+    -0.44999998807907104,
+    -0.5806812047958374
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 17,
+   "componentType": 5126,
+   "count": 1287,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 18,
+   "componentType": 5126,
+   "count": 1287,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 19,
+   "componentType": 5123,
+   "count": 3906,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 20,
+   "componentType": 5126,
+   "count": 1839,
+   "max": [
+    0.5522934794425964,
+    0.9177578687667847,
+    0.5137465596199036
+   ],
+   "min": [
+    -0.6268775463104248,
+    -0.241072878241539,
+    -0.5014631152153015
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 21,
+   "componentType": 5126,
+   "count": 1839,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 22,
+   "componentType": 5126,
+   "count": 1839,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 23,
+   "componentType": 5123,
+   "count": 5850,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 16704,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 16704,
+   "byteOffset": 16704,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 11136,
+   "byteOffset": 33408,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 8484,
+   "byteOffset": 44544,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 22836,
+   "byteOffset": 53028,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 22836,
+   "byteOffset": 75864,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15224,
+   "byteOffset": 98700,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 12000,
+   "byteOffset": 113924,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 17196,
+   "byteOffset": 125924,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 17196,
+   "byteOffset": 143120,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 11464,
+   "byteOffset": 160316,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 8760,
+   "byteOffset": 171780,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 20316,
+   "byteOffset": 180540,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 20316,
+   "byteOffset": 200856,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 13544,
+   "byteOffset": 221172,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 10644,
+   "byteOffset": 234716,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15444,
+   "byteOffset": 245360,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15444,
+   "byteOffset": 260804,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 10296,
+   "byteOffset": 276248,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 7812,
+   "byteOffset": 286544,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 22068,
+   "byteOffset": 294356,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 22068,
+   "byteOffset": 316424,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 14712,
+   "byteOffset": 338492,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 11700,
+   "byteOffset": 353204,
+   "target": 34963
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 364904,
+   "uri": "ObsidianCluster.bin"
+  }
+ ],
+ "extensionsUsed": [
+  "KHR_materials_emissive_strength"
+ ]
+}

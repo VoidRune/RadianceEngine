@@ -17,7 +17,7 @@
 
 namespace
 {
-	constexpr uint32_t BakerVersion = 4;
+	constexpr uint32_t BakerVersion = 9;
 
 	uint64_t Hash(uint64_t hash, const void* data, size_t size)
 	{

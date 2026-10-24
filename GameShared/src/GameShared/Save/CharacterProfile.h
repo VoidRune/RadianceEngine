@@ -1,4 +1,6 @@
 #pragma once
+#include "GameShared/Content/Brawl.h"
+#include "GameShared/Content/Cosmetics.h"
 #include "GameShared/Content/Items.h"
 #include <filesystem>
 #include <optional>
@@ -11,6 +13,11 @@ namespace Game
 		std::string Name;
 		StarterKit Kit = StarterKit::Arcanist;
 		GearSet Gear;
+		BrawlSpells Spells = DefaultBrawlSpells;
+		uint32_t Falls = 0;
+		uint64_t Starlit = 0;
+		uint8_t Honors = 0;
+		Cosmetics Style;
 	};
 
 	inline constexpr const char* ProfileDirectory = "Saves";

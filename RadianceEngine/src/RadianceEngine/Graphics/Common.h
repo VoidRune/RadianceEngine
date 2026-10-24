@@ -381,6 +381,7 @@ namespace Rdn
         Alpha,
         Premultiplied,
         Additive,
+        Max,
     };
 
     enum class ColorComponent : uint8_t

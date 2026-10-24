@@ -30,9 +30,11 @@ namespace Game
 		{
 			m_Allocator.ReleaseResource(m_Pipeline.get());
 			m_Allocator.ReleaseResource(m_SigilPipeline.get());
+			m_Allocator.ReleaseResource(m_CardPipeline.get());
 			m_Allocator.ReleaseResource(m_VertexShader.get());
 			m_Allocator.ReleaseResource(m_FragmentShader.get());
 			m_Allocator.ReleaseResource(m_SigilShader.get());
+			m_Allocator.ReleaseResource(m_CardShader.get());
 		}
 	}
 
@@ -41,14 +43,17 @@ namespace Game
 		Rdn::ShaderDesc vertexDesc;
 		Rdn::ShaderDesc fragmentDesc;
 		Rdn::ShaderDesc sigilDesc;
-		if (!Rdn::ShaderCompiler::Compile("res/Shaders/Game/Ui.vert", vertexDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/Ui.frag", fragmentDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/UiSigil.frag", sigilDesc))
+		Rdn::ShaderDesc cardDesc;
+		if (!Rdn::ShaderCompiler::Compile("res/Shaders/Game/Ui.vert", vertexDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/Ui.frag", fragmentDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/UiSigil.frag", sigilDesc) || !Rdn::ShaderCompiler::Compile("res/Shaders/Game/UiCard.frag", cardDesc))
 			return false;
 		m_VertexShader = std::make_unique<Rdn::Shader>();
 		m_FragmentShader = std::make_unique<Rdn::Shader>();
 		m_SigilShader = std::make_unique<Rdn::Shader>();
+		m_CardShader = std::make_unique<Rdn::Shader>();
 		m_Allocator.CreateShader(m_VertexShader.get(), vertexDesc);
 		m_Allocator.CreateShader(m_FragmentShader.get(), fragmentDesc);
 		m_Allocator.CreateShader(m_SigilShader.get(), sigilDesc);
+		m_Allocator.CreateShader(m_CardShader.get(), cardDesc);
 		const auto create = [&](Rdn::Shader* fragment)
 		{
 			auto pipeline = std::make_unique<Rdn::Pipeline>();
@@ -65,6 +70,7 @@ namespace Game
 		};
 		m_Pipeline = create(m_FragmentShader.get());
 		m_SigilPipeline = create(m_SigilShader.get());
+		m_CardPipeline = create(m_CardShader.get());
 		return true;
 	}
 
@@ -118,9 +124,10 @@ namespace Game
 		m_Runs.clear();
 		for (uint32_t index = 0; index < count; index++)
 		{
-			const bool sigil = primitives[index].Info.x == uint32_t(UiMode::Sigil);
-			if (m_Runs.empty() || m_Runs.back().Sigil != sigil)
-				m_Runs.push_back({ index, 0, sigil });
+			const uint32_t mode = primitives[index].Info.x;
+			const Program kind = mode == uint32_t(UiMode::Sigil) ? Program::Sigil : mode == uint32_t(UiMode::Card) ? Program::Card : Program::Main;
+			if (m_Runs.empty() || m_Runs.back().Kind != kind)
+				m_Runs.push_back({ index, 0, kind });
 			m_Runs.back().Count++;
 		}
 
@@ -141,18 +148,18 @@ namespace Game
 					const Rdn::GpuImage& image = *m_Textures[slot < m_TextureCount ? slot : 0];
 					write.AddWrite(Rdn::ImageWrite(1, Rdn::DescriptorType::CombinedImageSampler, image.GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_Sampler->GetHandle(), slot));
 				}
-				Rdn::DescriptorWrite sigilWrite;
-				sigilWrite.AddWrite(buffer);
-				std::optional<bool> bound;
+				Rdn::DescriptorWrite bufferWrite;
+				bufferWrite.AddWrite(buffer);
+				std::optional<Program> bound;
 				for (const Run& run : m_Runs)
 				{
-					if (bound != run.Sigil)
+					if (bound != run.Kind)
 					{
-						const Rdn::Pipeline& pipeline = run.Sigil ? *m_SigilPipeline : *m_Pipeline;
+						const Rdn::Pipeline& pipeline = run.Kind == Program::Sigil ? *m_SigilPipeline : run.Kind == Program::Card ? *m_CardPipeline : *m_Pipeline;
 						cmd.BindPipeline(pipeline.GetHandle());
-						cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline.GetLayout(), 0, run.Sigil ? sigilWrite : write);
+						cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline.GetLayout(), 0, run.Kind == Program::Main ? write : bufferWrite);
 						cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, pipeline.GetLayout(), &m_Constants, sizeof(m_Constants));
-						bound = run.Sigil;
+						bound = run.Kind;
 					}
 					cmd.Draw(6, run.Count, 0, run.First);
 				}

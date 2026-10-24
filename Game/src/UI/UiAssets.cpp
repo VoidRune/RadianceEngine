@@ -199,23 +199,68 @@ namespace Game
 		case AbilityId::Swap: return UiIcon::MagicPortal;
 		case AbilityId::MirrorWard: return UiIcon::CheckedShield;
 		case AbilityId::Frostbite: return UiIcon::IceSpear;
+		case AbilityId::ChainHook: return UiIcon::SpearHook;
+		case AbilityId::Firebomb: return UiIcon::HighShot;
+		case AbilityId::SplittingBolt: return UiIcon::SplitArrows;
+		case AbilityId::StormStrike: return UiIcon::ArcingBolt;
+		case AbilityId::Ignite: return UiIcon::Fireball;
+		case AbilityId::ShatterBurst: return UiIcon::Snowflake;
 		default: return UiIcon::Gems;
 		}
 	}
 
-	UiIcon IconFor(BoonId boon)
+	UiIcon IconFor(CardId card)
 	{
-		switch (boon)
+		switch (card)
 		{
-		case BoonId::FleetFoot: return UiIcon::Sprint;
-		case BoonId::HeavyHand: return UiIcon::Hand;
-		case BoonId::Anchored: return UiIcon::AnvilImpact;
-		case BoonId::Firewalker: return UiIcon::Fireball;
-		case BoonId::Vigor: return UiIcon::HeartPlus;
-		case BoonId::Quickening: return UiIcon::Stopwatch;
-		case BoonId::SwiftSpells: return UiIcon::Sparkles;
-		case BoonId::Nimble: return UiIcon::Dodge;
-		case BoonId::SecondWind: return UiIcon::LifeInTheBalance;
+		case CardId::SplittingEmber: return UiIcon::SplitArrows;
+		case CardId::LingeringGale: return UiIcon::Whirlwind;
+		case CardId::DeflectingGale: return UiIcon::Shield;
+		case CardId::ShatteringImpact: return UiIcon::EarthCrack;
+		case CardId::TwinComets: return UiIcon::MeteorImpact;
+		case CardId::Afterimage: return UiIcon::Teleport;
+		case CardId::Aftershock: return UiIcon::Aura;
+		case CardId::Implosion: return UiIcon::MagicSwirl;
+		case CardId::Pinball: return UiIcon::ArcingBolt;
+		case CardId::Overcharge: return UiIcon::LightningArc;
+		case CardId::HeartSwap: return UiIcon::HeartDrop;
+		case CardId::ThornedMirror: return UiIcon::ThornedArrow;
+		case CardId::BlackIce: return UiIcon::Snowflake;
+		case CardId::GlassCannon: return UiIcon::SkullCrack;
+		case CardId::Featherfall: return UiIcon::HighShot;
+		case CardId::Echo: return UiIcon::Dodge;
+		case CardId::HeavyRobes: return UiIcon::Robe;
+		case CardId::LongChain: return UiIcon::SpearHook;
+		case CardId::Whiplash: return UiIcon::Sprint;
+		case CardId::ClusterBomb: return UiIcon::ArrowCluster;
+		case CardId::StickyFire: return UiIcon::Fireball;
+		case CardId::Fivefold: return UiIcon::StrikingArrows;
+		case CardId::SeekerShards: return UiIcon::Crosshair;
+		case CardId::ForkedLightning: return UiIcon::LightningArc;
+		case CardId::StaticCharge: return UiIcon::Padlock;
+		case CardId::DeepWell: return UiIcon::PotionBall;
+		case CardId::Quickening: return UiIcon::Cycle;
+		case CardId::Siphon: return UiIcon::Vortex;
+		case CardId::Brimming: return UiIcon::FizzingFlask;
+		case CardId::BloodPact: return UiIcon::BleedingHeart;
+		case CardId::LastStand: return UiIcon::BrokenShield;
+		case CardId::VampiricEmbers: return UiIcon::Heartburn;
+		case CardId::Kindling: return UiIcon::BurningEmbers;
+		case CardId::Wildfire: return UiIcon::FireRing;
+		case CardId::Brittle: return UiIcon::FrozenBlock;
+		case CardId::Shatter: return UiIcon::IceBolt;
+		case CardId::Conductive: return UiIcon::LightningHelix;
+		case CardId::Overload: return UiIcon::PowerLightning;
+		case CardId::Barrier: return UiIcon::EnergyShield;
+		case CardId::SecondWind: return UiIcon::HeartBottle;
+		case CardId::Precise: return UiIcon::OnTarget;
+		case CardId::ApexOfMagic: return UiIcon::StarSwirl;
+		case CardId::ManaSingularity: return UiIcon::Sunbeams;
+		case CardId::MindOverMatter: return UiIcon::PsychicWaves;
+		case CardId::BloodMagic: return UiIcon::DrippingBlade;
+		case CardId::EchoChamber: return UiIcon::EchoRipples;
+		case CardId::UnstableArcana: return UiIcon::UnstableOrb;
+		case CardId::Leyline: return UiIcon::Meditation;
 		default: return UiIcon::Upgrade;
 		}
 	}
@@ -302,7 +347,19 @@ namespace Game
 		case StationKind::Lapidary: return UiIcon::Gems;
 		case StationKind::MissionBoard: return UiIcon::ScrollUnfurled;
 		case StationKind::ProvingGrounds: return UiIcon::CrossedSwords;
+		case StationKind::WishingVoid: return UiIcon::Coins;
+		case StationKind::Chess: return UiIcon::ChessKnight;
 		default: return UiIcon::Chest;
+		}
+	}
+
+	UiIcon IconFor(Headwear headwear)
+	{
+		switch (headwear)
+		{
+		case Headwear::Hood: return UiIcon::Hood;
+		case Headwear::Bare: return UiIcon::Aura;
+		default: return UiIcon::PointyHat;
 		}
 	}
 

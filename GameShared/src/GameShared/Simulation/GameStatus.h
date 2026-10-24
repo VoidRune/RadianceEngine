@@ -49,5 +49,6 @@ namespace Game
 		uint8_t Entrants = 0;
 		StormState Storm;
 		BrawlStatus Brawl;
+		uint16_t HubFalls = 0;
 	};
 }

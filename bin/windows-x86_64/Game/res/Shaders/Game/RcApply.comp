@@ -138,7 +138,7 @@ void main()
 	vec4 scene = imageLoad(SceneColor, pixel);
 	uint view = Rc.Options.x;
 	if (view == ViewLit)
-		scene.rgb += ambient * (1.0 - DepthFade(Rc.Shading.x, world.y));
+		scene.rgb += ambient * (1.0 - DepthFade(Rc.Shading.x, world.y)) * (1.0 - Haze(Rc.Shading.w, world.y));
 	else if (view == ViewAmbient)
 		scene.rgb += ambient;
 	else if (view == ViewIrradiance)

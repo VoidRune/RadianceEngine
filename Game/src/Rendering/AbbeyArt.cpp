@@ -228,14 +228,13 @@ namespace Game
 				Ground();
 				Walls();
 				BuildShapes();
-				const uint32_t base = m_Renderer.SetLevelGeometry(m_Vertices, m_Indices, m_Meshes);
+				const uint32_t base = m_Renderer.AddLevelGeometry(m_Vertices, m_Indices, m_Meshes);
 				Props();
 				for (const PendingItem& item : m_Pending)
 					AddItem(base + item.Mesh, item.Transform, item.Min, item.Max, item.Cut);
 				Wilds();
 				Roofs();
 				SkyMask();
-				m_Scene.LevelGeometry = true;
 				if (!m_Missing.empty())
 				{
 					std::string list;
@@ -286,6 +285,7 @@ namespace Game
 				item.Instance = m_Renderer.MakeModelInstance(mesh, transform, NoPalette, tint, 0.0f, low.y);
 				item.Center = { (low.x + high.x) * 0.5f, (low.z + high.z) * 0.5f };
 				item.Reach = 0.5f * std::sqrt((high.x - low.x) * (high.x - low.x) + (high.z - low.z) * (high.z - low.z));
+				item.Extent = { (high.x - low.x) * 0.5f, (high.z - low.z) * 0.5f };
 				item.Base = low.y;
 				item.Top = high.y;
 				item.Cut = cut;

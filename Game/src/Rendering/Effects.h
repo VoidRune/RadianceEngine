@@ -30,6 +30,7 @@ namespace Game
 		Shockwave,
 		Flash,
 		Gold,
+		Snow,
 		Count,
 	};
 
@@ -78,6 +79,12 @@ namespace Game
 		Campfire,
 		LanternFlame,
 		CandleFlame,
+		Gust,
+		Starstep,
+		BalloonPop,
+		CoinToss,
+		BombBurst,
+		Snowfall,
 		Count,
 	};
 

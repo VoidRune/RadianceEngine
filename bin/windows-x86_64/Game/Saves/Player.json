@@ -356,6 +356,7 @@
 			"rarity": "Legendary"
 		}
 	],
+	"falls": 47,
 	"gear": {
 		"amulet": {
 			"affixes": [
@@ -611,15 +612,41 @@
 			"skill": "Meteor"
 		}
 	],
+	"honors": [
+		"skydiver",
+		"stargazer",
+		"faithful"
+	],
 	"kit": "Arcanist",
+	"look": {
+		"headwear": "hood",
+		"outfit": "wanderer"
+	},
 	"materials": {
-		"arcaneDust": 273,
-		"gold": 252614,
-		"shards": 1613,
-		"starsteel": 175,
+		"arcaneDust": 316,
+		"gold": 260534,
+		"shards": 1692,
+		"starsteel": 181,
 		"voidShards": 30
 	},
 	"name": "Player",
+	"spells": [
+		"StormStrike",
+		"GravityWell",
+		"Comet"
+	],
+	"starlit": [
+		"EmberBolt",
+		"Gust",
+		"Comet",
+		"Warp",
+		"Shockwave",
+		"GravityWell",
+		"ArcLightning",
+		"Swap",
+		"MirrorWard",
+		"Frostbite"
+	],
 	"stash": [
 		{
 			"affixes": [
@@ -1083,8 +1110,29 @@
 			"power": 8.18401,
 			"rarity": "Legendary"
 		},
-		null,
-		null,
+		{
+			"affixes": [
+				{
+					"stat": "FireDamage",
+					"tier": 1,
+					"value": 0.08478
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 1,
+					"value": 0.01157
+				}
+			],
+			"base": "Spear",
+			"level": 3,
+			"power": 1.14069,
+			"rarity": "Rare"
+		},
+		{
+			"base": "Gem",
+			"level": 2,
+			"skill": "IceSpear"
+		},
 		{
 			"affixes": [
 				{
@@ -1119,17 +1167,56 @@
 			"rarity": "Mythic"
 		},
 		{
-			"base": "Gem",
-			"level": 2,
-			"skill": "Volley"
+			"affixes": [
+				{
+					"stat": "AttackSpeed",
+					"tier": 1,
+					"value": 0.0548
+				},
+				{
+					"stat": "ManaRegen",
+					"tier": 1,
+					"value": 0.73214
+				},
+				{
+					"stat": "ColdResist",
+					"tier": 1,
+					"value": 0.06542
+				}
+			],
+			"base": "Ring",
+			"level": 3,
+			"power": 1.20756,
+			"rarity": "Rare"
 		},
-		null,
+		{
+			"affixes": [
+				{
+					"stat": "ProjectileSpeed",
+					"tier": 1,
+					"value": 0.10114
+				},
+				{
+					"stat": "ColdDamage",
+					"tier": 1,
+					"value": 0.09571
+				}
+			],
+			"base": "Wand",
+			"level": 3,
+			"power": 1.19147,
+			"rarity": "Rare"
+		},
 		{
 			"base": "Gem",
 			"level": 6,
 			"skill": "Blink"
 		},
-		null,
+		{
+			"base": "Gem",
+			"level": 1,
+			"skill": "Meteor"
+		},
 		{
 			"base": "Gem",
 			"level": 5,

@@ -13,4 +13,5 @@ namespace Game
 	void BlendPose(Pose& target, const Pose& source, float weight, uint32_t joints, const JointWeights* mask = nullptr);
 	void ComputeGlobals(const ModelSkeleton& skeleton, const Pose& pose, JointMatrices& globals);
 	void ComputeSkin(const ModelSkeleton& skeleton, const JointMatrices& globals, JointMatrices& skin);
+	ModelClip RetargetClip(const ModelClip& clip, const ModelSkeleton& from, const ModelSkeleton& to, float armTuck = 0.0f);
 }

@@ -151,9 +151,8 @@ namespace Game
 			GetBounds(shape, min, max);
 			for (const Vec2 sample : { shape.Center, min, max, Vec2(min.x, max.y), Vec2(max.x, min.y) })
 			{
-				const int32_t x = int32_t(std::floor(sample.x));
-				const int32_t y = int32_t(std::floor(sample.y));
-				if (!map.IsWalkable(x, y) || m_Reserved[size_t(y) * size_t(map.GetWidth()) + size_t(x)] || std::abs(map.GetHeight(sample) - height) > 0.01f)
+				const TileCoord cell = map.CellAt(sample);
+				if (!map.IsWalkable(cell.X, cell.Y) || GetTerrain(map.GetTerrain(cell.X, cell.Y)).Style == TerrainStyle::Void || m_Reserved[size_t(cell.Y) * size_t(map.GetWidth()) + size_t(cell.X)] || std::abs(map.GetHeight(sample) - height) > 0.01f)
 					return false;
 			}
 			for (const Shape& other : m_Occupied)
@@ -186,9 +185,9 @@ namespace Game
 		m_Occupied.push_back(MakeWallShape(m_Level.Walls.back()));
 	}
 
-	int32_t LevelBuilder::Portal(Vec2 position, Vec2 destination, float destinationFacing, std::string label)
+	int32_t LevelBuilder::Portal(Vec2 position, Vec2 destination, float destinationFacing, std::string label, bool hidden)
 	{
-		m_Level.Portals.push_back({ .Position = position, .Destination = destination, .DestinationFacing = destinationFacing, .Label = std::move(label) });
+		m_Level.Portals.push_back({ .Position = position, .Destination = destination, .DestinationFacing = destinationFacing, .Label = std::move(label), .Hidden = hidden });
 		Reserve(position, 1.6f);
 		Reserve(destination, 1.6f);
 		return int32_t(m_Level.Portals.size() - 1);
@@ -223,6 +222,11 @@ namespace Game
 		m_Level.Stations.push_back({ kind, position, radius });
 	}
 
+	void LevelBuilder::Dummy(Vec2 position, Vec2 patrol, bool duck)
+	{
+		m_Level.Dummies.push_back({ position, patrol, duck });
+	}
+
 	void LevelBuilder::SpawnPoint(Vec2 position)
 	{
 		m_Level.SpawnPoints.push_back(position);
@@ -244,6 +248,12 @@ namespace Game
 	void LevelBuilder::Roof(const TileRect& area, float height)
 	{
 		m_Level.Roofs.push_back({ .Min = { float(area.X), float(area.Y) }, .Max = { float(area.Right()), float(area.Top()) }, .Height = height });
+	}
+
+	void LevelBuilder::SetRounded()
+	{
+		m_Level.Rounded = true;
+		m_Level.Map.RoundCorners();
 	}
 
 	Level LevelBuilder::Finish()

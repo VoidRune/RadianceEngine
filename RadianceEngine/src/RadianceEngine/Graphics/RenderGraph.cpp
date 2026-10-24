@@ -400,6 +400,16 @@ namespace Rdn
                 vkDestroyQueryPool(toVk(m_Device->GetLogicalDevice()), toVk(frame.Pool), nullptr);
     }
 
+    void RenderGraph::SetTimingEnabled(bool enabled)
+    {
+        if (enabled == m_TimingEnabled)
+            return;
+        m_TimingEnabled = enabled;
+        m_PassTimings.clear();
+        for (TimingFrame& frame : m_TimingFrames)
+            frame.Passes.clear();
+    }
+
     void RenderGraph::CollectTimings(uint32_t frameIndex)
     {
         m_RecordingTimings = nullptr;
@@ -426,7 +436,7 @@ namespace Rdn
                 const double scale = double(m_Device->GetProperties().TimestampPeriod) * 1e-6;
                 m_PassTimings.resize(frame.Passes.size());
                 for (size_t i = 0; i < frame.Passes.size(); i++)
-                    m_PassTimings[i] = { std::move(frame.Passes[i]), float(double(ticks[i * 2 + 1] - ticks[i * 2]) * scale) };
+                    m_PassTimings[i] = { std::move(frame.Passes[i]), float(double(ticks[i * 2 + 1] - ticks[i * 2]) * scale), float(double(ticks[i * 2] - ticks[0]) * scale) };
             }
         }
         frame.Passes.clear();

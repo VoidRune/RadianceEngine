@@ -21,6 +21,7 @@ namespace Game
 		float AreaScale = 1.0f;
 		uint8_t ExtraProjectiles = 0;
 		float PvpScale = 1.0f;
+		float RangeScale = 1.0f;
 
 		bool IsEmpty() const { return Ability == AbilityId::Count; }
 		bool operator==(const SkillTraits&) const = default;
@@ -44,6 +45,8 @@ namespace Game
 		float LifeSteal = 0.0f;
 		float Armor = 0.0f;
 		std::array<float, size_t(Element::Count)> Resist{};
+		float BloodRate = 0.0f;
+		uint8_t OverloadEvery = 0;
 
 		bool operator==(const PlayerTraits&) const = default;
 	};

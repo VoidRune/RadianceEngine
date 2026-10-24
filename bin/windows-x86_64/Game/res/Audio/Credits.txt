@@ -135,3 +135,16 @@ Sfx/Impact/Bone
     "Bones rattle" by congusbongus
     License: CC0
     https://opengameart.org/content/bones-rattle
+
+Sfx/Chess (Move, Capture, Promote)
+    Piece hits cut from "Chess_foley_1" by Amatsuuu (Freesound #629182) and "Chess Pieces Move
+    (Close)" by JJTaynos (Freesound #733927); the promotion sparkle is confirmation_002 from
+    "Interface Sounds" by Kenney
+    License: CC0
+    https://freesound.org/people/Amatsuuu/sounds/629182/
+    https://freesound.org/people/JJTaynos/sounds/733927/
+
+Sfx/Chess/Check
+    impactBell_heavy_000 from "Impact Sounds" and glass_001 from "Interface Sounds" by Kenney,
+    pitched and layered into a falling two-strike chime
+    License: CC0

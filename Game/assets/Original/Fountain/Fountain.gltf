@@ -1,0 +1,414 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v4.5.49",
+  "version": "2.0"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "Fountain"
+  }
+ ],
+ "materials": [
+  {
+   "name": "Stone",
+   "normalTexture": {
+    "index": 0
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 1
+    },
+    "metallicRoughnessTexture": {
+     "index": 2
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 2
+   }
+  },
+  {
+   "emissiveFactor": [
+    1.0,
+    0.42,
+    0.12
+   ],
+   "emissiveTexture": {
+    "index": 3
+   },
+   "name": "Ember",
+   "normalTexture": {
+    "index": 4
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 5
+    },
+    "metallicRoughnessTexture": {
+     "index": 6
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 6
+   },
+   "extensions": {
+    "KHR_materials_emissive_strength": {
+     "emissiveStrength": 4.0
+    }
+   }
+  },
+  {
+   "name": "Water",
+   "normalTexture": {
+    "index": 7
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 8
+    },
+    "metallicRoughnessTexture": {
+     "index": 9
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 9
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "Fountain",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    },
+    {
+     "attributes": {
+      "POSITION": 4,
+      "NORMAL": 5,
+      "TEXCOORD_0": 6
+     },
+     "indices": 7,
+     "material": 1
+    },
+    {
+     "attributes": {
+      "POSITION": 8,
+      "NORMAL": 9,
+      "TEXCOORD_0": 10
+     },
+     "indices": 11,
+     "material": 2
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  },
+  {
+   "sampler": 0,
+   "source": 1
+  },
+  {
+   "sampler": 0,
+   "source": 2
+  },
+  {
+   "sampler": 0,
+   "source": 3
+  },
+  {
+   "sampler": 0,
+   "source": 4
+  },
+  {
+   "sampler": 0,
+   "source": 5
+  },
+  {
+   "sampler": 0,
+   "source": 6
+  },
+  {
+   "sampler": 0,
+   "source": 7
+  },
+  {
+   "sampler": 0,
+   "source": 8
+  },
+  {
+   "sampler": 0,
+   "source": 9
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Stone_normal.png",
+   "uri": "Fountain_Stone_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Stone_albedo.png",
+   "uri": "Fountain_Stone_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Stone_orm.png",
+   "uri": "Fountain_Stone_orm.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Ember_emit.png",
+   "uri": "Fountain_Ember_emit.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Ember_normal.png",
+   "uri": "Fountain_Ember_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Ember_albedo.png",
+   "uri": "Fountain_Ember_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Ember_orm.png",
+   "uri": "Fountain_Ember_orm.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Water_normal.png",
+   "uri": "Fountain_Water_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Water_albedo.png",
+   "uri": "Fountain_Water_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Fountain_Water_orm.png",
+   "uri": "Fountain_Water_orm.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 11076,
+   "max": [
+    1.9800000190734863,
+    1.7280000448226929,
+    1.9800000190734863
+   ],
+   "min": [
+    -1.9800000190734863,
+    0,
+    -1.9800000190734863
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 11076,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 11076,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 37968,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5126,
+   "count": 158,
+   "max": [
+    0.09362854063510895,
+    2.0445268154144287,
+    0.09520502388477325
+   ],
+   "min": [
+    -0.09362854063510895,
+    1.6717051267623901,
+    -0.09520502388477325
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 158,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 158,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5123,
+   "count": 348,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 42,
+   "max": [
+    1.5700000524520874,
+    1.2619999647140503,
+    1.5700000524520874
+   ],
+   "min": [
+    -1.5700000524520874,
+    0.4699999988079071,
+    -1.5700000524520874
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5126,
+   "count": 42,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 10,
+   "componentType": 5126,
+   "count": 42,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 11,
+   "componentType": 5123,
+   "count": 120,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 132912,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 132912,
+   "byteOffset": 132912,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 88608,
+   "byteOffset": 265824,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 75936,
+   "byteOffset": 354432,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1896,
+   "byteOffset": 430368,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1896,
+   "byteOffset": 432264,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1264,
+   "byteOffset": 434160,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 696,
+   "byteOffset": 435424,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 504,
+   "byteOffset": 436120,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 504,
+   "byteOffset": 436624,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 336,
+   "byteOffset": 437128,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 240,
+   "byteOffset": 437464,
+   "target": 34963
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 437704,
+   "uri": "Fountain.bin"
+  }
+ ],
+ "extensionsUsed": [
+  "KHR_materials_emissive_strength"
+ ]
+}

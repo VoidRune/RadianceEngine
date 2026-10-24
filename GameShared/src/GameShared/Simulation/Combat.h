@@ -34,6 +34,8 @@ namespace Game
 		Vec2 PushDirection;
 		float PushReach = 0.0f;
 		bool Swap = false;
+		bool Slick = false;
+		bool Static = false;
 	};
 
 	struct DamageEvent
@@ -51,6 +53,10 @@ namespace Game
 	bool DealDamage(World& world, Entity target, const HitInfo& hit);
 	void StrikeArea(World& world, const AbilityDef& ability, int32_t damage, const AbilityContext& context);
 	void StrikeCircle(World& world, Vec2 center, float radius, const HitInfo& hit, Team side, float rewind);
+	void DeflectProjectiles(World& world, const AbilityContext& context, float reach, float halfArc);
+	void SplitBolts(World& world, Entity caster, uint32_t owner);
+	void ReelIn(World& world, Entity caster, uint32_t owner, Vec2 point);
+	void CancelRecast(World& world, Entity caster, AbilityId ability);
 	void DropLoot(World& world, const EnemyDef& def, const Enemy& enemy, Vec2 position);
 	void UpdateProjectiles(World& world, float dt);
 	void UpdateStrikes(World& world, float dt);

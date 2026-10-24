@@ -20,7 +20,7 @@ namespace Game
 		constexpr float DepthBiasTexels = 1.0f;
 	}
 
-	bool CompileVariant(const char* path, const char* define, Rdn::ShaderDesc& desc)
+	bool CompileVariant(const char* path, const char* define, Rdn::ShaderDesc& desc, Rdn::ShaderStage stage)
 	{
 		std::ifstream file(path, std::ios::binary);
 		std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -28,7 +28,7 @@ namespace Game
 		if (!file || line == std::string::npos)
 			return false;
 		source.insert(line + 1, std::string("#define ") + define + "\n#line 2\n");
-		return Rdn::ShaderCompiler::CompileFromSource(source, Rdn::ShaderStage::Compute, desc, path);
+		return Rdn::ShaderCompiler::CompileFromSource(source, stage, desc, path);
 	}
 
 	ShadowView FitShadowView(const WorldCamera& camera, const glm::vec3& sunDirection, float groundHeight, uint32_t resolution, glm::vec2& extent)
@@ -140,6 +140,8 @@ namespace Game
 			.EnvironmentSh = environment.Irradiance,
 			.EnvironmentParams = environment.Params,
 			.SkyMaskTransform = environment.SkyMaskTransform,
+			.Backdrop = glm::vec4(lighting.Floating ? 1.0f : 0.0f, lighting.FocusHeight, lighting.Time, lighting.Leviathan),
+			.Haze = glm::vec4(lighting.Haze, 0.0f),
 		};
 		const Rdn::ImageWrite environmentWrite(11, Rdn::DescriptorType::CombinedImageSampler, environment.Image->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, environment.Sampler->GetHandle());
 		const Rdn::ImageWrite skyMaskWrite(12, Rdn::DescriptorType::CombinedImageSampler, environment.SkyMask->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_LinearSampler->GetHandle());

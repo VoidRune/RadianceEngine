@@ -22,6 +22,10 @@ namespace Game
 		Ash,
 		Basalt,
 		Lava,
+		Starpath,
+		Ice,
+		Snow,
+		Icewater,
 		Count,
 	};
 
@@ -63,6 +67,10 @@ namespace Game
 		{ TerrainId::Ash, "Ash", true, false, TerrainStyle::Ground, 0x4D4844, 0x5A5450 },
 		{ TerrainId::Basalt, "Basalt", true, false, TerrainStyle::Slabs, 0x3A3431, 0x221D1B },
 		{ TerrainId::Lava, "Lava", true, false, TerrainStyle::Molten, 0xFF5A14, 0xFFB43C },
+		{ TerrainId::Starpath, "Starpath", true, false, TerrainStyle::Void, 0x07080B, 0x07080B },
+		{ TerrainId::Ice, "Ice", true, false, TerrainStyle::Slabs, 0xA9DDF2, 0x7FC4E4 },
+		{ TerrainId::Snow, "Snow", true, false, TerrainStyle::Slabs, 0xE8F0F6, 0xCBD9E4 },
+		{ TerrainId::Icewater, "Freezing water", true, false, TerrainStyle::Molten, 0x1D4F91, 0x2E6FB5 },
 	};
 
 	constexpr bool TerrainsMatchIds()
@@ -77,6 +85,16 @@ namespace Game
 	inline const TerrainDef& GetTerrain(TerrainId id)
 	{
 		return Terrains[size_t(id) < std::size(Terrains) ? size_t(id) : 0];
+	}
+
+	inline bool IsHazardLiquid(TerrainId id)
+	{
+		return id == TerrainId::Lava || id == TerrainId::Icewater;
+	}
+
+	inline bool IsBrawlFloor(TerrainId id)
+	{
+		return id == TerrainId::Basalt || id == TerrainId::Ice || id == TerrainId::Snow;
 	}
 
 	enum class WallId : uint8_t

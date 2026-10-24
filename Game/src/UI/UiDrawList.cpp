@@ -143,6 +143,19 @@ namespace Game
 		primitive.Info.w = AdditiveBits(style.Additive);
 	}
 
+	void UiDrawList::Card(const UiRect& rect, const CardStyle& style)
+	{
+		if (rect.W <= 0.0f || rect.H <= 0.0f)
+			return;
+		UiPrimitive& primitive = Add(UiMode::Card, rect.Center(), rect.Size() * 0.5f + glm::vec2(style.Margin));
+		primitive.Uv = glm::vec4(style.Mouse - rect.Center(), style.MedallionY - rect.Center().y, style.MedallionRadius);
+		primitive.Shape = glm::vec4(rect.Size() * 0.5f, style.Chamfer, 0.0f);
+		primitive.Params = glm::vec4(style.Hover, style.Fade, style.Taken, style.Reveal);
+		primitive.Colors = glm::uvec4(PackColor(style.Color), 0u, 0u, 0u);
+		primitive.Info.y = style.Rarity;
+		primitive.Info.z = uint32_t(std::fmod(std::abs(style.Seed), 1.0f) * 1023.0f);
+	}
+
 	void UiDrawList::Diamond(glm::vec2 center, float size, UiColor fill, UiColor border, float borderWidth)
 	{
 		Rect(UiRect::Centered(center, glm::vec2(size * 0.70710678f)), { .Fill = fill, .Border = border, .BorderWidth = borderWidth, .Rotation = 0.78539816f });
@@ -153,10 +166,12 @@ namespace Game
 		const AtlasIcon& entry = m_Assets->GetIcon(icon);
 		if (!entry.Valid)
 			return;
+		const float side = std::min(rect.W, rect.H);
+		const UiRect box = UiRect::Centered(rect.Center(), { side, side });
 		const auto emit = [&](glm::vec2 offset, UiColor top, UiColor bottom, float outline, float softness, bool additive)
 		{
-			const glm::vec2 min = rect.Min() + entry.PlaneMin * rect.Size() + offset;
-			const glm::vec2 max = rect.Min() + entry.PlaneMax * rect.Size() + offset;
+			const glm::vec2 min = box.Min() + entry.PlaneMin * box.Size() + offset;
+			const glm::vec2 max = box.Min() + entry.PlaneMax * box.Size() + offset;
 			UiPrimitive& primitive = Add(UiMode::Glyph, (min + max) * 0.5f, (max - min) * 0.5f);
 			primitive.Uv = glm::vec4(entry.UvMin, entry.UvMax);
 			primitive.Colors = glm::uvec4(PackColor(top), PackColor(bottom), PackColor(style.OutlineColor), 0u);

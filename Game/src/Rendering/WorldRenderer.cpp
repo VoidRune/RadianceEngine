@@ -224,6 +224,21 @@ namespace Game
 				}
 			return texels;
 		}
+
+		constexpr uint32_t VeinTextureSize = 1024;
+
+		std::vector<uint16_t> BakeVeinTexture()
+		{
+			std::vector<uint16_t> texels(size_t(VeinTextureSize) * VeinTextureSize);
+			for (uint32_t ty = 0; ty < VeinTextureSize; ty++)
+				for (uint32_t tx = 0; tx < VeinTextureSize; tx++)
+				{
+					const glm::vec2 uv = (glm::vec2(float(tx), float(ty)) + 0.5f) / float(VeinTextureSize);
+					const float n = 0.64f * TileNoise(uv, 18, 31) + 0.28f * TileNoise(uv, 52, 32) + 0.08f * TileNoise(uv, 140, 33);
+					texels[size_t(ty) * VeinTextureSize + tx] = uint16_t(std::lround(std::clamp(n, 0.0f, 1.0f) * 65535.0f));
+				}
+			return texels;
+		}
 	}
 
 	WorldRenderer::WorldRenderer(Rdn::Device& device, Rdn::ResourceAllocator& allocator, Rdn::Format colorFormat)
@@ -282,10 +297,10 @@ namespace Game
 		for (Rdn::Sampler* sampler : { m_ModelSampler.get(), m_NearestSampler.get(), m_RepeatSampler.get(), m_EnvironmentSampler.get() })
 			if (sampler)
 				m_Allocator.ReleaseResource(sampler);
-		for (Rdn::Pipeline* pipeline : { m_ShadowPipeline.get(), m_ModelShadowPipeline.get(), m_ModelAlphaShadowPipeline.get(), m_BackPipeline.get(), m_ModelBackPipeline.get() })
+		for (Rdn::Pipeline* pipeline : { m_ShadowPipeline.get(), m_ModelShadowPipeline.get(), m_ModelAlphaShadowPipeline.get(), m_BackPipeline.get(), m_ModelBackPipeline.get(), m_CrystalPipeline.get(), m_IcewaterPipeline.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
-		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get() })
+		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get(), m_CrystalFragmentShader.get(), m_IcewaterFragmentShader.get() })
 			if (shader)
 				m_Allocator.ReleaseResource(shader);
 		for (const auto& [pipeline, vertex, fragment] : { std::tuple(m_Pipeline.get(), m_VertexShader.get(), m_FragmentShader.get()), std::tuple(m_ModelPipeline.get(), m_ModelVertexShader.get(), m_ModelFragmentShader.get()), std::tuple(m_LavaPipeline.get(), m_LavaVertexShader.get(), m_LavaFragmentShader.get()) })
@@ -373,6 +388,9 @@ namespace Game
 		const uint32_t white = 0xFFFFFFFFu;
 		m_Textures.push_back(createTexture(1, 1, 1, Rdn::Format::R8G8B8A8_Unorm, &white, sizeof(white)));
 		m_TextureSamplers.push_back(m_NearestSampler.get());
+		const std::vector<uint16_t> veins = BakeVeinTexture();
+		m_Textures.push_back(createTexture(VeinTextureSize, VeinTextureSize, 1, Rdn::Format::R16_Unorm, veins.data(), veins.size() * sizeof(uint16_t)));
+		m_TextureSamplers.push_back(m_RepeatSampler.get());
 		for (const ModelTexture& texture : data.Textures)
 		{
 			uint32_t mips = texture.MipCount;
@@ -383,7 +401,7 @@ namespace Game
 			m_TextureSamplers.push_back(texture.Nearest ? m_NearestSampler.get() : texture.Repeat ? m_RepeatSampler.get() : m_ModelSampler.get());
 		}
 
-		const auto slot = [](uint32_t texture) { return texture == NoTexture ? 0u : texture + 1; };
+		const auto slot = [](uint32_t texture) { return texture == NoTexture ? 0u : texture + 2; };
 		m_Materials.push_back({});
 		for (const ModelMesh& mesh : data.Meshes)
 		{
@@ -394,10 +412,11 @@ namespace Game
 			material.Albedo = glows ? 0 : slot(mesh.Texture);
 			material.Surface = glows ? 0 : slot(mesh.Surface);
 			material.Normal = glows ? 0 : slot(mesh.Normal);
-			material.Flags = (alphaTested ? 1u : 0u) | (pbr ? 2u : 0u);
+			material.Flags = (alphaTested ? 1u : 0u) | (pbr ? 2u : 0u) | (mesh.DoubleSided ? 0u : 64u);
 			material.Color = glm::vec4(glows ? mesh.Emissive : glm::vec3(mesh.Color), alphaTested ? mesh.AlphaCutoff : 0.0f);
 			material.Params = glm::vec4(mesh.Roughness, mesh.Metallic, 1.0f, 0.0f);
-			m_DrawMeshes.push_back({ .FirstIndex = mesh.FirstIndex, .IndexCount = mesh.IndexCount, .Material = uint32_t(m_Materials.size()), .Skinned = mesh.Skinned, .Glows = glows, .AlphaTested = alphaTested });
+			material.Extra = glm::vec4(glows ? glm::vec3(0.0f) : mesh.Emission, 0.0f);
+			m_DrawMeshes.push_back({ .FirstIndex = mesh.FirstIndex, .IndexCount = mesh.IndexCount, .Material = uint32_t(m_Materials.size()), .Flags = mesh.Water ? MeshWater : 0u, .Skinned = mesh.Skinned, .Glows = glows, .AlphaTested = alphaTested });
 			m_Materials.push_back(material);
 		}
 		m_LibraryMeshes = uint32_t(m_DrawMeshes.size());
@@ -413,6 +432,8 @@ namespace Game
 			material.Params = glm::vec4(1.0f, 1.0f, 1.0f / tiling.Size, 0.0f);
 			m_Materials.push_back(material);
 		}
+		m_PlainMaterial = uint32_t(m_Materials.size());
+		m_Materials.push_back({ .Params = glm::vec4(0.92f, 0.0f, 1.0f, 0.0f) });
 		UploadMaterials();
 
 		for (const ModelEnvironment& source : data.Environments)
@@ -424,6 +445,8 @@ namespace Game
 			environment.MipCount = source.MipCount;
 			m_Environments.push_back(std::move(environment));
 		}
+		m_LevelVertices.clear();
+		m_LevelIndices.clear();
 		UploadGeometry({}, {});
 		BindTextures();
 		m_ModelDraws.assign(m_DrawMeshes.size(), {});
@@ -490,23 +513,45 @@ namespace Game
 		bind(m_BackTextureSet, m_ModelBackPipeline.get());
 	}
 
-	uint32_t WorldRenderer::SetLevelGeometry(const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<LevelMeshDesc>& meshes)
+	uint32_t WorldRenderer::AddLevelGeometry(const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<LevelMeshDesc>& meshes)
 	{
-		if (meshes.empty() && m_DrawMeshes.size() == m_LibraryMeshes)
-			return m_LibraryMeshes;
+		const uint32_t first = uint32_t(m_DrawMeshes.size());
+		if (meshes.empty())
+			return first;
 		m_Device.WaitIdle();
-		m_DrawMeshes.resize(m_LibraryMeshes);
-		const uint32_t libraryIndices = uint32_t(m_Models.GetData().Indices.size());
+		const uint32_t firstIndex = uint32_t(m_Models.GetData().Indices.size() + m_LevelIndices.size());
+		const uint32_t baseVertex = uint32_t(m_LevelVertices.size());
+		m_LevelVertices.insert(m_LevelVertices.end(), vertices.begin(), vertices.end());
+		for (const uint32_t index : indices)
+			m_LevelIndices.push_back(baseVertex + index);
 		for (const LevelMeshDesc& desc : meshes)
 		{
+			if ((desc.Flags & MeshSplat) != 0)
+			{
+				m_DrawMeshes.push_back({ .FirstIndex = firstIndex + desc.FirstIndex, .IndexCount = desc.IndexCount, .Material = desc.Material, .Layer = desc.Layer, .Flags = desc.Flags });
+				continue;
+			}
 			const uint32_t material = std::min<uint32_t>(desc.Material, uint32_t(m_Materials.size() - 1));
-			m_DrawMeshes.push_back({ .FirstIndex = libraryIndices + desc.FirstIndex, .IndexCount = desc.IndexCount, .Material = material, .Layer = std::min<uint32_t>(desc.Layer, uint32_t(m_Materials.size() - 1)), .Flags = desc.Flags,
+			m_DrawMeshes.push_back({ .FirstIndex = firstIndex + desc.FirstIndex, .IndexCount = desc.IndexCount, .Material = material, .Layer = std::min<uint32_t>(desc.Layer, uint32_t(m_Materials.size() - 1)), .Flags = desc.Flags,
 				.AlphaTested = (m_Materials[material].Flags & 1u) != 0 });
 		}
-		UploadGeometry(vertices, indices);
+		UploadGeometry(m_LevelVertices, m_LevelIndices);
 		m_ModelDraws.resize(m_DrawMeshes.size());
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
-		return m_LibraryMeshes;
+		return first;
+	}
+
+	void WorldRenderer::ClearLevelGeometry()
+	{
+		if (m_LevelVertices.empty() && m_DrawMeshes.size() == m_LibraryMeshes)
+			return;
+		m_Device.WaitIdle();
+		m_LevelVertices.clear();
+		m_LevelIndices.clear();
+		m_DrawMeshes.resize(m_LibraryMeshes);
+		UploadGeometry({}, {});
+		m_ModelDraws.resize(m_DrawMeshes.size());
+		m_ModelShadowDraws.resize(m_DrawMeshes.size());
 	}
 
 	void WorldRenderer::SetSkyMask(uint32_t width, uint32_t height, const std::vector<uint8_t>& openness, glm::vec2 origin, glm::vec2 size)
@@ -592,6 +637,21 @@ namespace Game
 			.DepthAttachmentFormat = DepthFormat,
 			.PushDescriptorSets = { 0 },
 		});
+		if (Rdn::ShaderDesc icewaterDesc; Rdn::ShaderCompiler::Compile("res/Shaders/Game/Icewater.frag", icewaterDesc))
+		{
+			m_IcewaterFragmentShader = std::make_unique<Rdn::Shader>();
+			m_Allocator.CreateShader(m_IcewaterFragmentShader.get(), icewaterDesc);
+			m_IcewaterPipeline = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_IcewaterPipeline.get(), Rdn::PipelineDesc{
+				.ShaderStages = { m_LavaVertexShader.get(), m_IcewaterFragmentShader.get() },
+				.CullMode = Rdn::CullMode::None,
+				.ColorAttachmentFormats = { AlbedoFormat, SurfaceFormat, EmissionFormat },
+				.DepthAttachmentFormat = DepthFormat,
+				.PushDescriptorSets = { 0 },
+			});
+		}
+		else
+			RDN_LOG_ERROR("The freezing water shader failed to compile, the Frozen Lake shows lava instead");
 		return true;
 	}
 
@@ -623,6 +683,21 @@ namespace Game
 			.DepthAttachmentFormat = DepthFormat,
 			.PushDescriptorSets = { 0 },
 		});
+		if (Rdn::ShaderDesc crystalDesc; CompileVariant("res/Shaders/Game/Model.frag", "CRYSTAL", crystalDesc, Rdn::ShaderStage::Fragment))
+		{
+			m_CrystalFragmentShader = std::make_unique<Rdn::Shader>();
+			m_Allocator.CreateShader(m_CrystalFragmentShader.get(), crystalDesc);
+			m_CrystalPipeline = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_CrystalPipeline.get(), Rdn::PipelineDesc{
+				.ShaderStages = { m_ModelVertexShader.get(), m_CrystalFragmentShader.get() },
+				.CullMode = Rdn::CullMode::None,
+				.ColorAttachmentFormats = { AlbedoFormat, SurfaceFormat, EmissionFormat },
+				.DepthAttachmentFormat = DepthFormat,
+				.PushDescriptorSets = { 0 },
+			});
+		}
+		else
+			RDN_LOG_ERROR("The crystal variant of the model shader failed to compile, the Caldera loses its crystal veins");
 		if (Rdn::ShaderDesc shadowDesc; Rdn::ShaderCompiler::Compile("res/Shaders/Game/ModelShadow.frag", shadowDesc))
 		{
 			m_ModelShadowShader = std::make_unique<Rdn::Shader>();
@@ -763,11 +838,15 @@ namespace Game
 		m_LavaQuads.clear();
 		m_Palettes.clear();
 		m_Particles->BeginFrame();
+		if (lighting.Grade != m_Post->GetGrade() && !m_Post->HasCustomLut())
+			m_Post->SetGrade(lighting.Grade);
 		m_Camera = camera;
 		m_Lighting = lighting;
+		m_Lighting.FocusHeight = focusHeight;
 		m_FocusHeight = focusHeight;
 		m_Constants.ViewProjection = camera.ViewProjection;
 		m_Constants.Focus = glm::vec4(fadeBelowFocus ? focusHeight : -1e4f, 0.0f, 0.0f, 0.0f);
+		m_Constants.Eye = glm::vec4(camera.Eye, 0.0f);
 	}
 
 	void WorldRenderer::DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw)
@@ -787,21 +866,21 @@ namespace Game
 			m_Instances[size_t(mesh)].push_back({ glm::vec4(center, yaw), glm::vec4(halfExtents, ground), glm::vec4(color, emission), glm::vec4(surface.Roughness, surface.Metallic, 0.0f, 0.0f) });
 	}
 
-	uint32_t WorldRenderer::AddPalette(const JointMatrices& skin)
+	uint32_t WorldRenderer::AddPalette(const JointMatrices& skin, uint32_t joints)
 	{
 		const uint32_t offset = uint32_t(m_Palettes.size());
-		const uint32_t joints = std::min(m_Models.GetSkeleton().JointCount(), MaxModelJoints);
+		joints = std::min(joints, MaxModelJoints);
 		m_Palettes.insert(m_Palettes.end(), skin.begin(), skin.begin() + joints);
 		return offset;
 	}
 
-	void WorldRenderer::DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground)
+	void WorldRenderer::DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags)
 	{
 		if (mesh < m_ModelDraws.size())
-			m_ModelDraws[mesh].push_back(MakeModelInstance(mesh, transform, palette, tint, emission, ground));
+			m_ModelDraws[mesh].push_back(MakeModelInstance(mesh, transform, palette, tint, emission, ground, accent, accentFlags));
 	}
 
-	ModelInstance WorldRenderer::MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground) const
+	ModelInstance WorldRenderer::MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags) const
 	{
 		const DrawMesh& source = m_DrawMeshes[mesh < m_DrawMeshes.size() ? mesh : 0];
 		const glm::mat4 rows = glm::transpose(transform);
@@ -809,7 +888,8 @@ namespace Game
 			.Rows = { rows[0], rows[1], rows[2] },
 			.Tint = tint,
 			.Shading = glm::vec4(source.Glows ? 1.0f : emission, ground, 0.0f, 0.0f),
-			.Info = glm::uvec4(source.Skinned ? palette : NoPalette, source.Material, source.Layer, source.Flags),
+			.Info = glm::uvec4(source.Skinned ? palette : NoPalette, source.Material, source.Layer, source.Flags | accentFlags),
+			.Accent = accent,
 		};
 	}
 
@@ -903,39 +983,47 @@ namespace Game
 					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_Pipeline->GetLayout(), 0, Rdn::DescriptorWrite()
 						.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_InstanceBuffer->GetHandle(), m_InstanceBuffer->GetOffset(frameIndex), uint64_t(count) * sizeof(BoxInstance)))
 						.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_MeshBuffer->GetHandle(), 0, m_MeshBuffer->GetSize())));
-					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Pipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
+					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Pipeline->GetLayout(), &m_Constants, BaseConstantsSize);
 					for (size_t mesh = 0; mesh < m_Instances.size(); mesh++)
 						if (m_BoxRanges[mesh].second > 0)
 							cmd.Draw(m_Meshes[mesh].VertexCount, m_BoxRanges[mesh].second, m_Meshes[mesh].FirstVertex, m_BoxRanges[mesh].first);
 				}
+				if (modelCount > 0 && m_TextureSet)
+				{
+					Rdn::DescriptorWrite write;
+					write.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_ModelInstanceBuffer->GetHandle(), m_ModelInstanceBuffer->GetOffset(frameIndex), uint64_t(modelCount) * sizeof(ModelInstance)));
+					write.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_ModelVertices->GetHandle(), 0, m_ModelVertices->GetSize()));
+					write.AddWrite(Rdn::BufferWrite(2, Rdn::DescriptorType::StorageBuffer, m_PaletteBuffer->GetHandle(), m_PaletteBuffer->GetOffset(frameIndex), uint64_t(paletteCount) * sizeof(glm::mat4)));
+					write.AddWrite(Rdn::BufferWrite(3, Rdn::DescriptorType::StorageBuffer, m_MaterialBuffer->GetHandle(), 0, m_MaterialBuffer->GetSize()));
+					cmd.BindIndexBuffer(m_ModelIndices->GetHandle(), Rdn::IndexType::Uint32);
+					for (Rdn::Pipeline* pipeline : { m_ModelPipeline.get(), m_CrystalPipeline.get() })
+					{
+						const bool crystal = pipeline == m_CrystalPipeline.get();
+						if (!pipeline)
+							continue;
+						cmd.BindPipeline(pipeline->GetHandle());
+						cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline->GetLayout(), 0, write);
+						cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline->GetLayout(), 1, { m_TextureSet->GetHandle() });
+						cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, pipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
+						for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
+						{
+							const DrawMesh& source = m_DrawMeshes[mesh];
+							if (m_ModelRanges[mesh].second > 0 && ((source.Flags & (MeshCrystal | MeshIce)) != 0 && m_CrystalPipeline) == crystal)
+								cmd.DrawIndexed(source.IndexCount, m_ModelRanges[mesh].second, source.FirstIndex, 0, m_ModelRanges[mesh].first);
+						}
+					}
+				}
 				if (count > 0 && lava.second > 0 && m_LavaTexture)
 				{
 					const LavaConstants constants{ m_Constants.ViewProjection, glm::vec4(m_Constants.Focus.x, 0.0f, 0.0f, 0.0f) };
-					cmd.BindPipeline(m_LavaPipeline->GetHandle());
-					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_LavaPipeline->GetLayout(), 0, Rdn::DescriptorWrite()
+					const Rdn::Pipeline& liquid = m_FrozenLiquid && m_IcewaterPipeline ? *m_IcewaterPipeline : *m_LavaPipeline;
+					cmd.BindPipeline(liquid.GetHandle());
+					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, liquid.GetLayout(), 0, Rdn::DescriptorWrite()
 						.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_InstanceBuffer->GetHandle(), m_InstanceBuffer->GetOffset(frameIndex), uint64_t(count) * sizeof(BoxInstance)))
 						.AddWrite(Rdn::ImageWrite(1, Rdn::DescriptorType::CombinedImageSampler, m_LavaTexture->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_RepeatSampler->GetHandle())));
-					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_LavaPipeline->GetLayout(), &constants, sizeof(constants));
+					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, liquid.GetLayout(), &constants, sizeof(constants));
 					cmd.Draw(6, lava.second, 0, lava.first);
 				}
-				if (modelCount == 0 || !m_TextureSet)
-					return;
-				Rdn::DescriptorWrite write;
-				write.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_ModelInstanceBuffer->GetHandle(), m_ModelInstanceBuffer->GetOffset(frameIndex), uint64_t(modelCount) * sizeof(ModelInstance)));
-				write.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_ModelVertices->GetHandle(), 0, m_ModelVertices->GetSize()));
-				write.AddWrite(Rdn::BufferWrite(2, Rdn::DescriptorType::StorageBuffer, m_PaletteBuffer->GetHandle(), m_PaletteBuffer->GetOffset(frameIndex), uint64_t(paletteCount) * sizeof(glm::mat4)));
-				write.AddWrite(Rdn::BufferWrite(3, Rdn::DescriptorType::StorageBuffer, m_MaterialBuffer->GetHandle(), 0, m_MaterialBuffer->GetSize()));
-				cmd.BindPipeline(m_ModelPipeline->GetHandle());
-				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelPipeline->GetLayout(), 0, write);
-				cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelPipeline->GetLayout(), 1, { m_TextureSet->GetHandle() });
-				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_ModelPipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
-				cmd.BindIndexBuffer(m_ModelIndices->GetHandle(), Rdn::IndexType::Uint32);
-				for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
-					if (m_ModelRanges[mesh].second > 0)
-					{
-						const DrawMesh& source = m_DrawMeshes[mesh];
-						cmd.DrawIndexed(source.IndexCount, m_ModelRanges[mesh].second, source.FirstIndex, 0, m_ModelRanges[mesh].first);
-					}
 			});
 		Rdn::RGImage backDepth{};
 		if (gi && GiPresets[size_t(m_GiQuality)].BackFaces && m_BackPipeline)
@@ -983,7 +1071,7 @@ namespace Game
 					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_BackPipeline->GetLayout(), 0, Rdn::DescriptorWrite()
 						.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_InstanceBuffer->GetHandle(), m_InstanceBuffer->GetOffset(frameIndex), uint64_t(boxCount) * sizeof(BoxInstance)))
 						.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_MeshBuffer->GetHandle(), 0, m_MeshBuffer->GetSize())));
-					cmd.PushConstants(Rdn::ShaderStage::Vertex, m_BackPipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
+					cmd.PushConstants(Rdn::ShaderStage::Vertex, m_BackPipeline->GetLayout(), &m_Constants, BaseConstantsSize);
 					for (size_t mesh = 0; mesh < m_Instances.size(); mesh++)
 						if (m_BoxRanges[mesh].second > 0)
 							cmd.Draw(m_Meshes[mesh].VertexCount, m_BoxRanges[mesh].second, m_Meshes[mesh].FirstVertex, m_BoxRanges[mesh].first);
@@ -998,10 +1086,10 @@ namespace Game
 				cmd.BindPipeline(m_ModelBackPipeline->GetHandle());
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelBackPipeline->GetLayout(), 0, write);
 				cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelBackPipeline->GetLayout(), 1, { m_BackTextureSet->GetHandle() });
-				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_ModelBackPipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
+				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_ModelBackPipeline->GetLayout(), &m_Constants, BaseConstantsSize);
 				cmd.BindIndexBuffer(m_ModelIndices->GetHandle(), Rdn::IndexType::Uint32);
 				for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
-					if (m_ModelRanges[mesh].second > 0)
+					if (m_ModelRanges[mesh].second > 0 && (m_DrawMeshes[mesh].Flags & (MeshGround | MeshSplat)) == 0)
 					{
 						const DrawMesh& source = m_DrawMeshes[mesh];
 						cmd.DrawIndexed(source.IndexCount, m_ModelRanges[mesh].second, source.FirstIndex, 0, m_ModelRanges[mesh].first);
@@ -1025,7 +1113,7 @@ namespace Game
 					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ShadowPipeline->GetLayout(), 0, Rdn::DescriptorWrite()
 						.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_InstanceBuffer->GetHandle(), m_InstanceBuffer->GetOffset(frameIndex), uint64_t(boxCount) * sizeof(BoxInstance)))
 						.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_MeshBuffer->GetHandle(), 0, m_MeshBuffer->GetSize())));
-					cmd.PushConstants(Rdn::ShaderStage::Vertex, m_ShadowPipeline->GetLayout(), &constants, sizeof(constants));
+					cmd.PushConstants(Rdn::ShaderStage::Vertex, m_ShadowPipeline->GetLayout(), &constants, BaseConstantsSize);
 					for (size_t range = 0; range < m_BoxRanges.size(); range++)
 						if (m_BoxRanges[range].second > 0)
 						{
@@ -1041,7 +1129,7 @@ namespace Game
 				write.AddWrite(Rdn::BufferWrite(2, Rdn::DescriptorType::StorageBuffer, m_PaletteBuffer->GetHandle(), m_PaletteBuffer->GetOffset(frameIndex), uint64_t(paletteCount) * sizeof(glm::mat4)));
 				cmd.BindPipeline(m_ModelShadowPipeline->GetHandle());
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelShadowPipeline->GetLayout(), 0, write);
-				cmd.PushConstants(Rdn::ShaderStage::Vertex, m_ModelShadowPipeline->GetLayout(), &constants, sizeof(constants));
+				cmd.PushConstants(Rdn::ShaderStage::Vertex, m_ModelShadowPipeline->GetLayout(), &constants, BaseConstantsSize);
 				cmd.BindIndexBuffer(m_ModelIndices->GetHandle(), Rdn::IndexType::Uint32);
 				bool alphaTested = false;
 				const auto draw = [&](bool alpha)
@@ -1051,6 +1139,8 @@ namespace Game
 						{
 							const auto [first, instances] = (*ranges)[mesh];
 							const DrawMesh& source = m_DrawMeshes[mesh];
+							if ((source.Flags & MeshGround) != 0)
+								continue;
 							alphaTested |= instances > 0 && source.AlphaTested;
 							if (instances > 0 && source.AlphaTested == alpha)
 								cmd.DrawIndexed(source.IndexCount, instances, source.FirstIndex, 0, first);
@@ -1063,7 +1153,7 @@ namespace Game
 				cmd.BindPipeline(m_ModelAlphaShadowPipeline->GetHandle());
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelAlphaShadowPipeline->GetLayout(), 0, write);
 				cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelAlphaShadowPipeline->GetLayout(), 1, { m_ShadowTextureSet->GetHandle() });
-				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_ModelAlphaShadowPipeline->GetLayout(), &constants, sizeof(constants));
+				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_ModelAlphaShadowPipeline->GetLayout(), &constants, BaseConstantsSize);
 				draw(true);
 			});
 	}

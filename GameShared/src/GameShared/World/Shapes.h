@@ -15,6 +15,7 @@ namespace Game
 		None = 0,
 		Movement = 1 << 0,
 		Projectiles = 1 << 1,
+		Void = 1 << 2,
 		All = Movement | Projectiles,
 	};
 

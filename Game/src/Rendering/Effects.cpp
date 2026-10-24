@@ -134,6 +134,15 @@ namespace Game
 					{ .Kind = K::Arcane, .Count = 24.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 1.5f, 4.0f }, .Life = { 0.4f, 0.8f }, .Size = { 0.07f, 0.12f } },
 					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.14f, 0.14f }, .Size = { 0.6f, 0.6f }, .Tint = { 0.5f, 0.3f, 1.0f } },
 				});
+				set(Fx::BombBurst, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.1f, 0.1f }, .Size = { 0.55f, 0.55f }, .Tint = { 0.6f, 0.4f, 0.25f } },
+					{ .Kind = K::Fire, .Count = 24.0f, .Outward = true, .Radius = 0.35f, .Direction = { 0.0f, 0.7f, 0.0f }, .Cone = 0.5f, .Speed = { 1.2f, 3.0f }, .Life = { 0.25f, 0.45f }, .Size = { 0.2f, 0.34f }, .Tint = { 0.6f, 0.6f, 0.6f } },
+					{ .Kind = K::Ember, .Count = 20.0f, .Outward = true, .Radius = 0.2f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 3.5f, 7.0f }, .Life = { 0.4f, 0.9f }, .Size = { 0.03f, 0.045f } },
+					{ .Kind = K::Smoke, .Count = 10.0f, .Outward = true, .Radius = 0.35f, .Direction = { 0.0f, 0.5f, 0.0f }, .Cone = 0.5f, .Speed = { 0.4f, 1.2f }, .Life = { 0.8f, 1.4f }, .Size = { 0.4f, 0.65f } },
+				});
+				set(Fx::Snowfall, {
+					{ .Kind = K::Snow, .Count = 150.0f, .Shape = SpawnShape::Disc, .Radius = 16.0f, .Direction = { 0.3f, -1.0f, 0.12f }, .Cone = 0.2f, .Speed = { 0.4f, 0.8f }, .Life = { 6.0f, 8.0f }, .Size = { 0.025f, 0.05f } },
+				});
 				set(Fx::FireBurst, {
 					{ .Kind = K::Fire, .Count = 22.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 0.5f, .Speed = { 1.0f, 3.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.2f, 0.35f } },
 					{ .Kind = K::Ember, .Count = 16.0f, .Outward = true, .Radius = 0.3f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 3.0f, 6.0f }, .Life = { 0.5f, 1.0f }, .Size = { 0.03f, 0.05f } },
@@ -197,6 +206,20 @@ namespace Game
 				});
 				set(Fx::LootSparkle, {
 					{ .Kind = K::Gold, .Count = 8.0f, .Radius = 0.3f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.3f, 0.8f }, .Life = { 0.8f, 1.4f }, .Size = { 0.05f, 0.08f } },
+				});
+				set(Fx::Gust, {
+					{ .Kind = K::Dust, .Count = 18.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.4f, 0.0f }, .Cone = 0.3f, .Speed = { 2.0f, 4.5f }, .Life = { 0.5f, 0.9f }, .Size = { 0.25f, 0.45f }, .Tint = { 0.75f, 0.8f, 0.95f } },
+					{ .Kind = K::Spark, .Count = 14.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 0.6f, .Direction = { 0.0f, 1.2f, 0.0f }, .Cone = 0.5f, .Speed = { 2.0f, 5.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.02f, 0.035f }, .Tint = { 0.6f, 0.75f, 1.0f } },
+				});
+				set(Fx::Starstep, {
+					{ .Kind = K::Glow, .Count = 14.0f, .Shape = SpawnShape::Disc, .Radius = 0.35f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 0.1f, 0.4f }, .Life = { 0.6f, 1.1f }, .Size = { 0.03f, 0.06f }, .Tint = { 0.55f, 0.7f, 1.3f } },
+				});
+				set(Fx::BalloonPop, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.1f, 0.1f }, .Size = { 0.9f, 0.9f }, .Tint = { 1.0f, 0.5f, 0.45f } },
+					{ .Kind = K::Bone, .Count = 16.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 2.0f, 5.0f }, .Life = { 0.6f, 1.1f }, .Size = { 0.04f, 0.07f }, .Tint = { 0.85f, 0.12f, 0.1f } },
+				});
+				set(Fx::CoinToss, {
+					{ .Kind = K::Gold, .Count = 12.0f, .Radius = 0.1f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.4f, .Speed = { 1.0f, 2.5f }, .Life = { 0.8f, 1.4f }, .Size = { 0.05f, 0.08f } },
 				});
 				set(Fx::GatewaySwirl, {
 					{ .Kind = K::Arcane, .Count = 30.0f, .Shape = SpawnShape::Ring, .Radius = 0.9f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.4f, .Speed = { 0.2f, 0.6f }, .Life = { 0.8f, 1.5f }, .Size = { 0.06f, 0.1f } },
@@ -345,6 +368,10 @@ namespace Game
 		flash.Sizes = { 0.6f, 1.0f, 1.0f, 0.9f };
 		flash.Motion.y = 0.5f;
 
+		ParticleMaterial& snow = define(ParticleKind::Snow, ParticleShape::Glow, ParticleAlign::Billboard, 0.0f, 0.0f);
+		SetColors(snow, { 0.9f, 0.94f, 1.0f, 0.0f }, { 0.9f, 0.94f, 1.0f, 0.85f }, { 0.88f, 0.92f, 0.98f, 0.8f }, { 0.85f, 0.9f, 0.96f, 0.0f }, { 0.0f, 0.1f, 0.85f, 1.0f });
+		snow.Physics = { -0.5f, 0.8f, 0.8f, 0.35f };
+
 		ParticleMaterial& gold = define(ParticleKind::Gold, ParticleShape::Star, ParticleAlign::Billboard, 1.0f, 1.3f);
 		SetColors(gold, { 3.5f, 2.6f, 0.9f, 0.0f }, { 3.2f, 2.3f, 0.7f, 1.0f }, { 1.8f, 1.1f, 0.25f, 0.6f }, { 0.6f, 0.3f, 0.05f, 0.0f }, { 0.0f, 0.2f, 0.6f, 1.0f });
 		gold.Sizes = { 0.5f, 1.0f, 0.8f, 0.3f };
@@ -381,6 +408,10 @@ namespace Game
 		case AbilityId::TomeVolley:
 		case AbilityId::InkSpiral:
 			return Fx::ArcaneTrail;
+		case AbilityId::SplittingBolt:
+			return Fx::ArcaneTrail;
+		case AbilityId::BoltShard:
+			return Fx::ShardTrail;
 		case AbilityId::ShardBurst:
 			return Fx::ShardTrail;
 		default:
@@ -412,6 +443,8 @@ namespace Game
 			return Fx::ArrowImpact;
 		case AbilityId::Spit:
 			return Fx::PoisonSplash;
+		case AbilityId::SplittingBolt:
+		case AbilityId::BoltShard:
 		case AbilityId::TomeVolley:
 		case AbilityId::InkSpiral:
 			return Fx::ArcaneBurst;
@@ -424,6 +457,10 @@ namespace Game
 	{
 		switch (ability)
 		{
+		case AbilityId::Firebomb:
+		case AbilityId::FirebombSkip:
+		case AbilityId::FirebombSkip2:
+			return Fx::BombBurst;
 		case AbilityId::Fireball:
 			return Fx::Explosion;
 		case AbilityId::Meteor:
@@ -433,6 +470,9 @@ namespace Game
 			return Fx::FrostNova;
 		case AbilityId::Gust:
 			return Fx::Cyclone;
+		case AbilityId::StormStrike:
+		case AbilityId::StormJump:
+			return Fx::HitLightning;
 		case AbilityId::Shockwave:
 			return Fx::LightningBurst;
 		case AbilityId::GravityWell:
@@ -441,6 +481,7 @@ namespace Game
 		case AbilityId::Warp:
 		case AbilityId::Swap:
 			return Fx::Blink;
+		case AbilityId::FirebombFlame:
 		case AbilityId::Firestrike:
 			return Fx::FireBurst;
 		case AbilityId::Slam:
@@ -460,6 +501,8 @@ namespace Game
 		case AbilityId::ArcaneBurst:
 		case AbilityId::ArcaneRing:
 			return Fx::ArcaneBurst;
+		case AbilityId::HookAnchor:
+			return Fx::ArrowImpact;
 		case AbilityId::ShelfCrush:
 		case AbilityId::Eruption:
 			return Fx::Debris;
@@ -640,18 +683,18 @@ namespace Game
 			result.Seed = seed;
 			return result;
 		};
-		const auto runes = [&](const glm::vec3& center, float size, float life, float inner, float startScale, float endScale)
+		const auto runes = [&](const glm::vec3& center, float size, float life, float inner, float startScale, float endScale, float intensity = 1.0f)
 		{
 			GroundDecal result = decal(DecalShape::Runes, center, glm::vec2(size));
-			result.Color = glm::vec4(color * 1.0f, 1.0f);
+			result.Color = glm::vec4(color * intensity, 1.0f);
 			result.Params = glm::vec4(-1.0f, 1.0f, inner, 0.9f);
 			Mark(result, life, 0.03f, startScale, endScale, 0.25f);
 		};
-		const auto shock = [&](float size, float life)
+		const auto shock = [&](float size, float life, float intensity = 1.2f)
 		{
 			const float extent = RingExtent(size, 0.09f);
 			GroundDecal result = decal(DecalShape::Ring, ground, glm::vec2(extent));
-			result.Color = glm::vec4(color * 1.2f, 1.0f);
+			result.Color = glm::vec4(color * intensity, 1.0f);
 			result.Params = glm::vec4(0.09f, 0.0f, 0.0f, size / extent);
 			Mark(result, life, 0.01f, 0.2f, 1.0f, life * 0.8f);
 		};
@@ -710,6 +753,23 @@ namespace Game
 			scorch(ground, radius * 0.75f, 6.0f, 2.0f);
 			shock(radius, 0.35f);
 			break;
+		case AbilityId::Firebomb:
+		case AbilityId::FirebombSkip:
+		case AbilityId::FirebombSkip2:
+			scorch(ground, radius * 0.5f, 4.0f, 0.5f);
+			shock(radius, 0.3f);
+			break;
+		case AbilityId::FirebombFlame:
+			scorch(ground, radius * 0.5f, 2.5f, 1.0f);
+			break;
+		case AbilityId::StormStrike:
+			scorch(ground, radius * 0.55f, 4.0f, 0.8f);
+			cracks(ground, radius * 0.95f, 3.0f, 0.4f);
+			shock(radius * 1.15f, 0.3f, 0.6f);
+			break;
+		case AbilityId::HookAnchor:
+			cracks(ground, 0.5f, 1.4f, 0.0f);
+			break;
 		case AbilityId::Meteor:
 		case AbilityId::Comet:
 			scorch(ground, radius * 0.85f, 9.0f, 0.8f);
@@ -732,7 +792,7 @@ namespace Game
 		case AbilityId::Warp:
 		case AbilityId::Swap:
 		case AbilityId::MirrorWard:
-			runes(ground, 1.1f, 0.6f, 0.0f, 0.6f, 1.0f);
+			runes(ground, 1.1f, 0.6f, 0.0f, 0.6f, 1.0f, 0.55f);
 			break;
 		case AbilityId::Firestrike:
 			scorch(ground, radius * 0.8f, 5.0f, 1.5f);

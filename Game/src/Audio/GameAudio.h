@@ -28,6 +28,7 @@ namespace Game
 		StormClosing,
 		RoundWon,
 		RoundLost,
+		ApexClaimed,
 	};
 
 	class GameAudio
@@ -48,7 +49,7 @@ namespace Game
 		void PlayEvent(AudioEvent event);
 		void PlayUi(Cue cue, float volume = 1.0f, float pitch = 1.0f, float delay = 0.0f);
 		void PlayHover(int index);
-		void PlayCrumble(Vec2 position);
+		void PlayCrumble(Vec2 position, bool ice = false);
 		uint32_t GetPlayedCount() const { return m_Played; }
 		void SetTrace(bool trace) { m_Trace = trace; }
 

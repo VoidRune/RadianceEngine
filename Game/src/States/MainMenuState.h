@@ -1,6 +1,7 @@
 #pragma once
 #include "App/AppState.h"
 #include "UI/UiTypes.h"
+#include <GameShared/Content/Cosmetics.h>
 #include <string>
 
 namespace Game
@@ -48,6 +49,7 @@ namespace Game
 		bool m_HasSave = false;
 		std::string m_CheckedName;
 		std::string m_SaveSummary;
+		Cosmetics m_Style;
 		bool m_Unlimited = false;
 		Page m_Page = Page::None;
 		float m_Reveal = 0.0f;

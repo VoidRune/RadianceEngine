@@ -183,13 +183,36 @@ float RingGlow(float r, float center, float width, float pixel)
 	return (Line(abs(r - center), width, pixel) + 0.3 * exp(-halo * halo)) * (1.0 - smoothstep(0.85, 1.0, r));
 }
 
-float RingShape(vec2 uv, float pixel, float radius, float thickness, float center, float dashes, float spin, float time)
+float RingShape(vec2 uv, float pixel, float radius, float thickness, float center, float dashes, float spin, float time, uint pattern)
 {
 	float r = length(uv);
-	float ring = RingGlow(r, center, max(thickness / radius, pixel * 0.6), pixel);
+	float width = max(thickness / radius, pixel * 0.6);
+	float turn = fract(atan(uv.y, uv.x) / Tau + time * spin);
+	float window = 1.0 - smoothstep(0.85, 1.0, r);
+	float ring = pattern == 2u ? RingGlow(r, center - width * 1.7, width * 0.65, pixel) + RingGlow(r, center + width * 1.7, width * 0.65, pixel) : RingGlow(r, center, width, pixel);
+	if (pattern == 1u)
+	{
+		float dash = fract(turn * 6.0);
+		ring *= smoothstep(0.06, 0.14, dash) * (1.0 - smoothstep(0.62, 0.7, dash));
+	}
+	else if (pattern == 3u)
+	{
+		float along = abs(fract(turn * 12.0 + 0.5) - 0.5) * Tau * center / 12.0;
+		float d = length(vec2(along, r - center));
+		ring = (Line(d, width * 1.9, pixel) + 0.35 * exp(-d * d / (width * width * 9.0))) * window;
+	}
+	else if (pattern == 4u || pattern == 5u)
+	{
+		float count = pattern == 4u ? 3.0 : 4.0;
+		float along = abs(fract(turn * count + 0.5) - 0.5) * Tau * r / count;
+		float reach = width * (pattern == 4u ? 6.5 : 5.0);
+		float spoke = pattern == 4u ? r - center : center - r;
+		float shape = pattern == 4u ? Line(along, width * 1.25, pixel) : Line(along, width * 2.6 * (1.0 - clamp(spoke / reach, 0.0, 1.0)), pixel);
+		ring = max(ring, shape * step(0.0, spoke) * (1.0 - smoothstep(reach * 0.8, reach, spoke)) * window);
+	}
 	if (dashes > 0.0)
 	{
-		float dash = fract(fract(atan(uv.y, uv.x) / Tau + time * spin) * dashes);
+		float dash = fract(turn * dashes);
 		ring *= smoothstep(0.1, 0.2, dash) * (1.0 - smoothstep(0.7, 0.8, dash));
 	}
 	return ring;

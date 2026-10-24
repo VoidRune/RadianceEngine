@@ -19,6 +19,13 @@
 
 namespace Rdn
 {
+	struct MemoryUsage
+	{
+		uint64_t Allocated = 0;
+		uint64_t Used = 0;
+		uint64_t Budget = 0;
+	};
+
 	class ResourceAllocator
 	{
 	public:
@@ -67,6 +74,7 @@ namespace Rdn
 		void FreeResources();
 
 		std::string DescribeMemoryUsage() const;
+		MemoryUsage GetDeviceLocalUsage() const;
 
 		struct DescriptorSetLayoutKey
 		{

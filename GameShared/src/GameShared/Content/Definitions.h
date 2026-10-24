@@ -82,6 +82,20 @@ namespace Game
 		Swap,
 		MirrorWard,
 		Frostbite,
+		ChainHook,
+		Firebomb,
+		SplittingBolt,
+		StormStrike,
+		FirebombSkip,
+		FirebombSkip2,
+		BoltShard,
+		StormJump,
+		HookAnchor,
+		HookPull,
+		HookYank,
+		FirebombFlame,
+		Ignite,
+		ShatterBurst,
 		Count,
 	};
 
@@ -128,6 +142,10 @@ namespace Game
 		float Push = 0.0f;
 		float Ward = 0.0f;
 		bool Swap = false;
+		AbilityId Parent = AbilityId::Count;
+		int32_t BrawlDamage = 0;
+		float BrawlMana = 0.0f;
+		float BrawlCooldown = 0.0f;
 	};
 
 	inline constexpr AbilityDef Abilities[] = {
@@ -167,16 +185,30 @@ namespace Game
 		{ .Id = AbilityId::Eruption, .Name = "Eruption", .Kind = AbilityKind::Ground, .Cooldown = 0.0f, .Damage = 70, .EffectDuration = 0.45f, .ImpactRadius = 3.2f, .ImpactDelay = 1.0f },
 		{ .Id = AbilityId::ShardBurst, .Name = "Shard Burst", .Damages = Element::Cold, .Cooldown = 0.0f, .Damage = 22, .ProjectileSpeed = 10.0f, .ProjectileRadius = 0.25f, .ProjectileRange = 13.0f, .SpawnOffset = 1.1f },
 		{ .Id = AbilityId::CrystalRain, .Name = "Crystal Rain", .Kind = AbilityKind::Ground, .Damages = Element::Cold, .Cooldown = 0.0f, .Damage = 40, .EffectDuration = 0.35f, .ImpactRadius = 1.9f, .ImpactDelay = 1.35f },
-		{ .Id = AbilityId::EmberBolt, .Name = "Ember Bolt", .Description = "A quick bolt of fire that shoves whoever it hits.", .Damages = Element::Fire, .Spell = true, .CastTime = 0.18f, .CastMove = 0.6f, .Cooldown = 0.9f, .ProjectileSpeed = 14.5f, .ProjectileRadius = 0.24f, .ProjectileRange = 10.0f, .EffectDuration = 0.2f, .Push = 11.5f },
-		{ .Id = AbilityId::Gust, .Name = "Gust", .Description = "A blast of wind in front of you that hurls rivals away.", .Kind = AbilityKind::Melee, .Spell = true, .CastTime = 0.12f, .CastMove = 0.5f, .Cooldown = 4.5f, .Reach = 3.6f, .HalfArc = 0.7f, .EffectDuration = 0.3f, .Push = 21.0f },
-		{ .Id = AbilityId::Comet, .Name = "Comet", .Description = "Calls a comet down on the target area. The impact flings everyone near it.", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Spell = true, .CastTime = 0.35f, .CastMove = 0.3f, .Cooldown = 6.5f, .EffectDuration = 0.4f, .ImpactRadius = 2.4f, .ImpactDelay = 0.85f, .Range = 10.0f, .Push = 20.0f },
-		{ .Id = AbilityId::Warp, .Name = "Warp", .Description = "Teleports you up to 6.5 units toward the cursor. Your way back out of the lava.", .Kind = AbilityKind::Dash, .Spell = true, .CastTime = 0.08f, .CastMove = 0.0f, .Cooldown = 6.0f, .DashDistance = 6.5f, .Invulnerability = 0.15f, .Range = 6.5f },
-		{ .Id = AbilityId::Shockwave, .Name = "Shockwave", .Description = "Blasts everyone around you away.", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Spell = true, .CastTime = 0.2f, .CastMove = 0.3f, .Cooldown = 7.0f, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 17.0f },
-		{ .Id = AbilityId::GravityWell, .Name = "Gravity Well", .Description = "Opens a well at the target that drags everyone inside to its center.", .Kind = AbilityKind::Ground, .Spell = true, .CastTime = 0.3f, .CastMove = 0.3f, .Cooldown = 9.0f, .EffectDuration = 0.45f, .ImpactRadius = 3.6f, .ImpactDelay = 0.7f, .Range = 9.0f, .Push = -1.0f },
-		{ .Id = AbilityId::ArcLightning, .Name = "Arc Lightning", .Description = "A bolt that jumps between up to three rivals and jolts each of them.", .Damages = Element::Lightning, .Spell = true, .CastTime = 0.25f, .CastMove = 0.6f, .Cooldown = 4.5f, .ProjectileSpeed = 22.0f, .ProjectileRadius = 0.16f, .ProjectileRange = 9.5f, .Chain = 2, .Push = 8.0f },
-		{ .Id = AbilityId::Swap, .Name = "Swap", .Description = "A bolt that trades places with the first rival it touches.", .Spell = true, .CastTime = 0.25f, .CastMove = 0.5f, .Cooldown = 9.0f, .ProjectileSpeed = 17.0f, .ProjectileRadius = 0.22f, .ProjectileRange = 11.0f, .EffectDuration = 0.4f, .Swap = true },
-		{ .Id = AbilityId::MirrorWard, .Name = "Mirror Ward", .Description = "For 1.6 seconds nothing can shove you, and spells that hit you fly back at whoever cast them.", .Kind = AbilityKind::Ward, .Spell = true, .CastTime = 0.0f, .CastMove = 1.0f, .Cooldown = 10.0f, .EffectDuration = 0.3f, .Ward = 1.6f },
-		{ .Id = AbilityId::Frostbite, .Name = "Frostbite", .Description = "An icy shard that nudges its target and slows it for a second.", .Damages = Element::Cold, .Spell = true, .CastTime = 0.2f, .CastMove = 0.6f, .Cooldown = 3.5f, .ProjectileSpeed = 16.0f, .ProjectileRadius = 0.2f, .ProjectileRange = 10.0f, .Chill = 2.0f, .Push = 6.0f },
+		{ .Id = AbilityId::EmberBolt, .Name = "Ember Bolt", .Description = "A quick bolt of fire that shoves whoever it hits.", .Damages = Element::Fire, .Spell = true, .CastTime = 0.18f, .CastMove = 0.6f, .Cooldown = 0.9f, .ProjectileSpeed = 14.5f, .ProjectileRadius = 0.24f, .ProjectileRange = 10.0f, .EffectDuration = 0.2f, .Push = 11.5f, .BrawlDamage = 6, .BrawlMana = 8.0f },
+		{ .Id = AbilityId::Gust, .Name = "Gust", .Description = "A blast of wind in front of you that hurls rivals away.", .Kind = AbilityKind::Melee, .Spell = true, .CastTime = 0.18f, .CastMove = 0.5f, .Cooldown = 7.5f, .Reach = 3.3f, .HalfArc = 0.7f, .EffectDuration = 0.3f, .Push = 13.0f, .BrawlDamage = 10, .BrawlMana = 25.0f },
+		{ .Id = AbilityId::Comet, .Name = "Comet", .Description = "Calls a comet down on the target area. The impact flings everyone near it.", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Spell = true, .CastTime = 0.35f, .CastMove = 0.3f, .Cooldown = 5.0f, .EffectDuration = 0.4f, .ImpactRadius = 2.8f, .ImpactDelay = 0.7f, .Range = 10.0f, .Push = 22.0f, .BrawlDamage = 20, .BrawlMana = 30.0f },
+		{ .Id = AbilityId::Warp, .Name = "Warp", .Description = "Teleports you up to 5 units toward the cursor. Your way back out of the lava.", .Kind = AbilityKind::Dash, .Spell = true, .CastTime = 0.08f, .CastMove = 0.0f, .Cooldown = 15.0f, .DashDistance = 5.0f, .Invulnerability = 0.15f, .Range = 5.0f, .BrawlDamage = 0, .BrawlMana = 20.0f },
+		{ .Id = AbilityId::Shockwave, .Name = "Shockwave", .Description = "Blasts everyone around you away.", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Spell = true, .CastTime = 0.2f, .CastMove = 0.3f, .Cooldown = 8.0f, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 13.5f, .BrawlDamage = 11, .BrawlMana = 30.0f },
+		{ .Id = AbilityId::GravityWell, .Name = "Gravity Well", .Description = "Opens a well at the target that slings everyone inside through its center.", .Kind = AbilityKind::Ground, .Spell = true, .CastTime = 0.3f, .CastMove = 0.3f, .Cooldown = 4.5f, .EffectDuration = 0.45f, .ImpactRadius = 4.0f, .ImpactDelay = 0.5f, .Range = 9.0f, .Push = -1.7f, .BrawlDamage = 8, .BrawlMana = 30.0f },
+		{ .Id = AbilityId::ArcLightning, .Name = "Arc Lightning", .Description = "A bolt that jumps between up to three rivals and jolts each of them.", .Damages = Element::Lightning, .Spell = true, .CastTime = 0.25f, .CastMove = 0.6f, .Cooldown = 4.5f, .ProjectileSpeed = 22.0f, .ProjectileRadius = 0.16f, .ProjectileRange = 9.5f, .Chain = 2, .Push = 9.0f, .BrawlDamage = 8, .BrawlMana = 25.0f },
+		{ .Id = AbilityId::Swap, .Name = "Swap", .Description = "A bolt that trades places with the first rival it touches.", .Spell = true, .CastTime = 0.18f, .CastMove = 0.5f, .Cooldown = 4.0f, .ProjectileSpeed = 22.0f, .ProjectileRadius = 0.22f, .ProjectileRange = 11.0f, .EffectDuration = 0.4f, .Swap = true, .BrawlDamage = 14, .BrawlMana = 15.0f },
+		{ .Id = AbilityId::MirrorWard, .Name = "Mirror Ward", .Description = "For a second nothing can shove you, and spells that hit you fly back at whoever cast them.", .Kind = AbilityKind::Ward, .Spell = true, .CastTime = 0.0f, .CastMove = 1.0f, .Cooldown = 18.0f, .EffectDuration = 0.3f, .Ward = 1.0f, .BrawlDamage = 0, .BrawlMana = 50.0f, .BrawlCooldown = 25.0f },
+		{ .Id = AbilityId::Frostbite, .Name = "Frostbite", .Description = "An icy shard that nudges its target and slows it for a second.", .Damages = Element::Cold, .Spell = true, .CastTime = 0.2f, .CastMove = 0.6f, .Cooldown = 3.5f, .ProjectileSpeed = 16.0f, .ProjectileRadius = 0.2f, .ProjectileRange = 10.0f, .Chill = 2.0f, .Push = 7.0f, .BrawlDamage = 8, .BrawlMana = 15.0f },
+		{ .Id = AbilityId::ChainHook, .Name = "Chain Hook", .Description = "Throws a hook that drags the first rival it catches to you, and past you. Press again to yank yourself to the hook instead.", .Spell = true, .CastTime = 0.2f, .CastMove = 0.5f, .Cooldown = 4.5f, .ProjectileSpeed = 15.0f, .ProjectileRadius = 0.26f, .ProjectileRange = 8.0f, .EffectDuration = 0.3f, .BrawlDamage = 14, .BrawlMana = 15.0f },
+		{ .Id = AbilityId::Firebomb, .Name = "Firebomb", .Description = "Lobs a bomb that bursts where it lands, skips on and bursts again.", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Spell = true, .CastTime = 0.25f, .CastMove = 0.5f, .Cooldown = 4.0f, .EffectDuration = 0.35f, .ImpactRadius = 2.0f, .ImpactDelay = 0.5f, .Range = 8.5f, .Push = 19.0f, .BrawlDamage = 10, .BrawlMana = 25.0f },
+		{ .Id = AbilityId::SplittingBolt, .Name = "Splitting Bolt", .Description = "A slow, heavy bolt. Press again to split it into three fast shards.", .Spell = true, .CastTime = 0.22f, .CastMove = 0.55f, .Cooldown = 5.0f, .ProjectileSpeed = 8.0f, .ProjectileRadius = 0.34f, .ProjectileRange = 9.0f, .EffectDuration = 0.25f, .Push = 14.0f, .BrawlDamage = 12, .BrawlMana = 25.0f },
+		{ .Id = AbilityId::StormStrike, .Name = "Storm Strike", .Description = "Lightning hits the target a moment after you cast, then jumps once to the nearest rival.", .Kind = AbilityKind::Ground, .Damages = Element::Lightning, .Spell = true, .CastTime = 0.15f, .CastMove = 0.55f, .Cooldown = 5.0f, .EffectDuration = 0.35f, .ImpactRadius = 1.3f, .ImpactDelay = 0.3f, .Range = 8.5f, .Push = 13.0f, .BrawlDamage = 6, .BrawlMana = 45.0f },
+		{ .Id = AbilityId::FirebombSkip, .Name = "Firebomb", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .EffectDuration = 0.35f, .ImpactRadius = 2.0f, .ImpactDelay = 0.95f, .Push = 19.0f, .Parent = AbilityId::Firebomb, .BrawlDamage = 9 },
+		{ .Id = AbilityId::FirebombSkip2, .Name = "Firebomb", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .EffectDuration = 0.35f, .ImpactRadius = 2.4f, .ImpactDelay = 1.4f, .Push = 22.0f, .Parent = AbilityId::Firebomb, .BrawlDamage = 16 },
+		{ .Id = AbilityId::BoltShard, .Name = "Splitting Bolt", .ProjectileSpeed = 15.0f, .ProjectileRadius = 0.2f, .ProjectileRange = 4.5f, .EffectDuration = 0.2f, .Push = 7.5f, .Parent = AbilityId::SplittingBolt, .BrawlDamage = 5 },
+		{ .Id = AbilityId::StormJump, .Name = "Storm Strike", .Damages = Element::Lightning, .EffectDuration = 0.3f, .Range = 4.0f, .Push = 10.0f, .Parent = AbilityId::StormStrike, .BrawlDamage = 3 },
+		{ .Id = AbilityId::HookAnchor, .Name = "Chain Hook", .EffectDuration = 1.0f, .Parent = AbilityId::ChainHook },
+		{ .Id = AbilityId::HookPull, .Name = "Chain Hook", .EffectDuration = 0.3f, .Parent = AbilityId::ChainHook },
+		{ .Id = AbilityId::HookYank, .Name = "Chain Hook", .EffectDuration = 0.35f, .Parent = AbilityId::ChainHook },
+		{ .Id = AbilityId::FirebombFlame, .Name = "Firebomb", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .EffectDuration = 0.3f, .ImpactRadius = 1.3f, .Parent = AbilityId::Firebomb, .BrawlDamage = 2 },
+		{ .Id = AbilityId::Ignite, .Name = "Kindling", .Damages = Element::Fire },
+		{ .Id = AbilityId::ShatterBurst, .Name = "Shatter", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Reach = 2.5f, .EffectDuration = 0.35f, .ImpactRadius = 2.5f },
 	};
 
 	constexpr bool AbilitiesMatchIds()
@@ -191,6 +223,12 @@ namespace Game
 	inline const AbilityDef& GetAbility(AbilityId id)
 	{
 		return Abilities[size_t(id) < std::size(Abilities) ? size_t(id) : 0];
+	}
+
+	inline AbilityId CreditOf(AbilityId id)
+	{
+		const AbilityId parent = GetAbility(id).Parent;
+		return parent != AbilityId::Count ? parent : id;
 	}
 
 	inline float GetProjectileLifetime(const AbilityDef& ability, float speed)

@@ -85,6 +85,22 @@ namespace Game
 		float Additive = 1.0f;
 	};
 
+	struct CardStyle
+	{
+		UiColor Color{ 1.0f };
+		uint32_t Rarity = 0;
+		float Chamfer = 16.0f;
+		float Margin = 56.0f;
+		float Hover = 0.0f;
+		float Fade = 1.0f;
+		float Taken = 0.0f;
+		float Reveal = 1.0f;
+		glm::vec2 Mouse{ -1e4f };
+		float MedallionY = 0.0f;
+		float MedallionRadius = 0.0f;
+		float Seed = 0.0f;
+	};
+
 	struct TextLine
 	{
 		std::string_view Text;
@@ -109,6 +125,7 @@ namespace Game
 		void Triangle(glm::vec2 center, glm::vec2 size, float rotation, UiColor color, UiColor border = UiColor(0.0f), float borderWidth = 0.0f);
 		void Orb(glm::vec2 center, float radius, float fill, UiColor light, UiColor deep, UiColor glass, UiColor highlight, float phase, float wave = 0.035f);
 		void Sigil(glm::vec2 center, float radius, const SigilStyle& style);
+		void Card(const UiRect& rect, const CardStyle& style);
 		void Diamond(glm::vec2 center, float size, UiColor fill, UiColor border = UiColor(0.0f), float borderWidth = 0.0f);
 		void Icon(UiIcon icon, const UiRect& rect, const IconStyle& style);
 		void Image(UiImage image, const UiRect& rect, UiColor tint = UiColor(1.0f), float saturation = 1.0f, float radius = 0.0f);

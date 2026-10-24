@@ -36,6 +36,7 @@ namespace Rdn
 		VertexAttributes VertexAttributes = {};
 		std::vector<Format> ColorAttachmentFormats = {};
 		std::vector<ColorComponent> ColorWriteMasks = {};
+		std::vector<BlendMode> ColorBlendModes = {};
 		Format DepthAttachmentFormat = Format::Undefined;
 		std::vector<uint32_t> PushDescriptorSets = {};
 	};

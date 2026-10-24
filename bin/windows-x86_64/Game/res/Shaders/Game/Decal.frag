@@ -65,7 +65,7 @@ void main()
 	else if (shape == DecalLane)
 		result.y = LaneShape(uv, extent.xy, pixelWorld, params.x, params.y, time);
 	else if (shape == DecalRing)
-		result.y = RingShape(uv, pixel, extent.x, params.x, params.w, params.y, params.z, time);
+		result.y = RingShape(uv, pixel, extent.x, params.x, params.w, params.y, params.z, time, seed);
 	else if (shape == DecalGlow)
 	{
 		float r2 = dot(uv, uv);

@@ -20,6 +20,7 @@ namespace Game
 		Crucible,
 		Ashlands,
 		Caldera,
+		FrozenLake,
 		Count,
 	};
 

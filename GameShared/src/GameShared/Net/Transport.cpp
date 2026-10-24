@@ -200,23 +200,23 @@ namespace Game
 		return true;
 	}
 
-	ConnectionId NetServer::OpenLocalConnection()
+	LocalConnection NetServer::OpenLocalConnection()
 	{
 		if (!EnsurePollGroup())
-			return InvalidConnection;
+			return {};
 		ISteamNetworkingSockets* sockets = SteamNetworkingSockets();
 		HSteamNetConnection serverEnd = k_HSteamNetConnection_Invalid;
 		HSteamNetConnection clientEnd = k_HSteamNetConnection_Invalid;
 		if (!sockets->CreateSocketPair(&serverEnd, &clientEnd, s_Simulation.IsActive(), nullptr, nullptr))
 		{
 			RDN_LOG_ERROR("Can't create the local connection");
-			return InvalidConnection;
+			return {};
 		}
 		sockets->SetConnectionUserData(serverEnd, GetEndpointId());
 		sockets->SetConnectionPollGroup(serverEnd, m_PollGroup);
 		m_Connections.push_back(serverEnd);
 		m_Events.push_back({ NetEventType::Connected, serverEnd, {} });
-		return clientEnd;
+		return { serverEnd, clientEnd };
 	}
 
 	void NetServer::Shutdown()

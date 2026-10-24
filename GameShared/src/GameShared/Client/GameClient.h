@@ -1,5 +1,6 @@
 #pragma once
 #include "GameShared/Content/Definitions.h"
+#include "GameShared/Content/Hub.h"
 #include "GameShared/Content/Traits.h"
 #include "GameShared/Net/Protocol.h"
 #include "GameShared/Net/Transport.h"
@@ -59,12 +60,24 @@ namespace Game
 		void StartRoyale(MapKind map);
 		void StartBrawl(MapKind map, const MatchRules& rules);
 		void PickBrawlSpell(uint32_t slot, AbilityId spell);
-		void ChooseBoon(uint32_t choice);
+		void PreferSpell(uint32_t slot, AbilityId spell);
+		void SendPreferredSpells();
+		const BrawlSpells& GetPreferredSpells() const { return m_Profile.Spells; }
+		uint32_t GetSpellsVersion() const { return m_SpellsVersion; }
+		uint32_t GetFeatsVersion() const { return m_FeatsVersion; }
+		void SetCosmetics(Cosmetics style);
+		Cosmetics GetCosmetics() const { return m_Profile.Style; }
+		uint32_t GetStyleVersion() const { return m_StyleVersion; }
+		void ChooseCard(uint32_t choice);
 		void SetBrawlReady(bool ready);
 		void Spectate(int32_t direction);
 		void ReturnToHub();
 		void OpenChest();
 		void UseGateway();
+		void MakeWish();
+		void PlayChess(Chess::Command command, uint32_t argument = 0);
+		const Chess::Match& GetChess() const { return m_Chess; }
+		uint32_t GetChessVersion() const { return m_ChessVersion; }
 
 		ClientState GetState() const { return m_State; }
 		bool IsLocal() const { return m_Local; }
@@ -122,7 +135,10 @@ namespace Game
 			float Radius = 0.0f;
 			uint8_t Pierce = 0;
 			bool Explodes = false;
+			bool Caught = false;
+			bool Reflected = false;
 			uint32_t LastHit = 0;
+			float Floor = NoFloor;
 		};
 
 		struct PredictedEffect
@@ -146,12 +162,15 @@ namespace Game
 		void HandleEvent(const NetEvent& event);
 		void HandleMessage(const NetMessage& message);
 		void OnSnapshot(ServerSnapshot&& snapshot);
+		void TrackFeats(const LocalPlayerState& local);
+		void Earn(Honor honor);
 		void OnTravel(const ServerTravel& travel);
 		void ResetView();
 		void Reconcile(const ServerSnapshot& snapshot);
 		void PredictTick(PlayerInput input);
 		void CollectBodies(uint32_t ticksAhead, std::vector<BodyCircle>& bodies) const;
 		void PredictAbility(const SkillTraits& skill, uint16_t tag, const PlayerActions& actions, const PlayerTraits& traits);
+		void PredictRecast(AbilityId ability, const PlayerActions& actions);
 		void ReleaseHits();
 		void SendAction(ActionType action, uint32_t value, uint32_t target = 0, uint32_t extra = 0);
 		void StepPredictedEffects(float dt);
@@ -179,6 +198,11 @@ namespace Game
 		SessionInfo m_Session;
 		uint32_t m_Travels = 0;
 		uint32_t m_StashVersion = 0;
+		Chess::Match m_Chess;
+		uint32_t m_ChessVersion = 0;
+		uint32_t m_SpellsVersion = 0;
+		uint32_t m_FeatsVersion = 0;
+		uint32_t m_StyleVersion = 0;
 		std::vector<ServerNotice> m_Notices;
 		std::vector<KillRecord> m_Kills;
 		std::unique_ptr<Level> m_Level;

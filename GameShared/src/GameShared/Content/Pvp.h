@@ -58,12 +58,25 @@ namespace Game
 		Ended,
 	};
 
+	enum class BrawlMode : uint8_t
+	{
+		Damage,
+		Knockback,
+		Count,
+	};
+
+	inline constexpr const char* BrawlModeNames[] = { "damage", "knockback" };
+	static_assert(std::size(BrawlModeNames) == size_t(BrawlMode::Count));
+
 	struct MatchRules
 	{
 		bool Teams = false;
 		uint8_t ScoreGoal = 15;
 		uint8_t Minutes = 8;
 		uint8_t Rounds = 5;
+		uint8_t Bots = 0;
+		uint8_t BotLevel = 1;
+		BrawlMode Mode = BrawlMode::Damage;
 	};
 
 	inline constexpr uint8_t MinScoreGoal = 5;
@@ -72,23 +85,29 @@ namespace Game
 	inline constexpr uint8_t MaxMatchMinutes = 20;
 	inline constexpr uint8_t MinBrawlRounds = 3;
 	inline constexpr uint8_t MaxBrawlRounds = 15;
+	inline constexpr uint8_t MaxBots = 11;
+	inline constexpr uint8_t BotLevels = 3;
 
 	inline MatchRules SanitizeRules(MatchRules rules)
 	{
 		rules.ScoreGoal = std::clamp(rules.ScoreGoal, MinScoreGoal, MaxScoreGoal);
 		rules.Minutes = std::clamp(rules.Minutes, MinMatchMinutes, MaxMatchMinutes);
 		rules.Rounds = std::clamp(rules.Rounds, MinBrawlRounds, MaxBrawlRounds);
+		rules.Bots = std::min(rules.Bots, MaxBots);
+		rules.BotLevel = std::min<uint8_t>(rules.BotLevel, BotLevels - 1);
+		if (rules.Mode >= BrawlMode::Count)
+			rules.Mode = BrawlMode::Damage;
 		return rules;
 	}
 
 	inline uint32_t EncodeRules(const MatchRules& rules)
 	{
-		return (rules.Teams ? 1u : 0u) | (uint32_t(rules.ScoreGoal) << 8) | (uint32_t(rules.Minutes) << 16) | (uint32_t(rules.Rounds) << 24);
+		return (rules.Teams ? 1u : 0u) | (uint32_t(rules.Bots & 0xFu) << 1) | (uint32_t(rules.BotLevel & 0x3u) << 5) | (rules.Mode == BrawlMode::Knockback ? 0x80u : 0u) | (uint32_t(rules.ScoreGoal) << 8) | (uint32_t(rules.Minutes) << 16) | (uint32_t(rules.Rounds) << 24);
 	}
 
 	inline MatchRules DecodeRules(uint32_t value)
 	{
-		return SanitizeRules({ (value & 1u) != 0, uint8_t((value >> 8) & 0xFFu), uint8_t((value >> 16) & 0xFFu), uint8_t((value >> 24) & 0xFFu) });
+		return SanitizeRules({ (value & 1u) != 0, uint8_t((value >> 8) & 0xFFu), uint8_t((value >> 16) & 0xFFu), uint8_t((value >> 24) & 0xFFu), uint8_t((value >> 1) & 0xFu), uint8_t((value >> 5) & 0x3u), (value & 0x80u) != 0 ? BrawlMode::Knockback : BrawlMode::Damage });
 	}
 
 	inline constexpr uint8_t TeamCount = 2;

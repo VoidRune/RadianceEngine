@@ -141,6 +141,7 @@ namespace Rdn
 	{
 		std::string Name;
 		float Milliseconds = 0.0f;
+		float Start = 0.0f;
 	};
 
 	// Per frame: Reset(), register resources, AddPass() in execution order, Execute().
@@ -175,7 +176,8 @@ namespace Rdn
 
 		void SetCullingEnabled(bool enabled) { m_CullingEnabled = enabled; }
 
-		void SetTimingEnabled(bool enabled) { m_TimingEnabled = enabled; }
+		void SetTimingEnabled(bool enabled);
+		bool IsTimingEnabled() const { return m_TimingEnabled; }
 		const std::vector<PassTiming>& GetPassTimings() const { return m_PassTimings; }
 
 	private:

@@ -85,6 +85,8 @@ namespace Game
 	void GameClient::ResetView()
 	{
 		m_Status = {};
+		m_Chess = {};
+		m_ChessVersion++;
 		m_PendingHits.clear();
 		m_NewHits.clear();
 		m_Snapshots.clear();
@@ -257,9 +259,33 @@ namespace Game
 		SendAction(ActionType::BrawlSpell, slot, uint32_t(spell));
 	}
 
-	void GameClient::ChooseBoon(uint32_t choice)
+	void GameClient::PreferSpell(uint32_t slot, AbilityId spell)
 	{
-		SendAction(ActionType::BrawlBoon, choice);
+		if (!AssignSpell(m_Profile.Spells, slot, spell))
+			return;
+		m_SpellsVersion++;
+		PickBrawlSpell(slot, spell);
+	}
+
+	void GameClient::SetCosmetics(Cosmetics style)
+	{
+		style = SanitizeCosmetics(style);
+		if (style == m_Profile.Style)
+			return;
+		m_Profile.Style = style;
+		m_StyleVersion++;
+		SendAction(ActionType::SetCosmetics, PackCosmetics(style));
+	}
+
+	void GameClient::SendPreferredSpells()
+	{
+		for (uint32_t slot = 0; slot < m_Profile.Spells.size(); slot++)
+			PickBrawlSpell(slot, m_Profile.Spells[slot]);
+	}
+
+	void GameClient::ChooseCard(uint32_t choice)
+	{
+		SendAction(ActionType::BrawlCard, choice);
 	}
 
 	void GameClient::SetBrawlReady(bool ready)
@@ -285,7 +311,7 @@ namespace Game
 		if (m_Session.Mode == GameMode::Brawl)
 		{
 			const BrawlPhase phase = m_Status.Brawl.Phase;
-			return m_Status.Match != MatchPhase::Ended && (phase == BrawlPhase::Draft || phase == BrawlPhase::Shop || phase == BrawlPhase::Fight);
+			return m_Status.Match != MatchPhase::Ended && (phase == BrawlPhase::Draft || phase == BrawlPhase::Pick || phase == BrawlPhase::Fight);
 		}
 		if (m_Status.Match != MatchPhase::Fight)
 			return false;
@@ -306,6 +332,61 @@ namespace Game
 	void GameClient::UseGateway()
 	{
 		SendAction(ActionType::UseGateway, 0);
+	}
+
+	void GameClient::MakeWish()
+	{
+		SendAction(ActionType::Wish, 0);
+	}
+
+	void GameClient::PlayChess(Chess::Command command, uint32_t argument)
+	{
+		SendAction(ActionType::Chess, uint32_t(command), argument, m_Chess.Revision);
+	}
+
+	void GameClient::Earn(Honor honor)
+	{
+		const uint8_t bit = HonorBit(honor);
+		if ((m_Profile.Honors & bit) != 0)
+			return;
+		m_Profile.Honors |= bit;
+		m_FeatsVersion++;
+		const HonorDef& def = GetHonor(honor);
+		m_Notices.push_back({ .Text = std::string("Title earned: ") + def.Title + ". " + def.Feat + ".", .Success = true });
+		SendAction(ActionType::SetHonors, m_Profile.Honors);
+	}
+
+	void GameClient::TrackFeats(const LocalPlayerState& local)
+	{
+		if (!local.Valid || !m_Level || m_Session.Mode != GameMode::Hub)
+			return;
+		if (local.State.IsFalling() && m_LocalPlayer.Valid && !m_LocalPlayer.State.IsFalling())
+		{
+			m_Profile.Falls++;
+			m_FeatsVersion++;
+			if (m_Profile.Falls >= SkydiverFalls)
+				Earn(Honor::Skydiver);
+		}
+		const std::vector<Constellation>& stars = m_Level->Constellations;
+		uint64_t lit = m_Profile.Starlit;
+		bool complete = !stars.empty();
+		for (size_t i = 0; i < stars.size() && i < 16; i++)
+		{
+			const uint64_t bit = uint64_t(1) << size_t(stars[i].Spell);
+			if ((local.Starlit >> i) & 1u)
+				lit |= bit;
+			complete &= (lit & bit) != 0;
+		}
+		if (lit != m_Profile.Starlit)
+		{
+			m_Profile.Starlit = lit;
+			m_FeatsVersion++;
+		}
+		if (complete)
+			Earn(Honor::Stargazer);
+		const Landmark* islet = m_Level->FindLandmark(LandmarkKind::CatIslet);
+		if (islet && !local.State.IsFalling() && LengthSquared(local.Motion.Position - islet->Position) <= islet->Radius * islet->Radius)
+			Earn(Honor::Faithful);
 	}
 
 	void GameClient::SendAction(ActionType action, uint32_t value, uint32_t target, uint32_t extra)
@@ -342,7 +423,7 @@ namespace Game
 		if (event.Type == NetEventType::Connected)
 		{
 			m_State = ClientState::Joining;
-			Send(ClientHello{ .Name = m_Profile.Name, .Kit = uint8_t(m_Profile.Kit), .HasGear = true, .Gear = m_Profile.Gear }, SendMode::Reliable);
+			Send(ClientHello{ .Name = m_Profile.Name, .Kit = uint8_t(m_Profile.Kit), .Honors = m_Profile.Honors, .Style = m_Profile.Style, .HasGear = true, .Gear = m_Profile.Gear }, SendMode::Reliable);
 			return;
 		}
 		std::string reason = m_DisconnectReason.empty() ? event.Reason : m_DisconnectReason;
@@ -390,6 +471,19 @@ namespace Game
 			{
 				m_Profile.Gear.Stash = stash.Stash;
 				m_StashVersion++;
+			}
+			break;
+		case MessageType::ServerChess:
+			if (ServerChess chess; m_State == ClientState::InGame && Decode(message.Data, chess))
+			{
+				m_Chess.Revision = chess.Revision;
+				m_Chess.Seats = chess.Seats;
+				m_Chess.Result = chess.Result;
+				m_Chess.Winner = chess.Winner;
+				m_Chess.DrawOffer = chess.DrawOffer;
+				m_Chess.Moves = std::move(chess.Moves);
+				Chess::Rebuild(m_Chess);
+				m_ChessVersion++;
 			}
 			break;
 		case MessageType::ServerNotice:
@@ -448,6 +542,7 @@ namespace Game
 			return;
 		if (snapshot.LocalPlayer.Valid && m_Session.Mode != GameMode::Royale)
 			m_Profile.Gear.Materials = snapshot.LocalPlayer.Materials;
+		TrackFeats(snapshot.LocalPlayer);
 		m_SnapshotAge = 0.0f;
 		std::sort(snapshot.Entities.begin(), snapshot.Entities.end(), [](const EntityState& a, const EntityState& b) { return a.NetId < b.NetId; });
 		for (const HitEvent& hit : snapshot.Hits)
@@ -529,10 +624,62 @@ namespace Game
 			}
 			const uint16_t tag = uint16_t(input.Sequence);
 			for (uint32_t slot = 0; slot < AbilitySlots; slot++)
+				if (actions.HasRecast(slot))
+					PredictRecast(actions.RecastAbility, actions);
+			for (uint32_t slot = 0; slot < AbilitySlots; slot++)
 				if (actions.HasReleased(slot))
 					PredictAbility(traits.Skills[slot], tag, actions, traits);
 		}
 		StepPredictedEffects(dt);
+	}
+
+	void GameClient::PredictRecast(AbilityId ability, const PlayerActions& actions)
+	{
+		const CardMask cards = m_LocalPlayer.Brawl.Cards;
+		if (ability == AbilityId::SplittingBolt)
+		{
+			const AbilityDef& shard = GetAbility(AbilityId::BoltShard);
+			const uint32_t count = HasCard(cards, CardId::Fivefold) ? FivefoldShards : BoltShards;
+			const float spread = BoltShardSpread * float(BoltShards - 1) / float(count - 1);
+			std::vector<PredictedProjectile> shards;
+			for (PredictedProjectile& bolt : m_PredictedProjectiles)
+			{
+				if (bolt.Ability != AbilityId::SplittingBolt || bolt.Lifetime <= 0.0f)
+					continue;
+				bolt.Lifetime = 0.0f;
+				if (HasCard(cards, CardId::SeekerShards))
+					continue;
+				const float heading = AngleOf(bolt.Velocity);
+				for (uint32_t i = 0; i < count; i++)
+					shards.push_back({
+						.Tag = bolt.Tag,
+						.Index = uint8_t(1 + i),
+						.Ability = AbilityId::BoltShard,
+						.Position = bolt.Position,
+						.Previous = bolt.Position,
+						.Velocity = FromAngle(heading + spread * (float(i) - float(count - 1) * 0.5f)) * shard.ProjectileSpeed,
+						.Lifetime = GetProjectileLifetime(shard, shard.ProjectileSpeed),
+						.Radius = shard.ProjectileRadius,
+						.Floor = bolt.Floor,
+					});
+			}
+			std::erase_if(m_PredictedProjectiles, [](const PredictedProjectile& projectile) { return projectile.Lifetime <= 0.0f; });
+			m_PredictedProjectiles.insert(m_PredictedProjectiles.end(), shards.begin(), shards.end());
+			return;
+		}
+		if (ability != AbilityId::ChainHook)
+			return;
+		uint16_t tag = 0;
+		for (const PredictedProjectile& hook : m_PredictedProjectiles)
+			if (hook.Ability == AbilityId::ChainHook)
+				tag = hook.Tag;
+		for (const PredictedEffect& anchor : m_PredictedEffects)
+			if (anchor.Ability == AbilityId::HookAnchor)
+				tag = anchor.Tag;
+		std::erase_if(m_PredictedProjectiles, [](const PredictedProjectile& projectile) { return projectile.Ability == AbilityId::ChainHook; });
+		std::erase_if(m_PredictedEffects, [](const PredictedEffect& effect) { return effect.Ability == AbilityId::HookAnchor; });
+		if (tag != 0)
+			m_PredictedEffects.push_back({ .Tag = tag, .Index = 2, .Ability = AbilityId::HookYank, .Position = actions.RecastPoint, .Facing = AngleOf(actions.RecastPoint - m_PredictedMotion.Position), .Remaining = GetAbility(AbilityId::HookYank).EffectDuration });
 	}
 
 	void GameClient::PredictAbility(const SkillTraits& skill, uint16_t tag, const PlayerActions& actions, const PlayerTraits& traits)
@@ -558,10 +705,11 @@ namespace Game
 					.Position = start,
 					.Previous = start,
 					.Velocity = heading * pattern.Speed,
-					.Lifetime = GetProjectileLifetime(ability, pattern.Speed),
+					.Lifetime = GetProjectileLifetime(ability, pattern.Speed) * skill.RangeScale,
 					.Radius = ability.ProjectileRadius,
 					.Pierce = pattern.Pierce,
 					.Explodes = ability.ImpactRadius > 0.0f,
+					.Floor = FloorAt(m_Level->Map, origin),
 				});
 			}
 			break;
@@ -570,6 +718,18 @@ namespace Game
 		{
 			const Vec2 target = GetGroundTarget(*m_Level, origin, actions.Direction, actions.AimDistance, ability.Range);
 			m_PredictedEffects.push_back({ .Tag = tag, .Ability = ability.Id, .Position = target, .Facing = AngleOf(actions.Direction), .Remaining = ability.ImpactDelay, .Scale = scale, .Pending = true });
+			if (ability.Id == AbilityId::Firebomb)
+			{
+				const uint32_t skips = HasCard(m_LocalPlayer.Brawl.Cards, CardId::ClusterBomb) ? ClusterSkips : 1u;
+				Vec2 landing = target;
+				for (uint32_t skip = 1; skip <= skips; skip++)
+				{
+					const AbilityDef& bounce = GetAbility(skip == 1 ? AbilityId::FirebombSkip : AbilityId::FirebombSkip2);
+					const Vec2 next = target + actions.Direction * (FirebombSkipDistance * float(skip));
+					landing = Lerp(landing, next, std::max(CastSegment(*m_Level, landing, next, Block::Projectiles) - 0.02f, 0.0f));
+					m_PredictedEffects.push_back({ .Tag = tag, .Index = uint8_t(skip), .Ability = bounce.Id, .Position = landing, .Facing = AngleOf(actions.Direction), .Remaining = bounce.ImpactDelay, .Scale = scale, .Pending = true });
+				}
+			}
 			break;
 		}
 		case AbilityKind::Melee:
@@ -589,7 +749,7 @@ namespace Game
 		{
 			projectile.Previous = projectile.Position;
 			const Vec2 end = projectile.Position + projectile.Velocity * dt;
-			const float travel = CastSegment(*m_Level, projectile.Position, end, Block::Projectiles);
+			const float travel = CastSegment(*m_Level, projectile.Position, end, Block::Projectiles, &projectile.Floor);
 			projectile.Position = Lerp(projectile.Position, end, travel);
 			const bool clear = travel >= 1.0f;
 			projectile.Lifetime -= dt;
@@ -598,9 +758,10 @@ namespace Game
 			for (const EntityState& entity : m_Entities)
 			{
 				const EnemyDef* def = FindEnemyDef(entity.Kind);
-				if (!def && (!IsHostile(entity) || entity.Has(EntityFlags::Dashing)))
+				const bool dummy = entity.Kind == EntityKind::Dummy;
+				if ((!def && !dummy && (!IsHostile(entity) || entity.Has(EntityFlags::Dashing))) || entity.Has(EntityFlags::Falling))
 					continue;
-				const float radius = def ? def->Radius * entity.GetScale() : PlayerRadius;
+				const float radius = def ? def->Radius * entity.GetScale() : dummy ? DummyRadius : PlayerRadius;
 				float parameter = 0.0f;
 				if (entity.NetId == projectile.LastHit || !SegmentTouchesCircle(projectile.Previous, projectile.Position, entity.Position, radius + projectile.Radius, parameter))
 					continue;
@@ -609,6 +770,7 @@ namespace Game
 					projectile.Position = Lerp(projectile.Previous, projectile.Position, parameter);
 					projectile.Lifetime = 0.0f;
 					projectile.Explodes = false;
+					projectile.Reflected = true;
 					break;
 				}
 				if (projectile.Explodes)
@@ -619,7 +781,9 @@ namespace Game
 				}
 				if (projectile.Pierce == 0)
 				{
+					projectile.Position = Lerp(projectile.Previous, projectile.Position, parameter);
 					projectile.Lifetime = 0.0f;
+					projectile.Caught = true;
 					break;
 				}
 				projectile.Pierce--;
@@ -627,6 +791,11 @@ namespace Game
 			}
 			if (projectile.Lifetime <= 0.0f && projectile.Explodes)
 				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = projectile.Index, .Ability = projectile.Ability, .Position = projectile.Position, .Remaining = GetAbility(projectile.Ability).EffectDuration, .Scale = areaScale });
+			if (projectile.Lifetime <= 0.0f && projectile.Ability == AbilityId::ChainHook && !projectile.Reflected)
+			{
+				const AbilityId end = projectile.Caught ? AbilityId::HookPull : AbilityId::HookAnchor;
+				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = uint8_t(projectile.Caught ? 3 : 1), .Ability = end, .Position = projectile.Position, .Facing = AngleOf(projectile.Velocity), .Remaining = GetAbility(end).EffectDuration });
+			}
 		}
 		std::erase_if(m_PredictedProjectiles, [](const PredictedProjectile& projectile) { return projectile.Lifetime <= 0.0f; });
 		for (PredictedEffect& effect : m_PredictedEffects)
@@ -809,12 +978,19 @@ namespace Game
 			self.Flags |= uint16_t(EntityFlags::Chilled);
 		if (m_PredictedState.Stun > 0.0f)
 			self.Flags |= uint16_t(EntityFlags::Stunned);
+		if (m_PredictedState.Static > 0.0f)
+			self.Flags |= uint16_t(EntityFlags::Static);
 		if (m_PredictedState.Ward > 0.0f)
 			self.Flags |= uint16_t(EntityFlags::Warded);
 		if (LengthSquared(m_PredictedState.Push) > 36.0f)
 			self.Flags |= uint16_t(EntityFlags::Flung);
-		if (const auto server = std::find_if(m_Entities.begin(), m_Entities.end(), [&](const EntityState& entity) { return entity.NetId == m_Welcome.PlayerNetId; }); server != m_Entities.end() && server->Has(EntityFlags::Burning))
-			self.Flags |= uint16_t(EntityFlags::Burning);
+		if (m_PredictedState.IsFalling())
+			self.Flags |= uint16_t(m_PredictedState.Fall < FallSeconds ? EntityFlags::Falling : EntityFlags::Lifted);
+		constexpr uint16_t ServerFlags = uint16_t(EntityFlags::Burning) | uint16_t(EntityFlags::Ignited) | uint16_t(EntityFlags::Marked) | uint16_t(EntityFlags::Barrier);
+		if (const auto server = std::find_if(m_Entities.begin(), m_Entities.end(), [&](const EntityState& entity) { return entity.NetId == m_Welcome.PlayerNetId; }); server != m_Entities.end())
+			self.Flags |= server->Flags & ServerFlags;
+		if (m_PredictedState.Still >= LeylineSeconds && HasCard(m_LocalPlayer.Brawl.Cards, CardId::Leyline))
+			self.Flags |= uint32_t(EntityFlags::Leyline);
 		if (m_PredictedState.CastSlot >= 0)
 		{
 			self.Flags |= uint16_t(EntityFlags::Attacking);

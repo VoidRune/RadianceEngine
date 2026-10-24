@@ -477,8 +477,11 @@ namespace Game
 			imported = ImportCharacter(model, stem, error);
 			break;
 		case ModelSourceKind::Animations:
-			imported = ImportAnimations(model, stem, error);
+		{
+			uint32_t skeleton = 0;
+			imported = SharedSkeleton(model, skeleton, error) && ImportAnimations(model, stem, skeleton, error);
 			break;
+		}
 		default:
 			imported = ImportProp(model, stem, error);
 			break;
@@ -488,14 +491,37 @@ namespace Game
 		return imported;
 	}
 
-	int32_t GltfImporter::FindJoint(const std::string& name) const
+	int32_t GltfImporter::FindJoint(uint32_t skeleton, const std::string& name) const
 	{
-		const std::vector<std::string>& names = m_Output.Skeleton.Names;
+		const std::vector<std::string>& names = m_Output.Skeletons[skeleton].Names;
 		const auto it = std::find(names.begin(), names.end(), name);
 		return it != names.end() ? int32_t(it - names.begin()) : -1;
 	}
 
-	bool GltfImporter::SetupSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin, std::string& error)
+	std::optional<uint32_t> GltfImporter::FindSkeleton(const std::string& name) const
+	{
+		for (uint32_t i = 0; i < m_Output.Skeletons.size(); i++)
+			if (m_Output.Skeletons[i].Name == name)
+				return i;
+		return std::nullopt;
+	}
+
+	bool GltfImporter::SharedSkeleton(const tinygltf::Model& model, uint32_t& index, std::string& error)
+	{
+		if (const std::optional<uint32_t> found = FindSkeleton(SharedSkeletonName))
+		{
+			index = *found;
+			return true;
+		}
+		if (model.skins.empty())
+		{
+			error = "there's no skin to take the skeleton from";
+			return false;
+		}
+		return SetupSkeleton(model, model.skins[0], SharedSkeletonName, index, error);
+	}
+
+	bool GltfImporter::SetupSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin, const std::string& skeletonName, uint32_t& index, std::string& error)
 	{
 		if (skin.joints.empty() || skin.joints.size() > MaxModelJoints)
 		{
@@ -516,11 +542,12 @@ namespace Game
 		int components = 0;
 		const std::vector<float> inverseBind = ReadFloats(model, skin.inverseBindMatrices, components);
 
-		ModelSkeleton& skeleton = m_Output.Skeleton;
+		ModelSkeleton skeleton;
+		skeleton.Name = skeletonName;
 		for (const int node : ordered)
 		{
 			const std::string& name = model.nodes[size_t(node)].name;
-			if (FindJoint(name) >= 0)
+			if (std::find(skeleton.Names.begin(), skeleton.Names.end(), name) != skeleton.Names.end())
 			{
 				error = "the skin has two joints named " + name;
 				return false;
@@ -541,27 +568,29 @@ namespace Game
 					matrix[i / 4][i % 4] = inverseBind[source * 16 + size_t(i)];
 			skeleton.InverseBind.push_back(FlipX(matrix));
 		}
+		index = uint32_t(m_Output.Skeletons.size());
+		m_Output.Skeletons.push_back(std::move(skeleton));
 		return true;
 	}
 
-	bool GltfImporter::CheckSkin(const tinygltf::Model& model, const tinygltf::Skin& skin, const std::string& file, std::string& error)
+	bool GltfImporter::CheckSkin(const tinygltf::Model& model, const tinygltf::Skin& skin, uint32_t skeleton, const std::string& file, std::string& error)
 	{
 		int components = 0;
 		const std::vector<float> inverseBind = ReadFloats(model, skin.inverseBindMatrices, components);
 		for (size_t i = 0; i < skin.joints.size(); i++)
 		{
 			const std::string& name = model.nodes[size_t(skin.joints[i])].name;
-			const int32_t joint = FindJoint(name);
+			const int32_t joint = FindJoint(skeleton, name);
 			if (joint < 0)
 			{
-				error = "joint " + name + " isn't in the shared skeleton";
+				error = "joint " + name + " isn't in the " + m_Output.Skeletons[skeleton].Name + " skeleton";
 				return false;
 			}
 			glm::mat4 matrix(1.0f);
 			if (components == 16 && inverseBind.size() >= (i + 1) * 16)
 				for (int c = 0; c < 16; c++)
 					matrix[c / 4][c % 4] = inverseBind[i * 16 + size_t(c)];
-			if (!NearlyEqual(FlipX(matrix), m_Output.Skeleton.InverseBind[size_t(joint)]))
+			if (!NearlyEqual(FlipX(matrix), m_Output.Skeletons[skeleton].InverseBind[size_t(joint)]))
 			{
 				m_Warnings.push_back(file + ": joint " + name + " is bound differently than the shared skeleton, the mesh may look distorted");
 				return true;
@@ -708,16 +737,9 @@ namespace Game
 	bool GltfImporter::ImportCharacter(const tinygltf::Model& model, const std::string& file, std::string& error)
 	{
 		bool any = false;
-		if (m_Output.Skeleton.Names.empty())
-		{
-			if (model.skins.empty())
-			{
-				error = "there's no skin to take the skeleton from";
-				return false;
-			}
-			if (!SetupSkeleton(model, model.skins[0], error))
-				return false;
-		}
+		uint32_t skeleton = 0;
+		if (!SharedSkeleton(model, skeleton, error))
+			return false;
 		const std::vector<int> parents = ParentsOf(model);
 		for (size_t n = 0; n < model.nodes.size(); n++)
 		{
@@ -730,16 +752,16 @@ namespace Game
 			if (node.skin >= 0 && size_t(node.skin) < model.skins.size())
 			{
 				const tinygltf::Skin& skin = model.skins[size_t(node.skin)];
-				if (!CheckSkin(model, skin, file, error))
+				if (!CheckSkin(model, skin, skeleton, file, error))
 					return false;
 				remap.resize(skin.joints.size());
 				for (size_t i = 0; i < skin.joints.size(); i++)
-					remap[i] = uint8_t(FindJoint(model.nodes[size_t(skin.joints[i])].name));
+					remap[i] = uint8_t(FindJoint(skeleton, model.nodes[size_t(skin.joints[i])].name));
 			}
 			else
 			{
 				for (int parent = parents[n]; parent >= 0 && rigidJoint < 0; parent = parents[size_t(parent)])
-					rigidJoint = FindJoint(model.nodes[size_t(parent)].name);
+					rigidJoint = FindJoint(skeleton, model.nodes[size_t(parent)].name);
 				rigidJoint = std::max(rigidJoint, 0);
 				transform = NodeGlobal(model, parents, int(n));
 			}
@@ -758,6 +780,7 @@ namespace Game
 				ModelMesh part;
 				part.Name = UniqueMeshName(mesh.primitives.size() > 1 ? mesh.name + "." + std::to_string(p) : mesh.name, file);
 				part.Skinned = true;
+				part.Skeleton = skeleton;
 				ApplyMaterial(model, primitive.material, part);
 				part.FirstIndex = uint32_t(m_Output.Indices.size());
 				part.IndexCount = uint32_t(geometry.Indices.size());
@@ -828,27 +851,17 @@ namespace Game
 		return part > 0;
 	}
 
-	bool GltfImporter::ImportAnimations(const tinygltf::Model& model, const std::string& file, std::string& error)
+	bool GltfImporter::ImportAnimations(const tinygltf::Model& model, const std::string& file, uint32_t skeletonIndex, std::string& error)
 	{
-		if (m_Output.Skeleton.Names.empty())
-		{
-			if (model.skins.empty())
-			{
-				error = "there's no skin to take the skeleton from";
-				return false;
-			}
-			if (!SetupSkeleton(model, model.skins[0], error))
-				return false;
-		}
-		const ModelSkeleton& skeleton = m_Output.Skeleton;
+		const ModelSkeleton& skeleton = m_Output.Skeletons[skeletonIndex];
 		const uint32_t joints = skeleton.JointCount();
 		std::vector<int32_t> nodeJoint(model.nodes.size(), -1);
 		for (size_t n = 0; n < model.nodes.size(); n++)
-			nodeJoint[n] = FindJoint(model.nodes[n].name);
+			nodeJoint[n] = FindJoint(skeletonIndex, model.nodes[n].name);
 
 		for (const tinygltf::Animation& animation : model.animations)
 		{
-			if (!m_ClipNames.insert(animation.name).second)
+			if (!m_ClipNames.insert(skeleton.Name + "/" + animation.name).second)
 				continue;
 			struct Channel
 			{
@@ -873,6 +886,7 @@ namespace Game
 			}
 			ModelClip clip;
 			clip.Name = animation.name;
+			clip.Skeleton = skeletonIndex;
 			clip.FrameRate = ModelClipFrameRate;
 			clip.FrameCount = uint32_t(std::lround(duration * clip.FrameRate)) + 1;
 			clip.Frames.resize(size_t(clip.FrameCount) * joints);
@@ -960,6 +974,8 @@ namespace Game
 			result.Color = { float(pbr.baseColorFactor[0]), float(pbr.baseColorFactor[1]), float(pbr.baseColorFactor[2]), float(pbr.baseColorFactor[3]) };
 		result.Roughness = float(pbr.roughnessFactor);
 		result.Metallic = float(pbr.metallicFactor);
+		result.DoubleSided = material.doubleSided;
+		result.Water = name.find("water") != std::string::npos;
 		if (material.alphaMode == "MASK")
 			result.AlphaCutoff = float(material.alphaCutoff);
 		else if (material.alphaMode == "BLEND")
@@ -982,6 +998,11 @@ namespace Game
 		const std::optional<RgbaImage> albedo = image(pbr.baseColorTexture.index);
 		const std::optional<RgbaImage> normal = image(material.normalTexture.index);
 		std::optional<RgbaImage> surface = image(pbr.metallicRoughnessTexture.index);
+		if (material.emissiveFactor.size() == 3)
+			result.Emission = { float(material.emissiveFactor[0]), float(material.emissiveFactor[1]), float(material.emissiveFactor[2]) };
+		if (const auto strength = material.extensions.find("KHR_materials_emissive_strength"); strength != material.extensions.end() && strength->second.Has("emissiveStrength"))
+			result.Emission *= float(strength->second.Get("emissiveStrength").GetNumberAsDouble());
+		const std::optional<RgbaImage> emission = result.Emission != glm::vec3(0.0f) ? image(material.emissiveTexture.index) : std::nullopt;
 		const int occlusionIndex = material.occlusionTexture.index;
 		if (surface && occlusionIndex != pbr.metallicRoughnessTexture.index)
 		{
@@ -1008,6 +1029,7 @@ namespace Game
 			.Alpha = alpha ? &*alpha : nullptr,
 			.Normal = normal ? &*normal : nullptr,
 			.Surface = surface ? &*surface : nullptr,
+			.Emission = emission ? &*emission : nullptr,
 			.MaxSize = source.TextureSize ? source.TextureSize : 512,
 			.AlphaCutoff = result.AlphaCutoff,
 			.Repeat = true,
@@ -1045,8 +1067,11 @@ namespace Game
 		{
 			std::string Name;
 			std::map<int, Geometry> ByMaterial;
+			uint32_t Skeleton = NoSkeleton;
+			glm::vec3 Origin{ 0.0f };
 		};
 		std::vector<Group> groups;
+		std::vector<uint32_t> skeletons;
 		if (!source.SplitNodes)
 			groups.push_back({ name, {} });
 		for (size_t n = 0; n < model.nodes.size(); n++)
@@ -1057,18 +1082,50 @@ namespace Game
 			if (source.SplitNodes)
 				groups.push_back({ name + "/" + (node.name.empty() ? std::to_string(n) : node.name), {} });
 			Group& group = groups.back();
-			const glm::mat4 global = NodeGlobal(model, parents, int(n));
+			std::vector<uint8_t> remap;
+			if (node.skin >= 0 && size_t(node.skin) < model.skins.size())
+			{
+				const tinygltf::Skin& skin = model.skins[size_t(node.skin)];
+				const std::string skeletonName = skin.name.empty() ? name : skin.name;
+				uint32_t skeleton = 0;
+				if (const std::optional<uint32_t> found = FindSkeleton(skeletonName))
+					skeleton = *found;
+				else if (!SetupSkeleton(model, skin, skeletonName, skeleton, error))
+				{
+					error = file->string() + ": " + error;
+					return false;
+				}
+				if (!CheckSkin(model, skin, skeleton, name, error))
+				{
+					error = file->string() + ": " + error;
+					return false;
+				}
+				remap.resize(skin.joints.size());
+				for (size_t i = 0; i < skin.joints.size(); i++)
+					remap[i] = uint8_t(FindJoint(skeleton, model.nodes[size_t(skin.joints[i])].name));
+				group.Skeleton = skeleton;
+				if (std::find(skeletons.begin(), skeletons.end(), skeleton) == skeletons.end())
+					skeletons.push_back(skeleton);
+			}
+			const glm::mat4 global = remap.empty() ? NodeGlobal(model, parents, int(n)) : glm::mat4(1.0f);
+			group.Origin = glm::vec3(global[3]);
 			for (const tinygltf::Primitive& primitive : model.meshes[size_t(node.mesh)].primitives)
 			{
 				if ((primitive.mode != TINYGLTF_MODE_TRIANGLES && primitive.mode != -1) || material(primitive.material).Skip)
 					continue;
-				if (!AppendPrimitive(model, primitive, global, nullptr, -1, group.ByMaterial[primitive.material], error))
+				if (!AppendPrimitive(model, primitive, global, remap.empty() ? nullptr : &remap, -1, group.ByMaterial[primitive.material], error))
 				{
 					error = file->string() + ": " + error;
 					return false;
 				}
 			}
 		}
+		for (const uint32_t skeleton : skeletons)
+			if (!model.animations.empty() && !ImportAnimations(model, name, skeleton, error))
+			{
+				error = file->string() + ": " + error;
+				return false;
+			}
 		uint32_t count = 0;
 		for (Group& group : groups)
 		{
@@ -1080,7 +1137,9 @@ namespace Game
 					low = glm::min(low, vertex.Position);
 					high = glm::max(high, vertex.Position);
 				}
-			const glm::vec3 pivot = source.SplitNodes ? glm::vec3(0.5f * (low.x + high.x), low.y, 0.5f * (low.z + high.z)) : glm::vec3(0.0f);
+			glm::vec3 pivot(0.0f);
+			if (source.SplitNodes && group.Skeleton == NoSkeleton)
+				pivot = source.KeepOrigin ? group.Origin : glm::vec3(0.5f * (low.x + high.x), low.y, 0.5f * (low.z + high.z));
 			uint32_t part = 0;
 			for (auto& [index, geometry] : group.ByMaterial)
 			{
@@ -1097,9 +1156,14 @@ namespace Game
 				mesh.Surface = scan.Surface;
 				mesh.Normal = scan.Normal;
 				mesh.Color = scan.Color;
+				mesh.Emission = scan.Emission;
 				mesh.Roughness = scan.Roughness;
 				mesh.Metallic = scan.Metallic;
 				mesh.AlphaCutoff = scan.AlphaCutoff;
+				mesh.DoubleSided = scan.DoubleSided;
+				mesh.Water = scan.Water;
+				mesh.Skinned = group.Skeleton != NoSkeleton;
+				mesh.Skeleton = group.Skeleton;
 				AddMesh(std::move(mesh), geometry.Vertices, geometry.Indices);
 				part++;
 				count++;

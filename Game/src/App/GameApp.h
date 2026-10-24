@@ -1,11 +1,15 @@
 #pragma once
 #include "App/AppState.h"
+#include "App/GraphicsTier.h"
 #include "App/LaunchOptions.h"
 #include "Rendering/Lighting.h"
+#include "UI/PerformanceWindow.h"
 #include "UI/UiTypes.h"
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/Net/Protocol.h>
 #include <GameShared/Save/CharacterProfile.h>
+#include <RadianceEngine/Core/FrameLimiter.h>
+#include <RadianceEngine/Core/Timer.h>
 #include <RadianceEngine/Graphics/Device.h>
 #include <RadianceEngine/Graphics/PresentQueue.h>
 #include <RadianceEngine/Graphics/RenderGraph.h>
@@ -13,6 +17,7 @@
 #include <RadianceEngine/Window/Window.h>
 #include <TimbreAudio/AudioEngine.h>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <string>
 
@@ -40,7 +45,10 @@ namespace Game
 		ShadowQuality Shadows = ShadowQuality::High;
 		GiQuality Gi = GiQuality::Medium;
 		bool Fullscreen = false;
+		bool Vsync = true;
+		uint32_t FrameCap = GraphicsPreset{}.FrameCap;
 		bool ShowControls = true;
+		bool ShowPerformance = false;
 		MapKind Map = MapKind::Town;
 		GameMode StartMode = GameMode::Hub;
 		uint8_t Tier = 1;
@@ -48,6 +56,7 @@ namespace Game
 		MatchRules Rules;
 		bool UnlimitedMaterials = false;
 		bool Peaceful = false;
+		bool Leviathan = false;
 		uint32_t FirstWave = 1;
 		float LootRate = 1.0f;
 		NetworkSimulation Simulation;
@@ -86,6 +95,12 @@ namespace Game
 		void ApplyAudioSettings();
 		void ApplyVisualSettings();
 		void RememberSettings(SettingsGroup group);
+		const Rdn::DeviceProperties& GetDeviceProperties() const { return m_Device->GetProperties(); }
+		Rdn::PresentMode GetPresentMode() const { return m_PresentQueue->GetPresentMode(); }
+		Rdn::Extent2D GetExtent() const { return m_PresentQueue->GetExtent(); }
+		Rdn::MemoryUsage GetMemoryUsage() const { return m_Allocator->GetDeviceLocalUsage(); }
+		GraphicsTier GetRecommendedGraphics() const { return m_RecommendedGraphics; }
+		void ApplyRecommendedGraphics();
 		CharacterProfile LoadCharacter(const std::string& name, StarterKit kit, bool fresh) const;
 		void SaveCharacter(const CharacterProfile& profile) const;
 
@@ -100,11 +115,19 @@ namespace Game
 
 		void LoadPreferences();
 		void SavePreferences();
+		void AdoptGraphicsTier();
 
 		Settings m_Settings;
 		Settings m_Stored;
 		bool m_PreferencesDirty = false;
 		float m_PreferencesDelay = 0.0f;
+		GraphicsTier m_RecommendedGraphics = GraphicsTier::High;
+		std::string m_GraphicsGpu;
+		std::optional<GraphicsTier> m_GraphicsTier;
+		Rdn::Timer m_Clock;
+		Rdn::FrameLimiter m_Limiter;
+		FrameTiming m_FrameTiming;
+		std::unique_ptr<PerformanceWindow> m_Performance;
 		std::unique_ptr<Rdn::Window> m_Window;
 		std::unique_ptr<Rdn::Device> m_Device;
 		std::unique_ptr<Rdn::PresentQueue> m_PresentQueue;

@@ -113,6 +113,7 @@ namespace Game
 		Orb,
 		Triangle,
 		Sigil,
+		Card,
 	};
 
 	struct UiPrimitive

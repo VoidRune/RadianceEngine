@@ -1,6 +1,7 @@
 #pragma once
 #include "Rendering/GBuffer.h"
 #include "Rendering/Particles.h"
+#include "Rendering/PostProcess.h"
 #include <RadianceEngine/Graphics/ResourceAllocator.h>
 #include <glm/glm.hpp>
 #include <algorithm>
@@ -52,7 +53,7 @@ namespace Game
 	};
 
 	inline constexpr const char* GiQualityNames[] = { "off", "low", "medium", "high" };
-	inline constexpr GiSettings GiPresets[] = { {}, { 8, 5, false, 0.0f, 0b00000, false, 3 }, { 4, 6, false, 0.05f, 0b01110, false, 3 }, { 2, 6, false, 0.05f, 0b11111, false, 4 } };
+	inline constexpr GiSettings GiPresets[] = { {}, { 8, 5, false, 0.0f, 0b00000, false, 3 }, { 4, 6, true, 0.05f, 0b01110, false, 3 }, { 2, 6, true, 0.05f, 0b11111, false, 4 } };
 	static_assert(std::size(GiQualityNames) == size_t(GiQuality::Count) && std::size(GiPresets) == size_t(GiQuality::Count));
 	inline constexpr Rdn::Format GiRadianceFormat = Rdn::Format::R16G16B16A16_Sfloat;
 	inline constexpr Rdn::Format GiHeightFormat = Rdn::Format::R32G32_Sfloat;
@@ -84,7 +85,7 @@ namespace Game
 	};
 
 	ShadowView FitShadowView(const WorldCamera& camera, const glm::vec3& sunDirection, float groundHeight, uint32_t resolution, glm::vec2& extent);
-	bool CompileVariant(const char* path, const char* define, Rdn::ShaderDesc& desc);
+	bool CompileVariant(const char* path, const char* define, Rdn::ShaderDesc& desc, Rdn::ShaderStage stage = Rdn::ShaderStage::Compute);
 
 	inline bool IsRawView(DebugView view)
 	{
@@ -104,6 +105,12 @@ namespace Game
 		float EnvironmentIntensity = 1.0f;
 		float EnvironmentRotation = 0.0f;
 		float Exposure = 1.0f;
+		bool Floating = false;
+		float Time = 0.0f;
+		float FocusHeight = 0.0f;
+		float Leviathan = -1.0f;
+		glm::vec3 Haze{ 0.07f, 0.055f, 0.13f };
+		ColorGrade Grade;
 	};
 
 	struct EnvironmentView
@@ -146,6 +153,8 @@ namespace Game
 			std::array<glm::vec4, 9> EnvironmentSh;
 			glm::vec4 EnvironmentParams;
 			glm::vec4 SkyMaskTransform;
+			glm::vec4 Backdrop;
+			glm::vec4 Haze;
 		};
 
 		Rdn::Device& m_Device;
