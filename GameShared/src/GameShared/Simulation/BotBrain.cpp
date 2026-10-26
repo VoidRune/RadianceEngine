@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <optional>
+#include <unordered_map>
 
 namespace Game
 {
@@ -18,7 +20,7 @@ namespace Game
 		constexpr float FieldInterval = 0.1f;
 		constexpr float FieldLimit = 12.0f;
 		constexpr float LandingDrag = 0.92f;
-		constexpr float ChainReach = 7.0f;
+		constexpr float ChainReach = 5.5f;
 		constexpr uint32_t VelocityTicks = 6;
 		constexpr float EscapeClearance = 1.1f;
 		constexpr float WanderSeconds = 3.0f;
@@ -29,11 +31,13 @@ namespace Game
 		constexpr float ManaPrice = 0.2f;
 		constexpr float WaryHealth = 0.35f;
 		constexpr int32_t DodgeDamage = 10;
+		constexpr float RollClearance = 0.3f;
+		constexpr float RollTurns[] = { 0.4f, -0.4f, 0.8f, -0.8f };
 		constexpr float BlinkReach = 3.5f;
 		constexpr float BloodHealth = 0.7f;
 		constexpr float BloodPrice = 0.15f;
 		constexpr float BloodMagicFloor = 0.25f;
-		constexpr float PlantReach = 10.0f;
+		constexpr float PlantReach = 7.5f;
 		constexpr float PlantNear = 2.5f;
 		constexpr float PlantCrowd = 6.0f;
 		constexpr float PlantHealth = 0.25f;
@@ -41,8 +45,34 @@ namespace Game
 		constexpr float PlantHorizon = 0.6f;
 		constexpr float PlantClearance = 1.5f;
 		constexpr float PlantCollapse = 3.0f;
-		constexpr float CycleReach = 8.0f;
+		constexpr float CycleReach = 7.0f;
 		constexpr float CycleScore = 0.05f;
+		constexpr float IslandSpan = 5.0f;
+		constexpr float GustLook = 1.2f;
+		constexpr float FlightSeconds = 0.4f;
+		constexpr float StrikeHorizon = BoltWarning + 0.2f;
+		constexpr float StrikeLead = 0.4f;
+		constexpr float StrikeMargin = 0.45f;
+		constexpr float RingLook = 2.0f;
+		constexpr float RingMargin = 1.2f;
+		constexpr float RouteSeconds = 0.4f;
+		constexpr float RouteStep = 0.4f;
+
+		bool Climbable(const Level& level, Vec2 from, Vec2 to)
+		{
+			if (level.Relief.IsEmpty())
+				return true;
+			float floor = FloorHeight(level, from);
+			const int32_t steps = std::max(1, int32_t(std::ceil(Length(to - from) / RouteStep)));
+			for (int32_t i = 1; i <= steps; i++)
+			{
+				const float height = FloorHeight(level, Lerp(from, to, float(i) / float(steps)));
+				if (height - floor > ClimbHeight)
+					return false;
+				floor = height;
+			}
+			return true;
+		}
 
 		struct SkillParams
 		{
@@ -71,7 +101,7 @@ namespace Game
 
 		constexpr BrawlSpells BalancedSets[] = {
 			{ AbilityId::Gust, AbilityId::Warp, AbilityId::Comet },
-			{ AbilityId::Frostbite, AbilityId::Gust, AbilityId::Warp },
+			{ AbilityId::FrostSpear, AbilityId::Gust, AbilityId::Warp },
 			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::MirrorWard },
 			{ AbilityId::Shockwave, AbilityId::Swap, AbilityId::Warp },
 			{ AbilityId::Firebomb, AbilityId::StormStrike, AbilityId::Warp },
@@ -85,16 +115,16 @@ namespace Game
 			{ AbilityId::ChainHook, AbilityId::Firebomb, AbilityId::Warp },
 		};
 		constexpr BrawlSpells SniperSets[] = {
-			{ AbilityId::Frostbite, AbilityId::Comet, AbilityId::Warp },
+			{ AbilityId::FrostSpear, AbilityId::Comet, AbilityId::Warp },
 			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::Warp },
-			{ AbilityId::Frostbite, AbilityId::ArcLightning, AbilityId::MirrorWard },
+			{ AbilityId::FrostSpear, AbilityId::ArcLightning, AbilityId::MirrorWard },
 			{ AbilityId::StormStrike, AbilityId::SplittingBolt, AbilityId::Warp },
 			{ AbilityId::Firebomb, AbilityId::ArcLightning, AbilityId::Warp },
 		};
 		constexpr BrawlSpells TricksterSets[] = {
 			{ AbilityId::Swap, AbilityId::GravityWell, AbilityId::Warp },
 			{ AbilityId::GravityWell, AbilityId::Comet, AbilityId::MirrorWard },
-			{ AbilityId::Swap, AbilityId::Frostbite, AbilityId::GravityWell },
+			{ AbilityId::Swap, AbilityId::FrostSpear, AbilityId::GravityWell },
 			{ AbilityId::ChainHook, AbilityId::Swap, AbilityId::Warp },
 			{ AbilityId::SplittingBolt, AbilityId::GravityWell, AbilityId::Firebomb },
 		};
@@ -110,7 +140,7 @@ namespace Game
 			{
 			case AbilityId::EmberBolt:
 				return 0.05f;
-			case AbilityId::Frostbite:
+			case AbilityId::FrostSpear:
 				return 0.09f;
 			case AbilityId::ArcLightning:
 				return 0.1f;
@@ -143,7 +173,7 @@ namespace Game
 			case BotStyle::Bruiser:
 				return spell == AbilityId::Gust || spell == AbilityId::Shockwave || spell == AbilityId::ChainHook ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
 			case BotStyle::Sniper:
-				return spell == AbilityId::Frostbite || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike || spell == AbilityId::SplittingBolt ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : spell == AbilityId::Gust ? 0.85f : 1.0f;
+				return spell == AbilityId::FrostSpear || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike || spell == AbilityId::SplittingBolt ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : spell == AbilityId::Gust ? 0.85f : 1.0f;
 			case BotStyle::Trickster:
 				return spell == AbilityId::Swap || spell == AbilityId::GravityWell || spell == AbilityId::ChainHook ? 1.4f : spell == AbilityId::Firebomb ? 1.15f : 1.0f;
 			default:
@@ -336,7 +366,7 @@ namespace Game
 		m_Clock = brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over ? std::max(brawl.Clock, 0.0f) : 0.0f;
 		if (std::abs(m_Clock - m_FieldClock) >= FieldInterval)
 		{
-			RefreshClearance();
+			RefreshClearance(world);
 			m_FieldClock = m_Clock;
 		}
 	}
@@ -344,7 +374,9 @@ namespace Game
 	void BotArena::BuildCells(const World& world)
 	{
 		const TileMap& map = world.GetMap();
+		const Elevation& relief = world.GetLevel().Relief;
 		m_SampleCell.assign(size_t(m_Width) * size_t(m_Height), SolidSample);
+		m_Floor.assign(relief.IsEmpty() ? size_t(0) : m_SampleCell.size(), 0.0f);
 		m_Slide.assign(m_SampleCell.size(), 1.0f);
 		for (int32_t y = 0; y < m_Height; y++)
 			for (int32_t x = 0; x < m_Width; x++)
@@ -353,12 +385,19 @@ namespace Game
 				const CellCoord cell = CellAt(sample);
 				int32_t& code = m_SampleCell[size_t(Index(x, y))];
 				const TerrainId terrain = map.GetTerrain(cell.X, cell.Y);
-				if (IsHazardLiquid(terrain))
+				if (!relief.IsEmpty())
+				{
+					const int32_t tileX = std::clamp(int32_t(sample.x), 0, map.GetWidth() - 1);
+					const int32_t tileY = std::clamp(int32_t(sample.y), 0, map.GetHeight() - 1);
+					code = relief.RimDistance(sample) < 0.0f ? LavaSample : !map.IsWalkable(tileX, tileY) ? SolidSample : tileY * map.GetWidth() + tileX;
+					m_Floor[size_t(Index(x, y))] = relief.Height(sample);
+				}
+				else if (IsBrawlHazard(terrain))
 					code = LavaSample;
 				else if (IsBrawlFloor(terrain))
 					code = cell.Y * map.GetWidth() + cell.X;
 				else
-					code = IsHazardLiquid(map.GetTerrain(int32_t(std::floor(sample.x)), int32_t(std::floor(sample.y)))) ? LavaSample : SolidSample;
+					code = world.GetLevel().Skyborne || IsBrawlHazard(map.GetTerrain(int32_t(std::floor(sample.x)), int32_t(std::floor(sample.y)))) ? LavaSample : SolidSample;
 				m_Slide[size_t(Index(x, y))] = 1.0f / SurfaceFriction(world.GetLevel(), sample);
 			}
 		m_Collapse.assign(m_SampleCell.size(), NeverLava);
@@ -381,14 +420,50 @@ namespace Game
 		}
 	}
 
-	void BotArena::RefreshClearance()
+	void BotArena::RefreshClearance(const World& world)
 	{
 		const float horizon = m_Clock + CollapseWarning;
+		m_Cover.assign(m_Collapse.size(), 0);
+		const CollapsePlan& plan = world.GetMatch().GetBrawl().Plan;
+		for (const DriftIsland& island : world.GetLevel().Islands)
+		{
+			if (IslandCollapseTime(plan, island) <= horizon)
+				continue;
+			const Vec2 offset = IslandOffset(island, m_Clock);
+			const Vec2 middle = island.Center + offset;
+			const int32_t minX = std::max(int32_t((middle.x - IslandSpan) / GridStep), 0);
+			const int32_t maxX = std::min(int32_t((middle.x + IslandSpan) / GridStep), m_Width - 1);
+			const int32_t minY = std::max(int32_t((middle.y - IslandSpan) / GridStep), 0);
+			const int32_t maxY = std::min(int32_t((middle.y + IslandSpan) / GridStep), m_Height - 1);
+			for (int32_t y = minY; y <= maxY; y++)
+				for (int32_t x = minX; x <= maxX; x++)
+					if (HoldsCell(island, CellAt(Vec2((float(x) + 0.5f) * GridStep, (float(y) + 0.5f) * GridStep) - offset)))
+						m_Cover[size_t(Index(x, y))] = 1;
+		}
+		m_Strike.assign(m_Collapse.size(), NeverLava);
+		m_Storm.assign(m_Collapse.size(), 0);
+		if (plan.Shape == BrawlShape::Peak && world.GetMatch().GetBrawl().Phase == BrawlPhase::Fight)
+		{
+			for (const LightningBolt& bolt : BoltsOf(plan))
+			{
+				if (bolt.Time <= m_Clock || bolt.Time > m_Clock + StrikeHorizon)
+					continue;
+				const float reach = BoltRadius + StrikeMargin;
+				for (int32_t y = std::max(int32_t((bolt.Center.y - reach) / GridStep), 0); y <= std::min(int32_t((bolt.Center.y + reach) / GridStep), m_Height - 1); y++)
+					for (int32_t x = std::max(int32_t((bolt.Center.x - reach) / GridStep), 0); x <= std::min(int32_t((bolt.Center.x + reach) / GridStep), m_Width - 1); x++)
+						if (const size_t i = size_t(Index(x, y)); LengthSquared(Vec2((float(x) + 0.5f) * GridStep, (float(y) + 0.5f) * GridStep) - bolt.Center) <= reach * reach)
+							m_Strike[i] = std::min(m_Strike[i], bolt.Time);
+			}
+			if (const StormRing ring = RingAt(plan, m_Clock + RingLook); ring.Active)
+				for (int32_t y = 0; y < m_Height; y++)
+					for (int32_t x = 0; x < m_Width; x++)
+						m_Storm[size_t(Index(x, y))] = ring.Outside(Vec2((float(x) + 0.5f) * GridStep, (float(y) + 0.5f) * GridStep)) ? 1 : 0;
+		}
 		m_ToDanger.resize(m_Collapse.size());
 		m_ToSafety.resize(m_Collapse.size());
 		for (size_t i = 0; i < m_Collapse.size(); i++)
 		{
-			const bool danger = m_Collapse[i] <= horizon;
+			const bool danger = (m_Collapse[i] <= horizon && m_Cover[i] == 0) || m_Strike[i] < NeverLava || m_Storm[i] != 0;
 			m_ToDanger[i] = danger ? 0.0f : FieldLimit / GridStep;
 			m_ToSafety[i] = danger ? FieldLimit / GridStep : 0.0f;
 		}
@@ -424,13 +499,63 @@ namespace Game
 		return m_Slide[size_t(Index(x, y))];
 	}
 
+	std::optional<Vec2> BotArena::Route(Vec2 from, Vec2 to) const
+	{
+		if (m_Floor.empty())
+			return std::nullopt;
+		const auto node = [&](Vec2 point) { return point.x >= 0.0f && point.y >= 0.0f && point.x < float(m_Width) * GridStep && point.y < float(m_Height) * GridStep ? Index(int32_t(point.x / GridStep), int32_t(point.y / GridStep)) : -1; };
+		const int32_t start = node(from);
+		const int32_t goal = node(to);
+		if (start < 0 || goal < 0 || m_SampleCell[size_t(goal)] < 0)
+			return std::nullopt;
+		std::vector<int32_t> parent(m_SampleCell.size(), -1);
+		std::vector<int32_t> queue;
+		queue.reserve(2048);
+		parent[size_t(start)] = start;
+		queue.push_back(start);
+		for (size_t head = 0; head < queue.size() && parent[size_t(goal)] < 0; head++)
+		{
+			const int32_t current = queue[head];
+			const int32_t cx = current % m_Width;
+			const int32_t cy = current / m_Width;
+			const float floor = m_Floor[size_t(current)];
+			for (int32_t dy = -1; dy <= 1; dy++)
+				for (int32_t dx = -1; dx <= 1; dx++)
+				{
+					const int32_t nx = cx + dx;
+					const int32_t ny = cy + dy;
+					if ((dx == 0 && dy == 0) || nx < 0 || ny < 0 || nx >= m_Width || ny >= m_Height)
+						continue;
+					const int32_t next = Index(nx, ny);
+					if (parent[size_t(next)] >= 0 || m_SampleCell[size_t(next)] < 0 || m_Floor[size_t(next)] - floor > ClimbHeight)
+						continue;
+					if (dx != 0 && dy != 0 && (m_SampleCell[size_t(Index(cx, ny))] < 0 || m_SampleCell[size_t(Index(nx, cy))] < 0))
+						continue;
+					parent[size_t(next)] = current;
+					queue.push_back(next);
+				}
+		}
+		if (parent[size_t(goal)] < 0)
+			return std::nullopt;
+		std::vector<int32_t> path;
+		for (int32_t at = goal; at != start; at = parent[size_t(at)])
+			path.push_back(at);
+		if (path.empty())
+			return to;
+		const int32_t step = path[path.size() - std::min<size_t>(path.size(), 3)];
+		return Vec2((float(step % m_Width) + 0.5f) * GridStep, (float(step / m_Width) + 0.5f) * GridStep);
+	}
+
 	float BotArena::CollapseIn(Vec2 position) const
 	{
 		const int32_t x = int32_t(std::floor(position.x / GridStep));
 		const int32_t y = int32_t(std::floor(position.y / GridStep));
 		if (m_Collapse.empty() || x < 0 || y < 0 || x >= m_Width || y >= m_Height)
 			return AlwaysLava;
-		return m_Collapse[size_t(Index(x, y))] - m_Clock;
+		const float strike = size_t(Index(x, y)) < m_Strike.size() && m_Strike[size_t(Index(x, y))] < NeverLava ? m_Strike[size_t(Index(x, y))] - m_Clock - StrikeLead : NeverLava;
+		if (size_t(Index(x, y)) < m_Cover.size() && m_Cover[size_t(Index(x, y))] != 0)
+			return strike;
+		return std::min(m_Collapse[size_t(Index(x, y))] - m_Clock, strike);
 	}
 
 	BotBrain::BotBrain(uint32_t playerId, const BotProfile& profile)
@@ -471,14 +596,17 @@ namespace Game
 		if (!m_Alive)
 			return;
 		const MatchDirector& match = world.GetMatch();
+		m_Terrain = &world.GetLevel();
 		m_Position = transform->Position;
 		m_Push = controller->State.Push;
+		m_Wind = world.GetLevel().Skyborne ? GustAt(match.GetBrawl().Plan, match.GetBrawl().Clock).Velocity : Vec2();
 		m_Health = float(std::max(health->Current, 0)) / float(std::max(health->Max, 1));
 		m_Life = std::max(health->Current, 0);
 		m_SelfFling = match.GetKnockbackScale(NoPlayer, m_PlayerId, m_Health);
 		m_Burning = match.IsBurning(m_PlayerId);
 		m_Loadout = match.GetLoadout(m_PlayerId);
 		m_DamageMode = world.IsDamageBrawl();
+		m_Knockback = float(match.GetRules().Knockback) / 100.0f;
 		m_Reserve = 0.0f;
 		for (uint32_t slot = 1; slot < AbilitySlots && m_DamageMode; slot++)
 			if (SpellIn(slot) == AbilityId::Warp)
@@ -491,7 +619,7 @@ namespace Game
 		m_Rivals.clear();
 		entities.Each<PlayerController>([&](Entity entity, PlayerController& other)
 		{
-			if (other.PlayerId == m_PlayerId || !other.State.Alive || other.State.IsFalling() || !match.IsPresent(other.PlayerId))
+			if (other.PlayerId == m_PlayerId || !other.State.Alive || other.State.IsFalling() || !match.IsPresent(other.PlayerId) || match.AreAllies(m_PlayerId, other.PlayerId))
 				return;
 			const Transform* place = entities.TryGet<Transform>(entity);
 			const Health* life = entities.TryGet<Health>(entity);
@@ -541,6 +669,8 @@ namespace Game
 				}
 				return;
 			}
+			if (match.AreAllies(m_PlayerId, replicated->Owner))
+				return;
 			m_Missiles.push_back({ replicated->NetId, place->Position, projectile.Velocity, projectile.Radius, projectile.Lifetime, AbilityId(projectile.Ability), projectile.Damage });
 		});
 		const float dt = world.GetTickSeconds();
@@ -568,7 +698,7 @@ namespace Game
 				return;
 			}
 			const Replicated* replicated = entities.TryGet<Replicated>(entity);
-			if (!replicated || strike.Shape != StrikeShape::Circle)
+			if (!replicated || strike.Shape != StrikeShape::Circle || match.AreAllies(m_PlayerId, strike.Owner))
 				return;
 			m_Zones.push_back({ replicated->NetId, place->Position, strike.Radius, strike.Remaining });
 		});
@@ -610,7 +740,7 @@ namespace Game
 		return -1;
 	}
 
-	Vec2 BotBrain::SafePoint(const BotArena& arena, float reach, float minimum) const
+	Vec2 BotBrain::SafePoint(const BotArena& arena, float reach, float minimum, Vec2 drift) const
 	{
 		Vec2 best = m_Position;
 		float bestScore = -1e9f;
@@ -618,7 +748,9 @@ namespace Game
 			for (uint32_t step = 0; step < 16; step++)
 			{
 				const Vec2 point = m_Position + FromAngle(2.0f * Pi * float(step) / 16.0f) * radius;
-				const float clearance = arena.Clearance(point);
+				if (m_Terrain && !Climbable(*m_Terrain, m_Position, point))
+					continue;
+				const float clearance = std::min(arena.Clearance(point), arena.Clearance(point + drift));
 				const float score = std::min(clearance, 3.5f) - 0.12f * radius + (clearance >= minimum ? 2.0f : 0.0f);
 				if (score > bestScore)
 				{
@@ -629,18 +761,37 @@ namespace Game
 		return best;
 	}
 
-	void BotBrain::PressDodge(PlayerInput& input, Vec2 direction)
+	void BotBrain::PressDodge(const BotArena& arena, PlayerInput& input, Vec2 direction, bool path)
 	{
-		if (!m_State || m_State->DodgeCooldown > 0.0f || (m_State->HeldButtons & uint8_t(InputButton::Dodge)) != 0 || m_State->DashDistance > 0.0f)
+		if (!m_State || m_State->DodgeCooldown > 0.0f || (m_State->HeldButtons & uint8_t(InputButton::Dodge)) != 0 || m_State->DashDistance > 0.0f || LengthSquared(direction) < 1e-8f)
 			return;
+		const float reach = GetAbility(AbilityId::Roll).DashDistance;
+		const auto clear = [&](Vec2 heading)
+		{
+			for (float t = 0.25f; t <= 1.0f; t += 0.25f)
+				if (arena.Clearance(m_Position + heading * (reach * t)) < RollClearance)
+					return false;
+			return true;
+		};
+		Vec2 heading = Normalize(direction);
+		if (path && !clear(heading))
+		{
+			const auto turned = std::find_if(std::begin(RollTurns), std::end(RollTurns), [&](float turn) { return clear(Rotate(heading, FromAngle(turn))); });
+			if (turned == std::end(RollTurns))
+				return;
+			heading = Rotate(heading, FromAngle(*turned));
+		}
 		input.Buttons |= uint8_t(InputButton::Dodge);
-		input.Move = Normalize(direction);
+		input.Move = heading;
 	}
 
-	void BotBrain::Cast(PlayerInput& input, uint32_t slot, float aim, float distance)
+	void BotBrain::Cast(PlayerInput& input, uint32_t slot, float aim, float distance, float charge)
 	{
 		const SkillParams& params = ParamsOf(m_Profile.Skill);
+		const SkillTraits& skill = m_Traits->Skills[slot];
 		m_Casting = int32_t(slot);
+		m_ChargeUntil = m_Time + skill.CastTime + charge * std::max(skill.ChargeTime - skill.CastTime, 0.0f);
+		m_ChargeSpeed = SpearShot(charge).Speed;
 		m_CastNoise = Noise(params.AimNoise);
 		m_CastStretch = 1.0f + Noise(params.AimNoise * 0.6f);
 		m_CastAim = aim + m_CastNoise;
@@ -655,7 +806,10 @@ namespace Game
 		const BrawlStatus& brawl = world.GetMatch().GetBrawl();
 		const bool lava = IsBrawlLava(world.GetLevel(), brawl, m_Position) || m_Burning;
 		const float collapse = arena.CollapseIn(m_Position);
-		if (!lava && collapse > 0.9f)
+		const Gust gust = GustAt(brawl.Plan, brawl.Clock);
+		const Vec2 drift = gust.Warning > 0.0f ? gust.Direction * (GustSpeed * GustLook) : Vec2();
+		const bool windy = LengthSquared(drift) > 0.0f && arena.Clearance(m_Position + drift) < EscapeClearance;
+		if (!lava && !windy && collapse > 0.9f)
 		{
 			m_Danger = 0.0f;
 			return false;
@@ -664,7 +818,7 @@ namespace Game
 			m_Composed = m_Random.Float() < ParamsOf(m_Profile.Skill).Recovery;
 		m_Danger += m_TickSeconds;
 		const bool act = m_Composed || m_Danger > 0.8f;
-		const Vec2 safe = SafePoint(arena, lava ? 6.5f : 4.0f, EscapeClearance);
+		const Vec2 safe = SafePoint(arena, lava ? 6.5f : 4.0f, EscapeClearance, drift);
 		const Vec2 offset = safe - m_Position;
 		const float distance = Length(offset);
 		input.Move = distance > 1e-3f ? offset / distance : SafeDirection(arena, m_Position, 0.5f);
@@ -720,7 +874,7 @@ namespace Game
 				return true;
 			}
 		if ((lava || collapse < 0.5f) && distance > 1.0f && act)
-			PressDodge(input, input.Move);
+			PressDodge(arena, input, input.Move, false);
 		return true;
 	}
 
@@ -728,7 +882,7 @@ namespace Game
 	{
 		if (LengthSquared(m_Push) < 2.5f * 2.5f)
 			return false;
-		const Vec2 landing = m_Position + m_Push * (LandingDrag * arena.Slide(m_Position) / PushFriction);
+		const Vec2 landing = m_Position + m_Push * (LandingDrag * arena.Slide(m_Position) / PushFriction) + m_Wind * FlightSeconds;
 		const float danger = arena.Clearance(landing);
 		if (danger > 0.35f)
 		{
@@ -761,7 +915,7 @@ namespace Game
 					return true;
 				}
 		if (bestClearance > danger + 0.3f && m_FlingComposed)
-			PressDodge(input, best);
+			PressDodge(arena, input, best, false);
 		return true;
 	}
 
@@ -816,7 +970,7 @@ namespace Game
 				if (m_State->DodgeCooldown > 0.0f)
 					Blink(arena, input, side);
 				else
-					PressDodge(input, side);
+					PressDodge(arena, input, side);
 			}
 			m_Sidestep = side;
 			m_SidestepTime = 0.25f;
@@ -850,7 +1004,7 @@ namespace Game
 				if (m_State->DodgeCooldown > 0.0f)
 					Blink(arena, input, out);
 				else
-					PressDodge(input, out);
+					PressDodge(arena, input, out);
 			}
 			return true;
 		}
@@ -1027,6 +1181,7 @@ namespace Game
 					return true;
 			return false;
 		};
+		float charge = 0.0f;
 		const auto consider = [&](float score, float aim, float distance, uint32_t target, Vec2 point, int32_t follow = -1)
 		{
 			if (score > best.Score)
@@ -1037,14 +1192,41 @@ namespace Game
 				best.Target = target;
 				best.Point = point;
 				best.FollowSlot = follow;
+				best.Charge = charge;
 			}
 		};
 		switch (def.Kind)
 		{
 		case AbilityKind::Projectile:
+			if (IsCharged(skill))
+			{
+				const float span = std::max(skill.ChargeTime - skill.CastTime, 0.0f);
+				for (const Rival& rival : m_Rivals)
+				{
+					if (rival.Warded)
+						continue;
+					const float gap = Length(rival.Position - m_Position);
+					const float needed = std::clamp((gap + 0.4f - def.ProjectileRange - def.SpawnOffset) / (SpearFullRange - def.ProjectileRange), 0.0f, 1.0f);
+					for (const float power : { needed, std::max(needed, 0.5f), 1.0f })
+					{
+						const ChargedShot shot = SpearShot(power);
+						const float hold = skill.CastTime + power * span;
+						const Vec2 point = Lead(rival, hold, shot.Speed);
+						const Vec2 offset = point - m_Position;
+						const float distance = Length(offset);
+						if (distance < 0.3f || distance > shot.Range + def.SpawnOffset - 0.2f || !HasLineOfFire(level, m_Position, point))
+							continue;
+						float value = LandingValue(arena, point, offset / distance * (shot.Push * rival.Fling)) + 0.08f + (setupReady() ? 0.12f : 0.0f);
+						value += Harm(damage * shot.DamageScale, rival, spell);
+						charge = power;
+						consider(HitChance(hold + distance / shot.Speed, distance, rival) * value * weight - threshold, AngleOf(offset), distance, rival.PlayerId, point);
+					}
+				}
+				break;
+			}
 			if (spell == AbilityId::ChainHook)
 			{
-				const float pull = (HasCard(m_Loadout.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) * (m_DamageMode ? DamagePullScale : 1.0f);
+				const float pull = (HasCard(m_Loadout.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) * (m_DamageMode ? DamagePullScale : 1.0f) * m_Knockback;
 				const float reach = def.ProjectileRange * skill.RangeScale + def.SpawnOffset - 0.2f;
 				for (const Rival& rival : m_Rivals)
 				{
@@ -1273,6 +1455,15 @@ namespace Game
 	{
 		const BrawlStatus& brawl = world.GetMatch().GetBrawl();
 		const TileMap& map = world.GetMap();
+		const StormRing ring = RingAt(brawl.Plan, brawl.Clock + RingLook);
+		const float safe = std::max(ring.Radius - RingMargin, 0.0f);
+		if (ring.Active && Length(m_Position - ring.Center) > safe)
+		{
+			const Vec2 inward = m_Position - ring.Center;
+			m_Goal = ring.Center + (LengthSquared(inward) > 1e-6f ? Normalize(inward) : Vec2(1.0f, 0.0f)) * (safe * 0.5f);
+			m_HasGoal = true;
+			return;
+		}
 		const Rival* target = FindRival(m_Target);
 		bool closeIn = false;
 		for (uint32_t slot = 1; slot < AbilitySlots; slot++)
@@ -1280,12 +1471,14 @@ namespace Game
 				closeIn = true;
 		const float caution = ParamsOf(m_Profile.Skill).Caution;
 		const bool wary = m_DamageMode && m_Health < WaryHealth;
-		const float preferred = closeIn && !wary ? 2.4f : (m_Profile.Style == BotStyle::Sniper ? 6.5f : 4.8f) + (wary ? 2.0f : 0.0f);
+		const float preferred = closeIn && !wary ? 2.4f : (m_Profile.Style == BotStyle::Sniper ? 5.5f : 4.2f) + (wary ? 1.5f : 0.0f);
 		const float radius = std::max(brawl.Plan.StartRadius, 1.0f);
 		const auto score = [&](Vec2 point)
 		{
-			if (!map.IsWalkableAt(point))
+			if (!map.IsWalkableAt(point) || !Climbable(world.GetLevel(), m_Position, point))
 				return -1e9f;
+			if (ring.Active && Length(point - ring.Center) > safe)
+				return -5.0f - Length(point - ring.Center);
 			const float clearance = arena.Clearance(point);
 			if (clearance < 0.5f)
 				return -10.0f + clearance;
@@ -1388,7 +1581,7 @@ namespace Game
 			input.Move = m_Sidestep;
 			return;
 		}
-		const Vec2 offset = m_Goal - m_Position;
+		const Vec2 offset = (m_Routed ? m_Route : m_Goal) - m_Position;
 		const float distance = Length(offset);
 		Vec2 move = distance > 0.2f ? offset / std::max(distance, 0.6f) : Vec2();
 		if (const Rival* target = FindRival(m_Target); target && LengthSquared(target->Position - m_Position) < 81.0f)
@@ -1397,6 +1590,23 @@ namespace Game
 			move += Vec2(-toward.y, toward.x) * (0.45f * m_Strafe);
 		}
 		input.Move = ClampLength(move, 1.0f);
+	}
+
+	void BotBrain::RouteGoal(const World& world, const BotArena& arena)
+	{
+		m_Routed = false;
+		const Level& level = world.GetLevel();
+		if (level.Relief.IsEmpty() || !m_HasGoal || Climbable(level, m_Position, m_Goal))
+			return;
+		if (m_Time >= m_RouteTime || LengthSquared(m_RouteGoal - m_Goal) > 0.25f)
+		{
+			const std::optional<Vec2> step = arena.Route(m_Position, m_Goal);
+			m_RouteTime = m_Time + RouteSeconds;
+			m_RouteGoal = m_Goal;
+			m_RouteValid = step.has_value();
+			m_Route = step.value_or(m_Goal);
+		}
+		m_Routed = m_RouteValid;
 	}
 
 	void BotBrain::Update(World& world, const BotArena& arena, BotTally& tally)
@@ -1462,7 +1672,7 @@ namespace Game
 							chosen = option;
 					if (chosen.Slot >= 0 && chosen.Score > 0.0f)
 					{
-						Cast(input, uint32_t(chosen.Slot), chosen.Aim, chosen.Distance);
+						Cast(input, uint32_t(chosen.Slot), chosen.Aim, chosen.Distance, chosen.Charge);
 						m_CastTarget = chosen.Target;
 						m_CastOffset = chosen.Point;
 						if (m_DamageMode && HasCard(m_Loadout.Cards, CardId::EchoChamber) && EchoesInChamber(SpellIn(uint32_t(chosen.Slot))))
@@ -1483,16 +1693,23 @@ namespace Game
 				}
 			}
 			if (!urgent && !m_Planting)
+			{
+				RouteGoal(world, arena);
 				Steer(input);
+			}
 			const bool echoing = m_State->CastSlot < 0 && m_Time < m_EchoUntil;
+			const bool charging = !echoing && m_State->CastSlot >= 0 && m_Casting == m_State->CastSlot && IsCharged(m_Traits->Skills[size_t(m_Casting)]);
+			if (charging && m_Time < m_ChargeUntil)
+				input.Buttons |= uint8_t(SlotButton(uint32_t(m_Casting)));
 			if ((m_State->CastSlot >= 0 && m_Casting >= 0) || echoing)
 			{
 				const AbilityDef& def = GetAbility(echoing ? m_EchoSpell : SpellIn(uint32_t(m_Casting)));
 				const Rival* target = FindRival(m_CastTarget);
-				const float lead = echoing ? 0.0f : m_State->CastTimer;
+				const float lead = echoing ? 0.0f : charging ? std::max(m_ChargeUntil - m_Time, 0.0f) : m_State->CastTimer;
+				const float speed = charging ? m_ChargeSpeed : def.ProjectileSpeed;
 				if (target && (def.Kind == AbilityKind::Projectile || def.Kind == AbilityKind::Melee || def.Kind == AbilityKind::Ground))
 				{
-					const Vec2 point = def.Kind == AbilityKind::Ground ? target->Position + m_CastOffset : def.Kind == AbilityKind::Projectile ? Lead(*target, lead, def.ProjectileSpeed) : target->Position + target->Velocity * lead;
+					const Vec2 point = def.Kind == AbilityKind::Ground ? target->Position + m_CastOffset : def.Kind == AbilityKind::Projectile ? Lead(*target, lead, speed) : target->Position + target->Velocity * lead;
 					const Vec2 offset = point - m_Position;
 					input.Aim = AngleOf(offset) + m_CastNoise;
 					input.AimDistance = std::clamp(Length(offset) * m_CastStretch, 0.0f, MaxAimDistance);

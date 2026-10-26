@@ -51,6 +51,8 @@ namespace Game
 		Frost,
 		Cracks,
 		Fracture,
+		Charge,
+		FrostLane,
 	};
 
 	enum class ParticleAlign : uint8_t

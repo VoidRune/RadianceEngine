@@ -198,7 +198,7 @@ namespace Game
 		case AbilityId::ArcLightning: return UiIcon::LightningArc;
 		case AbilityId::Swap: return UiIcon::MagicPortal;
 		case AbilityId::MirrorWard: return UiIcon::CheckedShield;
-		case AbilityId::Frostbite: return UiIcon::IceSpear;
+		case AbilityId::FrostSpear: return UiIcon::IceSpear;
 		case AbilityId::ChainHook: return UiIcon::SpearHook;
 		case AbilityId::Firebomb: return UiIcon::HighShot;
 		case AbilityId::SplittingBolt: return UiIcon::SplitArrows;

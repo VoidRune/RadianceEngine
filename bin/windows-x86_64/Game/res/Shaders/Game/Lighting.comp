@@ -29,6 +29,7 @@ layout(std140, set = 0, binding = 5) uniform LightingFrame
 	vec4 SkyMaskTransform;
 	vec4 Backdrop;
 	vec4 Haze;
+	vec4 Eye;
 } Frame;
 layout(set = 0, binding = 6) uniform sampler2D ShadowMap;
 layout(set = 0, binding = 11) uniform sampler2D EnvironmentMap;
@@ -112,7 +113,12 @@ void main()
 		vec2 screen = (vec2(pixel) + 0.5) / vec2(size);
 		vec4 far = Frame.InverseViewProjection * vec4(screen * 2.0 - 1.0, 1.0, 1.0);
 		vec3 direction = normalize(far.xyz / far.w - Frame.CameraPosition.xyz);
-		result = Backdrop(Frame.CameraPosition.xyz, direction, Frame.Backdrop.z, Frame.SunDirection.xyz, SkyMask, Frame.SkyMaskTransform, Frame.Backdrop.w);
+		if (Frame.Backdrop.x > 2.5)
+			result = StormSky(Frame.CameraPosition.xyz, direction, Frame.Backdrop.z, Frame.SunDirection.xyz, Frame.Eye, Frame.Haze.w);
+		else if (Frame.Backdrop.x > 1.5)
+			result = DaySky(Frame.CameraPosition.xyz, direction, Frame.Backdrop.z, Frame.SunDirection.xyz);
+		else
+			result = Backdrop(Frame.CameraPosition.xyz, direction, Frame.Backdrop.z, Frame.SunDirection.xyz, SkyMask, Frame.SkyMaskTransform, Frame.Backdrop.w);
 	}
 	if (depth < 1.0)
 	{
@@ -138,6 +144,8 @@ void main()
 		float cosI = dot(n, l);
 		float shadow = cosI > 0.0 ? SunShadow(position, n, cosI) : 0.0;
 		vec3 sunIrradiance = Frame.SunRadiance.rgb * (max(cosI, 0.0) * shadow);
+		if (Frame.Eye.w > 0.0)
+			sunIrradiance *= mix(Frame.Eye.w, 1.0, 1.0 - smoothstep(Frame.Eye.z - 0.6, Frame.Eye.z + 1.6, length(position.xz - Frame.Eye.xy)));
 		vec3 sun = EvaluateBrdf(albedo.rgb, metallic, roughness, n, v, l) * sunIrradiance;
 		float fade = DepthFade(Frame.CameraPosition.w, position.y);
 		bool environment = Frame.EnvironmentParams.x > 0.0;
@@ -163,6 +171,8 @@ void main()
 		vec3 lit = mix(sun + ambient, DepthColor, fade);
 
 		result = lit + emission;
+		if (Frame.Backdrop.x > 2.5)
+			result = ThroughDeck(result, Frame.CameraPosition.xyz, position, Frame.Backdrop.z, Frame.Haze.w);
 		if (floating)
 			result = mix(result, Frame.Haze.rgb, Haze(Frame.Backdrop.y, position.y));
 		switch (Frame.Options.x)

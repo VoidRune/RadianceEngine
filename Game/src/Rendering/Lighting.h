@@ -106,10 +106,14 @@ namespace Game
 		float EnvironmentRotation = 0.0f;
 		float Exposure = 1.0f;
 		bool Floating = false;
+		bool Daylight = false;
+		bool Storm = false;
+		glm::vec4 Eye{ 0.0f };
 		float Time = 0.0f;
 		float FocusHeight = 0.0f;
 		float Leviathan = -1.0f;
 		glm::vec3 Haze{ 0.07f, 0.055f, 0.13f };
+		float StormBuild = 0.0f;
 		ColorGrade Grade;
 	};
 
@@ -155,6 +159,7 @@ namespace Game
 			glm::vec4 SkyMaskTransform;
 			glm::vec4 Backdrop;
 			glm::vec4 Haze;
+			glm::vec4 Eye;
 		};
 
 		Rdn::Device& m_Device;

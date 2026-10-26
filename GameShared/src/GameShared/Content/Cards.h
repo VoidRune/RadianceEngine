@@ -139,12 +139,12 @@ namespace Game
 		{ CardId::Overcharge, CardKind::Upgrade, CardRarity::Common, AbilityId::ArcLightning, "Overcharge", "Arc Lightning jumps to one more rival.", nullptr, TagStorm },
 		{ CardId::HeartSwap, CardKind::Upgrade, CardRarity::Rare, AbilityId::Swap, "Heart Swap", "Swap also trades health, and with it how far each of you flies.", "If the rival Swap hits has more health than you, you steal up to 15 of it.", TagBlood },
 		{ CardId::ThornedMirror, CardKind::Upgrade, CardRarity::Common, AbilityId::MirrorWard, "Thorned Mirror", "Spells you reflect come back 50% stronger.", nullptr, TagGuard },
-		{ CardId::BlackIce, CardKind::Upgrade, CardRarity::Common, AbilityId::Frostbite, "Black Ice", "A rival you chill slides 40% further for a second and a half.", "Frostbite chills half a second longer, and the rival slides 40% further.", TagFrost },
+		{ CardId::BlackIce, CardKind::Upgrade, CardRarity::Common, AbilityId::FrostSpear, "Black Ice", "A rival your Ice Spear hits slides 40% further for a second and a half.", "Ice Spear chills half a second longer, and the rival slides 40% further.", TagFrost },
 		{ CardId::GlassCannon, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Glass Cannon", "Your spells shove 50% harder, but you fly 15% further.", "You deal 40% more damage, but take 10% more.", TagBlood },
-		{ CardId::Featherfall, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Featherfall", "Once per round, your first step into lava bounces you back onto solid stone.", nullptr, TagGuard },
+		{ CardId::Featherfall, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Featherfall", "Once per round, the first time you fall into lava, water or the abyss, you bounce back onto solid ground.", nullptr, TagGuard },
 		{ CardId::Echo, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Echo", "After a dodge, your next spell casts again 0.3 s later at half strength.", nullptr, TagMana },
 		{ CardId::HeavyRobes, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Heavy Robes", "You get shoved 12% less, but move 15% slower.", "You take 12% less damage, but move 15% slower.", TagGuard },
-		{ CardId::LongChain, CardKind::Upgrade, CardRarity::Common, AbilityId::ChainHook, "Long Chain", "Chain Hook flies half again as far and recharges 20% faster.", "Chain Hook flies half again as far, recharges 20% faster and hits 25% harder.", TagBlood },
+		{ CardId::LongChain, CardKind::Upgrade, CardRarity::Common, AbilityId::ChainHook, "Long Chain", "Chain Hook flies 20% farther and recharges 20% faster.", "Chain Hook flies 20% farther, recharges 20% faster and hits 25% harder.", TagBlood },
 		{ CardId::Whiplash, CardKind::Upgrade, CardRarity::Rare, AbilityId::ChainHook, "Whiplash", "A rival you hook flies much further past you.", "A rival you hook flies further past you and takes 80% more damage.", TagBlood },
 		{ CardId::ClusterBomb, CardKind::Upgrade, CardRarity::Common, AbilityId::Firebomb, "Cluster Bomb", "Firebomb skips twice and bursts three times, the last time biggest.", nullptr, TagFire },
 		{ CardId::StickyFire, CardKind::Upgrade, CardRarity::Rare, AbilityId::Firebomb, "Sticky Fire", "Every Firebomb landing keeps burning for a second, shoving anyone who walks in.", "Every Firebomb landing keeps burning for a second, scorching anyone who walks in.", TagFire },
@@ -161,8 +161,8 @@ namespace Game
 		{ CardId::VampiricEmbers, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Vampiric Embers", "Every Ember Bolt hit heals you for 1.", nullptr, TagBlood | TagFire, InDamage },
 		{ CardId::Kindling, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Kindling", "Your spells, except Ember Bolt, set rivals alight for 4 damage over 2 seconds.", nullptr, TagFire, InDamage },
 		{ CardId::Wildfire, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Wildfire", "A burning rival you kill bursts into flames that set everyone nearby alight.", nullptr, TagFire, InDamage, AbilityId::Count, AbilityId::Count, CardId::Kindling },
-		{ CardId::Brittle, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Brittle", "Chilled rivals take 15% more damage from you.", nullptr, TagFrost, InDamage, AbilityId::Frostbite },
-		{ CardId::Shatter, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Shatter", "A chilled rival you kill bursts for 15 damage around them.", nullptr, TagFrost, InDamage, AbilityId::Frostbite },
+		{ CardId::Brittle, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Brittle", "Chilled rivals take 15% more damage from you.", nullptr, TagFrost, InDamage, AbilityId::FrostSpear },
+		{ CardId::Shatter, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Shatter", "A chilled rival you kill bursts for 15 damage around them.", nullptr, TagFrost, InDamage, AbilityId::FrostSpear },
 		{ CardId::Conductive, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Conductive", "Your lightning marks rivals. Your next Ember Bolt on a marked rival deals double.", nullptr, TagStorm, InDamage, AbilityId::ArcLightning, AbilityId::StormStrike },
 		{ CardId::Overload, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Overload", "Every fifth spell you cast costs nothing and deals 50% more.", nullptr, TagStorm | TagMana, InDamage },
 		{ CardId::Barrier, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Barrier", "Start each round with an 8-point shield.", nullptr, TagGuard, InDamage },
@@ -247,7 +247,7 @@ namespace Game
 
 	inline constexpr uint32_t SplitShards = 3;
 	inline constexpr float SplitSpread = 0.42f;
-	inline constexpr float SplitRange = 4.0f;
+	inline constexpr float SplitRange = 3.0f;
 	inline constexpr float SplitPushScale = 0.6f;
 	inline constexpr float SplitRadiusScale = 0.8f;
 	inline constexpr uint32_t GalePulses = 3;
@@ -283,7 +283,7 @@ namespace Game
 	inline constexpr float FeatherfallMargin = 0.7f;
 	inline constexpr float FeatherfallFooting = 1.0f;
 	inline constexpr float FeatherfallGrace = 0.6f;
-	inline constexpr float LongChainScale = 1.5f;
+	inline constexpr float LongChainScale = 1.2f;
 	inline constexpr float LongChainCooldown = 0.8f;
 	inline constexpr float WhiplashPull = 2.4f;
 	inline constexpr uint32_t ClusterSkips = 2;
@@ -294,7 +294,7 @@ namespace Game
 	inline constexpr float StickyPush = 9.0f;
 	inline constexpr uint32_t FivefoldShards = 5;
 	inline constexpr float SeekRange = 5.0f;
-	inline constexpr float SeekTurnRate = 4.5f;
+	inline constexpr float SeekTurnRate = 8.0f;
 	inline constexpr uint32_t ForkedJumps = 2;
 	inline constexpr float StaticSeconds = 1.5f;
 	inline constexpr float DeepWellMana = 50.0f;
@@ -361,6 +361,7 @@ namespace Game
 		PerkPinball = 1 << 1,
 		PerkSlick = 1 << 2,
 		PerkSeek = 1 << 3,
+		PerkBurst = 1 << 4,
 	};
 
 	enum StrikePerk : uint8_t

@@ -623,11 +623,11 @@
 		"outfit": "wanderer"
 	},
 	"materials": {
-		"arcaneDust": 316,
-		"gold": 260534,
-		"shards": 1692,
-		"starsteel": 181,
-		"voidShards": 30
+		"arcaneDust": 378,
+		"gold": 301913,
+		"shards": 1785,
+		"starsteel": 194,
+		"voidShards": 32
 	},
 	"name": "Player",
 	"spells": [
@@ -1222,16 +1222,121 @@
 			"level": 5,
 			"skill": "Volley"
 		},
-		null,
-		null,
-		null,
-		null,
+		{
+			"affixes": [
+				{
+					"stat": "GemLevel",
+					"tier": 1,
+					"value": 1.0
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 1,
+					"value": 0.01306
+				},
+				{
+					"stat": "AreaSize",
+					"tier": 2,
+					"value": 0.13846
+				},
+				{
+					"stat": "ProjectileSpeed",
+					"tier": 1,
+					"value": 0.12291
+				}
+			],
+			"base": "Crossbow",
+			"level": 30,
+			"power": 8.0796,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ManaRegen",
+					"tier": 1,
+					"value": 0.79051
+				},
+				{
+					"stat": "Regeneration",
+					"tier": 2,
+					"value": 0.88799
+				},
+				{
+					"stat": "AreaSize",
+					"tier": 1,
+					"value": 0.08133
+				}
+			],
+			"base": "Amulet",
+			"level": 30,
+			"power": 8.10263,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "PhysicalDamage",
+					"tier": 1,
+					"value": 0.08219
+				}
+			],
+			"base": "Wand",
+			"level": 28,
+			"power": 7.0506,
+			"rarity": "Uncommon"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "CritDamage",
+					"tier": 2,
+					"value": 0.1929
+				},
+				{
+					"stat": "CooldownRecovery",
+					"tier": 3,
+					"value": 0.12167
+				},
+				{
+					"stat": "LifeSteal",
+					"tier": 4,
+					"value": 0.0308
+				}
+			],
+			"base": "Axe",
+			"level": 28,
+			"power": 7.17922,
+			"rarity": "Legendary"
+		},
 		{
 			"base": "Gem",
 			"level": 2,
 			"skill": "PiercingShot"
 		},
-		null,
+		{
+			"affixes": [
+				{
+					"stat": "CritChance",
+					"tier": 2,
+					"value": 0.05426
+				},
+				{
+					"stat": "Damage",
+					"tier": 1,
+					"value": 0.07305
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 1,
+					"value": 0.05537
+				}
+			],
+			"base": "Amulet",
+			"level": 28,
+			"power": 7.2421,
+			"rarity": "Legendary"
+		},
 		{
 			"base": "Gem",
 			"level": 4,
@@ -1260,19 +1365,151 @@
 			"power": 7.99196,
 			"rarity": "Legendary"
 		},
-		null,
-		null,
-		null,
-		null,
+		{
+			"base": "Gem",
+			"level": 5,
+			"skill": "ChainLightning"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "LightningResist",
+					"tier": 2,
+					"value": 0.09985
+				},
+				{
+					"stat": "CooldownRecovery",
+					"tier": 4,
+					"value": 0.14733
+				},
+				{
+					"stat": "CastSpeed",
+					"tier": 3,
+					"value": 0.09744
+				},
+				{
+					"stat": "Armor",
+					"tier": 2,
+					"value": 16.21848
+				}
+			],
+			"base": "Hood",
+			"level": 28,
+			"power": 7.1373,
+			"rarity": "Legendary"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ProjectileSpeed",
+					"tier": 2,
+					"value": 0.14432
+				},
+				{
+					"stat": "Damage",
+					"tier": 1,
+					"value": 0.06708
+				},
+				{
+					"stat": "ExtraProjectiles",
+					"tier": 2,
+					"value": 1.0
+				}
+			],
+			"base": "Bow",
+			"level": 28,
+			"power": 7.39435,
+			"rarity": "Rare"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ManaRegen",
+					"tier": 3,
+					"value": 1.83185
+				},
+				{
+					"stat": "MaxMana",
+					"tier": 2,
+					"value": 27.25696
+				},
+				{
+					"stat": "LightningResist",
+					"tier": 2,
+					"value": 0.09511
+				}
+			],
+			"base": "Plate",
+			"level": 28,
+			"power": 6.96014,
+			"rarity": "Rare"
+		},
 		{
 			"base": "Gem",
 			"level": 5,
 			"skill": "IceSpear"
 		},
-		null,
-		null,
-		null,
-		null
+		{
+			"affixes": [
+				{
+					"stat": "FireResist",
+					"tier": 1,
+					"value": 0.06664
+				},
+				{
+					"stat": "MaxHealth",
+					"tier": 3,
+					"value": 44.95552
+				},
+				{
+					"stat": "ColdResist",
+					"tier": 2,
+					"value": 0.09779
+				}
+			],
+			"base": "Tunic",
+			"level": 28,
+			"power": 7.15852,
+			"rarity": "Rare"
+		},
+		{
+			"base": "Gem",
+			"level": 4,
+			"skill": "FrostNova"
+		},
+		{
+			"affixes": [
+				{
+					"stat": "ColdDamage",
+					"tier": 4,
+					"value": 0.27329
+				},
+				{
+					"stat": "GemLevel",
+					"tier": 2,
+					"value": 1.0
+				},
+				{
+					"stat": "CooldownRecovery",
+					"tier": 2,
+					"value": 0.08631
+				},
+				{
+					"stat": "AttackSpeed",
+					"tier": 1,
+					"value": 0.06226
+				}
+			],
+			"base": "Bow",
+			"level": 28,
+			"power": 6.793,
+			"rarity": "Mythic"
+		},
+		{
+			"base": "Gem",
+			"level": 5,
+			"skill": "Meteor"
+		}
 	],
 	"version": 2
 }

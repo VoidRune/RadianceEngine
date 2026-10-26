@@ -1,7 +1,9 @@
 #include "GameApp.h"
 #include "Audio/GameAudio.h"
+#include "Online/SteamPlatform.h"
 #include "Rendering/MenuBackdrop.h"
 #include "Rendering/ModelSources.h"
+#include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
 #include "States/LightingTestState.h"
 #include "States/MainMenuState.h"
@@ -65,6 +67,23 @@ namespace Game
 			if (ParseNumber(text, parsed))
 				value = std::clamp(parsed, 0.0f, 1.0f);
 		}
+
+		std::string NameFromPersona(std::string_view persona)
+		{
+			constexpr size_t MaxName = 24;
+			std::string name;
+			for (const char c : persona)
+				if (uint8_t(c) >= 32 && std::string_view("/\\:*?\"<>|").find(c) == std::string_view::npos)
+					name += c;
+			if (name.size() > MaxName)
+			{
+				size_t end = MaxName;
+				while (end > 0 && (uint8_t(name[end]) & 0xC0u) == 0x80u)
+					end--;
+				name.resize(end);
+			}
+			return name;
+		}
 	}
 
 	void GameApp::LoadPreferences()
@@ -79,9 +98,14 @@ namespace Game
 			const std::string_view key = std::string_view(line).substr(0, equals);
 			const std::string_view value = std::string_view(line).substr(equals + 1);
 			if (key == "PlayerName" && !value.empty())
+			{
 				m_Settings.PlayerName = value;
+				m_NamedInSettings = true;
+			}
 			else if (key == "JoinAddress")
 				m_Settings.JoinAddress = value;
+			else if (key == "FriendsCanJoin")
+				m_Settings.FriendsCanJoin = value == "1";
 			else if (uint16_t port = 0; key == "Port" && ParseNumber(value, port) && port >= 1024)
 				m_Settings.Port = port;
 			else if (key == "Kit")
@@ -140,6 +164,7 @@ namespace Game
 			m_Stored.JoinAddress = m_Settings.JoinAddress;
 			m_Stored.Port = m_Settings.Port;
 			m_Stored.Kit = m_Settings.Kit;
+			m_Stored.FriendsCanJoin = m_Settings.FriendsCanJoin;
 			break;
 		}
 		m_PreferencesDelay = 0.5f;
@@ -150,7 +175,7 @@ namespace Game
 	{
 		m_PreferencesDirty = false;
 		std::ofstream file(PreferencesPath);
-		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nKit=" << GetKit(m_Stored.Kit).Name
+		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nFriendsCanJoin=" << (m_Stored.FriendsCanJoin ? 1 : 0) << "\nKit=" << GetKit(m_Stored.Kit).Name
 			<< "\nVolume=" << m_Stored.Volume << "\nMusicVolume=" << m_Stored.MusicVolume << "\nEffectsVolume=" << m_Stored.EffectsVolume << "\nMuted=" << (m_Stored.Muted ? 1 : 0)
 			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0) << "\nVsync=" << (m_Stored.Vsync ? 1 : 0)
 			<< "\nFrameCap=" << m_Stored.FrameCap << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\n";
@@ -204,6 +229,13 @@ namespace Game
 		m_Settings.UnlimitedMaterials = options.UnlimitedMaterials;
 		NetLibrary::Initialize();
 		NetLibrary::SetSimulation(m_Settings.Simulation);
+		m_Steam = std::make_unique<SteamPlatform>(options.Steam);
+		m_Steam->EnableAchievements(m_Settings.SaveProfiles);
+		if (!m_NamedInSettings && options.Name.empty() && m_Steam->IsReady())
+			if (const std::string persona = NameFromPersona(m_Steam->GetPersonaName()); !persona.empty())
+				m_Settings.PlayerName = persona;
+		if (options.ConnectLobby)
+			m_Steam->JoinLobby(*options.ConnectLobby);
 
 		std::string error;
 		if (options.ExportProps)
@@ -293,6 +325,7 @@ namespace Game
 			RDN_LOG_FATAL("Can't load the models: {}", modelError);
 			std::exit(1);
 		}
+		RegisterSpellMeshes(*m_WorldRenderer);
 		m_MenuBackdrop = std::make_unique<MenuBackdrop>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
 		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
 		if (options.Shadows)
@@ -348,6 +381,20 @@ namespace Game
 		return MakeNewProfile(name, kit);
 	}
 
+	void GameApp::JoinFriend(const LobbyJoin& join)
+	{
+		m_NextState.reset();
+		m_State.reset();
+		SessionConfig config;
+		config.Host = false;
+		config.RelayHost = join.Host;
+		config.HostName = join.HostName;
+		config.LobbyTicket = join.Ticket;
+		config.Profile = LoadCharacter(m_Settings.PlayerName, m_Settings.Kit, false);
+		m_GameAudio->PlayUi(Cue::UiRift, 0.9f);
+		m_State = std::make_unique<SessionState>(*this, std::move(config));
+	}
+
 	void GameApp::SaveCharacter(const CharacterProfile& profile) const
 	{
 		if (!m_Settings.SaveProfiles)
@@ -363,6 +410,7 @@ namespace Game
 			SavePreferences();
 		m_NextState.reset();
 		m_State.reset();
+		m_Steam.reset();
 		m_Device->WaitIdle();
 		m_MenuBackdrop.reset();
 		m_WorldRenderer.reset();
@@ -546,6 +594,9 @@ namespace Game
 		const Rdn::Extent2D extent = m_PresentQueue->GetExtent();
 		m_DebugUi->BeginFrame(dt, extent);
 		m_Ui->BeginFrame(dt, glm::vec2(float(extent.Width), float(extent.Height)), !m_DebugUi->WantsMouse());
+		m_Steam->Update(dt);
+		if (const std::optional<LobbyJoin> join = m_Steam->TakeJoin())
+			JoinFriend(*join);
 		m_State->Update(dt);
 		m_State->DrawUi();
 		if (m_Settings.ShowPerformance)

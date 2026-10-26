@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/Achievements.h"
 #include "GameShared/Content/Chess.h"
 #include "GameShared/Content/Crafting.h"
 #include "GameShared/Content/Definitions.h"
@@ -117,6 +118,9 @@ namespace Game
 		void RecordDamage(uint32_t victim, uint32_t attacker, int32_t amount, uint8_t ability) { m_Match.RecordDamage(victim, attacker, amount, ability); }
 		int32_t ShapeBrawlDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount) { return m_Match.ShapeDamage(state, victim, attacker, ability, unmitigated, chilled, amount); }
 		void AfterBrawlDamage(Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt) { m_Match.AfterDamage(*this, target, victim, attacker, ability, dealt); }
+		void NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, bool pull, uint32_t returned) { m_Match.NoteBlow(victim, attacker, ability, pull, returned); }
+		void NoteFling(uint32_t victim, uint32_t attacker, uint8_t ability) { m_Match.NoteFling(*this, victim, attacker, ability); }
+		void NoteSwap(uint32_t victim, uint32_t attacker, Vec2 landing) { m_Match.NoteSwap(*this, victim, attacker, landing); }
 		CardMask GetCards(uint32_t playerId) const { return m_Match.GetCards(playerId); }
 		Entity SpawnLoot(LootKind kind, Vec2 position);
 		Entity SpawnItem(const Item& item, Vec2 position, uint32_t blockedPlayer, uint32_t forPlayer = NoPlayer);
@@ -137,6 +141,8 @@ namespace Game
 		CraftResult CraftGem(Entity player, ItemRef ref, GemAction action);
 		bool OpenChest(Entity player);
 		void Spectate(Entity player, int32_t direction);
+		bool JoinMatch(Entity player);
+		void SeatPlayer(uint32_t playerId, uint8_t seat) { m_Match.SetSeat(playerId, seat); }
 		bool PickBrawlSpell(Entity player, uint32_t slot, AbilityId spell);
 		bool ChooseCard(Entity player, uint32_t choice);
 		bool GrantCard(Entity player, CardId card);
@@ -160,7 +166,7 @@ namespace Game
 		void ResetRun();
 		void WakePack(uint16_t pack);
 		void OnEnemyKilled(Entity entity, const Enemy& enemy, Vec2 position, uint32_t attacker);
-		bool ConsumeRevive();
+		bool ConsumeRevive(uint32_t playerId);
 
 		bool GetPastPosition(Entity entity, double tick, Vec2& position) const;
 		Vec2 FindSpawnPosition(uint32_t playerId) const;
@@ -185,6 +191,19 @@ namespace Game
 		};
 		std::vector<Notice> TakeNotices() { return std::exchange(m_Notices, {}); }
 
+		struct Award
+		{
+			uint32_t PlayerId = NoPlayer;
+			Achievement Id = Achievement::FirstFling;
+			uint32_t Detail = 0;
+		};
+		void Achieve(uint32_t playerId, Achievement id, uint32_t detail = 0)
+		{
+			if (playerId < MaxPlayers)
+				m_Awards.push_back({ playerId, id, detail });
+		}
+		std::vector<Award> TakeAwards() { return std::exchange(m_Awards, {}); }
+
 		const WorldSettings& GetSettings() const { return m_Settings; }
 		GameMode GetMode() const { return m_Settings.Mode; }
 		bool IsHub() const { return m_Settings.Mode == GameMode::Hub; }
@@ -192,6 +211,7 @@ namespace Game
 		bool IsDamageBrawl() const { return m_Settings.Mode == GameMode::Brawl && m_Settings.Rules.Mode == BrawlMode::Damage; }
 		bool UsesBrawlDamage() const { return IsDamageBrawl() || IsHub(); }
 		bool AreRivals(uint32_t a, uint32_t b) const;
+		ArenaState GetArena() const;
 		uint8_t GetTeam(uint32_t playerId) const { return IsPvp() ? m_Match.GetTeam(playerId) : NoTeam; }
 		const MatchDirector& GetMatch() const { return m_Match; }
 		MissionRewards GetRewards() const;
@@ -244,6 +264,7 @@ namespace Game
 		std::vector<HitEvent> m_Hits;
 		std::vector<KillRecord> m_Kills;
 		std::vector<Notice> m_Notices;
+		std::vector<Award> m_Awards;
 		std::vector<BodyCircle> m_Bodies;
 		struct EchoCast
 		{

@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/Achievements.h"
 #include "GameShared/Content/Brawl.h"
 #include "GameShared/Content/Cosmetics.h"
 #include "GameShared/Content/Items.h"
@@ -18,6 +19,8 @@ namespace Game
 		uint64_t Starlit = 0;
 		uint8_t Honors = 0;
 		Cosmetics Style;
+		AchievementMask Achievements = 0;
+		uint32_t Scholar = 0;
 	};
 
 	inline constexpr const char* ProfileDirectory = "Saves";

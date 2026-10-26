@@ -16,3 +16,5 @@ set "ASSETS=%~dp0..\..\assets\Original"
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0hero.py" -- --out "%ASSETS%\Hero" || exit /b 1
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0armory.py" -- --out "%ASSETS%\Armory" || exit /b 1
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0glacier.py" -- --out "%ASSETS%\Glacier" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0ruins.py" -- --out "%ASSETS%\Ruins" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0summit.py" -- --out "%ASSETS%\Summit" || exit /b 1

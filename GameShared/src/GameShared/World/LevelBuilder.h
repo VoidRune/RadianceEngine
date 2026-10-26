@@ -53,4 +53,17 @@ namespace Game
 	};
 
 	int8_t ToLevel(float height);
+
+	struct Lobe
+	{
+		Vec2 Middle;
+		float Radius = 1.0f;
+		float Phase[3] = {};
+		float Wobble = 0.0f;
+
+		float Reach(float angle) const;
+		bool Contains(Vec2 point) const;
+	};
+
+	Lobe MakeLobe(Random& random, Vec2 middle, float radius, float wobble);
 }

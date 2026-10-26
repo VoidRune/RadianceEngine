@@ -1,15 +1,25 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
 
 struct SteamNetConnectionStatusChangedCallback_t;
+class ISteamNetworkingSockets;
+class ISteamNetworkingUtils;
 
 namespace Game
 {
 	using ConnectionId = uint32_t;
 	constexpr ConnectionId InvalidConnection = 0;
+
+	enum class NetRoute : uint8_t
+	{
+		Direct,
+		Relay,
+		Count,
+	};
 
 	enum class SendMode
 	{
@@ -38,6 +48,7 @@ namespace Game
 		float RemoteQuality = 0.0f;
 		float InBytesPerSecond = 0.0f;
 		float OutBytesPerSecond = 0.0f;
+		bool Relayed = false;
 	};
 
 	struct NetMessage
@@ -68,6 +79,9 @@ namespace Game
 		static void RunCallbacks();
 		static void SetSimulation(const NetworkSimulation& simulation);
 		static const NetworkSimulation& GetSimulation();
+		static void AttachRelay(ISteamNetworkingSockets* sockets, ISteamNetworkingUtils* utils);
+		static void DetachRelay();
+		static bool HasRelay();
 	};
 
 	class NetEndpoint
@@ -79,7 +93,7 @@ namespace Game
 		NetEndpoint& operator=(const NetEndpoint&) = delete;
 
 		int64_t GetEndpointId() const { return m_EndpointId; }
-		virtual void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t& info) = 0;
+		virtual void OnStatusChanged(NetRoute route, SteamNetConnectionStatusChangedCallback_t& info) = 0;
 
 	private:
 		int64_t m_EndpointId = 0;
@@ -92,6 +106,7 @@ namespace Game
 		~NetServer() override;
 
 		bool Listen(uint16_t port);
+		bool ListenRelay();
 		LocalConnection OpenLocalConnection();
 		void Shutdown();
 
@@ -99,18 +114,19 @@ namespace Game
 		void Close(ConnectionId connection, const char* reason);
 		void Poll(std::vector<NetEvent>& events, std::vector<NetMessage>& messages);
 
-		bool IsListening() const { return m_ListenSocket != 0; }
+		bool IsListening() const { return m_ListenSockets[size_t(NetRoute::Direct)] != 0; }
+		bool IsRelayListening() const { return m_ListenSockets[size_t(NetRoute::Relay)] != 0; }
 		uint16_t GetPort() const { return m_Port; }
 		int32_t GetPing(ConnectionId connection) const;
 		ConnectionStats GetStats(ConnectionId connection) const;
 
-		void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t& info) override;
+		void OnStatusChanged(NetRoute route, SteamNetConnectionStatusChangedCallback_t& info) override;
 
 	private:
-		bool EnsurePollGroup();
+		bool EnsurePollGroup(NetRoute route);
 
-		uint32_t m_ListenSocket = 0;
-		uint32_t m_PollGroup = 0;
+		std::array<uint32_t, size_t(NetRoute::Count)> m_ListenSockets{};
+		std::array<uint32_t, size_t(NetRoute::Count)> m_PollGroups{};
 		uint16_t m_Port = 0;
 		std::vector<ConnectionId> m_Connections;
 		std::vector<NetEvent> m_Events;
@@ -123,6 +139,7 @@ namespace Game
 		~NetClient() override;
 
 		bool Connect(const std::string& address, uint16_t defaultPort);
+		bool ConnectRelay(uint64_t steamId);
 		void ConnectLocal(ConnectionId connection);
 		void Disconnect(const char* reason);
 
@@ -133,7 +150,7 @@ namespace Game
 		int32_t GetPing() const;
 		ConnectionStats GetStats() const;
 
-		void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t& info) override;
+		void OnStatusChanged(NetRoute route, SteamNetConnectionStatusChangedCallback_t& info) override;
 
 	private:
 		void Receive(std::vector<NetMessage>& messages) const;

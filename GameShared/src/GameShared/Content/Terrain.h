@@ -26,6 +26,9 @@ namespace Game
 		Ice,
 		Snow,
 		Icewater,
+		Skystone,
+		Sky,
+		Slate,
 		Count,
 	};
 
@@ -71,6 +74,9 @@ namespace Game
 		{ TerrainId::Ice, "Ice", true, false, TerrainStyle::Slabs, 0xA9DDF2, 0x7FC4E4 },
 		{ TerrainId::Snow, "Snow", true, false, TerrainStyle::Slabs, 0xE8F0F6, 0xCBD9E4 },
 		{ TerrainId::Icewater, "Freezing water", true, false, TerrainStyle::Molten, 0x1D4F91, 0x2E6FB5 },
+		{ TerrainId::Skystone, "Skystone", true, false, TerrainStyle::Slabs, 0xD9CCB0, 0xB6A787 },
+		{ TerrainId::Sky, "Open sky", true, false, TerrainStyle::Void, 0x9CC4E8, 0x9CC4E8 },
+		{ TerrainId::Slate, "Mountain slate", true, false, TerrainStyle::Slabs, 0x5E6A78, 0x4A5462 },
 	};
 
 	constexpr bool TerrainsMatchIds()
@@ -94,7 +100,12 @@ namespace Game
 
 	inline bool IsBrawlFloor(TerrainId id)
 	{
-		return id == TerrainId::Basalt || id == TerrainId::Ice || id == TerrainId::Snow;
+		return id == TerrainId::Basalt || id == TerrainId::Ice || id == TerrainId::Snow || id == TerrainId::Skystone || id == TerrainId::Slate;
+	}
+
+	inline bool IsBrawlHazard(TerrainId id)
+	{
+		return IsHazardLiquid(id) || id == TerrainId::Sky;
 	}
 
 	enum class WallId : uint8_t

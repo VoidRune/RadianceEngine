@@ -42,7 +42,7 @@ namespace Game
 		float MissionTime = 0.0f;
 		MatchPhase Match = MatchPhase::Countdown;
 		float MatchTime = 0.0f;
-		std::array<uint16_t, TeamCount> TeamScores{};
+		std::array<uint16_t, MaxTeams> TeamScores{};
 		uint32_t Winner = NoPlayer;
 		uint8_t WinningTeam = NoTeam;
 		uint8_t Alive = 0;

@@ -20,6 +20,26 @@ namespace Game
 		return int8_t(std::clamp(int32_t(std::lround(height / HeightUnit)), -127, 127));
 	}
 
+	float Lobe::Reach(float angle) const
+	{
+		return Radius * (1.0f + Wobble * (0.6f * std::sin(3.0f * angle + Phase[0]) + 0.3f * std::sin(5.0f * angle + Phase[1]) + 0.2f * std::sin(7.0f * angle + Phase[2])));
+	}
+
+	bool Lobe::Contains(Vec2 point) const
+	{
+		const Vec2 offset = point - Middle;
+		return Length(offset) < Reach(std::atan2(offset.y, offset.x));
+	}
+
+	Lobe MakeLobe(Random& random, Vec2 middle, float radius, float wobble)
+	{
+		Lobe blob{ middle, radius };
+		for (float& phase : blob.Phase)
+			phase = random.Float() * 2.0f * Pi;
+		blob.Wobble = wobble;
+		return blob;
+	}
+
 	LevelBuilder::LevelBuilder(MapKind kind, uint32_t seed, int32_t width, int32_t height, TerrainId fill)
 		: m_Random(uint64_t(seed) * 0x2545F4914F6CDD1DULL + uint64_t(kind) + 7), m_Reserved(size_t(width) * size_t(height), 0)
 	{

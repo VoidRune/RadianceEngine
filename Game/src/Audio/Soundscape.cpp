@@ -27,6 +27,8 @@ namespace Game
 			{ "res/Audio/Ambience/Ashlands.ogg", 0.85f },
 			{ "res/Audio/Ambience/Campfire.ogg", 0.5f },
 			{ "res/Audio/Ambience/Storm.ogg", 0.45f },
+			{ "res/Audio/Ambience/Crucible.ogg", 0.7f },
+			{ "res/Audio/Ambience/Ashlands.ogg", 0.8f },
 		};
 
 		float FireVolume(PropId id)
@@ -165,6 +167,10 @@ namespace Game
 		case AmbienceScene::FrozenLake:
 			m_Bank.Play(Cue::GlassLight, { .Volume = 0.22f, .Pitch = 0.42f + 0.12f * m_Random.Float(), .Position = around(18.0f + 8.0f * m_Random.Float(), 0.0f) });
 			m_NextCall = 12.0f + 18.0f * m_Random.Float();
+			break;
+		case AmbienceScene::StormPeak:
+			m_Bank.Play(Cue::Thunder, { .Volume = 0.3f, .Pitch = 0.7f + 0.15f * m_Random.Float(), .Position = around(30.0f + 10.0f * m_Random.Float(), 10.0f) });
+			m_NextCall = 5.0f + 9.0f * m_Random.Float();
 			break;
 		default:
 			m_NextCall = 30.0f;

@@ -21,6 +21,8 @@ namespace Game
 		Ashlands,
 		Caldera,
 		FrozenLake,
+		SkyRuins,
+		StormPeak,
 		Count,
 	};
 

@@ -2,6 +2,7 @@
 #include "GameShared/Content/Definitions.h"
 #include "GameShared/Entity/Components.h"
 #include "GameShared/Simulation/Abilities.h"
+#include <span>
 
 namespace Game
 {
@@ -36,6 +37,7 @@ namespace Game
 		bool Swap = false;
 		bool Slick = false;
 		bool Static = false;
+		uint32_t Returned = NoPlayer;
 	};
 
 	struct DamageEvent
@@ -52,7 +54,7 @@ namespace Game
 	bool ApplyDamage(World& world, Entity target, const DamageEvent& damage);
 	bool DealDamage(World& world, Entity target, const HitInfo& hit);
 	void StrikeArea(World& world, const AbilityDef& ability, int32_t damage, const AbilityContext& context);
-	void StrikeCircle(World& world, Vec2 center, float radius, const HitInfo& hit, Team side, float rewind);
+	void StrikeCircle(World& world, Vec2 center, float radius, const HitInfo& hit, Team side, float rewind, std::span<const Entity> spared = {});
 	void DeflectProjectiles(World& world, const AbilityContext& context, float reach, float halfArc);
 	void SplitBolts(World& world, Entity caster, uint32_t owner);
 	void ReelIn(World& world, Entity caster, uint32_t owner, Vec2 point);

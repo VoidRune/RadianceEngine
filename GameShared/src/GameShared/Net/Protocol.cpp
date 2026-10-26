@@ -65,6 +65,7 @@ namespace Game
 			writer.Write(uint8_t(skill.Usable ? 1 : 0));
 			writer.Write(skill.Level);
 			writer.Write(skill.CastTime);
+			writer.Write(skill.ChargeTime);
 			writer.Write(skill.Cooldown);
 			writer.Write(skill.ManaCost);
 			writer.Write(skill.MoveScale);
@@ -80,6 +81,7 @@ namespace Game
 			skill.Usable = reader.Read<uint8_t>() != 0;
 			skill.Level = reader.Read<uint8_t>();
 			skill.CastTime = reader.Read<float>();
+			skill.ChargeTime = reader.Read<float>();
 			skill.Cooldown = reader.Read<float>();
 			skill.ManaCost = reader.Read<float>();
 			skill.MoveScale = reader.Read<float>();
@@ -158,7 +160,16 @@ namespace Game
 				writer.Write(brawl.Plan.Craters[i].Radius);
 				writer.Write(brawl.Plan.Craters[i].Time);
 			}
+			const uint8_t bolts = uint8_t(std::min<size_t>(brawl.Plan.BoltCount, MaxBolts));
+			writer.Write(bolts);
+			for (uint32_t i = 0; i < bolts; i++)
+			{
+				writer.Write(brawl.Plan.Bolts[i].Center);
+				writer.Write(brawl.Plan.Bolts[i].Time);
+			}
+			writer.Write(uint8_t(brawl.Plan.Steady ? 1 : 0));
 			writer.Write(QuantizeOwner(brawl.RoundWinner));
+			writer.Write(brawl.RoundTeam);
 			writer.Write(brawl.Ready);
 			writer.Write(brawl.Players);
 		}
@@ -185,7 +196,17 @@ namespace Game
 				brawl.Plan.Craters[i].Radius = reader.Read<float>();
 				brawl.Plan.Craters[i].Time = reader.Read<float>();
 			}
+			brawl.Plan.BoltCount = reader.Read<uint8_t>();
+			if (brawl.Plan.BoltCount > MaxBolts)
+				return false;
+			for (uint32_t i = 0; i < brawl.Plan.BoltCount; i++)
+			{
+				brawl.Plan.Bolts[i].Center = reader.ReadVec2();
+				brawl.Plan.Bolts[i].Time = reader.Read<float>();
+			}
+			brawl.Plan.Steady = reader.Read<uint8_t>() != 0;
 			brawl.RoundWinner = DequantizeOwner(reader.Read<uint8_t>());
+			brawl.RoundTeam = reader.Read<uint8_t>();
 			brawl.Ready = reader.Read<uint8_t>();
 			brawl.Players = reader.Read<uint8_t>();
 			return !reader.Failed() && uint8_t(brawl.Phase) <= uint8_t(BrawlPhase::Pick);
@@ -225,6 +246,7 @@ namespace Game
 			writer.Write(state.DodgeCooldown);
 			writer.Write(state.Mana);
 			writer.Write(state.CastTimer);
+			writer.Write(state.Charge);
 			writer.Write(state.Stun);
 			writer.Write(state.Chill);
 			writer.Write(state.Slick);
@@ -261,6 +283,7 @@ namespace Game
 			state.DodgeCooldown = reader.Read<float>();
 			state.Mana = reader.Read<float>();
 			state.CastTimer = reader.Read<float>();
+			state.Charge = reader.Read<float>();
 			state.Stun = reader.Read<float>();
 			state.Chill = reader.Read<float>();
 			state.Slick = reader.Read<float>();
@@ -344,6 +367,57 @@ namespace Game
 
 	namespace
 	{
+		void WriteRules(ByteWriter& writer, const MatchRules& rules)
+		{
+			writer.Write(rules.Teams);
+			writer.Write(rules.ScoreGoal);
+			writer.Write(rules.Minutes);
+			writer.Write(rules.Rounds);
+			writer.Write(rules.Bots);
+			writer.Write(rules.BotLevel);
+			writer.Write(rules.Mode);
+			writer.Write(rules.Health);
+			writer.Write(rules.Mana);
+			writer.Write(rules.Damage);
+			writer.Write(rules.CastSpeed);
+			writer.Write(rules.CooldownSpeed);
+			writer.Write(rules.MoveSpeed);
+			writer.Write(rules.ManaRegen);
+			writer.Write(rules.Knockback);
+			writer.Write(uint8_t((rules.Apex ? 1u : 0u) | (rules.ApexDraft ? 2u : 0u) | (rules.Crumble ? 4u : 0u) | (rules.WinnerCard ? 8u : 0u) | (rules.RandomSpells ? 16u : 0u)));
+			WriteBytes(writer, rules.TeamBots);
+			WriteBytes(writer, rules.Seats);
+		}
+
+		MatchRules ReadRules(ByteReader& reader)
+		{
+			MatchRules rules;
+			rules.Teams = reader.Read<uint8_t>();
+			rules.ScoreGoal = reader.Read<uint8_t>();
+			rules.Minutes = reader.Read<uint8_t>();
+			rules.Rounds = reader.Read<uint8_t>();
+			rules.Bots = reader.Read<uint8_t>();
+			rules.BotLevel = reader.Read<uint8_t>();
+			rules.Mode = reader.Read<BrawlMode>();
+			rules.Health = reader.Read<uint16_t>();
+			rules.Mana = reader.Read<uint16_t>();
+			rules.Damage = reader.Read<uint16_t>();
+			rules.CastSpeed = reader.Read<uint16_t>();
+			rules.CooldownSpeed = reader.Read<uint16_t>();
+			rules.MoveSpeed = reader.Read<uint16_t>();
+			rules.ManaRegen = reader.Read<uint16_t>();
+			rules.Knockback = reader.Read<uint16_t>();
+			const uint8_t flags = reader.Read<uint8_t>();
+			rules.Apex = (flags & 1u) != 0;
+			rules.ApexDraft = (flags & 2u) != 0;
+			rules.Crumble = (flags & 4u) != 0;
+			rules.WinnerCard = (flags & 8u) != 0;
+			rules.RandomSpells = (flags & 16u) != 0;
+			ReadBytes(reader, rules.TeamBots);
+			ReadBytes(reader, rules.Seats);
+			return SanitizeRules(rules);
+		}
+
 		void WriteSession(ByteWriter& writer, const SessionInfo& session)
 		{
 			writer.Write(session.Mode);
@@ -351,7 +425,7 @@ namespace Game
 			writer.Write(session.MapSeed);
 			writer.Write(session.Tier);
 			writer.Write(session.Modifiers);
-			writer.Write(EncodeRules(session.Rules));
+			WriteRules(writer, session.Rules);
 			writer.Write(session.Epoch);
 			writer.Write(uint8_t(session.UnlimitedMaterials ? 1 : 0));
 		}
@@ -363,7 +437,7 @@ namespace Game
 			session.MapSeed = reader.Read<uint32_t>();
 			session.Tier = reader.Read<uint8_t>();
 			session.Modifiers = reader.Read<ModifierMask>();
-			session.Rules = DecodeRules(reader.Read<uint32_t>());
+			session.Rules = ReadRules(reader);
 			session.Epoch = reader.Read<uint32_t>();
 			session.UnlimitedMaterials = reader.Read<uint8_t>() != 0;
 			return !reader.Failed() && session.Mode < GameMode::Count && session.Map < MapKind::Count;
@@ -451,6 +525,8 @@ namespace Game
 		writer.Write(message.Value);
 		writer.Write(message.Target);
 		writer.Write(message.Extra);
+		if (message.Action == ActionType::StartMatch)
+			WriteRules(writer, message.Rules);
 	}
 
 	bool Read(ByteReader& reader, ClientAction& message)
@@ -459,6 +535,8 @@ namespace Game
 		message.Value = reader.Read<uint16_t>();
 		message.Target = reader.Read<uint16_t>();
 		message.Extra = reader.Read<uint32_t>();
+		if (message.Action == ActionType::StartMatch)
+			message.Rules = ReadRules(reader);
 		return !reader.Failed() && message.Action < ActionType::Count;
 	}
 
@@ -549,6 +627,19 @@ namespace Game
 		return !reader.Failed();
 	}
 
+	void Write(ByteWriter& writer, const ServerAchievement& message)
+	{
+		writer.Write(message.Id);
+		writer.Write(message.Detail);
+	}
+
+	bool Read(ByteReader& reader, ServerAchievement& message)
+	{
+		message.Id = reader.Read<Achievement>();
+		message.Detail = reader.Read<uint32_t>();
+		return !reader.Failed() && message.Id < Achievement::Count;
+	}
+
 	void Write(ByteWriter& writer, const ServerChess& message)
 	{
 		writer.Write(message.Revision);
@@ -612,7 +703,7 @@ namespace Game
 			writer.Write(PackCosmetics(player.Look.Style));
 			writer.Write(player.Team);
 			writer.Write(player.Placement);
-			writer.Write(uint8_t((player.Host ? 1 : 0) | (player.Choosing ? 2 : 0) | (player.Bot ? 4 : 0)));
+			writer.Write(uint8_t((player.Host ? 1 : 0) | (player.Choosing ? 2 : 0) | (player.Bot ? 4 : 0) | (player.Spectator ? 8 : 0)));
 			writer.Write(player.Score);
 			writer.Write(player.Rounds);
 			writer.Write(player.Honors);
@@ -645,6 +736,7 @@ namespace Game
 			player.Host = (flags & 1u) != 0;
 			player.Choosing = (flags & 2u) != 0;
 			player.Bot = (flags & 4u) != 0;
+			player.Spectator = (flags & 8u) != 0;
 			player.Score = reader.Read<uint16_t>();
 			player.Rounds = reader.Read<uint8_t>();
 			player.Honors = reader.Read<uint8_t>();
@@ -750,7 +842,10 @@ namespace Game
 			writer.Write(entity.Health);
 			writer.Write(uint16_t(entity.Flags));
 			if (entity.Kind == EntityKind::Player)
+			{
 				writer.Write(uint8_t(entity.Flags >> 16));
+				writer.Write(entity.Charge);
+			}
 		}
 
 		const size_t hits = std::min<size_t>(message.Hits.size(), MaxListSize);
@@ -871,7 +966,10 @@ namespace Game
 			entity.Health = reader.Read<uint8_t>();
 			entity.Flags = reader.Read<uint16_t>();
 			if (entity.Kind == EntityKind::Player)
+			{
 				entity.Flags |= uint32_t(reader.Read<uint8_t>()) << 16;
+				entity.Charge = reader.Read<uint8_t>();
+			}
 			if (uint8_t(entity.Kind) >= uint8_t(EntityKind::Count))
 				return false;
 		}

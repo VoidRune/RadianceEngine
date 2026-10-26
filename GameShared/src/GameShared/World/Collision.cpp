@@ -1,4 +1,5 @@
 #include "Collision.h"
+#include "GameShared/Content/Brawl.h"
 #include <algorithm>
 #include <cmath>
 
@@ -7,6 +8,30 @@ namespace Game
 	namespace
 	{
 		constexpr float FloorSweepStep = 0.1f;
+
+		float TierBlock(const Level& level, Vec2 from, Vec2 to, float limit, float launch)
+		{
+			const auto blocked = [&](float parameter) { return FloorHeight(level, Lerp(from, to, parameter)) - launch > SpellClimb; };
+			const int32_t samples = std::max(1, int32_t(std::ceil(Length(to - from) * limit / FloorSweepStep)));
+			float previous = 0.0f;
+			for (int32_t i = 1; i <= samples; i++)
+			{
+				const float parameter = limit * float(i) / float(samples);
+				if (blocked(parameter))
+				{
+					float low = previous;
+					float high = parameter;
+					for (int32_t refine = 0; refine < 8; refine++)
+					{
+						const float middle = (low + high) * 0.5f;
+						(blocked(middle) ? high : low) = middle;
+					}
+					return low;
+				}
+				previous = parameter;
+			}
+			return limit;
+		}
 
 		Shape TileShape(int32_t x, int32_t y)
 		{
@@ -121,6 +146,8 @@ namespace Game
 		const bool projectiles = Blocks(mask, Block::Projectiles);
 		const bool sweep = projectiles && level.Rounded;
 		const Block blockers = level.Rounded && Blocks(mask, Block::Movement) ? Block(uint8_t(mask) | uint8_t(Block::Void)) : mask;
+		const bool tiered = projectiles && floor && !level.Relief.IsEmpty();
+		const float launch = tiered ? (*floor > NoFloor ? *floor : FloorHeight(level, from)) : 0.0f;
 		float ground = FloorAt(map, from, floor ? *floor : NoFloor);
 		const auto rises = [&](Vec2 point)
 		{
@@ -152,6 +179,11 @@ namespace Game
 			}
 			if (floor)
 				*floor = ground;
+			if (tiered)
+			{
+				result = TierBlock(level, from, to, result, launch);
+				*floor = launch;
+			}
 			return result;
 		};
 		float hit = 1.0f;
@@ -224,7 +256,13 @@ namespace Game
 
 	bool HasLineOfFire(const Level& level, Vec2 from, Vec2 to)
 	{
-		return CastSegment(level, from, to, Block::Projectiles) >= 1.0f;
+		float floor = NoFloor;
+		return CastSegment(level, from, to, Block::Projectiles, level.Relief.IsEmpty() ? nullptr : &floor) >= 1.0f;
+	}
+
+	float LaunchFloor(const Level& level, Vec2 position, float fallback)
+	{
+		return level.Relief.IsEmpty() ? FloorAt(level.Map, position, fallback) : FloorHeight(level, position);
 	}
 
 	bool IsPathClear(const Level& level, Vec2 from, Vec2 to, float radius)

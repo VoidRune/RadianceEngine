@@ -129,6 +129,8 @@ namespace Game
 		{ .Path = "Original/Hero", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
 		{ .Path = "Original/Armory", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true, .KeepOrigin = true },
 		{ .Path = "Original/Glacier", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
+		{ .Path = "Original/Ruins", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
+		{ .Path = "Original/Summit", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
 		{ .Path = "Original/Materials/PavingStone", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
 		{ .Path = "Original/Materials/PavingBed", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
 		{ .Path = "Original/Materials/GroundGrass", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
@@ -137,6 +139,9 @@ namespace Game
 		{ .Path = "Original/Materials/GroundSand", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 2.0f },
 		{ .Path = "Original/Materials/GroundSnow", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
 		{ .Path = "Original/Materials/GroundWater", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 2.0f },
+		{ .Path = "Original/Materials/GroundCliff", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 3.0f },
+		{ .Path = "Original/Materials/GroundScree", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
+		{ .Path = "Original/Materials/GroundAlpine", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
 	};
 
 	inline constexpr ModelPack ModelPacks[] = {

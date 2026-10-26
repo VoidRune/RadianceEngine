@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/Achievements.h"
 #include "GameShared/Content/Cosmetics.h"
 #include "GameShared/Content/Crafting.h"
 #include "GameShared/Content/Items.h"
@@ -11,6 +12,8 @@
 #include "GameShared/Simulation/HitEvent.h"
 #include "GameShared/Simulation/PlayerInput.h"
 #include "GameShared/World/Level.h"
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -19,7 +22,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 30;
+	constexpr uint32_t ProtocolVersion = 38;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -38,6 +41,7 @@ namespace Game
 		ServerNotice,
 		ServerKillFeed,
 		ServerChess,
+		ServerAchievement,
 		Count,
 	};
 
@@ -90,6 +94,7 @@ namespace Game
 		SetHonors,
 		Chess,
 		SetCosmetics,
+		JoinMatch,
 		Count,
 	};
 
@@ -118,6 +123,7 @@ namespace Game
 		uint16_t Value = 0;
 		uint16_t Target = 0;
 		uint32_t Extra = 0;
+		MatchRules Rules;
 	};
 
 	constexpr uint16_t AnySlot = UINT16_MAX;
@@ -200,6 +206,13 @@ namespace Game
 		std::vector<KillRecord> Kills;
 	};
 
+	struct ServerAchievement
+	{
+		static constexpr MessageType Type = MessageType::ServerAchievement;
+		Achievement Id = Achievement::FirstFling;
+		uint32_t Detail = 0;
+	};
+
 	struct PlayerLook
 	{
 		ItemBase Weapon = ItemBase::Wand;
@@ -230,6 +243,7 @@ namespace Game
 		CardMask Cards = 0;
 		bool Choosing = false;
 		bool Bot = false;
+		bool Spectator = false;
 	};
 
 	struct ServerPlayerList
@@ -250,10 +264,22 @@ namespace Game
 		uint8_t Scale = 16;
 		uint8_t Health = 255;
 		uint32_t Flags = 0;
+		uint8_t Charge = 0;
 
 		bool Has(EntityFlags flag) const { return (Flags & uint32_t(flag)) != 0; }
 		float GetScale() const { return float(Scale) / 16.0f; }
+		float GetChargePower() const { return float(std::min(Charge, ChargeFull)) / float(ChargeFull); }
+		float GetOvercharge() const { return Charge > ChargeFull ? float(Charge - ChargeFull) / float(255 - ChargeFull) : 0.0f; }
+
+		static constexpr uint8_t ChargeFull = 200;
 	};
+
+	inline uint8_t PackCharge(float power, float over)
+	{
+		if (power < 1.0f)
+			return uint8_t(std::lround(std::clamp(power, 0.0f, 1.0f) * float(EntityState::ChargeFull)));
+		return uint8_t(EntityState::ChargeFull + std::lround(std::clamp(over, 0.0f, 1.0f) * float(255 - EntityState::ChargeFull)));
+	}
 
 	struct LocalPlayerState
 	{
@@ -313,6 +339,7 @@ namespace Game
 	void Write(ByteWriter& writer, const ServerNotice& message);
 	void Write(ByteWriter& writer, const ServerKillFeed& message);
 	void Write(ByteWriter& writer, const ServerChess& message);
+	void Write(ByteWriter& writer, const ServerAchievement& message);
 
 	bool Read(ByteReader& reader, ClientHello& message);
 	bool Read(ByteReader& reader, ClientInput& message);
@@ -327,6 +354,7 @@ namespace Game
 	bool Read(ByteReader& reader, ServerNotice& message);
 	bool Read(ByteReader& reader, ServerKillFeed& message);
 	bool Read(ByteReader& reader, ServerChess& message);
+	bool Read(ByteReader& reader, ServerAchievement& message);
 
 	template<typename T>
 	std::vector<uint8_t> Encode(const T& message)

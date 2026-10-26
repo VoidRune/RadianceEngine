@@ -109,6 +109,7 @@ namespace Game
 		float DodgeCooldown = 0.0f;
 		float Mana = 0.0f;
 		float CastTimer = 0.0f;
+		float Charge = 0.0f;
 		float Stun = 0.0f;
 		float Chill = 0.0f;
 		float Slick = 0.0f;
@@ -193,6 +194,7 @@ namespace Game
 	{
 		Vec2 Velocity;
 		float Lifetime = 0.0f;
+		float Span = 0.0f;
 		float Radius = 0.1f;
 		int32_t Damage = 0;
 		Team Side = Team::Players;
@@ -215,6 +217,7 @@ namespace Game
 		Entity Source;
 		float Floor = NoFloor;
 		uint8_t Perks = 0;
+		uint32_t Returned = NoPlayer;
 	};
 
 	struct Effect

@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 
 namespace Game
@@ -20,8 +21,16 @@ namespace Game
 		static_assert(std::size(BaseKeys) == size_t(ItemBase::Count));
 		constexpr const char* StatKeys[] = { "Damage", "PhysicalDamage", "FireDamage", "ColdDamage", "LightningDamage", "AttackSpeed", "CastSpeed", "CritChance", "CritDamage", "LifeSteal", "AreaSize", "ExtraProjectiles", "Pierce", "ProjectileSpeed", "CooldownRecovery", "GemLevel", "MaxHealth", "MaxMana", "ManaRegen", "Regeneration", "Armor", "FireResist", "ColdResist", "LightningResist", "PoisonResist", "MoveSpeed" };
 		static_assert(std::size(StatKeys) == size_t(Stat::Count));
-		constexpr const char* AbilityKeys[] = { "Bolt", "Orb", "Slash", "Chop", "Stab", "Thrust", "Arrow", "Quarrel", "Fireball", "Meteor", "FrostNova", "IceSpear", "ChainLightning", "Blink", "Cyclone", "GroundSlam", "Volley", "RainOfArrows", "PiercingShot", "Rejuvenate", "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain", "EmberBolt", "Gust", "Comet", "Warp", "Shockwave", "GravityWell", "ArcLightning", "Swap", "MirrorWard", "Frostbite", "ChainHook", "Firebomb", "SplittingBolt", "StormStrike", "FirebombSkip", "FirebombSkip2", "BoltShard", "StormJump", "HookAnchor", "HookPull", "HookYank", "FirebombFlame", "Ignite", "ShatterBurst" };
+		constexpr const char* AbilityKeys[] = { "Bolt", "Orb", "Slash", "Chop", "Stab", "Thrust", "Arrow", "Quarrel", "Fireball", "Meteor", "FrostNova", "IceSpear", "ChainLightning", "Blink", "Cyclone", "GroundSlam", "Volley", "RainOfArrows", "PiercingShot", "Rejuvenate", "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain", "EmberBolt", "Gust", "Comet", "Warp", "Shockwave", "GravityWell", "ArcLightning", "Swap", "MirrorWard", "FrostSpear", "ChainHook", "Firebomb", "SplittingBolt", "StormStrike", "FirebombSkip", "FirebombSkip2", "BoltShard", "StormJump", "HookAnchor", "HookPull", "HookYank", "FirebombFlame", "Ignite", "ShatterBurst" };
 		static_assert(std::size(AbilityKeys) == size_t(AbilityId::Count));
+
+		std::optional<AbilityId> AbilityFromKey(const std::string& name)
+		{
+			if (name == "Frostbite")
+				return AbilityId::FrostSpear;
+			const auto key = std::find(std::begin(AbilityKeys), std::end(AbilityKeys), name);
+			return key != std::end(AbilityKeys) ? std::optional<AbilityId>(AbilityId(key - std::begin(AbilityKeys))) : std::nullopt;
+		}
 		constexpr const char* RarityKeys[] = { "Common", "Uncommon", "Rare", "Legendary", "Mythic" };
 		static_assert(std::size(RarityKeys) == size_t(Rarity::Count));
 		constexpr const char* KitKeys[] = { "Arcanist", "Knight", "Ranger", "Lancer" };
@@ -165,24 +174,33 @@ namespace Game
 				for (size_t slot = 0; slot < profile.Spells.size() && slot < root["spells"].size(); slot++)
 				{
 					const std::string name = root["spells"][slot].is_string() ? root["spells"][slot].get<std::string>() : std::string();
-					const auto key = std::find(std::begin(AbilityKeys), std::end(AbilityKeys), name);
-					if (key != std::end(AbilityKeys))
-						AssignSpell(profile.Spells, uint32_t(slot), AbilityId(key - std::begin(AbilityKeys)));
+					if (const std::optional<AbilityId> spell = AbilityFromKey(name))
+						AssignSpell(profile.Spells, uint32_t(slot), *spell);
 				}
 			if (root.contains("falls") && root["falls"].is_number_unsigned())
 				profile.Falls = uint32_t(std::min<uint64_t>(root["falls"].get<uint64_t>(), UINT32_MAX));
 			if (root.contains("starlit") && root["starlit"].is_array())
 				for (const Json& entry : root["starlit"])
 				{
-					const auto key = entry.is_string() ? std::find(std::begin(AbilityKeys), std::end(AbilityKeys), entry.get<std::string>()) : std::end(AbilityKeys);
-					if (key != std::end(AbilityKeys))
-						profile.Starlit |= uint64_t(1) << size_t(key - std::begin(AbilityKeys));
+					if (const std::optional<AbilityId> spell = entry.is_string() ? AbilityFromKey(entry.get<std::string>()) : std::nullopt)
+						profile.Starlit |= uint64_t(1) << size_t(*spell);
 				}
 			if (root.contains("honors") && root["honors"].is_array())
 				for (const Json& entry : root["honors"])
 					for (const HonorDef& honor : Honors)
 						if (entry.is_string() && entry.get<std::string>() == honor.Key)
 							profile.Honors |= HonorBit(honor.Id);
+			if (root.contains("achievements") && root["achievements"].is_array())
+				for (const Json& entry : root["achievements"])
+					for (const AchievementDef& achievement : Achievements)
+						if (entry.is_string() && entry.get<std::string>() == achievement.Key)
+							profile.Achievements |= AchievementBit(achievement.Id);
+			if (root.contains("scholar") && root["scholar"].is_array())
+				for (const Json& entry : root["scholar"])
+					for (size_t i = 0; i < std::size(BrawlSpellPool); i++)
+						if (entry.is_string() && AbilityFromKey(entry.get<std::string>()) == BrawlSpellPool[i])
+							profile.Scholar |= 1u << uint32_t(i);
+			profile.Achievements |= AchievementsFromHonors(profile.Honors);
 			if (root.contains("look") && root["look"].is_object())
 			{
 				const Json& look = root["look"];
@@ -244,6 +262,22 @@ namespace Game
 				if ((profile.Honors & HonorBit(honor.Id)) != 0)
 					honors.push_back(honor.Key);
 			root["honors"] = honors;
+		}
+		if (profile.Achievements != 0)
+		{
+			Json achievements = Json::array();
+			for (const AchievementDef& achievement : Achievements)
+				if ((profile.Achievements & AchievementBit(achievement.Id)) != 0)
+					achievements.push_back(achievement.Key);
+			root["achievements"] = achievements;
+		}
+		if (profile.Scholar != 0)
+		{
+			Json scholar = Json::array();
+			for (size_t i = 0; i < std::size(BrawlSpellPool); i++)
+				if ((profile.Scholar >> i) & 1u)
+					scholar.push_back(AbilityKeys[size_t(BrawlSpellPool[i])]);
+			root["scholar"] = scholar;
 		}
 
 		std::error_code code;

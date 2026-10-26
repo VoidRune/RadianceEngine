@@ -201,9 +201,9 @@ namespace Game
 		const UiRect ffa = teams.CutLeft((teams.W - 10.0f) * 0.5f);
 		teams.CutLeft(10.0f);
 		if (ui.Button(Ui::MakeId("arenaffa"), ffa, "Free for all", m_ArenaRules.Teams ? ButtonKind::Normal : ButtonKind::Primary))
-			m_ArenaRules.Teams = false;
+			m_ArenaRules.Teams = 0;
 		if (ui.Button(Ui::MakeId("arenateams"), teams, "Two teams", m_ArenaRules.Teams ? ButtonKind::Primary : ButtonKind::Normal))
-			m_ArenaRules.Teams = true;
+			m_ArenaRules.Teams = 2;
 		left.CutTop(10.0f);
 		const auto stepper = [&](const char* label, const std::string& value, UiId id, int& current, int low, int high, int step)
 		{
@@ -269,7 +269,7 @@ namespace Game
 		{
 			int rounds = m_BrawlRules.Rounds;
 			UiRect row = third.CutTop(40.0f);
-			draw.TextAligned(row.CutLeft(150.0f), "Rounds", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
+			draw.TextAligned(row.CutLeft(170.0f), "Rounds", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
 			if (ui.Button(Ui::MakeId("brawlrounds"), row.CutLeft(40.0f), "-", ButtonKind::Normal, rounds > MinBrawlRounds))
 				rounds--;
 			draw.TextAligned(row.CutLeft(90.0f), std::to_string(rounds), Theme::Title(22.0f), { 0.5f, 0.5f });
@@ -281,8 +281,9 @@ namespace Game
 			DrawArenaChoice(third);
 			DrawBotRules(third);
 		}
-		third.CutTop(draw.TextWrapped(third, "Everyone has 100 health and the same Ember Bolt, plus three spells from their spellbook. Between rounds everyone but the winner picks a card. Your gear only changes how you look.", Theme::Body(13.5f, Theme::Faint)) + 8.0f);
-		const MatchReward brawlReward = GetBrawlReward(true, std::max(players + m_BrawlRules.Bots, 2u), 15);
+		const std::string brawlRules = Format("Everyone has %u health and the same Ember Bolt, plus three spells from their spellbook. Between rounds %s picks a card. Teams, spectators and custom rules are set at the Caldera Gate.", unsigned(m_BrawlRules.Health), m_BrawlRules.WinnerCard ? "everyone" : "everyone but the winner");
+		third.CutTop(draw.TextWrapped(third, brawlRules, Theme::Body(13.5f, Theme::Faint)) + 8.0f);
+		const MatchReward brawlReward = GetBrawlReward(true, std::max(players + CountRuleBots(m_BrawlRules), 2u), 15);
 		draw.TextAligned(third.CutTop(22.0f), Format("Winning with 15 points pays about %u gold", unsigned(brawlReward.Gold)), Theme::Body(13.5f, Theme::Success), { 0.0f, 0.5f });
 		third.CutTop(6.0f);
 		if (ui.Button(Ui::MakeId("startbrawl"), third.CutTop(46.0f), EnterLabel(), ButtonKind::Primary, true, UiIcon::Whirlwind))

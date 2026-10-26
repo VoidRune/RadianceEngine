@@ -18,6 +18,7 @@ namespace Game
 	bool CrossesVoid(const Level& level, Vec2 from, Vec2 to);
 	float GetVoidClearance(const Level& level, Vec2 point, float limit);
 	float FloorAt(const TileMap& map, Vec2 position, float fallback = NoFloor);
+	float LaunchFloor(const Level& level, Vec2 position, float fallback = NoFloor);
 	float CastSegment(const Level& level, Vec2 from, Vec2 to, Block mask, float* floor = nullptr);
 	bool HasLineOfFire(const Level& level, Vec2 from, Vec2 to);
 	bool IsPathClear(const Level& level, Vec2 from, Vec2 to, float radius);

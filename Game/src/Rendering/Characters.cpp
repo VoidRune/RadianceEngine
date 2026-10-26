@@ -87,6 +87,9 @@ namespace Game
 		constexpr float FidgetDelayMin = 4.0f;
 		constexpr float FidgetDelaySpread = 5.0f;
 		constexpr float StrikeSettle = 18.0f;
+		constexpr float HoldPoint = 0.62f;
+		constexpr float HoldReach = 0.28f;
+		constexpr float HoldRelease = 1.7f;
 
 		uint64_t LookKey(const PlayerLook& look)
 		{
@@ -483,7 +486,8 @@ namespace Game
 		case AbilityId::ChainLightning:
 		case AbilityId::EmberBolt:
 			return { .Windup = Anim::CastFlick, .Variants = 3 };
-		case AbilityId::Frostbite:
+		case AbilityId::FrostSpear:
+			return { .Windup = Anim::CastHurl, .Hold = true };
 		case AbilityId::IceSpear:
 			return { Anim::CastLunge };
 		case AbilityId::Fireball:
@@ -646,7 +650,17 @@ namespace Game
 		const float windup = std::max(input.Windup, MinimumWindup);
 		Layer layer{ int32_t(*clip), 0.0f, 1.0f, input.Attack.Loop };
 		m_StrikeTime = 0.0f;
-		if (!input.Attack.Loop && input.Attack.Release != Anim::Count)
+		m_HoldTime = 0.0f;
+		if (input.Attack.Hold)
+		{
+			float strike = models.GetStrikeTime(*clip);
+			if (strike < 0.05f)
+				strike = duration * 0.4f;
+			m_HoldTime = strike * HoldPoint;
+			layer.Rate = std::clamp(m_HoldTime / HoldReach, 0.6f, 2.5f);
+			layer.Loop = false;
+		}
+		else if (!input.Attack.Loop && input.Attack.Release != Anim::Count)
 		{
 			layer.Rate = std::clamp(duration / windup, 0.5f, 4.0f);
 			layer.Loop = false;
@@ -682,7 +696,8 @@ namespace Game
 			m_Phase = Phase::Release;
 			return;
 		}
-		m_Action.Current.Rate = std::max(m_Action.Current.Rate, 1.0f);
+		m_Action.Current.Rate = std::max(m_Action.Current.Rate, m_HoldTime > 0.0f ? HoldRelease : 1.0f);
+		m_HoldTime = 0.0f;
 		m_Phase = Phase::FollowThrough;
 	}
 
@@ -784,6 +799,8 @@ namespace Game
 		if (m_Phase != Phase::None && m_Action.Current.Clip >= 0)
 		{
 			m_Action.Advance(library, dt, ActionFade);
+			if (m_Phase == Phase::Windup && m_HoldTime > 0.0f)
+				m_Action.Current.Time = std::min(m_Action.Current.Time, m_HoldTime);
 			m_Action.Weight = std::min(1.0f, m_Action.Weight + dt / ActionFade);
 			const bool finished = !m_Action.Current.Loop && m_Action.Current.Time >= models.GetClip(uint32_t(m_Action.Current.Clip)).Duration();
 			if ((m_Phase == Phase::Release || m_Phase == Phase::FollowThrough) && finished)

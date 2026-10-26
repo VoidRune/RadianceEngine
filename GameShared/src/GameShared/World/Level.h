@@ -6,6 +6,8 @@
 #include "GameShared/World/Shapes.h"
 #include "GameShared/World/TileMap.h"
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <iterator>
 #include <optional>
@@ -24,6 +26,8 @@ namespace Game
 		Abbey,
 		Caldera,
 		FrozenLake,
+		SkyRuins,
+		StormPeak,
 		Count,
 	};
 
@@ -43,10 +47,12 @@ namespace Game
 		{ MapKind::Abbey, "Vesper Abbey", "A rain-soaked abbey courtyard at dusk, with a walled garden, a storage yard and a candlelit crypt." },
 		{ MapKind::Caldera, "The Caldera", "A disc of basalt floating on a lake of lava inside a volcano. It crumbles from the edge inward every round." },
 		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes." },
+		{ MapKind::SkyRuins, "Sky Ruins", "A temple broken into islands high above the clouds. There is no lava, only a long fall: drifting islands carry you out and back, wind gusts push everyone one way, and the ruins crumble into the sky." },
+		{ MapKind::StormPeak, "Storm Peak", "A mountain summit high above the clouds, crowned by the old Stormcallers' ritual circle. Lightning hunts anyone who stands still, the storm closes in on the circle, and a shove knocks you down a ledge or off the mountain." },
 	};
 	static_assert(std::size(Maps) == size_t(MapKind::Count));
 
-	inline constexpr MapKind BrawlMaps[] = { MapKind::Caldera, MapKind::FrozenLake };
+	inline constexpr MapKind BrawlMaps[] = { MapKind::Caldera, MapKind::FrozenLake, MapKind::SkyRuins, MapKind::StormPeak };
 	inline constexpr MapKind RandomBrawlMap = MapKind::Count;
 
 	inline const MapDef& GetMapDef(MapKind kind)
@@ -71,7 +77,7 @@ namespace Game
 
 	inline bool IsBrawlMap(MapKind kind)
 	{
-		return kind == MapKind::Caldera || kind == MapKind::FrozenLake;
+		return kind == MapKind::Caldera || kind == MapKind::FrozenLake || kind == MapKind::SkyRuins || kind == MapKind::StormPeak;
 	}
 
 	enum class StationKind : uint8_t
@@ -236,6 +242,89 @@ namespace Game
 		float Yaw = 0.0f;
 	};
 
+	struct DriftIsland
+	{
+		std::vector<TileCoord> Cells;
+		Vec2 Center;
+		Vec2 Axis;
+		float Reach = 4.0f;
+		float Period = 22.0f;
+		float Phase = 0.0f;
+	};
+
+	inline constexpr int32_t ElevationCliffs = 3;
+
+	struct ElevationRamp
+	{
+		Vec2 Foot;
+		Vec2 Uphill;
+		float Width = 0.0f;
+		uint8_t Cliff = 0;
+		bool Stair = false;
+	};
+
+	struct Elevation
+	{
+		struct Spot
+		{
+			size_t Index = 0;
+			float U = 0.0f;
+			float V = 0.0f;
+		};
+
+		Vec2 Origin;
+		float Spacing = 0.25f;
+		int32_t Columns = 0;
+		int32_t Rows = 0;
+		std::vector<float> Floor;
+		std::vector<float> Rim;
+		std::array<std::vector<float>, ElevationCliffs> Edges;
+		std::array<std::vector<float>, ElevationCliffs> Drops;
+		std::vector<ElevationRamp> Ramps;
+		Vec2 Summit;
+		float Ritual = 0.0f;
+
+		bool IsEmpty() const { return Floor.empty(); }
+
+		Spot Locate(Vec2 position) const
+		{
+			const float gx = std::clamp((position.x - Origin.x) / Spacing, 0.0f, float(Columns - 1) - 1e-3f);
+			const float gy = std::clamp((position.y - Origin.y) / Spacing, 0.0f, float(Rows - 1) - 1e-3f);
+			const int32_t i = int32_t(gx);
+			const int32_t j = int32_t(gy);
+			return { size_t(j) * size_t(Columns) + size_t(i), gx - float(i), gy - float(j) };
+		}
+
+		float Read(const std::vector<float>& grid, const Spot& spot) const
+		{
+			const float* row = grid.data() + spot.Index;
+			const float* next = row + Columns;
+			return std::lerp(std::lerp(row[0], row[1], spot.U), std::lerp(next[0], next[1], spot.U), spot.V);
+		}
+
+		float Height(Vec2 position) const
+		{
+			const Spot spot = Locate(position);
+			float height = Read(Floor, spot);
+			for (int32_t cliff = 0; cliff < ElevationCliffs; cliff++)
+				if (Read(Edges[size_t(cliff)], spot) >= 0.0f)
+					height += Read(Drops[size_t(cliff)], spot);
+			return height;
+		}
+
+		float RimDistance(Vec2 position) const { return Read(Rim, Locate(position)); }
+
+		float EdgeDistance(int32_t cliff, Vec2 position) const { return Read(Edges[size_t(cliff)], Locate(position)); }
+
+		Vec2 Gradient(const std::vector<float>& grid, Vec2 position) const
+		{
+			const float h = Spacing * 0.5f;
+			const float dx = Read(grid, Locate(position + Vec2(h, 0.0f))) - Read(grid, Locate(position - Vec2(h, 0.0f)));
+			const float dy = Read(grid, Locate(position + Vec2(0.0f, h))) - Read(grid, Locate(position - Vec2(0.0f, h)));
+			return Vec2(dx, dy) / (2.0f * h);
+		}
+	};
+
 	inline Vec2 ChessSquareCenter(const ChessSpot& spot, int32_t file, int32_t rank)
 	{
 		const Vec2 ranks = FromAngle(spot.Yaw);
@@ -293,9 +382,12 @@ namespace Game
 		std::vector<TileRect> Railings;
 		std::optional<ChessSpot> ChessTable;
 		std::vector<Boundary> Boundaries;
+		std::vector<DriftIsland> Islands;
+		Elevation Relief;
 		bool Rounded = false;
 		bool Floating = false;
 		bool Bouncy = false;
+		bool Skyborne = false;
 		Vec2 PlayerSpawn;
 		Vec2 MissionStart;
 		Vec2 BossArena;
@@ -303,6 +395,8 @@ namespace Game
 		std::vector<Shape> Shapes;
 		std::vector<uint32_t> BucketStart;
 		std::vector<uint32_t> BucketShapes;
+		std::vector<uint32_t> ShapeProps;
+		std::vector<uint8_t> Sunk;
 
 		void Finalize();
 		const Portal* FindPortal(uint32_t index) const { return index < Portals.size() ? &Portals[index] : nullptr; }
@@ -340,7 +434,8 @@ namespace Game
 				{
 					const size_t tile = size_t(y) * size_t(Map.GetWidth()) + size_t(x);
 					for (uint32_t i = BucketStart[tile]; i < BucketStart[tile + 1]; i++)
-						function(Shapes[BucketShapes[i]]);
+						if (Sunk.empty() || !Sunk[BucketShapes[i]])
+							function(Shapes[BucketShapes[i]]);
 				}
 		}
 	};
@@ -356,4 +451,6 @@ namespace Game
 	Level BuildAbbeyLevel(uint32_t seed);
 	Level BuildCalderaLevel(uint32_t seed);
 	Level BuildFrozenLakeLevel(uint32_t seed);
+	Level BuildSkyRuinsLevel(uint32_t seed);
+	Level BuildStormPeakLevel(uint32_t seed);
 }

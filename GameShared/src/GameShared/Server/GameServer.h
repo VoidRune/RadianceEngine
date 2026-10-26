@@ -16,6 +16,7 @@ namespace Game
 	{
 		uint16_t Port = DefaultPort;
 		bool Listen = true;
+		bool Relay = false;
 		uint32_t TickRate = 60;
 		uint32_t SnapshotInterval = 1;
 		uint32_t MapSeed = 0;
@@ -63,6 +64,7 @@ namespace Game
 		uint32_t GetPlayerCount() const;
 		uint32_t GetBotCount() const { return uint32_t(m_Bots.size()); }
 		uint32_t GetStarvedTicks() const { return m_StarvedTicks; }
+		bool IsRelayListening() const { return m_Net.IsRelayListening(); }
 		float GetTickPhase() const { return m_Accumulator; }
 		std::vector<ServerPlayerStats> GetPlayerStats() const;
 
@@ -91,6 +93,7 @@ namespace Game
 			uint32_t TraitsRefresh = 0;
 			uint8_t Honors = 0;
 			Cosmetics Style;
+			AchievementMask Awarded = 0;
 		};
 
 		struct Bot
@@ -127,6 +130,7 @@ namespace Game
 		Client* FindClientByPlayer(uint32_t playerId);
 		bool AllocatePlayerId(uint32_t& playerId) const;
 		void FillBots();
+		bool SpawnBot(uint8_t team);
 		void DropBot();
 		std::string NameOf(uint32_t playerId) const;
 

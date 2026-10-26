@@ -14,6 +14,8 @@ const uint DecalScorch = 5u;
 const uint DecalFrost = 6u;
 const uint DecalCracks = 7u;
 const uint DecalFracture = 8u;
+const uint DecalCharge = 9u;
+const uint DecalFrostLane = 10u;
 
 const float Tau = 6.28318531;
 
@@ -247,6 +249,30 @@ vec2 FrostShape(vec2 uv, float strength, uint seed, float time)
 	return vec2(edge * (0.35 + 0.35 * n) * strength, strength * (spikes * 0.7 + sparkle * 1.5 + edge * 0.12));
 }
 
+vec2 FrostLaneShape(vec2 uv, vec2 extent, float pixel, float strength, uint seed, float time)
+{
+	vec2 p = uv * extent;
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.613;
+	float along = (p.x + extent.x) / max(2.0 * extent.x, 1e-3);
+	float n = Fbm(p * 2.2 + offset);
+	float fine = Fbm(p * 7.0 - offset);
+	float taper = smoothstep(0.0, min(0.7, extent.x), p.x + extent.x) * (0.7 + 0.3 * along);
+	float halfWidth = extent.y * taper * (0.68 + 0.42 * n);
+	float edge = (1.0 - smoothstep(halfWidth * 0.45, halfWidth, abs(p.y))) * (1.0 - smoothstep(extent.x - 0.4 * extent.y, extent.x, p.x));
+	float streak = 0.0;
+	for (int i = 0; i < 3; i++)
+	{
+		float lane = (HashUnit(seed + uint(i) * 977u) - 0.5) * 1.1 * halfWidth;
+		float wobble = (ValueNoise(vec2(p.x * 1.7, float(i) * 13.0) + offset) - 0.5) * 0.16;
+		float broken = step(0.3, ValueNoise(vec2(p.x * 2.5 + float(i) * 7.0, 3.0 + float(i))));
+		streak = max(streak, Line(abs(p.y - lane - wobble), 0.01 + 0.012 * fine, pixel) * broken);
+	}
+	vec2 cell = floor(p * 9.0 + 200.0);
+	float sparkleSeed = HashUnit(uint(cell.x) * 7919u + uint(cell.y) * 104729u + seed);
+	float sparkle = step(0.93, sparkleSeed) * pow(0.5 + 0.5 * sin(time * 5.0 + sparkleSeed * 40.0), 8.0);
+	return vec2(edge * (0.45 + 0.4 * n + 0.15 * fine) * strength, strength * edge * (streak * 0.5 + sparkle * 1.2 + 0.05));
+}
+
 float CrackPath(float r, uint key, float amplitude)
 {
 	float x = r * 6.0;
@@ -343,6 +369,38 @@ float LightningBolt(vec2 uv, uint seed, float segments, float amplitude, float p
 	float d = abs(uv.y - mix(a, b, x - i));
 	float taper = smoothstep(-0.02, 0.08, uv.x) * (1.0 - smoothstep(0.7, 1.0, uv.x));
 	return (Line(d, max(0.018, pixel * 0.6), pixel) + 0.3 * exp(-d * d * 120.0)) * taper;
+}
+
+vec2 ChargeShape(vec2 uv, float pixel, float progress, uint seed, float time)
+{
+	float r = length(uv);
+	float angle = atan(uv.y, uv.x);
+	float window = 1.0 - smoothstep(0.92, 1.0, r);
+	float wobble = (ValueNoise(vec2(angle * 6.0 + 40.0, time * 9.0 + float(seed & 63u))) - 0.5) * 0.06;
+	float edge = r - 0.86 - wobble;
+	float rim = Line(abs(edge), max(0.014, pixel * 0.7), pixel) + 0.35 * exp(-edge * edge * 196.0);
+	float flicker = 0.7 + 0.3 * sin(time * 61.0 + float(seed & 255u));
+	uint beat = uint(time * 14.0);
+	float arcs = 0.0;
+	for (uint k = 0u; k < 4u; k++)
+	{
+		uint h = Hash(seed * 2654435761u + beat * 40503u + k * 977u);
+		if (HashUnit(h ^ 0x3333u) > 0.35 + 0.6 * progress)
+			continue;
+		float a = HashUnit(h) * Tau;
+		vec2 start = vec2(cos(a), sin(a)) * 0.86;
+		float b = a + (HashUnit(h ^ 0x9E37u) - 0.5) * 2.2;
+		vec2 end = vec2(cos(b), sin(b)) * mix(0.1, 0.55, HashUnit(h ^ 0x51F1u)) * (1.2 - progress);
+		vec2 axis = end - start;
+		float span = max(length(axis), 1e-3);
+		vec2 along = axis / span;
+		vec2 local = vec2(dot(uv - start, along), dot(uv - start, vec2(-along.y, along.x))) / span;
+		arcs += LightningBolt(local, h, 5.0, 0.35, pixel / span);
+	}
+	float core = exp(-r * r * 6.0) * progress * progress;
+	float fill = (1.0 - smoothstep(0.75, 0.88, r)) * (0.05 + 0.1 * progress);
+	float glow = (rim * (0.5 + 0.9 * progress) * flicker + arcs * (0.6 + 0.8 * progress) + core * 0.9 + fill) * window;
+	return vec2((1.0 - smoothstep(0.7, 0.9, r)) * 0.3 * progress, glow);
 }
 
 float LightningShape(vec2 uv, uint seed, float pixel)

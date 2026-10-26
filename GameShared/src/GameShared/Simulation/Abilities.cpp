@@ -15,7 +15,7 @@ namespace Game
 		{
 		case AbilityKind::Projectile:
 		{
-			const ProjectilePattern pattern = GetProjectilePattern(ability, context.ExtraProjectiles, context.ExtraPierce, context.ProjectileSpeedScale);
+			const ProjectilePattern pattern = ChargedPattern(ability, GetProjectilePattern(ability, context.ExtraProjectiles, context.ExtraPierce, context.ProjectileSpeedScale), context.Charge, context.ProjectileSpeedScale);
 			for (uint32_t i = 0; i < pattern.Count; i++)
 			{
 				const Vec2 direction = ProjectileDirection(pattern, context.Direction, i);

@@ -77,8 +77,12 @@ void main()
 		result = FrostShape(uv, params.x, seed, time);
 	else if (shape == DecalCracks)
 		result = CracksShape(uv, pixel, extent.x, params.x, seed);
+	else if (shape == DecalCharge)
+		result = ChargeShape(uv, pixel, params.x, seed, time);
 	else if (shape == DecalFracture)
 		result = FractureShape(world.xz, pixelWorld, params.x, time);
+	else if (shape == DecalFrostLane)
+		result = FrostLaneShape(uv, extent.xy, pixelWorld, params.x, seed, time);
 	float coverage = clamp(result.x * decal.Tint.a, 0.0, 1.0) * mask;
 	float roughness = decal.Extent.w;
 	float surfaceCoverage = roughness >= 0.0 ? coverage : 0.0;

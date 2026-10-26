@@ -2,6 +2,7 @@
 #include "Rendering/Particles.h"
 #include <GameShared/Content/Definitions.h>
 #include <glm/glm.hpp>
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -31,6 +32,9 @@ namespace Game
 		Flash,
 		Gold,
 		Snow,
+		Wind,
+		Rain,
+		Mote,
 		Count,
 	};
 
@@ -85,6 +89,15 @@ namespace Game
 		CoinToss,
 		BombBurst,
 		Snowfall,
+		Crumble,
+		WindStreak,
+		Rain,
+		SpearAura,
+		SpearReady,
+		SpearRelease,
+		SpearCrack,
+		SpearShatter,
+		SpearTrail,
 		Count,
 	};
 
@@ -104,6 +117,8 @@ namespace Game
 
 		void Burst(Fx fx, const glm::vec3& position, const glm::vec3& direction = { 0.0f, 1.0f, 0.0f }, float scale = 1.0f, const glm::vec3& tint = glm::vec3(1.0f));
 		void Trail(Fx fx, uint64_t key, const glm::vec3& position, float dt, float scale = 1.0f, const glm::vec3& tint = glm::vec3(1.0f));
+		void Stream(Fx fx, const glm::vec3& center, const glm::vec3& direction, float rate, float dt);
+		void Converge(uint64_t key, const glm::vec3& target, float radius, float rate, float life, float dt, float size = 1.0f);
 		void Mark(const GroundDecal& decal, float life, float fadeIn = 0.05f, float startScale = 1.0f, float endScale = 1.0f, float growTime = 0.25f, float cooling = 0.0f);
 		void Spike(const glm::vec3& base, float height, float radius, float yaw, const glm::vec3& color, float life);
 		void Impact(AbilityId ability, const glm::vec3& ground, float facing, float scale, const glm::vec3& color, uint32_t seed, const HeightAt& heightAt);
@@ -143,9 +158,18 @@ namespace Game
 			float Age = 0.0f;
 		};
 
+		struct ConvergeState
+		{
+			float Carry = 0.0f;
+			uint32_t Count = 0;
+			bool Touched = false;
+		};
+
 		ParticleSystem& m_Particles;
 		std::unordered_map<uint64_t, TrailState> m_Trails;
+		std::unordered_map<uint64_t, ConvergeState> m_Converges;
 		std::vector<DecalMark> m_Marks;
 		std::vector<SpikeMark> m_Spikes;
+		std::array<float, size_t(Fx::Count)> m_StreamCarry{};
 	};
 }

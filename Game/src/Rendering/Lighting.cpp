@@ -140,8 +140,9 @@ namespace Game
 			.EnvironmentSh = environment.Irradiance,
 			.EnvironmentParams = environment.Params,
 			.SkyMaskTransform = environment.SkyMaskTransform,
-			.Backdrop = glm::vec4(lighting.Floating ? 1.0f : 0.0f, lighting.FocusHeight, lighting.Time, lighting.Leviathan),
-			.Haze = glm::vec4(lighting.Haze, 0.0f),
+			.Backdrop = glm::vec4(lighting.Floating ? (lighting.Storm ? 3.0f : lighting.Daylight ? 2.0f : 1.0f) : 0.0f, lighting.FocusHeight, lighting.Time, lighting.Leviathan),
+			.Haze = glm::vec4(lighting.Haze, lighting.StormBuild),
+			.Eye = lighting.Eye,
 		};
 		const Rdn::ImageWrite environmentWrite(11, Rdn::DescriptorType::CombinedImageSampler, environment.Image->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, environment.Sampler->GetHandle());
 		const Rdn::ImageWrite skyMaskWrite(12, Rdn::DescriptorType::CombinedImageSampler, environment.SkyMask->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_LinearSampler->GetHandle());

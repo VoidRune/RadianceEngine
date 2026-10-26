@@ -28,6 +28,7 @@ namespace Game
 		float PvpScale = 1.0f;
 		float PushScale = 1.0f;
 		float RangeScale = 1.0f;
+		float Charge = 0.0f;
 		CardMask Cards = 0;
 		Vec2 Departure;
 	};

@@ -12,7 +12,7 @@ namespace Game
 {
 	namespace
 	{
-		constexpr float ChainRange = 7.0f;
+		constexpr float ChainRange = 5.5f;
 
 		constexpr float BossChillScale = 0.5f;
 
@@ -127,6 +127,7 @@ namespace Game
 			hit.PushDirection = projectile.Velocity;
 			hit.Swap = projectile.Swap;
 			hit.Slick = (projectile.Perks & PerkSlick) != 0;
+			hit.Returned = projectile.Returned;
 			return hit;
 		}
 
@@ -144,6 +145,18 @@ namespace Game
 			StrikeCircle(world, position, projectile.ImpactRadius, hit, projectile.Side, projectile.Rewind);
 			const AbilityDef& ability = GetAbility(AbilityId(projectile.Ability));
 			world.SpawnEffect(ability.Id, position, 0.0f, owner, tag, ability.ImpactRadius > 0.0f ? projectile.ImpactRadius / ability.ImpactRadius : 1.0f);
+		}
+
+		void SpearBurst(World& world, const Projectile& projectile, Vec2 position, uint32_t owner)
+		{
+			HitInfo hit = MakeHit(projectile, owner);
+			hit.Damage = ScaleDamage(projectile.Damage, float(SpearBurstDamage) / float(SpearFullDamage));
+			hit.Push = projectile.Push * (SpearBurstPush / SpearFullPush);
+			hit.Chill = SpearBurstChill;
+			hit.Mode = PushMode::Radial;
+			hit.PushOrigin = position;
+			hit.PushReach = SpearBurstRadius;
+			StrikeCircle(world, position, SpearBurstRadius, hit, projectile.Side, projectile.Rewind, { projectile.Hits.data(), projectile.HitCount });
 		}
 
 		void ResetHistory(World& world, Entity entity, Vec2 position)
@@ -166,6 +179,8 @@ namespace Game
 			if (caster == target || !from || !to || !casterController || (!targetController && !dummy) || !casterController->State.Alive)
 				return false;
 			std::swap(from->Position, to->Position);
+			if (targetController)
+				world.NoteSwap(targetController->PlayerId, casterController->PlayerId, to->Position);
 			for (PlayerController* controller : { casterController, targetController })
 				if (controller)
 				{
@@ -280,6 +295,8 @@ namespace Game
 			impulse *= world.GetMatch().GetKnockbackScale(hit.Attacker, controller->PlayerId, fraction, hit.Mode == PushMode::Pull);
 			PlayerState& state = controller->State;
 			state.Push = ClampLength(state.Push + impulse, MaxPush);
+			if (hit.Mode != PushMode::Pull)
+				world.NoteFling(controller->PlayerId, hit.Attacker, hit.Ability);
 			if (Length(impulse) >= PushStagger)
 			{
 				state.CastSlot = -1;
@@ -300,8 +317,10 @@ namespace Game
 				if (const Vec2 toward = caster->Position - point; LengthSquared(toward) > 0.25f)
 					heading = Normalize(toward);
 			CancelRecast(world, projectile.Source, AbilityId(projectile.Ability));
+			if (const PlayerController* sender = entities.TryGet<PlayerController>(projectile.Source); sender && projectile.Source != target)
+				projectile.Returned = sender->PlayerId;
 			projectile.Velocity = heading * speed;
-			projectile.Lifetime = GetProjectileLifetime(GetAbility(AbilityId(projectile.Ability)), speed);
+			projectile.Lifetime = projectile.Span > 0.0f ? projectile.Span : GetProjectileLifetime(GetAbility(AbilityId(projectile.Ability)), speed);
 			projectile.Source = target;
 			if (world.GetMatch().HasPlayerCard(controller->PlayerId, CardId::ThornedMirror))
 			{
@@ -310,7 +329,7 @@ namespace Game
 					projectile.Damage = ScaleDamage(projectile.Damage, ThornScale);
 			}
 			projectile.Rewind = 0.0f;
-			projectile.Floor = FloorAt(world.GetLevel().Map, point, projectile.Floor);
+			projectile.Floor = LaunchFloor(world.GetLevel(), point, projectile.Floor);
 			projectile.Hits = {};
 			projectile.Hits[0] = target;
 			projectile.HitCount = 1;
@@ -353,7 +372,9 @@ namespace Game
 			if (next.HitCount < next.Hits.size())
 				next.Hits[next.HitCount++] = hit;
 			const Vec2 direction = Normalize(best->Position - from);
-			next.Velocity = direction * Length(projectile.Velocity);
+			const float speed = Length(projectile.Velocity);
+			next.Velocity = direction * speed;
+			next.Lifetime = ChainRange / std::max(speed, 1e-3f);
 			world.SpawnProjectileCopy(next, from + direction * 0.3f, owner);
 			return true;
 		}
@@ -515,6 +536,8 @@ namespace Game
 		const bool critical = hit.CritChance > 0.0f && world.GetRandom().Float() < hit.CritChance;
 		const float crit = critical ? (pvp && !world.IsDamageBrawl() ? 1.0f + (hit.CritMultiplier - 1.0f) * PvpCritScale : hit.CritMultiplier) : 1.0f;
 		const int32_t damage = hit.Damage > 0 && !unharmed ? std::max(1, ScaleDamage(hit.Damage, crit * (pvp ? hit.PvpScale : 1.0f))) : 0;
+		if (const PlayerController* victim = entities.TryGet<PlayerController>(target); victim && victim->State.Alive && victim->State.Invulnerable <= 0.0f)
+			world.NoteBlow(victim->PlayerId, hit.Attacker, hit.Ability, hit.Mode == PushMode::Pull, hit.Returned);
 		if (damage <= 0)
 		{
 			if (!ApplyKnockback(world, target, hit, true))
@@ -564,12 +587,12 @@ namespace Game
 		return true;
 	}
 
-	void StrikeCircle(World& world, Vec2 center, float radius, const HitInfo& hit, Team side, float rewind)
+	void StrikeCircle(World& world, Vec2 center, float radius, const HitInfo& hit, Team side, float rewind, std::span<const Entity> spared)
 	{
 		for (const Target& target : CollectTargets(world.GetEntities()))
 		{
 			Vec2 position;
-			if (!IsHostile(world, side, hit.Attacker, target) || !TargetPosition(world, target, rewind, position))
+			if (!IsHostile(world, side, hit.Attacker, target) || std::find(spared.begin(), spared.end(), target.Handle) != spared.end() || !TargetPosition(world, target, rewind, position))
 				continue;
 			if (LengthSquared(position - center) > (radius + target.Radius) * (radius + target.Radius))
 				continue;
@@ -629,11 +652,11 @@ namespace Game
 				if (const Vec2 toward = caster->Position - transform->Position; LengthSquared(toward) > 0.25f)
 					heading = Normalize(toward);
 			projectile.Velocity = heading * speed;
-			projectile.Lifetime = GetProjectileLifetime(GetAbility(AbilityId(projectile.Ability)), speed);
+			projectile.Lifetime = projectile.Span > 0.0f ? projectile.Span : GetProjectileLifetime(GetAbility(AbilityId(projectile.Ability)), speed);
 			CancelRecast(world, projectile.Source, AbilityId(projectile.Ability));
 			projectile.Source = context.Source;
 			projectile.Rewind = 0.0f;
-			projectile.Floor = FloorAt(world.GetLevel().Map, transform->Position, projectile.Floor);
+			projectile.Floor = LaunchFloor(world.GetLevel(), transform->Position, projectile.Floor);
 			projectile.Hits = {};
 			projectile.HitCount = 0;
 			transform->Facing = AngleOf(heading);
@@ -762,6 +785,7 @@ namespace Game
 				}
 			bool spent = false;
 			bool reflected = false;
+			Vec2 last = reached;
 			for (const Contact& contact : contacts)
 			{
 				const Vec2 point = Lerp(start, reached, contact.Parameter);
@@ -792,12 +816,15 @@ namespace Game
 				if (projectile.Pierce == 0)
 				{
 					spent = true;
+					last = point;
 					break;
 				}
 				projectile.Pierce--;
 			}
 			if (reflected)
 				return;
+			if ((projectile.Perks & PerkBurst) && (spent || !clear || projectile.Lifetime <= 0.0f))
+				SpearBurst(world, projectile, last, owner);
 			if (!spent && projectile.ImpactRadius > 0.0f && (!clear || projectile.Lifetime <= 0.0f))
 				Explode(world, projectile, reached, owner, tag);
 			else if (!spent && clear && projectile.Lifetime <= 0.0f && (projectile.Perks & PerkSplit))
@@ -998,7 +1025,7 @@ namespace Game
 			if (controller.State.Alive)
 				return;
 			controller.RespawnTimer = std::max(controller.RespawnTimer - dt, 0.0f);
-			if (controller.RespawnTimer <= 0.0f && world.ConsumeRevive())
+			if (controller.RespawnTimer <= 0.0f && world.ConsumeRevive(controller.PlayerId))
 				world.RespawnPlayer(entity);
 		});
 	}

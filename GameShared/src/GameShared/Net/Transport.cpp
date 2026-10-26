@@ -14,20 +14,92 @@ namespace Game
 
 		struct RetiredSocket
 		{
+			NetRoute Route = NetRoute::Direct;
 			HSteamListenSocket Socket = k_HSteamListenSocket_Invalid;
 			uint16_t Port = 0;
 			Clock::time_point CloseTime;
 		};
 
+		struct Link
+		{
+			NetRoute Route = NetRoute::Direct;
+			HSteamNetConnection Handle = k_HSteamNetConnection_Invalid;
+		};
+
+		struct Relay
+		{
+			ISteamNetworkingSockets* Sockets = nullptr;
+			ISteamNetworkingUtils* Utils = nullptr;
+		};
+
 		constexpr std::chrono::milliseconds RetiredSocketLifetime{ 1500 };
 		constexpr int32_t ConnectTimeoutMs = 7000;
+		constexpr int32_t RelayConnectTimeoutMs = 20000;
 		constexpr int32_t SendRateBytes = 512 * 1024;
+		constexpr int RelayPort = 0;
 
 		int32_t s_References = 0;
 		NetworkSimulation s_Simulation;
+		Relay s_Relay;
 		std::unordered_map<int64_t, NetEndpoint*> s_Endpoints;
 		int64_t s_NextEndpointId = 1;
 		std::vector<RetiredSocket> s_RetiredSockets;
+		std::unordered_map<ConnectionId, Link> s_Links;
+		std::unordered_map<uint64_t, ConnectionId> s_LinkIds;
+		ConnectionId s_NextConnection = 1;
+
+		ISteamNetworkingSockets* SocketsFor(NetRoute route)
+		{
+			return route == NetRoute::Relay ? s_Relay.Sockets : SteamNetworkingSockets();
+		}
+
+		uint64_t LinkKey(NetRoute route, HSteamNetConnection handle)
+		{
+			return (uint64_t(route) << 32) | handle;
+		}
+
+		ConnectionId Bind(NetRoute route, HSteamNetConnection handle)
+		{
+			const ConnectionId connection = s_NextConnection++;
+			s_Links[connection] = { route, handle };
+			s_LinkIds[LinkKey(route, handle)] = connection;
+			return connection;
+		}
+
+		ConnectionId Lookup(NetRoute route, HSteamNetConnection handle)
+		{
+			const auto it = s_LinkIds.find(LinkKey(route, handle));
+			return it != s_LinkIds.end() ? it->second : InvalidConnection;
+		}
+
+		const Link* Resolve(ConnectionId connection)
+		{
+			const auto it = s_Links.find(connection);
+			return it != s_Links.end() && SocketsFor(it->second.Route) ? &it->second : nullptr;
+		}
+
+		void Release(ConnectionId connection, const char* reason, bool linger)
+		{
+			const auto it = s_Links.find(connection);
+			if (it == s_Links.end())
+				return;
+			const Link link = it->second;
+			s_Links.erase(it);
+			s_LinkIds.erase(LinkKey(link.Route, link.Handle));
+			if (ISteamNetworkingSockets* sockets = SocketsFor(link.Route))
+				sockets->CloseConnection(link.Handle, 0, reason, linger);
+		}
+
+		void ForgetRoute(NetRoute route)
+		{
+			std::erase_if(s_Links, [&](const auto& entry)
+			{
+				if (entry.second.Route != route)
+					return false;
+				s_LinkIds.erase(LinkKey(route, entry.second.Handle));
+				return true;
+			});
+		}
 
 		void CloseRetiredSockets(auto&& shouldClose)
 		{
@@ -35,7 +107,8 @@ namespace Game
 			{
 				if (!shouldClose(retired))
 					return false;
-				SteamNetworkingSockets()->CloseListenSocket(retired.Socket);
+				if (ISteamNetworkingSockets* sockets = SocketsFor(retired.Route))
+					sockets->CloseListenSocket(retired.Socket);
 				return true;
 			});
 		}
@@ -50,17 +123,36 @@ namespace Game
 				RDN_LOG("Network: {}", message);
 		}
 
-		void OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t* info)
+		void Dispatch(NetRoute route, SteamNetConnectionStatusChangedCallback_t& info)
 		{
-			if (const auto it = s_Endpoints.find(info->m_info.m_nUserData); it != s_Endpoints.end())
-				it->second->OnStatusChanged(*info);
-			else if (info->m_info.m_eState == k_ESteamNetworkingConnectionState_Connecting)
-				SteamNetworkingSockets()->CloseConnection(info->m_hConn, 0, "The server is shutting down", false);
+			if (const auto it = s_Endpoints.find(info.m_info.m_nUserData); it != s_Endpoints.end())
+				it->second->OnStatusChanged(route, info);
+			else if (info.m_info.m_eState == k_ESteamNetworkingConnectionState_Connecting)
+				SocketsFor(route)->CloseConnection(info.m_hConn, 0, "The server is shutting down", false);
 		}
 
-		void ApplySimulation()
+		void OnDirectStatusChanged(SteamNetConnectionStatusChangedCallback_t* info)
 		{
-			ISteamNetworkingUtils* utils = SteamNetworkingUtils();
+			Dispatch(NetRoute::Direct, *info);
+		}
+
+		void OnRelayStatusChanged(SteamNetConnectionStatusChangedCallback_t* info)
+		{
+			if (s_Relay.Sockets)
+				Dispatch(NetRoute::Relay, *info);
+		}
+
+		void Configure(ISteamNetworkingUtils* utils, FnSteamNetConnectionStatusChanged callback, int32_t timeout)
+		{
+			utils->SetDebugOutputFunction(k_ESteamNetworkingSocketsDebugOutputType_Important, &OnDebugOutput);
+			utils->SetGlobalConfigValuePtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(callback));
+			utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_TimeoutInitial, timeout);
+			utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_SendRateMin, SendRateBytes);
+			utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_SendRateMax, SendRateBytes);
+		}
+
+		void ApplySimulation(ISteamNetworkingUtils* utils)
+		{
 			utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Send, s_Simulation.LagMs);
 			utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Send, s_Simulation.LossPercent);
 		}
@@ -70,7 +162,7 @@ namespace Game
 			return mode == SendMode::Reliable ? k_nSteamNetworkingSend_ReliableNoNagle : k_nSteamNetworkingSend_UnreliableNoNagle;
 		}
 
-		void ReceiveAll(std::vector<NetMessage>& messages, auto&& receive)
+		void ReceiveAll(std::vector<NetMessage>& messages, auto&& receive, auto&& identify)
 		{
 			SteamNetworkingMessage_t* batch[64];
 			while (true)
@@ -79,7 +171,8 @@ namespace Game
 				for (int i = 0; i < count; i++)
 				{
 					const uint8_t* data = static_cast<const uint8_t*>(batch[i]->m_pData);
-					messages.push_back({ batch[i]->m_conn, std::vector<uint8_t>(data, data + batch[i]->m_cbSize) });
+					if (const ConnectionId connection = identify(batch[i]->m_conn); connection != InvalidConnection)
+						messages.push_back({ connection, std::vector<uint8_t>(data, data + batch[i]->m_cbSize) });
 					batch[i]->Release();
 				}
 				if (count < int(std::size(batch)))
@@ -89,15 +182,16 @@ namespace Game
 
 		ConnectionStats StatsOf(ConnectionId connection)
 		{
+			const Link* link = Resolve(connection);
 			SteamNetConnectionRealTimeStatus_t status;
-			if (connection == InvalidConnection || SteamNetworkingSockets()->GetConnectionRealTimeStatus(connection, &status, 0, nullptr) != k_EResultOK)
+			if (!link || SocketsFor(link->Route)->GetConnectionRealTimeStatus(link->Handle, &status, 0, nullptr) != k_EResultOK)
 				return {};
-			return { status.m_nPing, status.m_flConnectionQualityLocal, status.m_flConnectionQualityRemote, status.m_flInBytesPerSec, status.m_flOutBytesPerSec };
+			return { status.m_nPing, status.m_flConnectionQualityLocal, status.m_flConnectionQualityRemote, status.m_flInBytesPerSec, status.m_flOutBytesPerSec, link->Route == NetRoute::Relay };
 		}
 
 		bool IsTimeout(const SteamNetConnectionStatusChangedCallback_t& info)
 		{
-			return info.m_info.m_eEndReason == k_ESteamNetConnectionEnd_Misc_Timeout;
+			return info.m_info.m_eEndReason == k_ESteamNetConnectionEnd_Misc_Timeout || info.m_info.m_eEndReason == k_ESteamNetConnectionEnd_Misc_P2P_Rendezvous;
 		}
 	}
 
@@ -112,12 +206,8 @@ namespace Game
 			s_References = 0;
 			return false;
 		}
-		SteamNetworkingUtils()->SetDebugOutputFunction(k_ESteamNetworkingSocketsDebugOutputType_Important, &OnDebugOutput);
-		SteamNetworkingUtils()->SetGlobalConfigValuePtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(&OnConnectionStatusChanged));
-		SteamNetworkingUtils()->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_TimeoutInitial, ConnectTimeoutMs);
-		SteamNetworkingUtils()->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_SendRateMin, SendRateBytes);
-		SteamNetworkingUtils()->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_SendRateMax, SendRateBytes);
-		ApplySimulation();
+		Configure(SteamNetworkingUtils(), &OnDirectStatusChanged, ConnectTimeoutMs);
+		ApplySimulation(SteamNetworkingUtils());
 		return true;
 	}
 
@@ -125,7 +215,8 @@ namespace Game
 	{
 		if (s_References == 0 || --s_References > 0)
 			return;
-		CloseRetiredSockets([](const RetiredSocket&) { return true; });
+		CloseRetiredSockets([](const RetiredSocket& retired) { return retired.Route == NetRoute::Direct; });
+		ForgetRoute(NetRoute::Direct);
 		GameNetworkingSockets_Kill();
 	}
 
@@ -134,6 +225,8 @@ namespace Game
 		if (s_References == 0)
 			return;
 		SteamNetworkingSockets()->RunCallbacks();
+		if (s_Relay.Sockets)
+			s_Relay.Sockets->RunCallbacks();
 		if (!s_RetiredSockets.empty())
 			CloseRetiredSockets([now = Clock::now()](const RetiredSocket& retired) { return retired.CloseTime <= now; });
 	}
@@ -142,12 +235,43 @@ namespace Game
 	{
 		s_Simulation = simulation;
 		if (s_References > 0)
-			ApplySimulation();
+			ApplySimulation(SteamNetworkingUtils());
+		if (s_Relay.Utils)
+			ApplySimulation(s_Relay.Utils);
 	}
 
 	const NetworkSimulation& NetLibrary::GetSimulation()
 	{
 		return s_Simulation;
+	}
+
+	void NetLibrary::AttachRelay(ISteamNetworkingSockets* sockets, ISteamNetworkingUtils* utils)
+	{
+		if (!sockets || !utils)
+			return;
+		DetachRelay();
+		s_Relay = { sockets, utils };
+		Configure(utils, &OnRelayStatusChanged, RelayConnectTimeoutMs);
+		ApplySimulation(utils);
+		utils->InitRelayNetworkAccess();
+	}
+
+	void NetLibrary::DetachRelay()
+	{
+		if (!s_Relay.Sockets)
+			return;
+		CloseRetiredSockets([](const RetiredSocket& retired) { return retired.Route == NetRoute::Relay; });
+		for (const auto& [connection, link] : s_Links)
+			if (link.Route == NetRoute::Relay)
+				s_Relay.Sockets->CloseConnection(link.Handle, 0, "Steam shut down", false);
+		ForgetRoute(NetRoute::Relay);
+		s_Relay.Utils->SetGlobalConfigValuePtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, nullptr);
+		s_Relay = {};
+	}
+
+	bool NetLibrary::HasRelay()
+	{
+		return s_Relay.Sockets != nullptr;
 	}
 
 	NetEndpoint::NetEndpoint()
@@ -172,37 +296,56 @@ namespace Game
 		NetLibrary::Shutdown();
 	}
 
-	bool NetServer::EnsurePollGroup()
+	bool NetServer::EnsurePollGroup(NetRoute route)
 	{
-		if (m_PollGroup == 0)
-			m_PollGroup = SteamNetworkingSockets()->CreatePollGroup();
-		return m_PollGroup != 0;
+		uint32_t& group = m_PollGroups[size_t(route)];
+		if (group == 0)
+			if (ISteamNetworkingSockets* sockets = SocketsFor(route))
+				group = sockets->CreatePollGroup();
+		return group != 0;
 	}
 
 	bool NetServer::Listen(uint16_t port)
 	{
-		if (!EnsurePollGroup())
+		if (!EnsurePollGroup(NetRoute::Direct))
 			return false;
-		CloseRetiredSockets([port](const RetiredSocket& retired) { return retired.Port == port; });
+		CloseRetiredSockets([port](const RetiredSocket& retired) { return retired.Route == NetRoute::Direct && retired.Port == port; });
 		SteamNetworkingIPAddr address;
 		address.SetIPv4(0, port);
 		SteamNetworkingConfigValue_t option;
 		option.SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, GetEndpointId());
-		m_ListenSocket = SteamNetworkingSockets()->CreateListenSocketIP(address, 1, &option);
-		if (m_ListenSocket == k_HSteamListenSocket_Invalid)
+		const HSteamListenSocket socket = SteamNetworkingSockets()->CreateListenSocketIP(address, 1, &option);
+		if (socket == k_HSteamListenSocket_Invalid)
 		{
-			m_ListenSocket = 0;
 			RDN_LOG_ERROR("Can't listen on UDP port {}, it may be in use", port);
 			return false;
 		}
+		m_ListenSockets[size_t(NetRoute::Direct)] = socket;
 		m_Port = port;
 		RDN_LOG("Listening on UDP port {}", port);
 		return true;
 	}
 
+	bool NetServer::ListenRelay()
+	{
+		if (!NetLibrary::HasRelay() || !EnsurePollGroup(NetRoute::Relay))
+			return false;
+		SteamNetworkingConfigValue_t option;
+		option.SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, GetEndpointId());
+		const HSteamListenSocket socket = s_Relay.Sockets->CreateListenSocketP2P(RelayPort, 1, &option);
+		if (socket == k_HSteamListenSocket_Invalid)
+		{
+			RDN_LOG_ERROR("Can't accept players through Steam");
+			return false;
+		}
+		m_ListenSockets[size_t(NetRoute::Relay)] = socket;
+		RDN_LOG("Accepting players through the Steam relay network");
+		return true;
+	}
+
 	LocalConnection NetServer::OpenLocalConnection()
 	{
-		if (!EnsurePollGroup())
+		if (!EnsurePollGroup(NetRoute::Direct))
 			return {};
 		ISteamNetworkingSockets* sockets = SteamNetworkingSockets();
 		HSteamNetConnection serverEnd = k_HSteamNetConnection_Invalid;
@@ -213,30 +356,35 @@ namespace Game
 			return {};
 		}
 		sockets->SetConnectionUserData(serverEnd, GetEndpointId());
-		sockets->SetConnectionPollGroup(serverEnd, m_PollGroup);
-		m_Connections.push_back(serverEnd);
-		m_Events.push_back({ NetEventType::Connected, serverEnd, {} });
-		return { serverEnd, clientEnd };
+		sockets->SetConnectionPollGroup(serverEnd, m_PollGroups[size_t(NetRoute::Direct)]);
+		const LocalConnection local{ Bind(NetRoute::Direct, serverEnd), Bind(NetRoute::Direct, clientEnd) };
+		m_Connections.push_back(local.Server);
+		m_Events.push_back({ NetEventType::Connected, local.Server, {} });
+		return local;
 	}
 
 	void NetServer::Shutdown()
 	{
-		ISteamNetworkingSockets* sockets = SteamNetworkingSockets();
 		for (ConnectionId connection : m_Connections)
-			sockets->CloseConnection(connection, 0, "Server shut down", true);
+			Release(connection, "Server shut down", true);
 		m_Connections.clear();
-		if (m_ListenSocket != 0)
-			s_RetiredSockets.push_back({ m_ListenSocket, m_Port, Clock::now() + RetiredSocketLifetime });
-		if (m_PollGroup != 0)
-			sockets->DestroyPollGroup(m_PollGroup);
-		m_ListenSocket = 0;
-		m_PollGroup = 0;
+		for (size_t route = 0; route < size_t(NetRoute::Count); route++)
+		{
+			ISteamNetworkingSockets* sockets = SocketsFor(NetRoute(route));
+			if (m_ListenSockets[route] != 0 && sockets)
+				s_RetiredSockets.push_back({ NetRoute(route), m_ListenSockets[route], route == size_t(NetRoute::Direct) ? m_Port : uint16_t(0), Clock::now() + RetiredSocketLifetime });
+			if (m_PollGroups[route] != 0 && sockets)
+				sockets->DestroyPollGroup(m_PollGroups[route]);
+		}
+		m_ListenSockets.fill(0);
+		m_PollGroups.fill(0);
 		m_Events.clear();
 	}
 
 	void NetServer::Send(ConnectionId connection, std::span<const uint8_t> data, SendMode mode)
 	{
-		SteamNetworkingSockets()->SendMessageToConnection(connection, data.data(), uint32_t(data.size()), SendFlags(mode), nullptr);
+		if (const Link* link = Resolve(connection))
+			SocketsFor(link->Route)->SendMessageToConnection(link->Handle, data.data(), uint32_t(data.size()), SendFlags(mode), nullptr);
 	}
 
 	void NetServer::Close(ConnectionId connection, const char* reason)
@@ -245,15 +393,22 @@ namespace Game
 		if (it == m_Connections.end())
 			return;
 		m_Connections.erase(it);
-		SteamNetworkingSockets()->CloseConnection(connection, 0, reason, true);
+		Release(connection, reason, true);
 	}
 
 	void NetServer::Poll(std::vector<NetEvent>& events, std::vector<NetMessage>& messages)
 	{
 		events.insert(events.end(), std::make_move_iterator(m_Events.begin()), std::make_move_iterator(m_Events.end()));
 		m_Events.clear();
-		if (m_PollGroup != 0)
-			ReceiveAll(messages, [this](SteamNetworkingMessage_t** batch, int size) { return SteamNetworkingSockets()->ReceiveMessagesOnPollGroup(m_PollGroup, batch, size); });
+		for (size_t route = 0; route < size_t(NetRoute::Count); route++)
+		{
+			ISteamNetworkingSockets* sockets = SocketsFor(NetRoute(route));
+			if (m_PollGroups[route] == 0 || !sockets)
+				continue;
+			ReceiveAll(messages,
+				[&](SteamNetworkingMessage_t** batch, int size) { return sockets->ReceiveMessagesOnPollGroup(m_PollGroups[route], batch, size); },
+				[&](HSteamNetConnection handle) { return Lookup(NetRoute(route), handle); });
+		}
 	}
 
 	int32_t NetServer::GetPing(ConnectionId connection) const
@@ -266,39 +421,42 @@ namespace Game
 		return StatsOf(connection);
 	}
 
-	void NetServer::OnStatusChanged(SteamNetConnectionStatusChangedCallback_t& info)
+	void NetServer::OnStatusChanged(NetRoute route, SteamNetConnectionStatusChangedCallback_t& info)
 	{
-		ISteamNetworkingSockets* sockets = SteamNetworkingSockets();
-		const bool known = std::find(m_Connections.begin(), m_Connections.end(), info.m_hConn) != m_Connections.end();
+		ISteamNetworkingSockets* sockets = SocketsFor(route);
+		const ConnectionId connection = Lookup(route, info.m_hConn);
+		const bool known = connection != InvalidConnection && std::find(m_Connections.begin(), m_Connections.end(), connection) != m_Connections.end();
 		switch (info.m_info.m_eState)
 		{
 		case k_ESteamNetworkingConnectionState_Connecting:
 			if (known || info.m_info.m_hListenSocket == k_HSteamListenSocket_Invalid)
 				break;
-			if (m_ListenSocket == 0 || info.m_info.m_hListenSocket != m_ListenSocket)
+			if (m_ListenSockets[size_t(route)] == 0 || info.m_info.m_hListenSocket != m_ListenSockets[size_t(route)])
 			{
 				sockets->CloseConnection(info.m_hConn, 0, "The server is shutting down", false);
 				break;
 			}
-			if (sockets->AcceptConnection(info.m_hConn) != k_EResultOK || !sockets->SetConnectionPollGroup(info.m_hConn, m_PollGroup))
+			if (sockets->AcceptConnection(info.m_hConn) != k_EResultOK || !sockets->SetConnectionPollGroup(info.m_hConn, m_PollGroups[size_t(route)]))
 			{
 				sockets->CloseConnection(info.m_hConn, 0, "Can't accept", false);
 				break;
 			}
-			m_Connections.push_back(info.m_hConn);
+			m_Connections.push_back(Bind(route, info.m_hConn));
 			break;
 		case k_ESteamNetworkingConnectionState_Connected:
 			if (known)
-				m_Events.push_back({ NetEventType::Connected, info.m_hConn, {} });
+				m_Events.push_back({ NetEventType::Connected, connection, {} });
 			break;
 		case k_ESteamNetworkingConnectionState_ClosedByPeer:
 		case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
 			if (known)
 			{
-				std::erase(m_Connections, info.m_hConn);
-				m_Events.push_back({ NetEventType::Disconnected, info.m_hConn, info.m_info.m_szEndDebug, IsTimeout(info) });
+				std::erase(m_Connections, connection);
+				m_Events.push_back({ NetEventType::Disconnected, connection, info.m_info.m_szEndDebug, IsTimeout(info) });
+				Release(connection, nullptr, false);
 			}
-			sockets->CloseConnection(info.m_hConn, 0, nullptr, false);
+			else
+				sockets->CloseConnection(info.m_hConn, 0, nullptr, false);
 			break;
 		default:
 			break;
@@ -332,25 +490,52 @@ namespace Game
 
 		SteamNetworkingConfigValue_t option;
 		option.SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, GetEndpointId());
-		m_Connection = SteamNetworkingSockets()->ConnectByIPAddress(remote, 1, &option);
-		if (m_Connection == k_HSteamNetConnection_Invalid)
+		const HSteamNetConnection handle = SteamNetworkingSockets()->ConnectByIPAddress(remote, 1, &option);
+		if (handle == k_HSteamNetConnection_Invalid)
 		{
-			m_Connection = InvalidConnection;
 			RDN_LOG_ERROR("Can't connect to {}", address);
 			return false;
 		}
+		m_Connection = Bind(NetRoute::Direct, handle);
 		char description[SteamNetworkingIPAddr::k_cchMaxString];
 		remote.ToString(description, sizeof(description), true);
 		RDN_LOG("Connecting to {}", description);
 		return true;
 	}
 
+	bool NetClient::ConnectRelay(uint64_t steamId)
+	{
+		Disconnect("Reconnecting");
+		if (!NetLibrary::HasRelay())
+		{
+			RDN_LOG_ERROR("Can't reach a host through Steam while Steam is unavailable");
+			return false;
+		}
+		SteamNetworkingIdentity identity;
+		identity.Clear();
+		identity.SetSteamID64(steamId);
+		SteamNetworkingConfigValue_t option;
+		option.SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, GetEndpointId());
+		const HSteamNetConnection handle = s_Relay.Sockets->ConnectP2P(identity, RelayPort, 1, &option);
+		if (handle == k_HSteamNetConnection_Invalid)
+		{
+			RDN_LOG_ERROR("Can't connect to {} through Steam", steamId);
+			return false;
+		}
+		m_Connection = Bind(NetRoute::Relay, handle);
+		RDN_LOG("Connecting to {} through the Steam relay network", steamId);
+		return true;
+	}
+
 	void NetClient::ConnectLocal(ConnectionId connection)
 	{
 		Disconnect("Reconnecting");
+		const Link* link = Resolve(connection);
+		if (!link)
+			return;
 		m_Connection = connection;
 		m_Connected = true;
-		SteamNetworkingSockets()->SetConnectionUserData(connection, GetEndpointId());
+		SocketsFor(link->Route)->SetConnectionUserData(link->Handle, GetEndpointId());
 		m_Events.push_back({ NetEventType::Connected, connection, {} });
 	}
 
@@ -360,15 +545,15 @@ namespace Game
 		m_Messages.clear();
 		if (m_Connection == InvalidConnection)
 			return;
-		SteamNetworkingSockets()->CloseConnection(m_Connection, 0, reason, true);
+		Release(m_Connection, reason, true);
 		m_Connection = InvalidConnection;
 		m_Connected = false;
 	}
 
 	void NetClient::Send(std::span<const uint8_t> data, SendMode mode)
 	{
-		if (m_Connection != InvalidConnection)
-			SteamNetworkingSockets()->SendMessageToConnection(m_Connection, data.data(), uint32_t(data.size()), SendFlags(mode), nullptr);
+		if (const Link* link = Resolve(m_Connection))
+			SocketsFor(link->Route)->SendMessageToConnection(link->Handle, data.data(), uint32_t(data.size()), SendFlags(mode), nullptr);
 	}
 
 	void NetClient::Poll(std::vector<NetEvent>& events, std::vector<NetMessage>& messages)
@@ -382,8 +567,13 @@ namespace Game
 
 	void NetClient::Receive(std::vector<NetMessage>& messages) const
 	{
-		if (m_Connection != InvalidConnection)
-			ReceiveAll(messages, [this](SteamNetworkingMessage_t** batch, int size) { return SteamNetworkingSockets()->ReceiveMessagesOnConnection(m_Connection, batch, size); });
+		const Link* link = Resolve(m_Connection);
+		if (!link)
+			return;
+		ISteamNetworkingSockets* sockets = SocketsFor(link->Route);
+		ReceiveAll(messages,
+			[&](SteamNetworkingMessage_t** batch, int size) { return sockets->ReceiveMessagesOnConnection(link->Handle, batch, size); },
+			[this](HSteamNetConnection) { return m_Connection; });
 	}
 
 	int32_t NetClient::GetPing() const
@@ -396,9 +586,9 @@ namespace Game
 		return m_Connected ? StatsOf(m_Connection) : ConnectionStats{};
 	}
 
-	void NetClient::OnStatusChanged(SteamNetConnectionStatusChangedCallback_t& info)
+	void NetClient::OnStatusChanged(NetRoute route, SteamNetConnectionStatusChangedCallback_t& info)
 	{
-		if (info.m_hConn != m_Connection)
+		if (m_Connection == InvalidConnection || Lookup(route, info.m_hConn) != m_Connection)
 			return;
 		switch (info.m_info.m_eState)
 		{
@@ -410,7 +600,7 @@ namespace Game
 		case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
 			Receive(m_Messages);
 			m_Events.push_back({ NetEventType::Disconnected, m_Connection, info.m_info.m_szEndDebug[0] ? info.m_info.m_szEndDebug : "Connection lost", IsTimeout(info) });
-			SteamNetworkingSockets()->CloseConnection(m_Connection, 0, nullptr, false);
+			Release(m_Connection, nullptr, false);
 			m_Connection = InvalidConnection;
 			m_Connected = false;
 			break;

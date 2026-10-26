@@ -21,6 +21,12 @@ namespace Game
 		float BobPhase = 0.0f;
 	};
 
+	struct LooseItem
+	{
+		SceneItem Item;
+		Vec2 Anchor;
+	};
+
 	struct SceneBox
 	{
 		MeshKind Mesh = MeshKind::Box;
@@ -74,6 +80,7 @@ namespace Game
 	struct LevelScene
 	{
 		std::vector<SceneChunk> Chunks;
+		std::vector<LooseItem> Loose;
 		std::vector<uint8_t> Cells;
 		std::vector<uint8_t> PropDrawn;
 		std::vector<uint8_t> WallDrawn;

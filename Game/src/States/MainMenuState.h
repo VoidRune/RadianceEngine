@@ -2,6 +2,7 @@
 #include "App/AppState.h"
 #include "UI/UiTypes.h"
 #include <GameShared/Content/Cosmetics.h>
+#include <GameShared/Save/CharacterProfile.h>
 #include <string>
 
 namespace Game
@@ -29,6 +30,8 @@ namespace Game
 		};
 
 		void StartSession(bool host);
+		CharacterProfile PrepareProfile();
+		void DrawFriendGames(Ui& ui, UiRect area);
 		void RefreshCharacter();
 		void OpenPage(Page page);
 		void DrawMotes(Ui& ui);
@@ -51,6 +54,7 @@ namespace Game
 		std::string m_SaveSummary;
 		Cosmetics m_Style;
 		bool m_Unlimited = false;
+		bool m_FriendsCanJoin = true;
 		Page m_Page = Page::None;
 		float m_Reveal = 0.0f;
 		float m_Time = 0.0f;

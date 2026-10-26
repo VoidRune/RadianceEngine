@@ -80,6 +80,7 @@ namespace Game
 		m_Mode = settings.Mode;
 		m_Rules = SanitizeRules(settings.Rules);
 		m_Teams.fill(NoTeam);
+		m_Seats = m_Rules.Seats;
 		m_SpawnPoints = world.GetLevel().SpawnPoints;
 		SetPhase(MatchPhase::Countdown);
 		if (m_Mode == GameMode::Arena)
@@ -178,17 +179,77 @@ namespace Game
 		return alive;
 	}
 
+	void MatchDirector::Bench(World& world, Entity player)
+	{
+		EntityRegistry& entities = world.GetEntities();
+		PlayerController* controller = entities.TryGet<PlayerController>(player);
+		if (!controller)
+			return;
+		controller->State.Alive = false;
+		controller->RespawnTimer = 0.0f;
+		if (Health* health = entities.TryGet<Health>(player))
+			health->Current = 0;
+		controller->Watching = NoPlayer;
+	}
+
+	uint8_t MatchDirector::SmallestTeam(uint32_t playerId) const
+	{
+		std::array<uint32_t, MaxTeams> members{};
+		for (uint32_t id = 0; id < MaxPlayers; id++)
+			if (id != playerId && m_Present[id] && m_Teams[id] < m_Rules.Teams)
+				members[m_Teams[id]]++;
+		uint8_t smallest = 0;
+		for (uint8_t team = 1; team < m_Rules.Teams; team++)
+			if (members[team] < members[smallest])
+				smallest = team;
+		return smallest;
+	}
+
+	uint32_t MatchDirector::CountTeams(bool aliveOnly) const
+	{
+		std::array<bool, MaxTeams> counted{};
+		for (uint32_t id = 0; id < MaxPlayers; id++)
+			if (m_Scores[id].Entered && (!aliveOnly || !m_Scores[id].Out) && m_Teams[id] < MaxTeams)
+				counted[m_Teams[id]] = true;
+		return uint32_t(std::count(counted.begin(), counted.end(), true));
+	}
+
+	void MatchDirector::SetSeat(uint32_t playerId, uint8_t seat)
+	{
+		if (playerId < MaxPlayers)
+			m_Seats[playerId] = seat == SpectatorSeat || seat < m_Rules.Teams ? seat : NoTeam;
+	}
+
+	bool MatchDirector::JoinMatch(World& world, Entity player, uint32_t playerId)
+	{
+		if (!IsSpectator(playerId) || m_Phase == MatchPhase::Ended)
+			return false;
+		m_Seats[playerId] = NoTeam;
+		OnPlayerSpawned(world, player, playerId);
+		return true;
+	}
+
 	void MatchDirector::OnPlayerSpawned(World& world, Entity player, uint32_t playerId)
 	{
 		if (playerId >= MaxPlayers)
 			return;
+		if (IsSpectator(playerId))
+		{
+			m_Teams[playerId] = NoTeam;
+			Bench(world, player);
+			return;
+		}
 		if (!m_Present[playerId])
 		{
 			m_Scores[playerId] = {};
 			m_Teams[playerId] = NoTeam;
 			m_Present[playerId] = true;
 			if (m_Mode == GameMode::Brawl)
+			{
+				const BrawlSpells spells = m_Brawlers[playerId].Loadout.Spells;
 				m_Brawlers[playerId] = {};
+				m_Brawlers[playerId].Loadout.Spells = spells;
+			}
 		}
 		EntityRegistry& entities = world.GetEntities();
 		if (m_Mode == GameMode::Brawl)
@@ -196,26 +257,29 @@ namespace Game
 			PlayerController* controller = entities.TryGet<PlayerController>(player);
 			if (!controller)
 				return;
+			if (IsTeamBrawl() && m_Teams[playerId] == NoTeam)
+				m_Teams[playerId] = m_Seats[playerId] < m_Rules.Teams ? m_Seats[playerId] : SmallestTeam(playerId);
 			if (m_Phase == MatchPhase::Ended || !CanRespawn())
 			{
-				controller->State.Alive = false;
-				controller->RespawnTimer = 0.0f;
-				if (Health* health = entities.TryGet<Health>(player))
-					health->Current = 0;
-				controller->Watching = NoPlayer;
+				Bench(world, player);
 				return;
 			}
 			controller->State.Invulnerable = SpawnProtection;
 			FitBrawlArena();
+			if (m_Brawl.Phase == BrawlPhase::Draft && IsApexDraft() && !m_Brawlers[playerId].Loadout.OfferPending && (m_Brawlers[playerId].Loadout.Cards & ApexMask) == 0)
+			{
+				OfferApexPick(world, playerId);
+				m_CardRevision++;
+			}
 			return;
 		}
 		if (m_Mode == GameMode::Arena && m_Rules.Teams && m_Teams[playerId] == NoTeam)
 		{
-			std::array<uint32_t, TeamCount> members{};
+			std::array<uint32_t, MaxTeams> members{};
 			entities.Each<PlayerController>([&](Entity, PlayerController& other)
 			{
 				const uint8_t team = GetTeam(other.PlayerId);
-				if (other.PlayerId != playerId && team < TeamCount)
+				if (other.PlayerId != playerId && team < MaxTeams)
 					members[team]++;
 			});
 			m_Teams[playerId] = members[1] < members[0] ? 1 : 0;
@@ -258,6 +322,7 @@ namespace Game
 		m_Present[playerId] = false;
 		m_Scores[playerId] = {};
 		m_Teams[playerId] = NoTeam;
+		m_Seats[playerId] = NoTeam;
 		if (m_Mode == GameMode::Brawl)
 		{
 			m_Brawlers[playerId] = {};
@@ -284,7 +349,7 @@ namespace Game
 		if (fighting && killer < MaxPlayers && killer != victim && !teamKill)
 		{
 			m_Scores[killer].Kills++;
-			if (m_Mode == GameMode::Arena && m_Rules.Teams && m_Teams[killer] < TeamCount)
+			if (m_Mode == GameMode::Arena && m_Rules.Teams && m_Teams[killer] < MaxTeams)
 				m_TeamScores[m_Teams[killer]]++;
 		}
 		if (m_Mode == GameMode::Arena)
@@ -293,7 +358,7 @@ namespace Game
 				return;
 			if (m_Rules.Teams)
 			{
-				for (uint8_t team = 0; team < TeamCount; team++)
+				for (uint8_t team = 0; team < m_Rules.Teams; team++)
 					if (m_TeamScores[team] >= m_Rules.ScoreGoal)
 						EndMatch(world, NoPlayer, team);
 			}
@@ -743,7 +808,7 @@ namespace Game
 		status.Winner = m_Winner;
 		status.WinningTeam = m_WinningTeam;
 		uint32_t players = 0;
-		const_cast<EntityRegistry&>(world.GetEntities()).Each<PlayerController>([&](Entity, PlayerController&) { players++; });
+		const_cast<EntityRegistry&>(world.GetEntities()).Each<PlayerController>([&](Entity, PlayerController& controller) { players += IsSpectator(controller.PlayerId) ? 0u : 1u; });
 		status.Entrants = uint8_t(std::min(m_Phase == MatchPhase::Countdown ? players : m_Entrants, 255u));
 		status.Alive = uint8_t(std::min(m_Phase == MatchPhase::Countdown ? players : CountAlive(), 255u));
 		status.Storm = m_Storm;
@@ -757,7 +822,7 @@ namespace Game
 		if (m_Mode == GameMode::Royale)
 			return GetRoyaleReward(score.Placement > 0 ? score.Placement : m_Entrants, m_Entrants, score.Kills);
 		if (m_Mode == GameMode::Brawl)
-			return GetBrawlReward(m_Winner == playerId, std::max(m_Entrants, CountPresent()), m_Brawlers[playerId].Points);
+			return GetBrawlReward(IsTeamBrawl() ? m_WinningTeam != NoTeam && m_Teams[playerId] == m_WinningTeam : m_Winner == playerId, std::max(m_Entrants, CountPresent()), m_Brawlers[playerId].Points);
 		const bool won = m_Rules.Teams ? m_WinningTeam != NoTeam && m_Teams[playerId] == m_WinningTeam : m_Winner == playerId;
 		return GetArenaReward(won, m_Entrants, score.Kills);
 	}

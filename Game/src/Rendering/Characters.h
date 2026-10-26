@@ -97,6 +97,7 @@ namespace Game
 		Anim Release = Anim::Count;
 		bool Loop = false;
 		uint8_t Variants = 1;
+		bool Hold = false;
 	};
 
 	struct PropAttachment
@@ -277,6 +278,7 @@ namespace Game
 		float m_Moving = 0.0f;
 		float m_FlinchCooldown = 0.0f;
 		float m_StrikeTime = 0.0f;
+		float m_HoldTime = 0.0f;
 		float m_IdleTime = 0.0f;
 		float m_FidgetDelay = 4.0f;
 		int32_t m_LastFidget = -1;

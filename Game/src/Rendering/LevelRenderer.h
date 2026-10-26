@@ -12,9 +12,9 @@ namespace Game
 	class WorldRenderer;
 
 	inline constexpr float CameraFov = 40.0f;
-	inline constexpr float CameraHeight = 15.3f;
-	inline constexpr float CameraBack = 9.9f;
-	inline constexpr float CameraFocusOffset = 1.2f;
+	inline constexpr float CameraHeight = 14.2f;
+	inline constexpr float CameraBack = 9.2f;
+	inline constexpr float CameraFocusOffset = 1.1f;
 	inline constexpr float LavaSurface = -0.3f;
 	inline constexpr float LavaWading = -0.42f;
 	inline constexpr float CollapseFallSeconds = 1.1f;
@@ -35,6 +35,7 @@ namespace Game
 		const BrawlStatus* Brawl = nullptr;
 		const std::vector<uint8_t>* Risen = nullptr;
 		float Restore = 1.0f;
+		float Clock = 0.0f;
 	};
 
 	class IslandArt
@@ -43,8 +44,10 @@ namespace Game
 		void Build(WorldRenderer& renderer, const Level& level);
 		void Clear();
 		bool IsBuilt() const { return !m_Chunks.empty(); }
+		bool IsSky() const { return m_Sky; }
 		void Draw(WorldRenderer& renderer, const LevelView& view) const;
-		std::optional<float> GroundHeight(const BrawlStatus* brawl, Vec2 position) const;
+		std::optional<float> GroundHeight(const BrawlStatus* brawl, float clock, Vec2 position) const;
+		const glm::mat4* Carrying(Vec2 position) const;
 
 	private:
 		struct Corner
@@ -71,21 +74,42 @@ namespace Game
 			Vec2 Max{ -1e9f, -1e9f };
 			uint32_t Mesh = 0;
 			uint32_t Tile = 0;
+			int32_t Island = -1;
 			bool Coast = false;
 			std::vector<uint32_t> Cells;
 			std::vector<uint32_t> Neighbours;
 		};
 
+		struct Motion
+		{
+			glm::mat4 Transform{ 1.0f };
+			float Warn = 0.0f;
+			float Fall = 0.0f;
+			bool Hidden = false;
+		};
+
 		const Cell* FindCell(CellCoord coord) const;
 		float SurfaceHeight(const Cell& cell, Vec2 position) const;
+		void BuildSkyMeshes(WorldRenderer& renderer, const std::vector<CellCoord>& across, const std::vector<uint8_t>& framed);
+		void DrawSky(WorldRenderer& renderer, const LevelView& view) const;
+		float CollapseTime(const CollapsePlan& plan, const Chunk& chunk) const;
+		Motion SkyMotion(const LevelView& view, size_t index) const;
+		Vec2 Drift(const Chunk& chunk, float clock) const;
+		std::optional<float> SkyHeight(const BrawlStatus* brawl, float clock, Vec2 position) const;
 
 		std::vector<Cell> m_Cells;
 		std::vector<Corner> m_Corners;
 		std::vector<Chunk> m_Chunks;
 		std::vector<int32_t> m_Lookup;
+		std::vector<DriftIsland> m_Islands;
+		const Level* m_Level = nullptr;
 		mutable std::vector<uint8_t> m_Solid;
+		mutable std::vector<glm::mat4> m_Carry;
+		mutable std::vector<uint8_t> m_Shown;
+		mutable std::vector<Motion> m_Motions;
 		int32_t m_Width = 0;
 		bool m_Frozen = false;
+		bool m_Sky = false;
 		int32_t m_Height = 0;
 	};
 
@@ -93,7 +117,8 @@ namespace Game
 	{
 	public:
 		void Draw(WorldRenderer& renderer, const Level& level, const LevelView& view);
-		float GroundHeight(const Level& level, const BrawlStatus* brawl, Vec2 position) const;
+		float GroundHeight(const Level& level, const BrawlStatus* brawl, Vec2 position, float clock) const;
+		bool IsOverSky(const BrawlStatus* brawl, Vec2 position, float clock) const;
 		const std::vector<LevelFire>& GetFires() const { return m_Scene.Fires; }
 
 	private:
@@ -114,11 +139,13 @@ namespace Game
 		void DrawWalls(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
 		void DrawProps(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
 		void DrawScene(WorldRenderer& renderer, const LevelView& view) const;
+		void DrawLoose(WorldRenderer& renderer, const LevelView& view) const;
 		void DrawPortals(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
 
 		SceneKey m_Key;
 		LevelScene m_Scene;
 		IslandArt m_Island;
+		const Elevation* m_Mountain = nullptr;
 		std::vector<float> m_PropReach;
 		std::vector<float> m_PropTop;
 		std::vector<glm::vec4> m_LavaRuns;

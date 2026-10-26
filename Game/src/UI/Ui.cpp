@@ -618,6 +618,45 @@ namespace Game
 		return true;
 	}
 
+	bool Ui::Tabs(UiId id, const UiRect& rect, int& index, std::span<const char* const> labels)
+	{
+		const int count = int(labels.size());
+		if (count == 0)
+			return false;
+		index = std::clamp(index, 0, count - 1);
+		UiDrawList& draw = Draw();
+		const float line = std::round(rect.Bottom()) - 1.0f;
+		FadedLine(draw, rect.X, line, rect.W, WithAlpha(Theme::Edge, 0.95f));
+		const float width = rect.W / float(count);
+		bool changed = false;
+		for (int i = 0; i < count; i++)
+		{
+			const UiRect tab{ rect.X + float(i) * width, rect.Y, width, rect.H };
+			const UiId tabId = id + uint64_t(i) + 1;
+			const UiInteraction interaction = Interact(tabId, tab);
+			const float hover = Animate(tabId, interaction.Hovered);
+			const float on = Animate(tabId ^ 0x5A17ED7AB5ull, i == index, 14.0f);
+			if (on > 0.01f)
+			{
+				draw.Rect({ tab.X + 8.0f, tab.Y + 4.0f, tab.W - 16.0f, line - tab.Y - 4.0f }, { .Fill = WithAlpha(Theme::Accent, 0.0f), .FillBottom = WithAlpha(Theme::Accent, 0.16f * on), .Chamfer = 6.0f });
+				const float underline = (tab.W - 28.0f) * (0.4f + 0.6f * on);
+				draw.Rect({ tab.Center().x - underline * 0.5f, line - 1.0f, underline, 3.0f }, { .Fill = WithAlpha(Theme::GoldLight, on), .FillBottom = WithAlpha(Theme::Gold, on), .Glow = WithAlpha(Theme::Gold, 0.35f * on), .GlowSize = 8.0f });
+				draw.Diamond({ tab.Center().x, line + 0.5f }, 8.0f * on, WithAlpha(Theme::GoldLight, on), WithAlpha(Theme::Ink, 0.9f * on), 1.0f);
+			}
+			else if (hover > 0.01f)
+				draw.Rect({ tab.X + 8.0f, tab.Y + 4.0f, tab.W - 16.0f, line - tab.Y - 4.0f }, { .Fill = WithAlpha(Theme::Astral, 0.0f), .FillBottom = WithAlpha(Theme::Astral, 0.08f * hover), .Chamfer = 6.0f });
+			const UiColor color = glm::mix(glm::mix(Theme::Muted, Theme::AccentLight, hover), Theme::GoldLight, on);
+			draw.TextAligned({ tab.X, tab.Y, tab.W, line - tab.Y }, labels[size_t(i)], Theme::Caps(14.5f, color, 2.0f), { 0.5f, 0.5f });
+			if (interaction.Clicked && i != index)
+			{
+				index = i;
+				m_Clicks++;
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
 	bool Ui::Repeat(Rdn::KeyCode key)
 	{
 		if (Rdn::Input::IsKeyPressed(key))

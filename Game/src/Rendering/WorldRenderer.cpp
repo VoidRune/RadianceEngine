@@ -461,9 +461,13 @@ namespace Game
 			if (buffer)
 				m_Allocator.ReleaseResource(buffer);
 		std::vector<ModelVertex> vertices = data.Vertices;
+		vertices.insert(vertices.end(), m_EffectVertices.begin(), m_EffectVertices.end());
 		vertices.insert(vertices.end(), levelVertices.begin(), levelVertices.end());
 		std::vector<uint32_t> indices = data.Indices;
-		const uint32_t base = uint32_t(data.Vertices.size());
+		const uint32_t effectBase = uint32_t(data.Vertices.size());
+		for (const uint32_t index : m_EffectIndices)
+			indices.push_back(effectBase + index);
+		const uint32_t base = effectBase + uint32_t(m_EffectVertices.size());
 		for (const uint32_t index : levelIndices)
 			indices.push_back(base + index);
 		m_ModelVertices = std::make_unique<Rdn::GpuBuffer>();
@@ -513,13 +517,49 @@ namespace Game
 		bind(m_BackTextureSet, m_ModelBackPipeline.get());
 	}
 
+	uint32_t WorldRenderer::AddEffectMesh(std::string_view name, const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const EffectMaterial& material, uint32_t flags)
+	{
+		if (const std::optional<uint32_t> existing = FindEffectMesh(name))
+			return *existing;
+		if (!m_LevelVertices.empty() || m_DrawMeshes.size() != m_LibraryMeshes)
+		{
+			RDN_LOG_ERROR("Effect mesh {} must be added before any level geometry", name);
+			return 0;
+		}
+		m_Device.WaitIdle();
+		const uint32_t firstIndex = uint32_t(m_Models.GetData().Indices.size() + m_EffectIndices.size());
+		const uint32_t baseVertex = uint32_t(m_EffectVertices.size());
+		m_EffectVertices.insert(m_EffectVertices.end(), vertices.begin(), vertices.end());
+		for (const uint32_t index : indices)
+			m_EffectIndices.push_back(baseVertex + index);
+		const uint32_t slot = uint32_t(m_Materials.size());
+		m_Materials.push_back({ .Flags = 2u | 64u, .Color = glm::vec4(material.Color, 0.0f), .Params = glm::vec4(material.Roughness, material.Metallic, 1.0f, 0.0f), .Extra = glm::vec4(material.Emission, 0.0f) });
+		UploadMaterials();
+		const uint32_t mesh = uint32_t(m_DrawMeshes.size());
+		m_DrawMeshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(indices.size()), .Material = slot, .Flags = flags });
+		m_LibraryMeshes = uint32_t(m_DrawMeshes.size());
+		m_EffectMeshes.emplace_back(std::string(name), mesh);
+		UploadGeometry({}, {});
+		m_ModelDraws.resize(m_DrawMeshes.size());
+		m_ModelShadowDraws.resize(m_DrawMeshes.size());
+		return mesh;
+	}
+
+	std::optional<uint32_t> WorldRenderer::FindEffectMesh(std::string_view name) const
+	{
+		for (const auto& [key, mesh] : m_EffectMeshes)
+			if (key == name)
+				return mesh;
+		return std::nullopt;
+	}
+
 	uint32_t WorldRenderer::AddLevelGeometry(const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<LevelMeshDesc>& meshes)
 	{
 		const uint32_t first = uint32_t(m_DrawMeshes.size());
 		if (meshes.empty())
 			return first;
 		m_Device.WaitIdle();
-		const uint32_t firstIndex = uint32_t(m_Models.GetData().Indices.size() + m_LevelIndices.size());
+		const uint32_t firstIndex = uint32_t(m_Models.GetData().Indices.size() + m_EffectIndices.size() + m_LevelIndices.size());
 		const uint32_t baseVertex = uint32_t(m_LevelVertices.size());
 		m_LevelVertices.insert(m_LevelVertices.end(), vertices.begin(), vertices.end());
 		for (const uint32_t index : indices)

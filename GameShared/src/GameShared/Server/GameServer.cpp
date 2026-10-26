@@ -130,6 +130,8 @@ namespace Game
 		m_BotRandom.Seed(uint64_t(m_Config.MapSeed) * 0x9E3779B97F4A7C15ULL + 0xB07u);
 		if (m_Config.Listen && !m_Net.Listen(m_Config.Port))
 			return false;
+		if (m_Config.Listen && m_Config.Relay && !m_Net.ListenRelay())
+			RDN_LOG_WARNING("Friends can only join with the address while the Steam relay is unavailable");
 		MapKind map = m_Config.Map;
 		if (m_Config.StartMode == GameMode::Hub)
 			map = MapKind::Hub;
@@ -519,14 +521,28 @@ namespace Game
 					map = BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))];
 				if ((mode == GameMode::Arena && IsArenaMap(map)) || (mode == GameMode::Royale && IsRoyaleMap(map)) || (mode == GameMode::Brawl && IsBrawlMap(map)))
 				{
-					const MatchRules rules = DecodeRules(action.Extra);
+					MatchRules rules = action.Rules;
+					if (mode != GameMode::Brawl)
+					{
+						rules.Teams = rules.Teams >= 2 ? 2 : 0;
+						rules.Seats = AutoSeats;
+						rules = SanitizeRules(rules);
+					}
 					Travel(mode, map, 1, 0, rules);
-					RDN_LOG("{} started {} on {}", client.Name, mode == GameMode::Royale ? "a battle royale" : mode == GameMode::Brawl ? "a " + std::to_string(rules.Rounds) + " round spellbrawl" : rules.Teams ? "a team arena match" : "a free for all arena match", GetMapDef(map).Name);
+					const std::string teams = rules.Teams >= 2 ? std::to_string(rules.Teams) + " team " : std::string();
+					RDN_LOG("{} started {} on {}", client.Name, mode == GameMode::Royale ? "a battle royale" : mode == GameMode::Brawl ? "a " + std::to_string(rules.Rounds) + " round " + teams + "spellbrawl" : rules.Teams ? "a team arena match" : "a free for all arena match", GetMapDef(map).Name);
 				}
 			}
 			break;
 		case ActionType::Spectate:
 			m_World->Spectate(client.Player, int16_t(action.Value));
+			break;
+		case ActionType::JoinMatch:
+			if (m_World->JoinMatch(client.Player))
+			{
+				RDN_LOG("{} stopped spectating and joins the match", client.Name);
+				BroadcastPlayerList();
+			}
 			break;
 		case ActionType::BrawlSpell:
 			m_World->PickBrawlSpell(client.Player, action.Value, AbilityId(std::min<uint32_t>(action.Target, uint32_t(AbilityId::Count))));
@@ -613,6 +629,17 @@ namespace Game
 			for (const Client& client : m_Clients)
 				if (client.Joined && (notice.PlayerId == NoPlayer || notice.PlayerId == client.PlayerId))
 					SendNotice(client, notice.Text, notice.Success);
+		for (const World::Award& award : m_World->TakeAwards())
+			for (Client& client : m_Clients)
+			{
+				const AchievementMask bit = AchievementBit(award.Id);
+				if (!client.Joined || client.PlayerId != award.PlayerId || (award.Id != Achievement::Scholar && (client.Awarded & bit) != 0))
+					continue;
+				client.Awarded |= bit;
+				Send(client, ServerAchievement{ .Id = award.Id, .Detail = award.Detail }, SendMode::Reliable);
+				if (award.Id != Achievement::Scholar)
+					RDN_LOG("{} earned {}", client.Name, GetAchievement(award.Id).Name);
+			}
 	}
 
 	void GameServer::OnInput(Client& client, const ClientInput& message)
@@ -756,6 +783,8 @@ namespace Game
 			case WorldEventType::RoundEnded:
 				if (event.PlayerId != NoPlayer)
 					RDN_LOG("{} wins round {}", NameOf(event.PlayerId), event.Detail);
+				else if (const uint8_t team = m_World->GetMatch().GetBrawl().RoundTeam; team < MaxTeams)
+					RDN_LOG("The {} team wins round {}", GetTeamName(team), event.Detail);
 				else
 					RDN_LOG("Round {} ends without a winner", event.Detail);
 				statsChanged = true;
@@ -887,8 +916,11 @@ namespace Game
 				state.Variant = uint8_t(AbilityId::Count);
 				if (controller->State.CastSlot >= 0)
 				{
+					const SkillTraits& skill = controller->Traits.Skills[size_t(controller->State.CastSlot)];
 					state.Flags |= uint16_t(EntityFlags::Attacking);
-					state.Variant = uint8_t(controller->Traits.Skills[size_t(controller->State.CastSlot)].Ability);
+					state.Variant = uint8_t(skill.Ability);
+					if (IsCharged(skill))
+						state.Charge = PackCharge(ChargePower(controller->State, skill), ChargeOver(controller->State, skill));
 				}
 			}
 			if (const Dummy* dummy = entities.TryGet<Dummy>(entity))
@@ -1040,6 +1072,7 @@ namespace Game
 				.Rounds = m_World->GetMatch().GetRoundWins(playerId),
 				.Cards = m_World->GetCards(playerId),
 				.Choosing = m_Session.Mode == GameMode::Brawl && m_World->GetMatch().GetLoadout(playerId).OfferPending,
+				.Spectator = m_World->GetMatch().IsSpectator(playerId),
 			};
 		};
 		for (const Client& client : m_Clients)
@@ -1094,49 +1127,83 @@ namespace Game
 	{
 		if (!m_World || m_Session.Mode != GameMode::Brawl || GetPlayerCount() == 0)
 			return;
-		const BotSkill skill = BotSkill(std::min<uint32_t>(m_Session.Rules.BotLevel, uint32_t(BotSkill::Count) - 1));
-		while (m_Bots.size() < m_Session.Rules.Bots)
+		const MatchRules& rules = m_Session.Rules;
+		if (rules.Teams < 2)
 		{
-			uint32_t playerId = 0;
-			if (!AllocatePlayerId(playerId))
-				break;
-			Bot bot{ .PlayerId = playerId };
-			for (uint32_t attempt = 0; attempt < 32 && bot.Name.empty(); attempt++)
-			{
-				const std::string name = PickBotName(m_BotNames++);
-				const auto taken = [&](const std::string& other) { return other == name; };
-				if (std::none_of(m_Clients.begin(), m_Clients.end(), [&](const Client& client) { return client.Joined && taken(client.Name); }) && std::none_of(m_Bots.begin(), m_Bots.end(), [&](const Bot& other) { return taken(other.Name); }))
-					bot.Name = name;
-			}
-			if (bot.Name.empty())
-				bot.Name = "Bot " + std::to_string(playerId + 1);
-			bot.Style.Head = Headwear(m_BotRandom.Below(uint32_t(Headwear::Count)));
-			const uint32_t first = m_BotRandom.Below(uint32_t(BotStyle::Count));
-			size_t fewest = m_Bots.size() + 1;
-			for (uint32_t i = 0; i < uint32_t(BotStyle::Count); i++)
-			{
-				const BotStyle style = BotStyle((first + i) % uint32_t(BotStyle::Count));
-				const size_t count = size_t(std::count_if(m_Bots.begin(), m_Bots.end(), [&](const Bot& other) { return other.Personality == style; }));
-				if (count < fewest)
-				{
-					fewest = count;
-					bot.Personality = style;
-				}
-			}
-			const BotStyle style = bot.Personality;
-			m_World->SpawnPlayer(playerId, ToInventory(MakeStarterGear(StarterKit::Arcanist)));
-			m_Squad.Add(playerId, BotProfile{ .Skill = skill, .Style = style, .Seed = m_BotRandom.Next() });
-			m_Bots.push_back(bot);
-			RDN_LOG("{} joined as a {} {} bot", bot.Name, BotSkillNames[size_t(skill)], BotStyleNames[size_t(style)]);
+			while (m_Bots.size() < rules.Bots && SpawnBot(NoTeam))
+				;
+			return;
 		}
+		for (uint8_t team = 0; team < rules.Teams; team++)
+		{
+			uint32_t have = uint32_t(std::count_if(m_Bots.begin(), m_Bots.end(), [&](const Bot& bot) { return m_World->GetTeam(bot.PlayerId) == team; }));
+			while (have < rules.TeamBots[team] && SpawnBot(team))
+				have++;
+		}
+	}
+
+	bool GameServer::SpawnBot(uint8_t team)
+	{
+		uint32_t playerId = 0;
+		if (!AllocatePlayerId(playerId))
+			return false;
+		const BotSkill skill = BotSkill(std::min<uint32_t>(m_Session.Rules.BotLevel, uint32_t(BotSkill::Count) - 1));
+		Bot bot{ .PlayerId = playerId };
+		for (uint32_t attempt = 0; attempt < 32 && bot.Name.empty(); attempt++)
+		{
+			const std::string name = PickBotName(m_BotNames++);
+			const auto taken = [&](const std::string& other) { return other == name; };
+			if (std::none_of(m_Clients.begin(), m_Clients.end(), [&](const Client& client) { return client.Joined && taken(client.Name); }) && std::none_of(m_Bots.begin(), m_Bots.end(), [&](const Bot& other) { return taken(other.Name); }))
+				bot.Name = name;
+		}
+		if (bot.Name.empty())
+			bot.Name = "Bot " + std::to_string(playerId + 1);
+		bot.Style.Head = Headwear(m_BotRandom.Below(uint32_t(Headwear::Count)));
+		const uint32_t first = m_BotRandom.Below(uint32_t(BotStyle::Count));
+		size_t fewest = m_Bots.size() + 1;
+		for (uint32_t i = 0; i < uint32_t(BotStyle::Count); i++)
+		{
+			const BotStyle style = BotStyle((first + i) % uint32_t(BotStyle::Count));
+			const size_t count = size_t(std::count_if(m_Bots.begin(), m_Bots.end(), [&](const Bot& other) { return other.Personality == style; }));
+			if (count < fewest)
+			{
+				fewest = count;
+				bot.Personality = style;
+			}
+		}
+		const BotStyle style = bot.Personality;
+		m_World->SeatPlayer(playerId, team);
+		m_World->SpawnPlayer(playerId, ToInventory(MakeStarterGear(StarterKit::Arcanist)));
+		m_Squad.Add(playerId, BotProfile{ .Skill = skill, .Style = style, .Seed = m_BotRandom.Next() });
+		m_Bots.push_back(bot);
+		if (team != NoTeam)
+			RDN_LOG("{} joined the {} team as a {} {} bot", bot.Name, GetTeamName(team), BotSkillNames[size_t(skill)], BotStyleNames[size_t(style)]);
+		else
+			RDN_LOG("{} joined as a {} {} bot", bot.Name, BotSkillNames[size_t(skill)], BotStyleNames[size_t(style)]);
+		return true;
 	}
 
 	void GameServer::DropBot()
 	{
 		if (m_Bots.empty())
 			return;
-		const Bot bot = m_Bots.back();
-		m_Bots.pop_back();
+		auto leaving = std::prev(m_Bots.end());
+		if (m_World && m_Session.Rules.Teams >= 2)
+		{
+			std::array<uint32_t, MaxTeams> members{};
+			for (uint32_t id = 0; id < MaxPlayers; id++)
+				if (const uint8_t team = m_World->GetTeam(id); team < MaxTeams)
+					members[team]++;
+			for (auto it = m_Bots.begin(); it != m_Bots.end(); ++it)
+			{
+				const uint8_t team = m_World->GetTeam(it->PlayerId);
+				const uint8_t current = m_World->GetTeam(leaving->PlayerId);
+				if (team < MaxTeams && (current >= MaxTeams || members[team] >= members[current]))
+					leaving = it;
+			}
+		}
+		const Bot bot = *leaving;
+		m_Bots.erase(leaving);
 		m_Squad.Remove(bot.PlayerId);
 		if (m_World)
 			if (const Entity player = m_World->FindPlayer(bot.PlayerId); player.IsValid())

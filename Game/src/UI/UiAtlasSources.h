@@ -45,7 +45,7 @@ namespace Game
 		"chess-king", "chess-queen", "chess-rook", "chess-bishop", "chess-knight", "chess-pawn",
 		"potion-ball", "cycle", "vortex", "fizzing-flask", "bleeding-heart", "broken-shield", "heartburn", "burning-embers",
 		"fire-ring", "frozen-block", "ice-bolt", "lightning-helix", "power-lightning", "energy-shield", "heart-bottle", "on-target",
-		"star-swirl", "sunbeams", "psychic-waves", "dripping-blade", "echo-ripples", "unstable-orb", "meditation",
+		"star-swirl", "sunbeams", "psychic-waves", "dripping-blade", "echo-ripples", "unstable-orb", "meditation", "eye",
 	};
 
 	inline VectorAtlasDesc MakeUiAtlasDesc()

@@ -50,6 +50,7 @@ namespace Game
 		void PlayUi(Cue cue, float volume = 1.0f, float pitch = 1.0f, float delay = 0.0f);
 		void PlayHover(int index);
 		void PlayCrumble(Vec2 position, bool ice = false);
+		void PlayLightning(Vec2 position, float distance);
 		uint32_t GetPlayedCount() const { return m_Played; }
 		void SetTrace(bool trace) { m_Trace = trace; }
 
@@ -61,6 +62,7 @@ namespace Game
 			float Idle = 0.0f;
 			float SinceHit = 1e9f;
 			Timbre::Voice Loop;
+			float Crackle = 0.0f;
 			bool Seen = false;
 			bool LeftFoot = false;
 		};
@@ -84,6 +86,7 @@ namespace Game
 		void StartTelegraph(const EntityState& entity, Tracked& tracked);
 		void StartCast(const EntityState& entity, Tracked& tracked, bool self);
 		void StartWindup(const EntityState& entity, Tracked& tracked);
+		void ChargeSpear(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt);
 		void PlayAggro(const EntityState& entity);
 		void PlayFootstep(const EntityState& entity, Tracked& tracked, float moved, float volume);
 		void PlayMonsterStep(const EntityState& entity, Tracked& tracked, float moved);
@@ -131,6 +134,8 @@ namespace Game
 		float m_LastCoins = -10.0f;
 		float m_LastBossVoice = -10.0f;
 		float m_NextThunder = 0.0f;
+		float m_CrackCooldown = 0.0f;
+		float m_ThunderCooldown = 0.0f;
 		uint32_t m_FrameImpacts = 0;
 		uint32_t m_Played = 0;
 		bool m_Primed = false;

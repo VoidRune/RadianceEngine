@@ -26,6 +26,8 @@ namespace Game
 	class GameAudio;
 	class ImGuiLayer;
 	class MenuBackdrop;
+	class SteamPlatform;
+	struct LobbyJoin;
 	class Ui;
 	class UiAssets;
 	class UiRenderer;
@@ -37,6 +39,7 @@ namespace Game
 		std::string JoinAddress = "127.0.0.1";
 		uint16_t Port = DefaultPort;
 		StarterKit Kit = StarterKit::Arcanist;
+		bool FriendsCanJoin = true;
 		bool SaveProfiles = true;
 		float Volume = 0.8f;
 		float MusicVolume = 0.8f;
@@ -91,6 +94,7 @@ namespace Game
 		MenuBackdrop& GetMenuBackdrop() { return *m_MenuBackdrop; }
 		Timbre::AudioEngine& GetAudio() { return *m_Audio; }
 		GameAudio& GetGameAudio() { return *m_GameAudio; }
+		SteamPlatform& GetSteam() { return *m_Steam; }
 		Settings& GetSettings() { return m_Settings; }
 		void ApplyAudioSettings();
 		void ApplyVisualSettings();
@@ -116,9 +120,12 @@ namespace Game
 		void LoadPreferences();
 		void SavePreferences();
 		void AdoptGraphicsTier();
+		void JoinFriend(const LobbyJoin& join);
 
 		Settings m_Settings;
 		Settings m_Stored;
+		bool m_NamedInSettings = false;
+		std::unique_ptr<SteamPlatform> m_Steam;
 		bool m_PreferencesDirty = false;
 		float m_PreferencesDelay = 0.0f;
 		GraphicsTier m_RecommendedGraphics = GraphicsTier::High;

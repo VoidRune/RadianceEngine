@@ -33,6 +33,7 @@ namespace Game
 	inline constexpr uint32_t MeshAccentDye = 4096;
 	inline constexpr uint32_t MeshCrystal = 8192;
 	inline constexpr uint32_t MeshIce = 16384;
+	inline constexpr uint32_t MeshCliff = 32768;
 
 	struct LevelMeshDesc
 	{
@@ -66,6 +67,14 @@ namespace Game
 		glm::vec4 Accent{ 0.0f };
 	};
 
+	struct EffectMaterial
+	{
+		glm::vec3 Color{ 1.0f };
+		float Roughness = 0.5f;
+		float Metallic = 0.0f;
+		glm::vec3 Emission{ 0.0f };
+	};
+
 	class WorldRenderer
 	{
 	public:
@@ -76,6 +85,8 @@ namespace Game
 
 		bool LoadModels(std::span<const ModelPack> packs, std::string& error);
 		const ModelLibrary& GetModels() const { return m_Models; }
+		uint32_t AddEffectMesh(std::string_view name, const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const EffectMaterial& material, uint32_t flags = 0);
+		std::optional<uint32_t> FindEffectMesh(std::string_view name) const;
 		uint32_t AddLevelGeometry(const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<LevelMeshDesc>& meshes);
 		void ClearLevelGeometry();
 		void SetSkyMask(uint32_t width, uint32_t height, const std::vector<uint8_t>& openness, glm::vec2 origin, glm::vec2 size);
@@ -226,6 +237,9 @@ namespace Game
 		std::unique_ptr<Rdn::DescriptorSet> m_BackTextureSet;
 		std::vector<DrawMesh> m_DrawMeshes;
 		std::vector<MaterialGpu> m_Materials;
+		std::vector<ModelVertex> m_EffectVertices;
+		std::vector<uint32_t> m_EffectIndices;
+		std::vector<std::pair<std::string, uint32_t>> m_EffectMeshes;
 		std::vector<ModelVertex> m_LevelVertices;
 		std::vector<uint32_t> m_LevelIndices;
 		uint32_t m_LibraryMeshes = 0;

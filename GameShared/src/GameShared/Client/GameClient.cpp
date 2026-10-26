@@ -43,6 +43,20 @@ namespace Game
 		return true;
 	}
 
+	bool GameClient::ConnectRelay(uint64_t host, const CharacterProfile& profile)
+	{
+		Reset({});
+		m_Profile = profile;
+		if (!m_Net.ConnectRelay(host))
+		{
+			m_DisconnectReason = "Can't reach the host through Steam";
+			return false;
+		}
+		m_Relayed = true;
+		m_State = ClientState::Connecting;
+		return true;
+	}
+
 	void GameClient::ConnectLocal(ConnectionId connection, const CharacterProfile& profile)
 	{
 		Reset({});
@@ -62,6 +76,7 @@ namespace Game
 	{
 		m_State = ClientState::Disconnected;
 		m_Local = false;
+		m_Relayed = false;
 		m_TickLocked = false;
 		m_HasViewAim = false;
 		m_DisconnectReason = std::move(reason);
@@ -241,7 +256,8 @@ namespace Game
 
 	void GameClient::StartArena(MapKind map, const MatchRules& rules)
 	{
-		SendAction(ActionType::StartMatch, uint32_t(GameMode::Arena), uint32_t(map), EncodeRules(rules));
+		if (m_State == ClientState::InGame)
+			Send(ClientAction{ .Action = ActionType::StartMatch, .Value = uint16_t(GameMode::Arena), .Target = uint16_t(map), .Rules = rules }, SendMode::Reliable);
 	}
 
 	void GameClient::StartRoyale(MapKind map)
@@ -251,7 +267,19 @@ namespace Game
 
 	void GameClient::StartBrawl(MapKind map, const MatchRules& rules)
 	{
-		SendAction(ActionType::StartMatch, uint32_t(GameMode::Brawl), uint32_t(map), EncodeRules(rules));
+		if (m_State == ClientState::InGame)
+			Send(ClientAction{ .Action = ActionType::StartMatch, .Value = uint16_t(GameMode::Brawl), .Target = uint16_t(map), .Rules = rules }, SendMode::Reliable);
+	}
+
+	void GameClient::JoinMatch()
+	{
+		SendAction(ActionType::JoinMatch, 0);
+	}
+
+	bool GameClient::IsSpectating() const
+	{
+		const PlayerInfo* self = FindPlayer(m_Welcome.PlayerId);
+		return self && self->Spectator && m_Session.Mode == GameMode::Brawl;
 	}
 
 	void GameClient::PickBrawlSpell(uint32_t slot, AbilityId spell)
@@ -311,7 +339,8 @@ namespace Game
 		if (m_Session.Mode == GameMode::Brawl)
 		{
 			const BrawlPhase phase = m_Status.Brawl.Phase;
-			return m_Status.Match != MatchPhase::Ended && (phase == BrawlPhase::Draft || phase == BrawlPhase::Pick || phase == BrawlPhase::Fight);
+			const uint8_t team = m_Session.Rules.Teams >= 2 ? GetTeam(m_Welcome.PlayerId) : NoTeam;
+			return m_Status.Match != MatchPhase::Ended && (phase == BrawlPhase::Draft || phase == BrawlPhase::Pick || phase == BrawlPhase::Fight) && (team == NoTeam || team != GetTeam(entity.Owner));
 		}
 		if (m_Status.Match != MatchPhase::Fight)
 			return false;
@@ -351,9 +380,38 @@ namespace Game
 			return;
 		m_Profile.Honors |= bit;
 		m_FeatsVersion++;
-		const HonorDef& def = GetHonor(honor);
-		m_Notices.push_back({ .Text = std::string("Title earned: ") + def.Title + ". " + def.Feat + ".", .Success = true });
 		SendAction(ActionType::SetHonors, m_Profile.Honors);
+		Achieve(HonorAchievements[size_t(honor)]);
+	}
+
+	void GameClient::Achieve(Achievement id, uint32_t detail)
+	{
+		if (id == Achievement::Scholar)
+		{
+			const uint32_t learned = m_Profile.Scholar | (detail & FullSpellPool);
+			if (learned != m_Profile.Scholar)
+			{
+				m_Profile.Scholar = learned;
+				m_FeatsVersion++;
+			}
+			if (learned != FullSpellPool)
+				return;
+		}
+		const AchievementMask bit = AchievementBit(id);
+		if ((m_Profile.Achievements & bit) != 0)
+			return;
+		m_Profile.Achievements |= bit;
+		m_FeatsVersion++;
+		m_Achieved.push_back(id);
+	}
+
+	void GameClient::AdoptAchievements(AchievementMask mask)
+	{
+		mask &= AllAchievements;
+		if ((m_Profile.Achievements | mask) == m_Profile.Achievements)
+			return;
+		m_Profile.Achievements |= mask;
+		m_FeatsVersion++;
 	}
 
 	void GameClient::TrackFeats(const LocalPlayerState& local)
@@ -428,7 +486,7 @@ namespace Game
 		}
 		std::string reason = m_DisconnectReason.empty() ? event.Reason : m_DisconnectReason;
 		if (m_DisconnectReason.empty() && event.TimedOut)
-			reason = m_State == ClientState::InGame ? "Lost the connection to the server" : "The server didn't answer. Check the address, and that the host's UDP port is open";
+			reason = m_State == ClientState::InGame ? "Lost the connection to the server" : m_Relayed ? "The host didn't answer through Steam" : "The server didn't answer. Check the address, and that the host's UDP port is open";
 		Reset(reason);
 	}
 
@@ -493,6 +551,10 @@ namespace Game
 				if (m_Notices.size() > 16)
 					m_Notices.erase(m_Notices.begin());
 			}
+			break;
+		case MessageType::ServerAchievement:
+			if (ServerAchievement achievement; m_State == ClientState::InGame && Decode(message.Data, achievement))
+				Achieve(achievement.Id, achievement.Detail);
 			break;
 		case MessageType::ServerKillFeed:
 			if (ServerKillFeed feed; m_State == ClientState::InGame && Decode(message.Data, feed))
@@ -562,6 +624,8 @@ namespace Game
 			m_LocalPlayer.Traits = knownTraits;
 		while (!m_PendingInputs.empty() && m_PendingInputs.front().Sequence <= snapshot.LastProcessedInput)
 			m_PendingInputs.pop_front();
+		if (const ArenaState arena = ArenaFor(uint32_t(m_PendingInputs.size())); arena.Plan)
+			SinkFallenProps(*m_Level, *arena.Plan, arena.Clock);
 		if (!m_LocalPlayer.Valid)
 		{
 			m_HasPrediction = false;
@@ -574,8 +638,9 @@ namespace Game
 		uint32_t ahead = 0;
 		for (const PlayerInput& input : m_PendingInputs)
 		{
-			CollectBodies(ahead++, m_Bodies);
-			SimulatePlayer(*m_Level, motion, state, traits, input, GetTickSeconds(), m_Bodies);
+			CollectBodies(ahead, m_Bodies);
+			SimulatePlayer(*m_Level, motion, state, traits, input, GetTickSeconds(), m_Bodies, ArenaFor(ahead));
+			ahead++;
 		}
 
 		const Vec2 error = m_PredictedMotion.Position - motion.Position;
@@ -597,6 +662,21 @@ namespace Game
 		m_HasPrediction = true;
 	}
 
+	ArenaState GameClient::ArenaFor(uint32_t ticksAhead) const
+	{
+		if (!m_Level || !m_Level->Skyborne || m_Session.Mode != GameMode::Brawl)
+			return {};
+		const BrawlStatus& brawl = m_Status.Brawl;
+		return { &brawl.Plan, GetArenaClock(double(GetLatestTick()) + double(ticksAhead)), brawl.Phase == BrawlPhase::Fight };
+	}
+
+	float GameClient::GetArenaClock(double tick) const
+	{
+		const BrawlStatus& brawl = m_Status.Brawl;
+		const bool running = brawl.Phase == BrawlPhase::Countdown || brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over;
+		return brawl.Clock + (running ? float(tick - double(GetLatestTick())) * GetTickSeconds() : 0.0f);
+	}
+
 	void GameClient::PredictTick(PlayerInput input)
 	{
 		input.Sequence = ++m_InputSequence;
@@ -615,8 +695,9 @@ namespace Game
 		if (m_HasPrediction)
 		{
 			const PlayerTraits& traits = GetTraits();
-			CollectBodies(uint32_t(m_PendingInputs.size() - 1), m_Bodies);
-			const PlayerActions actions = SimulatePlayer(*m_Level, m_PredictedMotion, m_PredictedState, traits, input, dt, m_Bodies);
+			const uint32_t ahead = uint32_t(m_PendingInputs.size() - 1);
+			CollectBodies(ahead, m_Bodies);
+			const PlayerActions actions = SimulatePlayer(*m_Level, m_PredictedMotion, m_PredictedState, traits, input, dt, m_Bodies, ArenaFor(ahead));
 			if (actions.Teleported())
 			{
 				m_PreviousMotion = m_PredictedMotion;
@@ -691,7 +772,9 @@ namespace Game
 		{
 		case AbilityKind::Projectile:
 		{
-			const ProjectilePattern pattern = GetProjectilePattern(ability, uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles), traits.ExtraPierce, traits.ProjectileSpeedScale);
+			const float charge = IsCharged(skill) ? actions.Charge : 0.0f;
+			const ProjectilePattern pattern = ChargedPattern(ability, GetProjectilePattern(ability, uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles), traits.ExtraPierce, traits.ProjectileSpeedScale), charge, traits.ProjectileSpeedScale);
+			const ChargedShot shot = ability.Id == AbilityId::FrostSpear ? SpearShot(charge) : ChargedShot{ .Radius = ability.ProjectileRadius };
 			for (uint32_t i = 0; i < pattern.Count && i < 16; i++)
 			{
 				const Vec2 heading = ProjectileDirection(pattern, actions.Direction, i);
@@ -705,11 +788,12 @@ namespace Game
 					.Position = start,
 					.Previous = start,
 					.Velocity = heading * pattern.Speed,
-					.Lifetime = GetProjectileLifetime(ability, pattern.Speed) * skill.RangeScale,
-					.Radius = ability.ProjectileRadius,
+					.Lifetime = (pattern.Speed > 0.0f ? ChargedRange(ability, charge) / pattern.Speed : 0.0f) * skill.RangeScale,
+					.Radius = shot.Radius,
 					.Pierce = pattern.Pierce,
+					.Scale = uint8_t(std::clamp(std::lround(shot.Size * 16.0f), 1l, 255l)),
 					.Explodes = ability.ImpactRadius > 0.0f,
-					.Floor = FloorAt(m_Level->Map, origin),
+					.Floor = LaunchFloor(*m_Level, origin),
 				});
 			}
 			break;
@@ -944,10 +1028,22 @@ namespace Game
 		const uint32_t playerId = m_Welcome.PlayerId;
 		m_PresentTick = double(GetLatestTick()) + double(m_PendingInputs.size()) - 1.0 + double(alpha);
 		const double lead = std::clamp(m_PresentTick - m_RenderTick, 0.0, MaxProjectileLeadSeconds * double(m_Welcome.TickRate));
+		const ArenaState arena = ArenaFor(0);
+		const float then = GetArenaClock(m_RenderTick);
+		const float now = GetArenaClock(m_PresentTick);
 		for (const EntityState& entity : m_Entities)
 		{
 			if (m_HasPrediction && entity.NetId == m_Welcome.PlayerNetId)
 				continue;
+			if (entity.Kind == EntityKind::Player && arena.Plan && !m_Level->Islands.empty())
+				if (const int32_t island = IslandAt(*m_Level, *arena.Plan, then, entity.Position); island >= 0)
+				{
+					const DriftIsland& drift = m_Level->Islands[size_t(island)];
+					EntityState carried = entity;
+					carried.Position += IslandOffset(drift, now) - IslandOffset(drift, then);
+					m_View.push_back(carried);
+					continue;
+				}
 			if ((entity.Kind == EntityKind::Projectile || entity.Kind == EntityKind::Effect) && entity.Owner == playerId && IsPredictedTag(entity.Tag))
 				continue;
 			if (entity.Kind == EntityKind::Projectile && entity.Owner == NoPlayer)
@@ -993,13 +1089,16 @@ namespace Game
 			self.Flags |= uint32_t(EntityFlags::Leyline);
 		if (m_PredictedState.CastSlot >= 0)
 		{
+			const SkillTraits& skill = GetTraits().Skills[size_t(m_PredictedState.CastSlot)];
 			self.Flags |= uint16_t(EntityFlags::Attacking);
-			self.Variant = uint8_t(GetTraits().Skills[size_t(m_PredictedState.CastSlot)].Ability);
+			self.Variant = uint8_t(skill.Ability);
+			if (IsCharged(skill))
+				self.Charge = PackCharge(ChargePower(m_PredictedState, skill), ChargeOver(m_PredictedState, skill));
 		}
 		m_View.push_back(self);
 
 		for (const PredictedProjectile& projectile : m_PredictedProjectiles)
-			m_View.push_back({ .NetId = PredictedNetIdBase + (uint32_t(projectile.Tag) << 4) + projectile.Index, .Kind = EntityKind::Projectile, .Position = Lerp(projectile.Previous, projectile.Position, alpha), .Facing = AngleOf(projectile.Velocity), .Owner = playerId, .Tag = projectile.Tag, .Variant = uint8_t(projectile.Ability) });
+			m_View.push_back({ .NetId = PredictedNetIdBase + (uint32_t(projectile.Tag) << 4) + projectile.Index, .Kind = EntityKind::Projectile, .Position = Lerp(projectile.Previous, projectile.Position, alpha), .Facing = AngleOf(projectile.Velocity), .Owner = playerId, .Tag = projectile.Tag, .Variant = uint8_t(projectile.Ability), .Scale = projectile.Scale });
 		for (const PredictedEffect& effect : m_PredictedEffects)
 			m_View.push_back({ .NetId = (effect.Pending ? PredictedEffectNetIdBase : PredictedImpactNetIdBase) + (uint32_t(effect.Tag) << 4) + effect.Index, .Kind = EntityKind::Effect, .Position = effect.Position, .Facing = effect.Facing, .Owner = playerId, .Tag = effect.Tag, .Variant = uint8_t(effect.Ability), .Scale = effect.Scale, .Flags = uint16_t(effect.Pending ? uint16_t(EntityFlags::Pending) : 0) });
 	}

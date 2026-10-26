@@ -199,10 +199,11 @@ void main()
 	bool water = (flags & MeshWater) != 0u;
 	bool lake = water && (flags & MeshGround) != 0u;
 	bool veins = (flags & MeshVeins) != 0u;
+	bool projected = veins || (flags & MeshCliff) != 0u;
 	float time = inCut.x;
 	vec2 uv = inUv;
 	vec4 tangent = inTangent;
-	if (veins)
+	if (projected)
 	{
 		vec3 facing = normalize(inNormal);
 		vec3 axes = abs(facing);

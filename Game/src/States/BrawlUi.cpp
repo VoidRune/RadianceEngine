@@ -31,13 +31,45 @@ namespace Game
 		constexpr float ApexNewsSeconds = 4.5f;
 		constexpr glm::vec3 LeylineGlow{ 0.42f, 1.0f, 0.78f };
 		constexpr float CrumbleRange = 18.0f;
+		constexpr float StrikeSight = 24.0f;
+		constexpr float SpireTop = 4.5f;
+		constexpr float SpireSlot = 1.0f;
+		constexpr float RingLead = 1.5f;
+		constexpr float BoltFlash = 0.4f;
+		constexpr float ScorchSeconds = 3.0f;
+		constexpr float RingSegment = 0.9f;
+		constexpr glm::vec3 BoltBlue{ 0.55f, 0.78f, 1.0f };
+		constexpr glm::vec3 RitualBlue{ 0.42f, 0.62f, 1.0f };
+		constexpr glm::vec3 StormViolet{ 0.46f, 0.38f, 1.0f };
+
+		std::vector<float> SpireStrikes(const CollapsePlan& plan, float from, float to)
+		{
+			std::vector<float> strikes;
+			if (plan.Shape != BrawlShape::Peak || to <= from)
+				return strikes;
+			for (int32_t slot = std::max(int32_t(std::floor(from / SpireSlot)), 1); slot <= int32_t(std::floor(to / SpireSlot)); slot++)
+			{
+				const float when = (float(slot) + 0.15f + 0.7f * CollapseNoise(slot, 0x5F17, plan.Seed)) * SpireSlot;
+				if (when > from && when <= to && CollapseNoise(slot, 0x5F19, plan.Seed) < 0.06f + 0.3f * StormBuild(plan, when))
+					strikes.push_back(when);
+			}
+			return strikes;
+		}
+
+		uint32_t BoltSeed(const LightningBolt& bolt)
+		{
+			return uint32_t(bolt.Time * 977.0f) * 2654435761u ^ uint32_t(bolt.Center.x * 131.0f) * 40503u;
+		}
 		constexpr glm::vec3 StarlightPale{ 0.55f, 0.66f, 1.0f };
 		constexpr float SigilScale = 1.05f;
 		constexpr const char* BotLevelNames[] = { "Easy", "Normal", "Hard" };
-		constexpr const char* ArenaNames[] = { "Random", "Caldera", "Frozen Lake" };
+		constexpr const char* ArenaNames[] = { "Random", "Caldera", "Frozen Lake", "Sky Ruins", "Storm Peak" };
 		constexpr const char* ModeNames[] = { "Damage", "Knockback" };
+		constexpr const char* GateTabs[] = { "Match", "Custom", "Teams" };
+		constexpr const char* TeamChoices[] = { "Off", "2 teams", "3 teams", "4 teams" };
 		static_assert(std::size(BotLevelNames) == BotLevels);
 		static_assert(std::size(ModeNames) == size_t(BrawlMode::Count));
+		static_assert(std::size(TeamChoices) == MaxTeams);
 
 		struct Sigil
 		{
@@ -58,7 +90,7 @@ namespace Game
 			{ AbilityId::ArcLightning, 6, { { -0.15f, 0.9f }, { 0.3f, 0.25f }, { -0.2f, 0.05f }, { 0.25f, -0.5f }, { -0.1f, -0.9f }, { 0.65f, 0.55f } }, 5, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 1, 5 } } },
 			{ AbilityId::Swap, 6, { { -0.8f, 0.3f }, { 0.8f, 0.3f }, { 0.5f, 0.6f }, { 0.8f, -0.3f }, { -0.8f, -0.3f }, { -0.5f, -0.6f } }, 4, { { 0, 1 }, { 1, 2 }, { 3, 4 }, { 4, 5 } } },
 			{ AbilityId::MirrorWard, 6, { { 0.0f, 0.85f }, { 0.65f, 0.5f }, { 0.55f, -0.3f }, { 0.0f, -0.85f }, { -0.55f, -0.3f }, { -0.65f, 0.5f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 0 } } },
-			{ AbilityId::Frostbite, 7, { { 0.0f, 0.0f }, { 0.0f, 0.85f }, { 0.74f, 0.42f }, { 0.74f, -0.42f }, { 0.0f, -0.85f }, { -0.74f, -0.42f }, { -0.74f, 0.42f } }, 6, { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 0, 4 }, { 0, 5 }, { 0, 6 } } },
+			{ AbilityId::FrostSpear, 6, { { -0.85f, -0.62f }, { -0.3f, -0.22f }, { 0.25f, 0.18f }, { 0.82f, 0.6f }, { 0.4f, 0.57f }, { 0.67f, 0.21f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 4 }, { 4, 3 }, { 2, 5 }, { 5, 3 } } },
 		};
 
 		const Sigil* FindSigil(AbilityId spell)
@@ -95,6 +127,109 @@ namespace Game
 			return mode == BrawlMode::Damage ? PlacementPoints[0] : RoundWinPoints;
 		}
 
+		struct Stepper
+		{
+			const char* Label = "";
+			std::string Value;
+			int Low = 0;
+			int High = 0;
+			int Step = 1;
+			bool Enabled = true;
+			std::string Note;
+			const char* Tip = nullptr;
+			float LabelWidth = 170.0f;
+			float ValueWidth = 100.0f;
+		};
+
+		bool StepRow(Ui& ui, UiRect& area, UiId id, int& current, const Stepper& stepper)
+		{
+			UiDrawList& draw = ui.Draw();
+			UiRect row = area.CutTop(40.0f);
+			const UiRect label = row.CutLeft(stepper.LabelWidth);
+			draw.TextAligned(label, stepper.Label, Theme::Bold(16.0f, stepper.Enabled ? Theme::Text : Theme::Faint), { 0.0f, 0.5f });
+			if (stepper.Tip && ui.Interact(id ^ 0x7105C0DEull, label).Hovered)
+				ui.Tooltip().Header(stepper.Label, Theme::AccentLight).Text(stepper.Tip);
+			const int before = current;
+			if (ui.Button(id, row.CutLeft(40.0f), "-", ButtonKind::Normal, stepper.Enabled && current > stepper.Low))
+				current = std::max(current - stepper.Step, stepper.Low);
+			TextStyle number = Theme::Title(22.0f);
+			if (!stepper.Enabled)
+			{
+				number.Color = Theme::Faint;
+				number.ColorBottom = Theme::Faint;
+			}
+			draw.TextAligned(row.CutLeft(stepper.ValueWidth), stepper.Value, number, { 0.5f, 0.5f });
+			if (ui.Button(id + 1, row.CutLeft(40.0f), "+", ButtonKind::Normal, stepper.Enabled && current < stepper.High))
+				current = std::min(current + stepper.Step, stepper.High);
+			if (!stepper.Note.empty())
+				draw.TextFit(row.Shrink(12.0f, 0.0f), stepper.Note, Theme::Body(13.5f, Theme::Faint));
+			area.CutTop(6.0f);
+			return current != before;
+		}
+
+		std::string Percent(int value)
+		{
+			return std::to_string(value) + "%";
+		}
+
+		bool ToggleRow(Ui& ui, UiRect& area, UiId id, const char* label, bool& value, bool enabled, const char* note)
+		{
+			UiDrawList& draw = ui.Draw();
+			const UiRect row = area.CutTop(32.0f);
+			bool changed = false;
+			if (enabled)
+				changed = ui.Checkbox(id, row, label, value);
+			else
+			{
+				draw.Diamond({ row.X + 10.0f, row.Center().y }, 19.0f, Theme::SlotBottom, WithAlpha(Theme::Edge, 0.45f), 1.3f);
+				draw.TextAligned({ row.X + 28.0f, row.Y, row.W - 28.0f, row.H }, label, Theme::Body(16.0f, Theme::Faint), { 0.0f, 0.5f });
+			}
+			if (note)
+			{
+				const UiRect line = area.CutTop(18.0f);
+				draw.TextAligned({ line.X + 28.0f, line.Y, line.W - 28.0f, line.H }, note, Theme::Body(13.5f, Theme::Faint), { 0.0f, 0.5f });
+			}
+			area.CutTop(4.0f);
+			return changed;
+		}
+
+		std::string CustomSummary(const MatchRules& rules)
+		{
+			const MatchRules defaults;
+			const bool damage = rules.Mode == BrawlMode::Damage;
+			std::vector<std::string> parts;
+			if (rules.Health != defaults.Health)
+				parts.push_back(std::to_string(rules.Health) + " life");
+			if (damage && rules.Mana != defaults.Mana)
+				parts.push_back(std::to_string(rules.Mana) + " mana");
+			if (damage && rules.ManaRegen != defaults.ManaRegen)
+				parts.push_back(std::to_string(rules.ManaRegen) + "% mana regen");
+			if (damage && rules.Damage != defaults.Damage)
+				parts.push_back(std::to_string(rules.Damage) + "% damage");
+			if (rules.CastSpeed != defaults.CastSpeed)
+				parts.push_back(std::to_string(rules.CastSpeed) + "% cast speed");
+			if (rules.CooldownSpeed != defaults.CooldownSpeed)
+				parts.push_back(std::to_string(rules.CooldownSpeed) + "% cooldown speed");
+			if (rules.MoveSpeed != defaults.MoveSpeed)
+				parts.push_back(std::to_string(rules.MoveSpeed) + "% movement");
+			if (rules.Knockback != defaults.Knockback)
+				parts.push_back(std::to_string(rules.Knockback) + "% knockback");
+			if (rules.RandomSpells)
+				parts.push_back("random spells every round");
+			if (damage && !rules.Apex)
+				parts.push_back("no apex cards");
+			else if (damage && rules.ApexDraft)
+				parts.push_back("an apex pick at the start");
+			if (!rules.Crumble)
+				parts.push_back("no crumbling");
+			if (!rules.WinnerCard)
+				parts.push_back("no card for the round winner");
+			std::string text;
+			for (size_t i = 0; i < parts.size(); i++)
+				text += (i == 0 ? "" : i + 1 == parts.size() ? " and " : ", ") + parts[i];
+			return text;
+		}
+
 		std::string Seconds(float seconds)
 		{
 			return std::to_string(int(std::ceil(std::max(seconds, 0.0f))));
@@ -107,6 +242,8 @@ namespace Game
 
 		float FinalCollapse(const CollapsePlan& plan)
 		{
+			if (plan.Shape == BrawlShape::Peak)
+				return RingClose;
 			return std::max(CollapseGrace + (plan.StartRadius - CollapseMinRadius) / CollapseRate, FinalCollapseStart);
 		}
 
@@ -121,6 +258,8 @@ namespace Game
 				return Format("%d, then %d on the jump", int(def.BrawlDamage), int(GetAbility(AbilityId::StormJump).BrawlDamage));
 			case AbilityId::SplittingBolt:
 				return Format("%d, or %d per shard", int(def.BrawlDamage), int(GetAbility(AbilityId::BoltShard).BrawlDamage));
+			case AbilityId::FrostSpear:
+				return Format("%d tapped, up to %d charged, %d burst", int(def.BrawlDamage), int(SpearFullDamage), int(SpearBurstDamage));
 			default:
 				return def.Chain > 0 ? Format("%d per rival", int(def.BrawlDamage)) : std::to_string(def.BrawlDamage);
 			}
@@ -132,7 +271,7 @@ namespace Game
 			if (mode == BrawlMode::Damage)
 			{
 				const std::string cost = def.BrawlMana > 0.0f ? Format("%.0f mana", double(def.BrawlMana)) : std::string("free");
-				const std::string effect = def.BrawlDamage > 0 ? Format("%d dmg", int(def.BrawlDamage)) : def.Ward > 0.0f ? std::string("Reflects") : std::string("Teleports");
+				const std::string effect = id == AbilityId::FrostSpear ? Format("%d-%d dmg", int(def.BrawlDamage), int(SpearFullDamage)) : def.BrawlDamage > 0 ? Format("%d dmg", int(def.BrawlDamage)) : def.Ward > 0.0f ? std::string("Reflects") : std::string("Teleports");
 				return Format("%s, %s   %g s", effect.c_str(), cost.c_str(), double(def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown));
 			}
 			switch (id)
@@ -143,6 +282,8 @@ namespace Game
 				return Format("Shove %.0f twice   %.1f s", double(def.Push), double(def.Cooldown));
 			case AbilityId::SplittingBolt:
 				return Format("Shove %.0f, splits   %.0f s", double(def.Push), double(def.Cooldown));
+			case AbilityId::FrostSpear:
+				return Format("Shove %.0f-%.0f, charge   %.0f s", double(def.Push), double(SpearFullPush), double(def.Cooldown));
 			case AbilityId::StormStrike:
 				return Format("Shove %.0f, jumps   %.1f s", double(def.Push), double(def.Cooldown));
 			default:
@@ -223,8 +364,8 @@ namespace Game
 				return "Swap";
 			case AbilityId::MirrorWard:
 				return "Block";
-			case AbilityId::Frostbite:
-				return "Slow";
+			case AbilityId::FrostSpear:
+				return "Charge";
 			case AbilityId::ChainHook:
 				return "Hook";
 			case AbilityId::Firebomb:
@@ -282,7 +423,15 @@ namespace Game
 				tooltip.Pair("Mana", def.BrawlMana > 0.0f ? Format("%.0f", double(def.BrawlMana)) : std::string("free"));
 			}
 			const float shove = damage ? DamagePushScale : 1.0f;
-			if (def.Push > 0.0f)
+			if (def.ChargeTime > 0.0f)
+			{
+				tooltip.Pair("Shove", Format(damage ? "%.1f to %.1f" : "%.0f to %.0f", double(def.Push * shove), double(SpearFullPush * shove)));
+				tooltip.Pair("Range", Format("%.1f to %.1f", double(def.ProjectileRange), double(SpearFullRange)));
+				tooltip.Pair("Full charge", Format("%.1f s, pierces %u rivals", double(def.ChargeTime), unsigned(SpearFullPierce)));
+				tooltip.Pair("Burst", Format(damage ? "%.1f around where it stops, shove %.1f" : "%.1f around where it stops, shove %.0f", double(SpearBurstRadius), double(SpearBurstPush * shove)));
+				tooltip.Pair("Hold longer", Format("it cracks loose after %.0f s", double(ChargeCrackSeconds)));
+			}
+			else if (def.Push > 0.0f)
 				tooltip.Pair("Shove", Format(damage ? "%.1f" : "%.0f", double(def.Push * shove)));
 			else if (def.Push < 0.0f)
 				tooltip.Pair("Pull", "through the center");
@@ -296,7 +445,7 @@ namespace Game
 				tooltip.Pair("Skips", Format(damage ? "%.1f further, shove %.1f" : "%.1f further, shove %.0f", double(FirebombSkipDistance), double(GetAbility(AbilityId::FirebombSkip).Push * shove)));
 			else if (id == AbilityId::StormStrike)
 				tooltip.Pair("Jumps", Format("once, up to %.1f", double(GetAbility(AbilityId::StormJump).Range)));
-			if (def.Kind == AbilityKind::Projectile)
+			if (def.Kind == AbilityKind::Projectile && def.ChargeTime <= 0.0f)
 				tooltip.Pair("Range", Format("%.1f", double(def.ProjectileRange)));
 			else if (def.Kind == AbilityKind::Ground || def.Kind == AbilityKind::Dash)
 				tooltip.Pair("Range", Format("%.1f", double(def.Range)));
@@ -306,7 +455,7 @@ namespace Game
 				tooltip.Pair("Jumps", std::to_string(def.Chain));
 			tooltip.Pair("Cast time", def.CastTime > 0.0f ? Format("%.2f s", double(def.CastTime)) : std::string("instant"));
 			tooltip.Pair("Cooldown", Format("%.1f s", double(damage && def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown)));
-			tooltip.Space(2.0f).Muted(def.CastMove <= 0.01f ? "You stand still while casting" : def.CastMove >= 0.99f ? "Cast it on the move" : "You slow down while casting");
+			tooltip.Space(2.0f).Muted(def.ChargeTime > 0.0f ? "You walk at half speed while charging, and a dodge drops the spear" : def.CastMove <= 0.01f ? "You stand still while casting" : def.CastMove >= 0.99f ? "Cast it on the move" : "You slow down while casting");
 		}
 	}
 
@@ -314,11 +463,15 @@ namespace Game
 	{
 		m_RestoreAge += dt;
 		m_CrumbleCooldown = std::max(m_CrumbleCooldown - dt, 0.0f);
+		m_Flash = std::max(m_Flash - dt * 4.5f, 0.0f);
+		m_RitualPulse = std::max(m_RitualPulse - dt * 2.5f, 0.0f);
 		const Level* level = m_Client.GetLevel();
 		if (!level || m_Client.GetSession().Mode != GameMode::Brawl)
 			return;
 		const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
 		UpdateCardNews(dt);
+		if (level->Kind == MapKind::StormPeak)
+			UpdateStorm(brawl);
 		const TileMap& map = level->Map;
 		const size_t cells = size_t(map.GetWidth()) * size_t(map.GetHeight());
 		const bool changed = !m_HasPlan || brawl.Plan.Seed != m_SeenPlan.Seed || brawl.Plan.StartRadius != m_SeenPlan.StartRadius || brawl.Plan.Center != m_SeenPlan.Center;
@@ -332,6 +485,9 @@ namespace Game
 					for (int32_t x = 0; x < map.GetWidth(); x++)
 						if (IsBrawlFloor(map.GetTerrain(x, y)) && TileCollapseTime(m_SeenPlan, x, y) <= m_SeenClock && TileCollapseTime(brawl.Plan, x, y) > brawl.Clock)
 							m_Risen[size_t(y) * size_t(map.GetWidth()) + size_t(x)] = 1;
+				for (const DriftIsland& island : level->Islands)
+					if (!island.Cells.empty() && IslandCollapseTime(m_SeenPlan, island) <= m_SeenClock && IslandCollapseTime(brawl.Plan, island) > brawl.Clock)
+						m_Risen[size_t(island.Cells.front().Y) * size_t(map.GetWidth()) + size_t(island.Cells.front().X)] = 1;
 				m_RestoreAge = 0.0f;
 			}
 			m_SeenPlan = brawl.Plan;
@@ -358,9 +514,11 @@ namespace Game
 				if (brawl.Clock - collapse > 0.5f)
 					continue;
 				const Vec2 seed = CellSeed({ x, y });
-				const glm::vec3 center(seed.x, LavaSurface + 0.1f, seed.y);
+				const glm::vec3 center(seed.x, level->Skyborne ? 0.05f : LavaSurface + 0.1f, seed.y);
 				if (level->Kind == MapKind::FrozenLake)
 					m_Effects->Burst(Fx::FrostBurst, center + glm::vec3(0.0f, 0.2f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0.6f);
+				else if (level->Skyborne)
+					m_Effects->Burst(Fx::Crumble, center, glm::vec3(0.0f, 1.0f, 0.0f), 0.5f);
 				else
 				{
 					m_Effects->Burst(Fx::FireBurst, center, glm::vec3(0.0f, 1.0f, 0.0f), 0.55f);
@@ -372,6 +530,131 @@ namespace Game
 					m_CrumbleCooldown = 0.35f;
 				}
 			}
+	}
+
+	void SessionState::UpdateStorm(const BrawlStatus& brawl)
+	{
+		const float clock = m_Client.GetArenaClock(m_Client.GetPresentTick());
+		const Level* level = m_Client.GetLevel();
+		if (level && clock > m_StormClock && clock - m_StormClock < 0.5f && (brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over))
+		{
+			const auto thunder = [&](const glm::vec3& point, float size)
+			{
+				const float distance = Length(Vec2(point.x, point.z) - Vec2(m_CameraTarget.x, m_CameraTarget.z));
+				if (distance < StrikeSight)
+				{
+					m_Effects->Burst(Fx::LightningBurst, point + glm::vec3(0.0f, 0.3f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.4f * size);
+					m_Effects->Burst(Fx::Crumble, point + glm::vec3(0.0f, 0.05f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0.4f * size, glm::vec3(0.7f, 0.74f, 0.8f));
+				}
+				m_Flash = std::max(m_Flash, std::clamp(1.0f - distance / 30.0f, 0.12f, 0.9f) * size);
+				m_App.GetGameAudio().PlayLightning(Vec2(point.x, point.z), distance);
+			};
+			for (const LightningBolt& bolt : BoltsOf(brawl.Plan))
+				if (bolt.Time > m_StormClock && bolt.Time <= clock)
+					thunder(Ground(bolt.Center), 1.0f);
+			for (const float strike : SpireStrikes(brawl.Plan, m_StormClock, clock))
+			{
+				thunder(Ground(level->Relief.Summit, SpireTop), 0.8f);
+				m_RitualPulse = 1.0f;
+				m_LastSpireStrike = strike;
+			}
+		}
+		m_StormClock = clock;
+	}
+
+	void SessionState::DrawPeak(WorldRenderer& renderer) const
+	{
+		const Level* level = m_Client.GetLevel();
+		if (!level || level->Relief.IsEmpty() || m_Client.GetSession().Mode != GameMode::Brawl)
+			return;
+		const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+		const Elevation& relief = level->Relief;
+		const bool live = brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over;
+		const float clock = live ? m_Client.GetArenaClock(m_Client.GetPresentTick()) : 0.0f;
+		const float build = live ? StormBuild(brawl.Plan, clock) : 0.2f;
+		const float awake = live ? std::clamp((clock - RingStart + RingWarning) / (RingSettle - RingStart + RingWarning), 0.0f, 1.0f) : 0.0f;
+		const glm::vec3 summit = Ground(relief.Summit);
+		const float glow = 0.16f + 0.25f * build + 0.9f * awake + 1.2f * m_RitualPulse;
+		DrawRuneCircle(renderer, { .Center = summit, .Radius = relief.Ritual - 0.1f, .Color = RitualBlue, .Intensity = glow, .Spin = 0.0f, .Seed = level->Seed % 7u + 3u });
+		DrawRuneCircle(renderer, { .Center = summit, .Radius = relief.Ritual + 1.65f, .Color = RitualBlue * 0.85f, .Intensity = 0.7f * glow, .Spin = 0.0f, .Inner = (relief.Ritual + 0.95f) / (relief.Ritual + 1.65f), .Seed = level->Seed % 5u + 11u });
+		if (m_RitualPulse > 0.0f)
+			DrawBolt(renderer, summit + glm::vec3(1.2f, 26.0f, -0.8f), summit + glm::vec3(0.0f, SpireTop, 0.0f), uint32_t(m_LastSpireStrike * 977.0f) + uint32_t(m_Time * 24.0f) * 40503u, 1.8f, 0.16f, glm::vec3(1.6f, 1.9f, 2.4f) * (0.5f + 1.5f * m_RitualPulse));
+		if (!live)
+			return;
+		for (const LightningBolt& bolt : BoltsOf(brawl.Plan))
+		{
+			const float until = bolt.Time - clock;
+			const glm::vec3 point = Ground(bolt.Center);
+			const uint32_t seed = BoltSeed(bolt);
+			if (until > 0.0f && until <= BoltWarning)
+			{
+				const float progress = 1.0f - until / BoltWarning;
+				GroundDecal charge;
+				charge.Center = point;
+				charge.Extent = glm::vec2(BoltRadius / 0.86f);
+				charge.Depth = 1.4f;
+				charge.Shape = DecalShape::Charge;
+				charge.Color = glm::vec4(BoltBlue * (0.7f + 1.5f * progress), 1.0f);
+				charge.Tint = glm::vec4(0.04f, 0.06f, 0.11f, 0.7f);
+				charge.Roughness = 0.35f;
+				charge.Params = glm::vec4(progress, 0.0f, 0.0f, 0.0f);
+				charge.Seed = seed;
+				renderer.DrawDecal(charge);
+				if (until < 0.35f)
+					DrawBeam(renderer, point, 16.0f, 0.03f + 0.07f * (1.0f - until / 0.35f), BoltBlue * 0.9f, 0.35f);
+			}
+			else if (until <= 0.0f && until > -BoltFlash)
+			{
+				const float fade = 1.0f + until / BoltFlash;
+				DrawBolt(renderer, point + glm::vec3(0.9f, 24.0f, -0.7f), point + glm::vec3(0.0f, 0.05f, 0.0f), seed + uint32_t(m_Time * 30.0f) * 40503u, 1.7f, 0.15f, glm::vec3(1.6f, 1.9f, 2.4f) * (0.6f + 1.4f * fade));
+				DrawGlow(renderer, point + glm::vec3(0.0f, 0.6f, 0.0f), 2.8f * fade + 0.4f, BoltBlue * (2.2f * fade));
+				DrawGroundRing(renderer, point, BoltRadius * (0.5f + 1.3f * (1.0f - fade)), BoltBlue, 1.6f * fade, 0.09f);
+			}
+			if (until <= 0.0f && until > -ScorchSeconds)
+			{
+				const float heat = 1.0f + until / ScorchSeconds;
+				GroundDecal scorch;
+				scorch.Center = point;
+				scorch.Extent = glm::vec2(BoltRadius * 0.85f);
+				scorch.Depth = 1.2f;
+				scorch.Shape = DecalShape::Scorch;
+				scorch.Color = glm::vec4(BoltBlue * 1.4f, 1.0f);
+				scorch.Tint = glm::vec4(0.03f, 0.03f, 0.035f, 0.75f * heat);
+				scorch.Roughness = 0.85f;
+				scorch.Params = glm::vec4(heat * heat, 0.0f, 0.0f, 0.0f);
+				scorch.Seed = seed;
+				renderer.DrawDecal(scorch);
+			}
+		}
+		const StormRing ring = RingAt(brawl.Plan, clock);
+		if (!ring.Active || ring.Radius <= 0.05f)
+			return;
+		const glm::vec3 middle(ring.Center.x, summit.y - 1.5f, ring.Center.y);
+		GroundDecal edge;
+		edge.Center = middle;
+		edge.Extent = glm::vec2(ring.Radius + 0.6f);
+		edge.Depth = 4.0f;
+		edge.Shape = DecalShape::Ring;
+		edge.Color = glm::vec4(StormViolet * 1.4f, 1.0f);
+		edge.Tint = glm::vec4(0.0f);
+		edge.Params = glm::vec4(0.12f, 0.0f, 0.0f, ring.Radius / (ring.Radius + 0.6f));
+		edge.Seed = 2;
+		renderer.DrawDecal(edge);
+		const Vec2 focus = { m_CameraTarget.x, m_CameraTarget.z };
+		const uint32_t beat = uint32_t(m_Time * 3.0f);
+		const uint32_t count = std::clamp(uint32_t(2.0f * Pi * ring.Radius / RingSegment), 8u, 256u);
+		for (uint32_t k = 0; k < 2; k++)
+		{
+			const uint32_t pick = (beat * 2654435761u + k * 40503u) % count;
+			const float angle = 2.0f * Pi * float(pick) / float(count);
+			const Vec2 a = ring.Center + FromAngle(angle) * ring.Radius;
+			const Vec2 b = ring.Center + FromAngle(angle + RingSegment * 2.5f / ring.Radius) * ring.Radius;
+			if (LengthSquared(a - focus) > 22.0f * 22.0f)
+				continue;
+			const float flicker = std::fmod(m_Time * 3.0f, 1.0f) < 0.25f ? 1.0f : 0.0f;
+			if (flicker > 0.0f)
+				DrawBolt(renderer, Ground(a, 2.4f), Ground(b, 0.3f), beat * 7919u + k, 0.6f, 0.06f, StormViolet * 1.6f, 0.3f);
+		}
 	}
 
 	void SessionState::DrawBrawlPlayer(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
@@ -424,6 +707,74 @@ namespace Game
 		}
 	}
 
+	void SessionState::DrawSkyWarnings()
+	{
+		const Level* level = m_Client.GetLevel();
+		if (!level || !level->Skyborne || m_Client.GetSession().Mode != GameMode::Brawl)
+			return;
+		const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+		if (brawl.Phase != BrawlPhase::Fight)
+			return;
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const float clock = m_Client.GetArenaClock(m_Client.GetPresentTick());
+		const Gust gust = GustAt(brawl.Plan, clock);
+		if (gust.Warning > 0.0f)
+		{
+			const glm::vec3 from = Ground(Vec2(m_CameraTarget.x, m_CameraTarget.z));
+			const std::optional<glm::vec2> a = ProjectToScreen(from);
+			const std::optional<glm::vec2> b = ProjectToScreen(from + glm::vec3(gust.Direction.x, 0.0f, gust.Direction.y));
+			const float fade = std::min(gust.Warning * 2.0f, 1.0f) * (gust.Strength > 0.0f ? 0.55f + 0.45f * gust.Strength : 1.0f);
+			const char* label = gust.Strength > 0.0f ? "Gust!" : "A gust is coming";
+			const float y = ui.GetSize().y * 0.15f;
+			draw.TextAligned({ 0.0f, y - 12.0f, ui.GetSize().x * 0.5f - 6.0f, 24.0f }, label, Theme::Bold(18.0f, Hex(0xEAF5FF, fade)), { 1.0f, 0.5f });
+			if (a && b && glm::length(*b - *a) > 1.0f)
+			{
+				const glm::vec2 heading = glm::normalize(ui.ToLogical(*b) - ui.ToLogical(*a));
+				const float pulse = gust.Strength > 0.0f ? 1.0f : 0.75f + 0.25f * std::sin(m_Time * 9.0f);
+				const glm::vec2 middle = { ui.GetSize().x * 0.5f + 40.0f, y };
+				draw.Circle(middle, 26.0f, Rgba(0.05f, 0.08f, 0.16f, 0.35f * fade));
+				for (int32_t i = -1; i <= 1; i++)
+					draw.Triangle(middle + heading * (float(i) * 12.0f), { 14.0f, 11.0f }, std::atan2(heading.x, -heading.y), Hex(0xEAF5FF, fade * pulse * (0.45f + 0.25f * float(i + 1))));
+			}
+		}
+		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
+		if (!self || !m_Client.GetPredictedState().Alive || m_Client.GetPredictedState().IsFalling())
+			return;
+		const float throb = 0.7f + 0.3f * std::sin(m_Time * 7.0f);
+		const bool peak = level->Kind == MapKind::StormPeak;
+		if (peak && brawl.Phase == BrawlPhase::Fight)
+		{
+			const StormRing ring = RingAt(brawl.Plan, clock + RingLead);
+			if (ring.Active && Length(self->Position - ring.Center) > ring.Radius - 0.6f && !self->Has(EntityFlags::Burning))
+			{
+				const float y = ui.GetSize().y * 0.15f;
+				draw.TextAligned({ 0.0f, y - 12.0f, ui.GetSize().x * 0.5f - 6.0f, 24.0f }, "Get inside the circle", Theme::Bold(18.0f, Hex(0xC9D8FF)), { 1.0f, 0.5f });
+				const std::optional<glm::vec2> from = ProjectToScreen(Ground(self->Position));
+				const std::optional<glm::vec2> to = ProjectToScreen(Ground(ring.Center));
+				if (from && to && glm::length(*to - *from) > 1.0f)
+				{
+					const glm::vec2 heading = glm::normalize(ui.ToLogical(*to) - ui.ToLogical(*from));
+					const glm::vec2 middle = { ui.GetSize().x * 0.5f + 40.0f, y };
+					draw.Circle(middle, 26.0f, Rgba(0.05f, 0.06f, 0.16f, 0.45f));
+					for (int32_t i = -1; i <= 1; i++)
+						draw.Triangle(middle + heading * (float(i) * 12.0f), { 14.0f, 11.0f }, std::atan2(heading.x, -heading.y), Hex(0xC9D8FF, 0.45f + 0.25f * float(i + 1)));
+				}
+			}
+			if (BoltThreat(brawl.Plan, self->Position, clock, 0.2f))
+			{
+				draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.3f, 0.45f, 0.9f, 0.06f), .Glow = Rgba(0.55f, 0.75f, 1.0f, 0.55f * throb), .GlowSize = 160.0f });
+				draw.TextAligned({ 0.0f, ui.GetSize().y * 0.2f, ui.GetSize().x, 24.0f }, "Lightning! Move", Theme::Bold(18.0f, Hex(0xCFE4FF)), { 0.5f, 0.5f });
+				return;
+			}
+		}
+		const float left = GroundLeft(*level, brawl.Plan, clock, self->Position);
+		if (left <= 0.0f || left > CollapseWarning)
+			return;
+		draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.45f, 0.6f, 0.9f, 0.05f), .Glow = Rgba(0.8f, 0.9f, 1.0f, 0.45f * throb), .GlowSize = 160.0f });
+		draw.TextAligned({ 0.0f, ui.GetSize().y * 0.2f, ui.GetSize().x, 24.0f }, peak ? "The ground is giving way! Move" : TermsFor(level->Kind).Danger, Theme::Bold(18.0f, Hex(0xEAF5FF)), { 0.5f, 0.5f });
+	}
+
 	void SessionState::DrawLavaWarning()
 	{
 		if (m_Client.GetSession().Mode != GameMode::Brawl || !m_Client.GetPredictedState().Alive)
@@ -437,9 +788,11 @@ namespace Game
 		const MapKind map = m_Client.GetSession().Map;
 		if (map == MapKind::FrozenLake)
 			draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.0f, 0.08f, 0.2f, 0.08f), .Glow = Rgba(0.35f, 0.75f, 1.0f, 0.5f * throb), .GlowSize = 160.0f });
+		else if (map == MapKind::StormPeak)
+			draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.05f, 0.04f, 0.18f, 0.12f), .Glow = Rgba(0.45f, 0.5f, 1.0f, 0.55f * throb), .GlowSize = 160.0f });
 		else
 			draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.4f, 0.08f, 0.0f, 0.07f), .Glow = Rgba(1.0f, 0.3f, 0.05f, 0.55f * throb), .GlowSize = 160.0f });
-		draw.TextAligned({ 0.0f, ui.GetSize().y * 0.2f, ui.GetSize().x, 24.0f }, TermsFor(map).Danger, Theme::Bold(18.0f, map == MapKind::FrozenLake ? Hex(0xA8E4FF) : Hex(0xFFC08A)), { 0.5f, 0.5f });
+		draw.TextAligned({ 0.0f, ui.GetSize().y * 0.2f, ui.GetSize().x, 24.0f }, TermsFor(map).Danger, Theme::Bold(18.0f, map == MapKind::FrozenLake ? Hex(0xA8E4FF) : map == MapKind::StormPeak ? Hex(0xC9D8FF) : Hex(0xFFC08A)), { 0.5f, 0.5f });
 	}
 
 	void SessionState::UpdateBrawlFeedback()
@@ -461,11 +814,14 @@ namespace Game
 		if (brawl.Phase == m_SeenBrawlPhase && brawl.Round == m_SeenRound)
 			return;
 		const uint32_t self = m_Client.GetPlayerId();
+		const bool teams = m_Client.GetSession().Rules.Teams >= 2;
 		switch (brawl.Phase)
 		{
 		case BrawlPhase::Fight:
 			m_BannerTitle = Format("Round %u", unsigned(brawl.Round));
-			if (m_Client.GetSession().Rules.Mode == BrawlMode::Damage)
+			if (teams)
+				m_BannerText = m_Client.GetSession().Rules.Mode == BrawlMode::Damage ? (brawl.Round == brawl.Rounds ? "The last round. Be the last team standing" : "Be the last team standing") : Format(brawl.Round == brawl.Rounds ? "The last round. Shove the other teams into the %s" : "Shove the other teams into the %s", TermsFor(status.Map).Hazard);
+			else if (m_Client.GetSession().Rules.Mode == BrawlMode::Damage)
 				m_BannerText = brawl.Round == brawl.Rounds ? "The last round. Outlast them all" : "Outlast them all";
 			else
 				m_BannerText = Format(brawl.Round == brawl.Rounds ? "The last round. Shove them all into the %s" : "Shove them into the %s", TermsFor(status.Map).Hazard);
@@ -474,12 +830,25 @@ namespace Game
 			audio.PlayEvent(AudioEvent::FightStart);
 			break;
 		case BrawlPhase::Over:
-			m_BannerTitle = brawl.RoundWinner == self ? "Round Won" : brawl.RoundWinner == NoPlayer ? "No Survivors" : PlayerName(brawl.RoundWinner);
-			m_BannerText = brawl.RoundWinner == self ? Format("+%u points", unsigned(WinPoints(m_Client.GetSession().Rules.Mode))) : brawl.RoundWinner == NoPlayer ? Format("The %s took everyone", TermsFor(status.Map).Place) : Format("takes round %u", unsigned(brawl.Round));
-			m_BannerColor = brawl.RoundWinner == self ? Hex(0xFFD36A) : Hex(0xC8C0B4);
+		{
+			const bool won = WonBrawlRound(self);
+			if (teams)
+			{
+				const bool nobody = brawl.RoundTeam >= MaxTeams;
+				m_BannerTitle = won ? "Round Won" : nobody ? "No Survivors" : std::string(GetTeamName(brawl.RoundTeam)) + " Team";
+				m_BannerText = won ? Format("Your team takes round %u", unsigned(brawl.Round)) : nobody ? Format("The %s took everyone", TermsFor(status.Map).Place) : Format("takes round %u", unsigned(brawl.Round));
+				m_BannerColor = won ? Hex(0xFFD36A) : nobody ? Hex(0xC8C0B4) : Lighten(WithAlpha(TeamColor(brawl.RoundTeam)), 0.35f);
+			}
+			else
+			{
+				m_BannerTitle = won ? "Round Won" : brawl.RoundWinner == NoPlayer ? "No Survivors" : PlayerName(brawl.RoundWinner);
+				m_BannerText = won ? Format("+%u points", unsigned(WinPoints(m_Client.GetSession().Rules.Mode))) : brawl.RoundWinner == NoPlayer ? Format("The %s took everyone", TermsFor(status.Map).Place) : Format("takes round %u", unsigned(brawl.Round));
+				m_BannerColor = won ? Hex(0xFFD36A) : Hex(0xC8C0B4);
+			}
 			m_BannerTime = 3.5f;
-			audio.PlayEvent(brawl.RoundWinner == self ? AudioEvent::RoundWon : AudioEvent::RoundLost);
+			audio.PlayEvent(won ? AudioEvent::RoundWon : AudioEvent::RoundLost);
 			break;
+		}
 		case BrawlPhase::Pick:
 			m_LoadoutOpen = true;
 			m_ChosenCard.reset();
@@ -527,7 +896,10 @@ namespace Game
 				subtitle = Format("Round %u of %u   %u of %u still standing", unsigned(brawl.Round), unsigned(brawl.Rounds), unsigned(status.Alive), unsigned(status.Entrants));
 				break;
 			case BrawlPhase::Over:
-				subtitle = brawl.RoundWinner == NoPlayer ? Format("Nobody survived round %u", unsigned(brawl.Round)) : brawl.RoundWinner == self ? Format("You won round %u", unsigned(brawl.Round)) : PlayerName(brawl.RoundWinner) + Format(" takes round %u", unsigned(brawl.Round));
+				if (m_Client.GetSession().Rules.Teams >= 2)
+					subtitle = brawl.RoundTeam >= MaxTeams ? Format("Nobody survived round %u", unsigned(brawl.Round)) : WonBrawlRound(self) ? Format("Your team won round %u", unsigned(brawl.Round)) : Format("The %s team takes round %u", GetTeamName(brawl.RoundTeam), unsigned(brawl.Round));
+				else
+					subtitle = brawl.RoundWinner == NoPlayer ? Format("Nobody survived round %u", unsigned(brawl.Round)) : brawl.RoundWinner == self ? Format("You won round %u", unsigned(brawl.Round)) : PlayerName(brawl.RoundWinner) + Format(" takes round %u", unsigned(brawl.Round));
 				subtitleColor = Theme::Gold;
 				break;
 			case BrawlPhase::Pick:
@@ -543,26 +915,55 @@ namespace Game
 		draw.TextAligned({ 0.0f, 16.0f, width, 34.0f }, title, titleStyle, { 0.5f, 0.5f });
 		DrawTitleOrnament(center, 32.0f, titleWidth);
 		draw.TextAligned({ 0.0f, 54.0f, width, 22.0f }, subtitle, Theme::Floating(16.0f, subtitleColor, UiFont::Body), { 0.5f, 0.5f });
+		const uint8_t teams = m_Client.GetSession().Rules.Teams;
+		float pillY = 97.0f;
+		if (teams >= 2)
+		{
+			const uint8_t mine = m_Client.GetTeam(self);
+			constexpr float Chip = 112.0f;
+			constexpr float Gap = 8.0f;
+			const float total = float(teams) * Chip + float(teams - 1) * Gap;
+			for (uint8_t team = 0; team < teams; team++)
+			{
+				const UiRect box{ center - total * 0.5f + float(team) * (Chip + Gap), 80.0f, Chip, 26.0f };
+				const UiColor color = WithAlpha(TeamColor(team));
+				draw.Rect(box, { .Fill = WithAlpha(Darken(color, 0.7f), 0.85f), .Border = team == mine ? Lighten(color, 0.35f) : WithAlpha(color, 0.6f), .BorderWidth = team == mine ? 1.8f : 1.0f, .Chamfer = 7.0f });
+				draw.TextAligned(box.Shrink(10.0f, 0.0f), GetTeamName(team), Theme::Bold(14.0f, Lighten(color, 0.45f)), { 0.0f, 0.5f });
+				draw.TextAligned(box.Shrink(10.0f, 0.0f), std::to_string(status.TeamScores[team]), Theme::Title(19.0f), { 1.0f, 0.5f });
+			}
+			pillY += 30.0f;
+		}
 		if (status.Match == MatchPhase::Ended)
 			return;
 
 		std::string line;
 		UiColor color = status.Map == MapKind::FrozenLake ? Hex(0x9BE7FF) : Hex(0xFFB27A);
-		if (IsChoosing(status))
+		if (m_Client.IsSpectating())
+		{
+			line = !m_Client.GetPredictedState().Alive && m_Client.GetLocalPlayer().Watching != NoPlayer ? "Spectating " + PlayerName(m_Client.GetLocalPlayer().Watching) + ", click to switch" : std::string("Spectating");
+			color = Theme::Astral;
+		}
+		else if (IsChoosing(status))
 		{
 			line = Format("%u of %u ready", unsigned(brawl.Ready), unsigned(std::max<uint8_t>(brawl.Players, 1)));
 			if (!m_LoadoutOpen)
-				line += "   Tab opens your spellbook";
+				line += "   I opens your spellbook";
 			color = Theme::AccentLight;
 		}
+		else if (brawl.Phase == BrawlPhase::Fight && brawl.Plan.Steady)
+			line = brawl.Plan.Shape == BrawlShape::Peak ? "The storm holds off this match" : std::string("The ") + TermsFor(status.Map).Floor + " holds this match";
 		else if (brawl.Phase == BrawlPhase::Fight)
 		{
 			const float final = FinalCollapse(brawl.Plan);
 			const BrawlTerms& terms = TermsFor(status.Map);
-			if (brawl.Clock < CollapseGrace)
+			const bool peak = brawl.Plan.Shape == BrawlShape::Peak;
+			const float grace = peak ? RingStart : CollapseGrace;
+			if (peak && brawl.Clock < RingStart - RingWarning)
+				line = "Lightning hunts anyone who stands still";
+			else if (brawl.Clock < grace)
 			{
-				const std::string left = Seconds(CollapseGrace - brawl.Clock);
-				line = std::string("The ") + terms.Floor + " holds for " + left + (left == "1" ? " more second" : " more seconds");
+				const std::string left = Seconds(grace - brawl.Clock);
+				line = peak ? "The storm closes in " + left + (left == "1" ? " second" : " seconds") : std::string("The ") + terms.Floor + " holds for " + left + (left == "1" ? " more second" : " more seconds");
 			}
 			else if (brawl.Clock < final)
 				line = terms.Breaking;
@@ -576,10 +977,11 @@ namespace Game
 		{
 			const TextStyle style = Theme::Floating(15.0f, color, UiFont::Bold);
 			const float lineWidth = draw.MeasureWidth(line, style) + 54.0f;
-			const UiRect pill = UiRect::Centered({ center, 97.0f }, { lineWidth, 28.0f });
+			const UiRect pill = UiRect::Centered({ center, pillY }, { lineWidth, 28.0f });
 			const bool frozen = status.Map == MapKind::FrozenLake;
-			draw.Rect(pill, { .Fill = frozen ? Rgba(0.03f, 0.08f, 0.16f, 0.78f) : Rgba(0.16f, 0.05f, 0.03f, 0.78f), .Border = WithAlpha(color, 0.7f), .BorderWidth = 1.0f, .Chamfer = 8.0f });
-			draw.Icon(IsChoosing(status) ? UiIcon::ScrollUnfurled : frozen ? UiIcon::Snowflake : UiIcon::Fireball, { pill.X + 10.0f, pill.Center().y - 9.0f, 18.0f, 18.0f }, { .Color = color });
+			const bool watching = m_Client.IsSpectating();
+			draw.Rect(pill, { .Fill = watching ? Rgba(0.04f, 0.06f, 0.12f, 0.8f) : frozen ? Rgba(0.03f, 0.08f, 0.16f, 0.78f) : Rgba(0.16f, 0.05f, 0.03f, 0.78f), .Border = WithAlpha(color, 0.7f), .BorderWidth = 1.0f, .Chamfer = 8.0f });
+			draw.Icon(watching ? UiIcon::Eye : IsChoosing(status) ? UiIcon::ScrollUnfurled : frozen ? UiIcon::Snowflake : status.Map == MapKind::StormPeak ? UiIcon::LightningArc : UiIcon::Fireball, { pill.X + 10.0f, pill.Center().y - 9.0f, 18.0f, 18.0f }, { .Color = color });
 			draw.TextAligned({ pill.X + 34.0f, pill.Y, pill.W - 44.0f, pill.H }, line, style, { 0.0f, 0.5f });
 		}
 		if (brawl.Phase == BrawlPhase::Countdown && brawl.Timer > 0.0f)
@@ -603,6 +1005,8 @@ namespace Game
 			news.Age += dt;
 		std::erase_if(m_ApexNews, [](const CardNews& news) { return news.Age > ApexNewsSeconds; });
 		const uint32_t self = m_Client.GetPlayerId();
+		const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+		const bool drafting = brawl.Phase == BrawlPhase::Draft || (brawl.Phase == BrawlPhase::Countdown && brawl.Round == 0);
 		for (const PlayerInfo& player : m_Client.GetPlayers())
 		{
 			if (player.PlayerId >= MaxPlayers)
@@ -613,7 +1017,7 @@ namespace Game
 				{
 					if (!HasCard(fresh, CardId(bit)))
 						continue;
-					if (IsApex(CardId(bit)))
+					if (IsApex(CardId(bit)) && !drafting)
 					{
 						m_ApexNews.push_back({ player.PlayerId, CardId(bit), 0.0f });
 						m_App.GetGameAudio().PlayEvent(AudioEvent::ApexClaimed);
@@ -854,7 +1258,7 @@ namespace Game
 	bool SessionState::CanEditSpells() const
 	{
 		const SessionInfo& session = m_Client.GetSession();
-		return (session.Mode == GameMode::Brawl && IsChoosing(m_Client.GetStatus())) || (session.Mode == GameMode::Hub && m_Station == StationKind::Spellbook);
+		return (session.Mode == GameMode::Brawl && IsChoosing(m_Client.GetStatus()) && !session.Rules.RandomSpells) || (session.Mode == GameMode::Hub && m_Station == StationKind::Spellbook);
 	}
 
 	void SessionState::DrawDraggedSpell()
@@ -878,15 +1282,18 @@ namespace Game
 	{
 		const GameStatus& status = m_Client.GetStatus();
 		const LocalPlayerState& local = m_Client.GetLocalPlayer();
-		if (!IsChoosing(status) || !local.Valid || m_Paused)
+		if (!IsChoosing(status) || !local.Valid || m_Paused || m_Client.IsSpectating())
 			return;
 		Ui& ui = m_App.GetUi();
 		const BrawlStatus& brawl = status.Brawl;
 		const BrawlLoadout& loadout = local.Brawl;
+		const MatchRules& rules = m_Client.GetSession().Rules;
 		const bool picking = brawl.Phase == BrawlPhase::Pick;
 		const uint32_t self = m_Client.GetPlayerId();
-		const bool champion = picking && brawl.RoundWinner == self;
-		const bool offered = picking && loadout.OfferPending && !m_ChosenCard;
+		const bool champion = picking && !rules.WinnerCard && WonBrawlRound(self);
+		const bool cardsUp = loadout.Offer[0] != CardId::Count && (loadout.OfferPending || m_ChosenCard.has_value());
+		const bool apexPick = !picking && cardsUp;
+		const bool offered = loadout.OfferPending && !m_ChosenCard;
 		if (offered && !m_App.UiWantsKeyboard())
 			for (uint32_t i = 0; i < CardChoices; i++)
 				if (Rdn::Input::IsKeyPressed(CardKeys[i]) && loadout.Offer[i] != CardId::Count)
@@ -916,23 +1323,31 @@ namespace Game
 		heading.Color = Theme::GoldLight;
 		heading.ColorBottom = Theme::Gold;
 		std::string title = "READY CHECK";
-		std::string hint = "These are the spells from your Emberhold Spellbook. Drag a different one onto a key below if you want, then ready up.";
+		std::string hint = rules.RandomSpells ? "Random spells: everyone gets three new spells when each round starts. Ready up when you are." : "These are the spells from your Emberhold Spellbook. Drag a different one onto a key below if you want, then ready up.";
 		if (champion)
 		{
 			title = "CHAMPION";
-			hint = Format("You won round %u. No card for the champion, the others are choosing theirs.", unsigned(brawl.Round));
+			hint = rules.Teams >= 2 ? Format("Your team won round %u. The winners sit this pick out, the others are choosing their cards.", unsigned(brawl.Round)) : Format("You won round %u. No card for the champion, the others are choosing theirs.", unsigned(brawl.Round));
 		}
-		else if (picking && loadout.OfferPending && !m_ChosenCard)
+		else if (apexPick)
+		{
+			title = offered ? "CHOOSE YOUR APEX" : "APEX TAKEN";
+			hint = offered ? "Every mage starts this match with an apex card, and it lasts all match. Press 1, 2 or 3." : rules.RandomSpells ? "It lasts for the whole match. Ready up when you are." : "It lasts for the whole match. Check your spells below, then ready up.";
+		}
+		else if (picking && offered)
 		{
 			title = "CHOOSE A CARD";
-			hint = "Upgrades change how one of your spells works. Wild cards bend the rules. Press 1, 2 or 3.";
+			hint = WonBrawlRound(self) ? "You won the round, and the winner picks a card too. Press 1, 2 or 3." : "Upgrades change how one of your spells works. Wild cards bend the rules. Press 1, 2 or 3.";
 		}
 		else if (picking)
 		{
 			title = m_ChosenCard ? "CARD TAKEN" : "BETWEEN ROUNDS";
-			hint = m_ChosenCard ? "It lasts for the rest of the match. Swap spells below if you like, then ready up." : "No cards left to offer. Swap spells below if you like, then ready up.";
+			if (rules.RandomSpells)
+				hint = m_ChosenCard ? "It lasts for the rest of the match. New spells come with the next round." : "No cards left to offer. New spells come with the next round.";
+			else
+				hint = m_ChosenCard ? "It lasts for the rest of the match. Swap spells below if you like, then ready up." : "No cards left to offer. Swap spells below if you like, then ready up.";
 		}
-		if (picking && !champion && loadout.Offer[0] != CardId::Count && (loadout.OfferPending || m_ChosenCard))
+		if ((picking || apexPick) && !champion && cardsUp)
 		{
 			constexpr float Gap = 40.0f;
 			m_CardReveal += ui.GetDeltaTime();
@@ -969,21 +1384,34 @@ namespace Game
 		}
 		else if (!picking)
 		{
-			const UiRect rules = UiRect::Centered({ center, cardsTop + cardHeight * 0.4f }, { std::min(size.x - 80.0f, 720.0f), 118.0f });
-			ui.Panel(rules, 12.0f);
-			UiRect text = rules.Shrink(22.0f, 18.0f);
+			const BrawlTerms& terms = TermsFor(m_Client.GetSession().Map);
+			const bool damage = rules.Mode == BrawlMode::Damage;
+			std::string scoring;
+			if (rules.Teams >= 2)
+				scoring = std::string(damage ? terms.DamageRules : terms.Rules) + Format(" The last team standing wins the round, and every mage on it scores %u. A kill adds 1. The team that wins the most rounds wins the match.", unsigned(RoundWinPoints));
+			else if (damage)
+				scoring = std::string(terms.DamageRules) + Format(" Last mage standing scores %u, second %u, third %u. A kill adds 1 for whoever dealt the victim the most damage in the last %.0f seconds.", unsigned(PlacementPoints[0]), unsigned(PlacementPoints[1]), unsigned(PlacementPoints[2]), double(DamageCreditSeconds));
+			else
+				scoring = std::string(terms.Rules) + " Last mage standing wins the round: 3 points, plus 1 for every rival you knock out.";
+			scoring += rules.WinnerCard ? " After each round, everyone picks a card." : " After each round, everyone but the winner picks a card.";
+			if (const std::string custom = CustomSummary(rules); !custom.empty())
+				scoring += " This match: " + custom + ".";
+			const TextStyle body = Theme::Body(14.5f, Theme::Text);
+			const float panelWidth = std::min(size.x - 80.0f, 720.0f);
+			const float lines = std::ceil(draw.MeasureWidth(scoring, body) / (panelWidth - 44.0f) + 0.35f);
+			const UiRect panel = UiRect::Centered({ center, cardsTop + cardHeight * 0.4f }, { panelWidth, 52.0f + 20.0f * lines });
+			ui.Panel(panel, 12.0f);
+			UiRect text = panel.Shrink(22.0f, 18.0f);
 			TextStyle labelStyle = Theme::Bold(12.0f, Theme::Muted);
 			labelStyle.Tracking = 1.6f;
 			draw.TextAligned(text.CutTop(16.0f), "HOW IT WORKS", labelStyle, { 0.5f, 0.5f });
 			text.CutTop(8.0f);
-			const BrawlTerms& terms = TermsFor(m_Client.GetSession().Map);
-			const std::string scoring = m_Client.GetSession().Rules.Mode == BrawlMode::Damage ? std::string(terms.DamageRules) + Format(" Last mage standing scores %u, second %u, third %u. A kill adds 1 for whoever dealt the victim the most damage in the last %.0f seconds.", unsigned(PlacementPoints[0]), unsigned(PlacementPoints[1]), unsigned(PlacementPoints[2]), double(DamageCreditSeconds)) : std::string(terms.Rules) + " Last mage standing wins the round: 3 points, plus 1 for every rival you knock out.";
-			draw.TextWrapped(text, scoring + " After each round, everyone but the winner picks a card.", Theme::Body(14.5f, Theme::Text), 0.5f, 1.05f);
+			draw.TextWrapped(text, scoring, body, 0.5f, 1.05f);
 		}
 		draw.TextAligned({ 0.0f, headingY, size.x, 40.0f }, title, heading, { 0.5f, 0.5f });
 		draw.TextAligned({ 0.0f, headingY + 36.0f, size.x, 22.0f }, hint, Theme::Floating(15.5f, Theme::Text, UiFont::Body), { 0.5f, 0.5f });
 
-		if (picking)
+		if (picking || apexPick)
 		{
 			std::string line;
 			for (auto news = m_CardNews.rbegin(); news != m_CardNews.rend() && line.size() < 120; ++news)
@@ -999,7 +1427,9 @@ namespace Game
 					names += (i == 0 ? "" : i + 1 == std::min<size_t>(waiting.size(), 3) ? " and " : ", ") + waiting[i];
 				line += (line.empty() ? "Still choosing: " : "   \xC2\xB7   Still choosing: ") + names;
 			}
-			if (brawl.RoundWinner != NoPlayer && brawl.RoundWinner != self)
+			if (picking && !rules.WinnerCard && brawl.RoundTeam < MaxTeams && !WonBrawlRound(self))
+				line += (line.empty() ? "" : "   \xC2\xB7   ") + std::string("The ") + GetTeamName(brawl.RoundTeam) + " team won the round and sits this pick out";
+			else if (picking && !rules.WinnerCard && brawl.RoundWinner != NoPlayer && brawl.RoundWinner != self)
 				line += (line.empty() ? "" : "   \xC2\xB7   ") + PlayerName(brawl.RoundWinner) + " won the round and gets no card";
 			draw.TextAligned({ 0.0f, feedY, size.x, 20.0f }, line, Theme::Floating(14.5f, Theme::AccentLight, UiFont::Body), { 0.5f, 0.5f });
 		}
@@ -1016,6 +1446,18 @@ namespace Game
 		const std::string waiting = !picking && brawl.Players < 2 ? std::string("Waiting for a rival. Ready starts a round on your own") : Format("%u of %u ready, %s in %s s", unsigned(brawl.Ready), unsigned(std::max<uint8_t>(brawl.Players, 1)), picking ? "next round" : "first round", Seconds(brawl.Timer).c_str());
 		draw.TextWrapped(row.Shrink(6.0f, 4.0f), waiting, Theme::Body(13.5f, Theme::Muted), 1.0f);
 
+		if (rules.RandomSpells)
+		{
+			ui.Panel(strip, 12.0f);
+			UiRect text = strip.Shrink(20.0f, 14.0f);
+			draw.Icon(UiIcon::UnstableOrb, text.CutLeft(52.0f).Shrink(0.0f, 6.0f), { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
+			text.CutLeft(14.0f);
+			TextStyle label = Theme::Bold(12.0f, Theme::Gold);
+			label.Tracking = 1.6f;
+			draw.TextAligned(text.CutTop(18.0f), "RANDOM SPELLS", label, { 0.0f, 0.5f });
+			draw.TextWrapped(text, "Everyone gets three new spells when each round starts, bots included. Your spellbook comes back after the match.", Theme::Body(14.5f, Theme::Text));
+			return;
+		}
 		DrawSpellStrip(strip);
 		DrawDraggedSpell();
 	}
@@ -1146,23 +1588,135 @@ namespace Game
 	{
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
-		const int limit = std::max(int(MaxPlayers) - std::max(int(m_Client.GetPlayers().size()), 1), 0);
-		int bots = std::min(int(m_BrawlRules.Bots), limit);
+		TidyBrawlSeats();
+		uint32_t humans = 0;
+		for (const PlayerInfo& player : m_Client.GetPlayers())
+			humans += player.Bot ? 0u : 1u;
+		const int limit = std::max(int(MaxPlayers) - std::max(int(humans), 1), 0);
+		const bool teams = m_BrawlRules.Teams >= 2;
+		int bots = std::min(int(CountRuleBots(m_BrawlRules)), limit);
+		const int before = bots;
+		StepRow(ui, area, Ui::MakeId("botcount"), bots, { .Label = "Bots", .Value = bots == 0 ? std::string("None") : std::to_string(bots), .Low = 0, .High = limit, .Tip = teams ? "Each new bot joins the team with the fewest mages. The Teams tab moves them around." : "Bots fill the empty seats and play like rivals." });
+		if (teams && bots != before)
+			AddBrawlBot(bots - before);
+		else if (!teams)
+			m_BrawlRules.Bots = uint8_t(std::clamp(bots, 0, limit));
 		UiRect row = area.CutTop(40.0f);
-		draw.TextAligned(row.CutLeft(150.0f), "Bots", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
-		if (ui.Button(Ui::MakeId("botcount"), row.CutLeft(40.0f), "-", ButtonKind::Normal, bots > 0))
-			bots--;
-		draw.TextAligned(row.CutLeft(90.0f), bots == 0 ? std::string("None") : std::to_string(bots), Theme::Title(22.0f), { 0.5f, 0.5f });
-		if (ui.Button(Ui::MakeId("botcount") + 1, row.CutLeft(40.0f), "+", ButtonKind::Normal, bots < limit))
-			bots++;
-		m_BrawlRules.Bots = uint8_t(std::clamp(bots, 0, limit));
-		area.CutTop(6.0f);
-		row = area.CutTop(40.0f);
-		draw.TextAligned(row.CutLeft(150.0f), "Bot skill", Theme::Bold(16.0f, m_BrawlRules.Bots > 0 ? Theme::Text : Theme::Faint), { 0.0f, 0.5f });
+		draw.TextAligned(row.CutLeft(170.0f), "Bot skill", Theme::Bold(16.0f, bots > 0 ? Theme::Text : Theme::Faint), { 0.0f, 0.5f });
 		int level = std::min<int>(m_BrawlRules.BotLevel, int(BotLevels) - 1);
-		if (ui.Choice(Ui::MakeId("botlevel"), row.CutLeft(250.0f), level, BotLevelNames))
+		if (ui.Choice(Ui::MakeId("botlevel"), row.CutLeft(std::min(300.0f, row.W)), level, BotLevelNames))
 			m_BrawlRules.BotLevel = uint8_t(level);
 		area.CutTop(6.0f);
+	}
+
+	void SessionState::DrawTeamChoice(UiRect& area)
+	{
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		UiRect row = area.CutTop(40.0f);
+		draw.TextAligned(row.CutLeft(170.0f), "Teams", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
+		int choice = m_BrawlRules.Teams >= 2 ? int(m_BrawlRules.Teams) - 1 : 0;
+		if (ui.Choice(Ui::MakeId("brawlteams"), row.CutLeft(std::min(300.0f, row.W)), choice, TeamChoices))
+			SetBrawlTeams(choice == 0 ? 0 : uint8_t(choice + 1));
+		const char* blurb = m_BrawlRules.Teams >= 2 ? "Last team standing wins. Sort mages on the Teams tab." : "Every mage for themselves.";
+		draw.TextFit(area.CutTop(22.0f), blurb, Theme::Body(13.5f, Theme::Muted));
+		area.CutTop(6.0f);
+	}
+
+	std::array<uint32_t, MaxTeams> SessionState::CountTeamMembers() const
+	{
+		std::array<uint32_t, MaxTeams> members{};
+		for (const PlayerInfo& player : m_Client.GetPlayers())
+			if (!player.Bot && player.PlayerId < MaxPlayers && m_BrawlRules.Seats[player.PlayerId] < m_BrawlRules.Teams)
+				members[m_BrawlRules.Seats[player.PlayerId]]++;
+		for (uint8_t team = 0; team < m_BrawlRules.Teams; team++)
+			members[team] += m_BrawlRules.TeamBots[team];
+		return members;
+	}
+
+	void SessionState::AddBrawlBot(int delta)
+	{
+		MatchRules& rules = m_BrawlRules;
+		if (rules.Teams < 2)
+			return;
+		for (; delta > 0; delta--)
+		{
+			const std::array<uint32_t, MaxTeams> members = CountTeamMembers();
+			uint8_t smallest = 0;
+			for (uint8_t team = 1; team < rules.Teams; team++)
+				if (members[team] < members[smallest])
+					smallest = team;
+			rules.TeamBots[smallest]++;
+		}
+		for (; delta < 0; delta++)
+		{
+			const std::array<uint32_t, MaxTeams> members = CountTeamMembers();
+			uint8_t largest = NoTeam;
+			for (uint8_t team = 0; team < rules.Teams; team++)
+				if (rules.TeamBots[team] > 0 && (largest == NoTeam || members[team] >= members[largest]))
+					largest = team;
+			if (largest == NoTeam)
+				break;
+			rules.TeamBots[largest]--;
+		}
+	}
+
+	void SessionState::SetBrawlTeams(uint8_t teams)
+	{
+		MatchRules& rules = m_BrawlRules;
+		if (teams == rules.Teams)
+			return;
+		const uint32_t bots = CountRuleBots(rules);
+		rules.Teams = teams;
+		rules.TeamBots.fill(0);
+		for (uint8_t& seat : rules.Seats)
+			if (seat != SpectatorSeat && seat >= teams)
+				seat = NoTeam;
+		if (teams < 2)
+		{
+			rules.Bots = uint8_t(std::min<uint32_t>(bots, MaxBots));
+			return;
+		}
+		TidyBrawlSeats();
+		AddBrawlBot(int(bots));
+	}
+
+	void SessionState::TidyBrawlSeats()
+	{
+		MatchRules& rules = m_BrawlRules;
+		std::array<bool, MaxPlayers> here{};
+		uint32_t humans = 0;
+		for (const PlayerInfo& player : m_Client.GetPlayers())
+			if (!player.Bot && player.PlayerId < MaxPlayers)
+			{
+				here[player.PlayerId] = true;
+				humans++;
+			}
+		for (uint32_t id = 0; id < MaxPlayers; id++)
+			if (!here[id])
+				rules.Seats[id] = NoTeam;
+		const uint32_t room = MaxPlayers - std::min(std::max(humans, 1u), MaxPlayers);
+		if (rules.Teams < 2)
+		{
+			for (uint8_t& seat : rules.Seats)
+				if (seat != SpectatorSeat)
+					seat = NoTeam;
+			rules.Bots = uint8_t(std::min<uint32_t>(rules.Bots, room));
+			return;
+		}
+		for (uint32_t id = 0; id < MaxPlayers; id++)
+		{
+			if (!here[id] || rules.Seats[id] == SpectatorSeat || rules.Seats[id] < rules.Teams)
+				continue;
+			const std::array<uint32_t, MaxTeams> members = CountTeamMembers();
+			uint8_t smallest = 0;
+			for (uint8_t team = 1; team < rules.Teams; team++)
+				if (members[team] < members[smallest])
+					smallest = team;
+			rules.Seats[id] = smallest;
+		}
+		while (CountTeamBots(rules) > room)
+			AddBrawlBot(-1);
 	}
 
 	void SessionState::DrawArenaChoice(UiRect& area)
@@ -1170,11 +1724,11 @@ namespace Game
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
 		UiRect row = area.CutTop(40.0f);
-		draw.TextAligned(row.CutLeft(150.0f), "Arena", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
-		ui.Choice(Ui::MakeId("brawlarena"), row.CutLeft(std::min(330.0f, row.W)), m_BrawlArena, ArenaNames);
+		draw.TextAligned(row.CutLeft(170.0f), "Arena", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
+		ui.Choice(Ui::MakeId("brawlarena"), row.CutLeft(std::min(300.0f, row.W)), m_BrawlArena, ArenaNames);
 		const MapKind arena = ChosenArena();
-		const char* blurb = arena == MapKind::Caldera ? "A crumbling island of basalt on a lake of lava." : arena == MapKind::FrozenLake ? "Slippery ice, bouncing ice pillars and air holes in a long frozen lake." : "A different arena every match.";
-		draw.TextAligned(area.CutTop(22.0f), blurb, Theme::Body(13.5f, Theme::Muted), { 0.0f, 0.5f });
+		const char* blurb = arena == MapKind::Caldera ? "A crumbling island of basalt on a lake of lava." : arena == MapKind::FrozenLake ? "Slippery ice, bouncing pillars and growing air holes." : arena == MapKind::SkyRuins ? "Ruins over open sky: drifting islands, gusts, and a long way down." : arena == MapKind::StormPeak ? "A terraced mountain in a lightning storm. Follow the eye, mind the ledges." : "A different arena every match.";
+		draw.TextFit(area.CutTop(22.0f), blurb, Theme::Body(13.5f, Theme::Muted));
 		area.CutTop(6.0f);
 	}
 
@@ -1183,13 +1737,21 @@ namespace Game
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
 		UiRect row = area.CutTop(40.0f);
-		draw.TextAligned(row.CutLeft(150.0f), "Mode", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
+		draw.TextAligned(row.CutLeft(170.0f), "Mode", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
 		int mode = int(m_BrawlRules.Mode);
-		if (ui.Choice(Ui::MakeId("brawlmode"), row.CutLeft(std::min(330.0f, row.W)), mode, ModeNames))
+		if (ui.Choice(Ui::MakeId("brawlmode"), row.CutLeft(std::min(300.0f, row.W)), mode, ModeNames))
 			m_BrawlRules.Mode = BrawlMode(mode);
 		const char* blurb = m_BrawlRules.Mode == BrawlMode::Damage ? "Spells hurt and cost mana. Placing and kills score." : "Spells only shove. Win rounds and knock rivals out.";
-		draw.TextAligned(area.CutTop(22.0f), blurb, Theme::Body(13.5f, Theme::Muted), { 0.0f, 0.5f });
+		draw.TextFit(area.CutTop(22.0f), blurb, Theme::Body(13.5f, Theme::Muted));
 		area.CutTop(6.0f);
+	}
+
+	bool SessionState::WonBrawlRound(uint32_t playerId) const
+	{
+		const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+		if (brawl.RoundTeam < MaxTeams)
+			return playerId != NoPlayer && m_Client.GetTeam(playerId) == brawl.RoundTeam;
+		return brawl.RoundWinner != NoPlayer && brawl.RoundWinner == playerId;
 	}
 
 	BrawlMode SessionState::ShownBrawlMode() const
@@ -1205,7 +1767,7 @@ namespace Game
 
 	MapKind SessionState::ChosenArena() const
 	{
-		return m_BrawlArena == 1 ? MapKind::Caldera : m_BrawlArena == 2 ? MapKind::FrozenLake : RandomBrawlMap;
+		return m_BrawlArena == 1 ? MapKind::Caldera : m_BrawlArena == 2 ? MapKind::FrozenLake : m_BrawlArena == 3 ? MapKind::SkyRuins : m_BrawlArena == 4 ? MapKind::StormPeak : RandomBrawlMap;
 	}
 
 	std::string SessionState::EnterLabel() const
@@ -1217,9 +1779,9 @@ namespace Game
 	void SessionState::DrawCalderaGate()
 	{
 		Ui& ui = m_App.GetUi();
-		constexpr float Width = 560.0f;
-		constexpr float Height = 636.0f;
-		const UiRect home{ (ui.GetSize().x - Width) * 0.5f, std::max((ui.GetSize().y - Height) * 0.5f - 24.0f, 12.0f), Width, Height };
+		constexpr float Width = 860.0f;
+		constexpr float Height = 724.0f;
+		const UiRect home{ (ui.GetSize().x - Width) * 0.5f, std::max((ui.GetSize().y - Height) * 0.5f - 66.0f, 12.0f), Width, Height };
 		bool open = true;
 		UiRect content = ui.Window(Ui::MakeId("calderagate"), "Caldera Gate", home, &open);
 		if (!open)
@@ -1227,54 +1789,382 @@ namespace Game
 			m_Station.reset();
 			return;
 		}
+		TidyBrawlSeats();
+		ui.Tabs(Ui::MakeId("gatetabs"), content.CutTop(36.0f), m_GateTab, GateTabs);
+		content.CutTop(12.0f);
+		const UiRect footer = content.CutBottom(96.0f);
+		if (m_GateTab == 0)
+			DrawGateMatch(content);
+		else if (m_GateTab == 1)
+			DrawGateCustom(content);
+		else
+			DrawGateTeams(content);
+		DrawGateFooter(footer);
+	}
+
+	void SessionState::DrawGateMatch(UiRect area)
+	{
+		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
-		const uint32_t players = std::max<uint32_t>(uint32_t(m_Client.GetPlayers().size()), 1u);
-		const uint32_t bots = m_BrawlRules.Bots;
-		const char* pitch = m_BrawlRules.Mode == BrawlMode::Damage ? "Spells hurt and cost mana, and they still nudge. Wear your rivals down on a crumbling island over lava or on the ice of the Frozen Lake. The last mage standing takes the round." : "Spells don't hurt in a spellbrawl, they shove. Knock your rivals off a crumbling island into the lava, or through the ice of the Frozen Lake. The last mage standing takes the round.";
-		content.CutTop(draw.TextWrapped(content, pitch, Theme::Body(14.5f, Theme::Text)) + 8.0f);
-		std::string party = players == 1 && bots == 0 ? std::string("Nobody else is here yet. Add a few bots, or wait at the gate for friends to join.") : Format("%u mages will step through together.", players + bots);
-		if (bots > 0)
-			party += Format(bots == 1 ? " One of them is a bot." : " %u of them are bots.", bots);
-		content.CutTop(draw.TextWrapped(content, party, Theme::Body(14.0f, players + bots == 1 ? Theme::Muted : Theme::Success)) + 12.0f);
+		const char* pitch = m_BrawlRules.Mode == BrawlMode::Damage ? "Spells hurt and cost mana, and they still nudge. Wear your rivals down on a crumbling island over lava or on the ice of the Frozen Lake." : "Spells don't hurt in a spellbrawl, they shove. Knock your rivals off a crumbling island into the lava, or through the ice of the Frozen Lake.";
+		area.CutTop(draw.TextWrapped(area, pitch, Theme::Body(14.5f, Theme::Text)) + 12.0f);
+		constexpr float Gap = 24.0f;
+		UiRect left = area.CutLeft((area.W - Gap) * 0.5f);
+		area.CutLeft(Gap);
+		UiRect right = area;
 
-		ui.Separator(content.CutTop(20.0f), "MATCH");
-		content.CutTop(8.0f);
+		ui.Separator(left.CutTop(20.0f), "MATCH");
+		left.CutTop(8.0f);
 		int rounds = m_BrawlRules.Rounds;
-		UiRect row = content.CutTop(40.0f);
-		draw.TextAligned(row.CutLeft(150.0f), "Rounds", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
-		if (ui.Button(Ui::MakeId("gaterounds"), row.CutLeft(40.0f), "-", ButtonKind::Normal, rounds > MinBrawlRounds))
-			rounds--;
-		draw.TextAligned(row.CutLeft(90.0f), std::to_string(rounds), Theme::Title(22.0f), { 0.5f, 0.5f });
-		if (ui.Button(Ui::MakeId("gaterounds") + 1, row.CutLeft(40.0f), "+", ButtonKind::Normal, rounds < MaxBrawlRounds))
-			rounds++;
-		m_BrawlRules.Rounds = uint8_t(std::clamp(rounds, int(MinBrawlRounds), int(MaxBrawlRounds)));
-		content.CutTop(6.0f);
-		DrawModeChoice(content);
-		DrawArenaChoice(content);
-		DrawBotRules(content);
-		content.CutTop(4.0f);
+		StepRow(ui, left, Ui::MakeId("gaterounds"), rounds, { .Label = "Rounds", .Value = std::to_string(rounds), .Low = MinBrawlRounds, .High = MaxBrawlRounds, .Tip = m_BrawlRules.Teams >= 2 ? "A team match ends early once a team can't be caught." : "Everyone plays every round. Points decide the winner." });
+		m_BrawlRules.Rounds = uint8_t(rounds);
+		DrawModeChoice(left);
+		DrawArenaChoice(left);
+		DrawTeamChoice(left);
 
-		ui.Separator(content.CutTop(20.0f), "YOUR SPELLS");
-		content.CutTop(8.0f);
-		UiRect icons = content.CutTop(44.0f);
-		const BrawlSpells& spells = m_Client.GetPreferredSpells();
-		for (uint32_t slot = 0; slot <= SkillSlots; slot++)
+		ui.Separator(right.CutTop(20.0f), "BOTS");
+		right.CutTop(8.0f);
+		DrawBotRules(right);
+		right.CutTop(4.0f);
+		ui.Separator(right.CutTop(20.0f), "YOUR SPELLS");
+		right.CutTop(8.0f);
+		if (m_BrawlRules.RandomSpells)
+			right.CutTop(draw.TextWrapped(right, "Random spells are on: everyone gets three new spells when each round starts.", Theme::Body(14.0f, Theme::Gold)) + 10.0f);
+		else
 		{
-			const AbilityId spell = slot == 0 ? BrawlBasic : spells[slot - 1];
-			const UiRect icon = icons.CutLeft(44.0f);
-			icons.CutLeft(10.0f);
-			const UiColor color = WithAlpha(SkillColor(spell));
-			draw.Icon(IconFor(spell), icon, { .Color = Lighten(color, 0.5f), .ColorBottom = color, .Outline = 0.9f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.75f), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
-			if (ui.Interact(Ui::MakeId("gatespell", slot), icon).Hovered)
-				DescribeSpell(ui.Tooltip(), spell, ShownBrawlMode());
+			UiRect icons = right.CutTop(40.0f);
+			const BrawlSpells& spells = m_Client.GetPreferredSpells();
+			for (uint32_t slot = 0; slot <= SkillSlots; slot++)
+			{
+				const AbilityId spell = slot == 0 ? BrawlBasic : spells[slot - 1];
+				const UiRect icon = icons.CutLeft(40.0f);
+				icons.CutLeft(10.0f);
+				const UiColor color = WithAlpha(SkillColor(spell));
+				draw.Icon(IconFor(spell), icon, { .Color = Lighten(color, 0.5f), .ColorBottom = color, .Outline = 0.9f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.75f), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
+				if (ui.Interact(Ui::MakeId("gatespell", slot), icon).Hovered)
+					DescribeSpell(ui.Tooltip(), spell, ShownBrawlMode());
+			}
+			draw.TextFit(icons.Shrink(4.0f, 0.0f), "Change them at the spellbook", Theme::Body(13.5f, Theme::Faint));
+			right.CutTop(10.0f);
 		}
-		draw.TextAligned(icons, "Change them at the spellbook by the pit", Theme::Body(13.5f, Theme::Faint), { 0.0f, 0.5f });
-		content.CutTop(10.0f);
+		ui.Separator(right.CutTop(20.0f), "RULES");
+		right.CutTop(8.0f);
+		const std::string custom = CustomSummary(m_BrawlRules);
+		const std::string text = custom.empty() ? std::string("Standard rules. Tune life, mana, speeds, knockback and more on the Custom tab.") : "This match: " + custom + ".";
+		draw.TextWrapped(right, text, Theme::Body(14.0f, custom.empty() ? Theme::Muted : Theme::Gold));
+	}
 
-		const MatchReward reward = GetBrawlReward(true, std::max(players + bots, 2u), 15);
-		draw.TextAligned(content.CutTop(22.0f), Format("Winning with 15 points pays about %u gold", unsigned(reward.Gold)), Theme::Body(13.5f, Theme::Success), { 0.0f, 0.5f });
-		content.CutTop(8.0f);
-		if (ui.Button(Ui::MakeId("gateenter"), content.CutTop(48.0f), EnterLabel(), ButtonKind::Primary, true, UiIcon::Whirlwind))
+	void SessionState::DrawGateCustom(UiRect area)
+	{
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		MatchRules& rules = m_BrawlRules;
+		const bool damage = rules.Mode == BrawlMode::Damage;
+		area.CutTop(draw.TextWrapped(area, "Bend the rules for this match. Everyone plays by the same numbers, bots included. Hover a setting to see what it does.", Theme::Body(14.5f, Theme::Text)) + 10.0f);
+		constexpr float Gap = 24.0f;
+		UiRect left = area.CutLeft((area.W - Gap) * 0.5f);
+		area.CutLeft(Gap);
+		UiRect right = area;
+		const auto step = [&](const char* name, uint16_t& field, int low, int high, int unit, bool enabled, const char* tip, bool percent, std::string note = {})
+		{
+			int value = field;
+			if (note.empty() && value == 100)
+				note = "Default";
+			StepRow(ui, left, Ui::MakeId(name), value, { .Label = name, .Value = percent ? Percent(value) : std::to_string(value), .Low = low, .High = high, .Step = unit, .Enabled = enabled, .Note = enabled ? note : std::string(), .Tip = tip, .LabelWidth = 156.0f, .ValueWidth = 84.0f });
+			field = uint16_t(value);
+		};
+
+		ui.Separator(left.CutTop(20.0f), "MAGES");
+		left.CutTop(8.0f);
+		step("Starting life", rules.Health, MinBrawlHealth, MaxBrawlHealth, BrawlPoolStep, true, "Health every mage starts each round with. Lava and water still burn at the same rate.", false);
+		step("Starting mana", rules.Mana, MinBrawlMana, MaxBrawlMana, BrawlPoolStep, damage, "The size of every mage's mana pool. Damage mode only.", false);
+		step("Mana regen", rules.ManaRegen, 0, MaxRegenPercent, TuningStep, damage, "How fast mana comes back. At 0% the pool never refills during a round. Damage mode only.", true, Format("%.0f/s", double(BrawlManaRegen) * rules.ManaRegen / 100.0));
+		step("Movement speed", rules.MoveSpeed, MinSpeedPercent, MaxMovePercent, TuningStep, true, "How fast mages walk. Dodges and shoves stay the same.", true);
+		left.CutTop(2.0f);
+		ui.Separator(left.CutTop(20.0f), "SPELLS");
+		left.CutTop(8.0f);
+		step("Spell damage", rules.Damage, MinDamagePercent, MaxDamagePercent, DamagePercentStep, damage, "How hard spells hit. Lava and water stay the same. Damage mode only.", true);
+		step("Cast speed", rules.CastSpeed, MinSpeedPercent, MaxSpeedPercent, TuningStep, true, "How fast spells are cast. At 200% every cast takes half as long.", true);
+		step("Cooldown speed", rules.CooldownSpeed, MinSpeedPercent, MaxSpeedPercent, TuningStep, true, "How fast spells come off cooldown. At 200% every cooldown is half as long. The dodge keeps its own cooldown.", true);
+		step("Knockback", rules.Knockback, MinKnockbackPercent, MaxKnockbackPercent, TuningStep, true, "How far shoves and pulls throw mages, hooks included. Turn it up for a pinball match.", true);
+
+		ui.Separator(right.CutTop(20.0f), "CARDS");
+		right.CutTop(8.0f);
+		ToggleRow(ui, right, Ui::MakeId("gatewinnercard"), "The round winner picks a card too", rules.WinnerCard, true, rules.WinnerCard ? "Everyone picks a card after every round" : "The winner sits the pick out, as in the first spellbrawls");
+		ToggleRow(ui, right, Ui::MakeId("gateapex"), "Apex cards", rules.Apex, damage, damage ? "Run-defining cards, one per mage, offered from round 4" : "Apex cards only exist in damage mode");
+		ToggleRow(ui, right, Ui::MakeId("gateapexdraft"), "Every mage starts with an apex pick", rules.ApexDraft, damage && rules.Apex, "Pick one of three apex cards in the ready check");
+		rules.ApexDraft = rules.ApexDraft && rules.Apex;
+		right.CutTop(2.0f);
+		ui.Separator(right.CutTop(20.0f), "CHAOS");
+		right.CutTop(8.0f);
+		ToggleRow(ui, right, Ui::MakeId("gaterandomspells"), "Random spells every round", rules.RandomSpells, true, rules.RandomSpells ? "Three new spells for everyone when each round starts" : "Everyone plays the spells they picked");
+		right.CutTop(2.0f);
+		ui.Separator(right.CutTop(20.0f), "ARENA");
+		right.CutTop(8.0f);
+		ToggleRow(ui, right, Ui::MakeId("gatecrumble"), "The arena crumbles", rules.Crumble, true, rules.Crumble ? "The floor breaks up from the edge inward" : "The floor holds all round. Only cards can break it");
+		if (right.H < 44.0f)
+			return;
+		right.CutTop(6.0f);
+		const MatchRules defaults;
+		const bool changed = rules.Health != defaults.Health || rules.Mana != defaults.Mana || rules.ManaRegen != defaults.ManaRegen || rules.MoveSpeed != defaults.MoveSpeed || rules.Damage != defaults.Damage || rules.CastSpeed != defaults.CastSpeed || rules.CooldownSpeed != defaults.CooldownSpeed || rules.Knockback != defaults.Knockback || rules.Apex != defaults.Apex || rules.ApexDraft != defaults.ApexDraft || rules.RandomSpells != defaults.RandomSpells || rules.Crumble != defaults.Crumble || rules.WinnerCard != defaults.WinnerCard;
+		if (ui.Button(Ui::MakeId("gatereset"), right.CutTop(38.0f).CutLeft(240.0f), "Back to the defaults", ButtonKind::Normal, changed, UiIcon::Cycle))
+		{
+			rules.Health = defaults.Health;
+			rules.Mana = defaults.Mana;
+			rules.ManaRegen = defaults.ManaRegen;
+			rules.MoveSpeed = defaults.MoveSpeed;
+			rules.Damage = defaults.Damage;
+			rules.CastSpeed = defaults.CastSpeed;
+			rules.CooldownSpeed = defaults.CooldownSpeed;
+			rules.Knockback = defaults.Knockback;
+			rules.Apex = defaults.Apex;
+			rules.ApexDraft = defaults.ApexDraft;
+			rules.RandomSpells = defaults.RandomSpells;
+			rules.Crumble = defaults.Crumble;
+			rules.WinnerCard = defaults.WinnerCard;
+		}
+	}
+
+	void SessionState::DrawGateTeams(UiRect area)
+	{
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		MatchRules& rules = m_BrawlRules;
+		const bool teams = rules.Teams >= 2;
+		const uint32_t self = m_Client.GetPlayerId();
+		std::vector<const PlayerInfo*> humans;
+		for (const PlayerInfo& player : m_Client.GetPlayers())
+			if (!player.Bot && player.PlayerId < MaxPlayers)
+				humans.push_back(&player);
+		const uint32_t room = MaxPlayers - std::min<uint32_t>(std::max<uint32_t>(uint32_t(humans.size()), 1u), MaxPlayers);
+		const char* intro = teams ? "Drag a mage onto another team, or click it to move it along. Mages dropped on Spectators watch the match instead of playing." : "Free for all. Turn teams on in the Match tab to split the mages up. Mages dropped on Spectators watch instead of playing.";
+		area.CutTop(draw.TextWrapped(area, intro, Theme::Body(14.5f, Theme::Text)) + 10.0f);
+
+		const auto seatOf = [&](uint32_t playerId) { return playerId < MaxPlayers ? rules.Seats[playerId] : NoTeam; };
+		const auto cycle = [&](uint32_t playerId)
+		{
+			uint8_t& seat = rules.Seats[playerId];
+			if (!teams)
+				seat = seat == SpectatorSeat ? NoTeam : SpectatorSeat;
+			else
+				seat = seat == SpectatorSeat ? uint8_t(0) : seat + 1 < rules.Teams ? uint8_t(seat + 1) : SpectatorSeat;
+		};
+		std::optional<uint32_t> clicked;
+		const auto humanChip = [&](const UiRect& rect, const PlayerInfo& player, UiColor color)
+		{
+			const UiId id = Ui::MakeId("seatchip", player.PlayerId);
+			const UiInteraction interaction = ui.Interact(id, rect);
+			ui.OfferDrag(id, SeatPayload, int(player.PlayerId));
+			const float hover = ui.Animate(id, interaction.Hovered);
+			if (interaction.Clicked)
+				clicked = player.PlayerId;
+			const bool watching = seatOf(player.PlayerId) == SpectatorSeat;
+			draw.Rect(rect, { .Fill = Lighten(Rgba(0.07f, 0.055f, 0.13f, 0.95f), 0.06f * hover), .FillBottom = Rgba(0.035f, 0.03f, 0.07f, 0.95f), .Border = WithAlpha(Lighten(color, 0.25f * hover), 0.55f + 0.4f * hover), .BorderWidth = 1.2f, .Chamfer = 6.0f });
+			draw.Icon(watching ? UiIcon::Eye : UiIcon::Hood, { rect.X + 8.0f, rect.Center().y - 9.0f, 18.0f, 18.0f }, { .Color = Lighten(color, 0.45f), .ColorBottom = color, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
+			const char* tag = player.PlayerId == self ? "you" : player.Host ? "host" : "";
+			const TextStyle tagStyle = Theme::Body(12.0f, Theme::Faint);
+			const float tagWidth = *tag ? draw.MeasureWidth(tag, tagStyle) + 8.0f : 0.0f;
+			draw.TextFit({ rect.X + 32.0f, rect.Y, rect.W - 40.0f - tagWidth, rect.H }, player.Name, Theme::Bold(14.5f, Lighten(color, 0.55f)));
+			if (*tag)
+				draw.TextAligned({ rect.Right() - tagWidth - 4.0f, rect.Y, tagWidth, rect.H }, tag, tagStyle, { 0.5f, 0.5f });
+			if (interaction.Hovered && !ui.GetDrag())
+				ui.Tooltip().Header(player.Name, color, std::nullopt, watching ? UiIcon::Eye : UiIcon::Hood).Text(teams ? "Click to move to the next team, then to the spectators." : watching ? "Watching. Click to let this mage play." : "Playing. Click to make this mage watch instead.").Muted("You can also drag the mage where you want it.");
+		};
+		const auto botChip = [&](const UiRect& rect, UiColor color, UiId id)
+		{
+			draw.Rect(rect, { .Fill = Rgba(0.05f, 0.045f, 0.09f, 0.9f), .FillBottom = Rgba(0.03f, 0.025f, 0.05f, 0.9f), .Border = WithAlpha(color, 0.35f), .BorderWidth = 1.0f, .Chamfer = 6.0f });
+			draw.Icon(UiIcon::Cog, { rect.X + 9.0f, rect.Center().y - 8.0f, 16.0f, 16.0f }, { .Color = WithAlpha(Lighten(color, 0.3f), 0.8f), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
+			draw.TextFit({ rect.X + 32.0f, rect.Y, rect.W - 64.0f, rect.H }, std::string(BotLevelNames[std::min<size_t>(rules.BotLevel, BotLevels - 1)]) + " bot", Theme::Body(14.0f, Theme::Muted));
+			const UiRect remove{ rect.Right() - 28.0f, rect.Center().y - 11.0f, 22.0f, 22.0f };
+			const UiInteraction interaction = ui.Interact(id, remove);
+			const float hover = ui.Animate(id, interaction.Hovered);
+			draw.Icon(UiIcon::CrossMark, remove.Shrink(4.0f), { .Color = glm::mix(Theme::Faint, Theme::Danger, hover) });
+			if (interaction.Hovered)
+				ui.Tooltip().Text("Remove this bot");
+			return interaction.Clicked;
+		};
+
+		constexpr float ChipHeight = 30.0f;
+		constexpr float ChipGap = 5.0f;
+		constexpr float SpectatorHeight = 82.0f;
+		const float buttonsHeight = teams ? 46.0f : 0.0f;
+		const UiRect columns = area.CutTop(std::max(area.H - SpectatorHeight - buttonsHeight - 10.0f, 120.0f));
+		area.CutTop(10.0f);
+		const uint32_t count = teams ? rules.Teams : 1u;
+		constexpr float ColumnGap = 10.0f;
+		const float columnWidth = teams ? (columns.W - ColumnGap * float(count - 1)) / float(count) : std::min(columns.W, 300.0f);
+		std::optional<std::pair<uint32_t, uint8_t>> moved;
+		for (uint32_t column = 0; column < count; column++)
+		{
+			const uint8_t team = teams ? uint8_t(column) : NoTeam;
+			const UiRect box{ columns.X + float(column) * (columnWidth + ColumnGap), columns.Y, columnWidth, columns.H };
+			const UiColor color = teams ? WithAlpha(TeamColor(team)) : Theme::Accent;
+			const UiPayload* drag = ui.GetDrag();
+			const bool target = drag && drag->Type == SeatPayload && box.Contains(ui.GetMouse());
+			draw.Rect(box, { .Fill = WithAlpha(Darken(color, 0.82f), 0.55f), .FillBottom = Rgba(0.02f, 0.015f, 0.04f, 0.6f), .Border = WithAlpha(color, target ? 0.95f : 0.45f), .BorderWidth = target ? 1.8f : 1.0f, .Glow = WithAlpha(color, target ? 0.25f : 0.0f), .GlowSize = 12.0f, .Chamfer = 9.0f });
+			UiRect inner = box.Shrink(8.0f, 8.0f);
+			const UiRect header = inner.CutTop(26.0f);
+			uint32_t mages = 0;
+			for (const PlayerInfo* player : humans)
+				mages += teams ? (seatOf(player->PlayerId) == team ? 1u : 0u) : (seatOf(player->PlayerId) != SpectatorSeat ? 1u : 0u);
+			const uint32_t bots = teams ? rules.TeamBots[team] : rules.Bots;
+			draw.TextAligned(header, teams ? GetTeamName(team) : "Playing", Theme::Bold(16.0f, Lighten(color, 0.4f)), { 0.0f, 0.5f });
+			draw.TextAligned(header, std::to_string(mages + bots), Theme::Title(18.0f), { 1.0f, 0.5f });
+			inner.CutTop(6.0f);
+			for (const PlayerInfo* player : humans)
+			{
+				const uint8_t seat = seatOf(player->PlayerId);
+				if ((teams && seat != team) || (!teams && seat == SpectatorSeat))
+					continue;
+				if (inner.H < ChipHeight)
+					break;
+				humanChip(inner.CutTop(ChipHeight), *player, teams ? color : WithAlpha(ColorOf(player->PlayerId)));
+				inner.CutTop(ChipGap);
+			}
+			for (uint32_t bot = 0; bot < bots && inner.H >= ChipHeight + 36.0f; bot++)
+			{
+				if (botChip(inner.CutTop(ChipHeight), color, Ui::MakeId("seatbot", column * 32u + bot)))
+				{
+					if (teams)
+						rules.TeamBots[team]--;
+					else
+						rules.Bots--;
+				}
+				inner.CutTop(ChipGap);
+			}
+			if (inner.H >= 30.0f && ui.Button(Ui::MakeId("seataddbot", column), inner.CutTop(30.0f), "Add a bot", ButtonKind::Normal, CountRuleBots(rules) < room, UiIcon::Cog))
+			{
+				if (teams)
+					rules.TeamBots[team]++;
+				else
+					rules.Bots++;
+			}
+			if (const std::optional<int> dropped = ui.AcceptDrop(box, SeatPayload))
+				moved = { uint32_t(*dropped), team };
+		}
+
+		const UiRect spectators = area.CutTop(SpectatorHeight);
+		{
+			const UiPayload* drag = ui.GetDrag();
+			const bool target = drag && drag->Type == SeatPayload && spectators.Contains(ui.GetMouse());
+			draw.Rect(spectators, { .Fill = Rgba(0.04f, 0.035f, 0.08f, 0.6f), .Border = WithAlpha(target ? Theme::Astral : Theme::Edge, target ? 0.95f : 0.5f), .BorderWidth = target ? 1.8f : 1.0f, .Glow = WithAlpha(Theme::Astral, target ? 0.2f : 0.0f), .GlowSize = 12.0f, .Chamfer = 9.0f });
+			UiRect inner = spectators.Shrink(10.0f, 8.0f);
+			UiRect header = inner.CutTop(22.0f);
+			draw.Icon(UiIcon::Eye, header.CutLeft(18.0f).Shrink(0.0f, 2.0f), { .Color = Theme::Astral });
+			header.CutLeft(8.0f);
+			draw.TextAligned(header, "Spectators", Theme::Bold(15.0f, Theme::AccentLight), { 0.0f, 0.5f });
+			inner.CutTop(6.0f);
+			UiRect line = inner.CutTop(ChipHeight);
+			bool any = false;
+			for (const PlayerInfo* player : humans)
+			{
+				if (seatOf(player->PlayerId) != SpectatorSeat || line.W < 120.0f)
+					continue;
+				humanChip(line.CutLeft(std::min(180.0f, line.W)), *player, Theme::Astral);
+				line.CutLeft(8.0f);
+				any = true;
+			}
+			if (!any)
+				draw.TextAligned(line, "Nobody is watching. Drop a mage here to let them spectate.", Theme::Body(13.5f, Theme::Faint), { 0.0f, 0.5f });
+			if (const std::optional<int> dropped = ui.AcceptDrop(spectators, SeatPayload))
+				moved = { uint32_t(*dropped), SpectatorSeat };
+		}
+		if (moved && moved->first < MaxPlayers)
+			rules.Seats[moved->first] = moved->second;
+		else if (clicked && *clicked < MaxPlayers)
+			cycle(*clicked);
+
+		if (teams)
+		{
+			area.CutTop(10.0f);
+			UiRect row = area.CutTop(36.0f);
+			if (ui.Button(Ui::MakeId("seatshuffle"), row.CutLeft(220.0f), "Shuffle the mages", ButtonKind::Normal, true, UiIcon::Cycle))
+			{
+				std::vector<uint32_t> playing;
+				for (const PlayerInfo* player : humans)
+					if (seatOf(player->PlayerId) != SpectatorSeat)
+						playing.push_back(player->PlayerId);
+				Random random(uint64_t(m_Time * 1000.0f) * 2654435761ull + 17u);
+				for (size_t i = playing.size(); i > 1; i--)
+					std::swap(playing[i - 1], playing[random.Below(uint32_t(i))]);
+				const uint32_t bots = CountTeamBots(rules);
+				rules.TeamBots.fill(0);
+				const uint32_t first = random.Below(rules.Teams);
+				for (size_t i = 0; i < playing.size(); i++)
+					rules.Seats[playing[i]] = uint8_t((first + i) % rules.Teams);
+				AddBrawlBot(int(bots));
+			}
+			row.CutLeft(10.0f);
+			if (ui.Button(Ui::MakeId("seateven"), row.CutLeft(220.0f), "Even out the bots", ButtonKind::Normal, CountTeamBots(rules) > 0, UiIcon::LifeInTheBalance))
+			{
+				const uint32_t bots = CountTeamBots(rules);
+				rules.TeamBots.fill(0);
+				AddBrawlBot(int(bots));
+			}
+		}
+
+		if (const UiPayload* drag = ui.GetDrag(); drag && drag->Type == SeatPayload)
+			if (const PlayerInfo* player = m_Client.FindPlayer(uint32_t(drag->Value)))
+			{
+				ui.SetLayer(UiLayer::Overlay);
+				UiDrawList& top = ui.Draw();
+				const UiRect ghost = UiRect::Centered(ui.GetMouse() + glm::vec2(0.0f, 6.0f), { 170.0f, 30.0f });
+				top.Shadow(ghost, 10.0f, 14.0f, Rgba(0.0f, 0.0f, 0.0f, 0.5f), { 0.0f, 4.0f });
+				top.Rect(ghost, { .Fill = Rgba(0.08f, 0.065f, 0.15f, 0.96f), .Border = Theme::Astral, .BorderWidth = 1.6f, .Chamfer = 6.0f });
+				top.Icon(UiIcon::Hood, { ghost.X + 8.0f, ghost.Center().y - 9.0f, 18.0f, 18.0f }, { .Color = Theme::AccentLight });
+				top.TextFit({ ghost.X + 32.0f, ghost.Y, ghost.W - 40.0f, ghost.H }, player->Name, Theme::Bold(14.5f, Theme::Text));
+				ui.SetLayer(UiLayer::Windows);
+			}
+	}
+
+	void SessionState::DrawGateFooter(UiRect area)
+	{
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const MatchRules& rules = m_BrawlRules;
+		uint32_t playing = 0;
+		std::vector<std::string> watchers;
+		for (const PlayerInfo& player : m_Client.GetPlayers())
+		{
+			if (player.Bot || player.PlayerId >= MaxPlayers)
+				continue;
+			if (rules.Seats[player.PlayerId] == SpectatorSeat)
+				watchers.push_back(player.PlayerId == m_Client.GetPlayerId() ? std::string("you") : player.Name);
+			else
+				playing++;
+		}
+		if (m_Client.GetPlayers().empty())
+			playing = 1;
+		const uint32_t bots = CountRuleBots(rules);
+		std::string party;
+		if (playing + bots == 0)
+			party = "Nobody is playing. Add bots, or let a mage play";
+		else if (playing + bots == 1)
+			party = bots == 1 ? "A single bot fights alone. Add another mage or bot" : "Nobody else is here yet. Add a few bots, or wait for friends to join";
+		else if (rules.Teams >= 2)
+		{
+			const std::array<uint32_t, MaxTeams> members = CountTeamMembers();
+			for (uint8_t team = 0; team < rules.Teams; team++)
+				party += std::string(team == 0 ? "" : "  against  ") + GetTeamName(team) + " " + std::to_string(members[team]);
+		}
+		else
+			party = Format("%u mages step through together", unsigned(playing + bots)) + (bots == 0 ? std::string() : bots == 1 ? std::string(", one of them a bot") : Format(", %u of them bots", unsigned(bots)));
+		if (!watchers.empty())
+		{
+			std::string names;
+			for (size_t i = 0; i < watchers.size(); i++)
+				names += (i == 0 ? "" : i + 1 == watchers.size() ? " and " : ", ") + watchers[i];
+			party += ". " + names + (watchers.size() == 1 && watchers[0] != "you" ? " watches" : " watch");
+		}
+		draw.TextFit(area.CutTop(22.0f), party, Theme::Body(14.0f, playing + bots >= 2 ? Theme::Success : Theme::Muted));
+		const std::string custom = CustomSummary(rules);
+		const MatchReward reward = GetBrawlReward(true, std::max(playing + bots, 2u), 15);
+		if (!custom.empty())
+			draw.TextFit(area.CutTop(20.0f), "Custom rules: " + custom, Theme::Body(13.5f, Theme::Gold));
+		else
+			draw.TextAligned(area.CutTop(20.0f), Format("Winning with 15 points pays about %u gold", unsigned(reward.Gold)), Theme::Body(13.5f, Theme::Faint), { 0.0f, 0.5f });
+		area.CutTop(10.0f);
+		if (ui.Button(Ui::MakeId("gateenter"), area.CutTop(48.0f), EnterLabel(), ButtonKind::Primary, playing + bots > 0, UiIcon::Whirlwind))
 		{
 			m_Client.StartBrawl(ChosenArena(), m_BrawlRules);
 			m_Station.reset();

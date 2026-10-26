@@ -2,6 +2,7 @@
 #include "Rendering/Models.h"
 #include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
+#include <GameShared/Content/Brawl.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -142,6 +143,48 @@ namespace Game
 				});
 				set(Fx::Snowfall, {
 					{ .Kind = K::Snow, .Count = 150.0f, .Shape = SpawnShape::Disc, .Radius = 16.0f, .Direction = { 0.3f, -1.0f, 0.12f }, .Cone = 0.2f, .Speed = { 0.4f, 0.8f }, .Life = { 6.0f, 8.0f }, .Size = { 0.025f, 0.05f } },
+				});
+				set(Fx::Crumble, {
+					{ .Kind = K::Dust, .Count = 18.0f, .Shape = SpawnShape::Disc, .Outward = true, .Radius = 0.7f, .Direction = { 0.0f, 0.4f, 0.0f }, .Cone = 0.5f, .Speed = { 0.8f, 2.5f }, .Life = { 0.8f, 1.5f }, .Size = { 0.35f, 0.65f }, .Tint = { 1.5f, 1.45f, 1.38f } },
+					{ .Kind = K::Bone, .Count = 16.0f, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.7f, .Speed = { 2.0f, 5.0f }, .Life = { 1.0f, 1.8f }, .Size = { 0.05f, 0.1f }, .Tint = { 1.25f, 1.18f, 1.05f } },
+				});
+				set(Fx::WindStreak, {
+					{ .Kind = K::Wind, .Count = 1.0f, .Shape = SpawnShape::Disc, .Aimed = true, .Radius = 13.0f, .Cone = 0.06f, .Speed = { 6.0f, 9.5f }, .Life = { 0.7f, 1.2f }, .Size = { 0.025f, 0.045f } },
+				});
+				set(Fx::Rain, {
+					{ .Kind = K::Rain, .Count = 1.0f, .Shape = SpawnShape::Disc, .Aimed = true, .Radius = 14.0f, .Cone = 0.04f, .Speed = { 13.0f, 17.0f }, .Life = { 0.5f, 0.7f }, .Size = { 0.012f, 0.02f } },
+				});
+				set(Fx::SpearAura, {
+					{ .Kind = K::Frost, .Count = 16.0f, .Radius = 0.22f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.9f, .Speed = { 0.05f, 0.3f }, .Life = { 0.5f, 0.9f }, .Size = { 0.16f, 0.28f }, .Tint = { 0.55f, 0.55f, 0.55f } },
+					{ .Kind = K::Mote, .Count = 14.0f, .Radius = 0.35f, .Cone = FullSphere, .Speed = { 0.05f, 0.25f }, .Life = { 0.4f, 0.8f }, .Size = { 0.025f, 0.045f } },
+				});
+				set(Fx::SpearReady, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.16f, 0.16f }, .Size = { 0.4f, 0.4f }, .Tint = { 0.2f, 0.4f, 0.9f } },
+					{ .Kind = K::Mote, .Count = 28.0f, .Outward = true, .Radius = 0.15f, .Cone = FullSphere, .Speed = { 2.0f, 4.5f }, .Life = { 0.25f, 0.5f }, .Size = { 0.03f, 0.06f } },
+					{ .Kind = K::IceShard, .Count = 10.0f, .Outward = true, .Radius = 0.15f, .Direction = { 0.0f, 0.6f, 0.0f }, .Cone = 1.2f, .Speed = { 1.5f, 3.5f }, .Life = { 0.4f, 0.7f }, .Size = { 0.03f, 0.05f } },
+				});
+				set(Fx::SpearRelease, {
+					{ .Kind = K::Frost, .Count = 8.0f, .Outward = true, .Radius = 0.15f, .Cone = FullSphere, .Speed = { 0.8f, 2.0f }, .Life = { 0.3f, 0.55f }, .Size = { 0.2f, 0.35f }, .Tint = { 0.35f, 0.35f, 0.35f } },
+					{ .Kind = K::Mote, .Count = 12.0f, .Aimed = true, .Radius = 0.1f, .Cone = 0.45f, .Speed = { 3.0f, 7.0f }, .Life = { 0.2f, 0.4f }, .Size = { 0.025f, 0.05f } },
+					{ .Kind = K::IceShard, .Count = 8.0f, .Aimed = true, .Radius = 0.1f, .Cone = 0.6f, .Speed = { 2.5f, 5.0f }, .Life = { 0.35f, 0.6f }, .Size = { 0.03f, 0.05f } },
+				});
+				set(Fx::SpearCrack, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.14f, 0.14f }, .Size = { 0.45f, 0.45f }, .Tint = { 0.25f, 0.45f, 0.85f } },
+					{ .Kind = K::IceShard, .Count = 34.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 2.5f, 6.5f }, .Life = { 0.5f, 0.9f }, .Size = { 0.04f, 0.08f } },
+					{ .Kind = K::Frost, .Count = 10.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 0.6f, 1.8f }, .Life = { 0.4f, 0.8f }, .Size = { 0.25f, 0.45f }, .Tint = { 0.4f, 0.4f, 0.4f } },
+					{ .Kind = K::Mote, .Count = 22.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 1.5f, 4.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.025f, 0.05f } },
+				});
+				set(Fx::SpearShatter, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.12f, 0.12f }, .Size = { 0.3f, 0.3f }, .Tint = { 0.15f, 0.3f, 0.6f } },
+					{ .Kind = K::IceShard, .Count = 18.0f, .Outward = true, .Radius = 0.15f, .Direction = { 0.0f, 0.9f, 0.0f }, .Cone = 1.0f, .Speed = { 2.5f, 6.0f }, .Life = { 0.45f, 0.9f }, .Size = { 0.04f, 0.08f } },
+					{ .Kind = K::Frost, .Count = 8.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 0.6f, 1.6f }, .Life = { 0.35f, 0.7f }, .Size = { 0.22f, 0.4f }, .Tint = { 0.4f, 0.4f, 0.4f } },
+					{ .Kind = K::Mote, .Count = 12.0f, .Outward = true, .Radius = 0.15f, .Cone = FullSphere, .Speed = { 1.5f, 3.5f }, .Life = { 0.25f, 0.5f }, .Size = { 0.025f, 0.045f } },
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.3f, 0.3f }, .Size = { 0.8f, 0.8f }, .Tint = { 0.12f, 0.26f, 0.55f }, .Lift = -0.5f },
+				});
+				set(Fx::SpearTrail, {
+					{ .Kind = K::Frost, .Count = 20.0f, .Density = 7.0f, .Shape = SpawnShape::Segment, .Radius = 0.06f, .Speed = { 0.1f, 0.3f }, .Life = { 0.25f, 0.45f }, .Size = { 0.07f, 0.12f }, .Tint = { 0.45f, 0.45f, 0.45f } },
+					{ .Kind = K::Mote, .Count = 10.0f, .Density = 4.0f, .Shape = SpawnShape::Segment, .Radius = 0.1f, .Speed = { 0.1f, 0.5f }, .Life = { 0.35f, 0.75f }, .Size = { 0.02f, 0.04f }, .Inherit = 0.08f },
+					{ .Kind = K::IceShard, .Count = 8.0f, .Density = 1.2f, .Shape = SpawnShape::Segment, .Radius = 0.06f, .Speed = { 0.3f, 1.0f }, .Life = { 0.3f, 0.55f }, .Size = { 0.03f, 0.05f } },
 				});
 				set(Fx::FireBurst, {
 					{ .Kind = K::Fire, .Count = 22.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 0.5f, .Speed = { 1.0f, 3.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.2f, 0.35f } },
@@ -372,6 +415,22 @@ namespace Game
 		SetColors(snow, { 0.9f, 0.94f, 1.0f, 0.0f }, { 0.9f, 0.94f, 1.0f, 0.85f }, { 0.88f, 0.92f, 0.98f, 0.8f }, { 0.85f, 0.9f, 0.96f, 0.0f }, { 0.0f, 0.1f, 0.85f, 1.0f });
 		snow.Physics = { -0.5f, 0.8f, 0.8f, 0.35f };
 
+		ParticleMaterial& wind = define(ParticleKind::Wind, ParticleShape::Spark, ParticleAlign::Velocity, 0.0f, 1.0f);
+		SetColors(wind, { 1.1f, 1.15f, 1.2f, 0.0f }, { 1.1f, 1.15f, 1.2f, 0.42f }, { 1.05f, 1.1f, 1.18f, 0.3f }, { 1.0f, 1.05f, 1.15f, 0.0f }, { 0.0f, 0.2f, 0.65f, 1.0f });
+		wind.Physics = { 0.0f, 0.1f, 1.2f, 0.35f };
+		wind.Look.w = 1.6f;
+
+		ParticleMaterial& rain = define(ParticleKind::Rain, ParticleShape::Spark, ParticleAlign::Velocity, 0.0f, 1.0f);
+		SetColors(rain, { 0.55f, 0.6f, 0.72f, 0.0f }, { 0.55f, 0.6f, 0.72f, 0.38f }, { 0.5f, 0.56f, 0.68f, 0.32f }, { 0.5f, 0.55f, 0.66f, 0.0f }, { 0.0f, 0.12f, 0.8f, 1.0f });
+		rain.Physics = { -6.0f, 0.0f, 0.0f, 0.0f };
+		rain.Look.w = 1.5f;
+
+		ParticleMaterial& mote = define(ParticleKind::Mote, ParticleShape::Star, ParticleAlign::Billboard, 1.0f, 1.6f);
+		SetColors(mote, { 1.2f, 1.5f, 1.9f, 0.0f }, { 0.75f, 1.2f, 1.8f, 1.0f }, { 0.35f, 0.7f, 1.4f, 0.8f }, { 0.15f, 0.35f, 0.8f, 0.0f }, { 0.0f, 0.15f, 0.7f, 1.0f });
+		mote.Sizes = { 0.5f, 1.0f, 0.9f, 0.3f };
+		mote.Physics = { 0.0f, 0.0f, 0.0f, 0.0f };
+		mote.Motion.x = 3.0f;
+
 		ParticleMaterial& gold = define(ParticleKind::Gold, ParticleShape::Star, ParticleAlign::Billboard, 1.0f, 1.3f);
 		SetColors(gold, { 3.5f, 2.6f, 0.9f, 0.0f }, { 3.2f, 2.3f, 0.7f, 1.0f }, { 1.8f, 1.1f, 0.25f, 0.6f }, { 0.6f, 0.3f, 0.05f, 0.0f }, { 0.0f, 0.2f, 0.6f, 1.0f });
 		gold.Sizes = { 0.5f, 1.0f, 0.8f, 0.3f };
@@ -394,8 +453,9 @@ namespace Game
 		case AbilityId::ArcLightning:
 			return Fx::BoltTrail;
 		case AbilityId::IceSpear:
-		case AbilityId::Frostbite:
 			return Fx::IceTrail;
+		case AbilityId::FrostSpear:
+			return Fx::SpearTrail;
 		case AbilityId::Swap:
 			return Fx::ArcaneTrail;
 		case AbilityId::Arrow:
@@ -430,8 +490,9 @@ namespace Game
 		case AbilityId::Orb:
 		case AbilityId::IceSpear:
 		case AbilityId::ShardBurst:
-		case AbilityId::Frostbite:
 			return Fx::FrostBurst;
+		case AbilityId::FrostSpear:
+			return Fx::SpearShatter;
 		case AbilityId::EmberBolt:
 			return Fx::FireBurst;
 		case AbilityId::Swap:
@@ -596,13 +657,54 @@ namespace Game
 		state.Last = position;
 	}
 
+	void EffectSystem::Stream(Fx fx, const glm::vec3& center, const glm::vec3& direction, float rate, float dt)
+	{
+		float& carry = m_StreamCarry[size_t(fx)];
+		carry += rate * dt;
+		const uint32_t count = uint32_t(carry);
+		if (count == 0)
+			return;
+		carry -= float(count);
+		for (const FxLayer& layer : FxTable()[size_t(fx)])
+		{
+			ParticleSpawn spawn = MakeSpawn(layer, center, direction, 1.0f, glm::vec3(1.0f));
+			spawn.Count = count;
+			m_Particles.Spawn(spawn);
+		}
+	}
+
+	void EffectSystem::Converge(uint64_t key, const glm::vec3& target, float radius, float rate, float life, float dt, float size)
+	{
+		ConvergeState& state = m_Converges[key];
+		state.Touched = true;
+		state.Carry += rate * dt;
+		for (; state.Carry >= 1.0f; state.Carry -= 1.0f)
+		{
+			const uint32_t n = state.Count++;
+			const float height = 1.0f - 2.0f * std::fmod(float(n) * 0.618034f + 0.11f, 1.0f);
+			const float spin = float(n) * 2.39996f;
+			const float ring = std::sqrt(std::max(1.0f - height * height, 0.0f));
+			const glm::vec3 start = target + glm::vec3(std::cos(spin) * ring, height * 0.75f, std::sin(spin) * ring) * radius;
+			ParticleSpawn spawn;
+			spawn.Material = uint32_t(ParticleKind::Mote);
+			spawn.Count = 1;
+			spawn.Origin = start;
+			spawn.Velocity = (target - start) / life;
+			spawn.Life = { life * 0.95f, life };
+			spawn.Size = glm::vec2(0.03f, 0.05f) * size;
+			m_Particles.Spawn(spawn);
+		}
+	}
+
 	void EffectSystem::EndFrame()
 	{
 		std::erase_if(m_Trails, [](auto& item) { return !std::exchange(item.second.Touched, false); });
+		std::erase_if(m_Converges, [](auto& item) { return !std::exchange(item.second.Touched, false); });
 	}
 
 	void EffectSystem::Clear()
 	{
+		m_Converges.clear();
 		m_Trails.clear();
 		m_Marks.clear();
 		m_Spikes.clear();
@@ -806,6 +908,12 @@ namespace Game
 			frost(ground, reach * 0.9f, 3.5f);
 			runes(ground, reach, 0.9f, 0.0f, 0.4f, 1.0f);
 			spikeRing(16, reach * 0.5f, reach * 0.95f, 0.5f, 1.1f, 1.6f);
+			break;
+		case AbilityId::FrostSpear:
+			frost(ground, 0.26f * scale, 2.8f);
+			if (scale >= SpearFullSize - 0.05f)
+				shock(SpearBurstRadius, 0.35f, 0.55f);
+			spikeRing(uint32_t(1.5f + 2.5f * scale), 0.12f * scale, 0.42f * scale, 0.14f * scale, 0.3f * scale, 1.1f);
 			break;
 		case AbilityId::CrystalRain:
 			frost(ground, radius, 3.0f);

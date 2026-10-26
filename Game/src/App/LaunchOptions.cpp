@@ -5,6 +5,7 @@
 #include <GameShared/Net/Protocol.h>
 #include <RadianceEngine/Core/Log.h>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <charconv>
 #include <iterator>
@@ -84,7 +85,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan] [--no-steam]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -151,7 +152,7 @@ namespace Game
 				options.Map = MapKind::Crucible;
 				if (hasValue && (value == "teams" || value == "ffa"))
 				{
-					options.Rules.Teams = value == "teams";
+					options.Rules.Teams = value == "teams" ? 2 : 0;
 					i++;
 				}
 			}
@@ -179,9 +180,9 @@ namespace Game
 			}
 			else if (argument == "--brawl-map" && hasValue)
 			{
-				valid = value == "caldera" || value == "lake" || value == "random";
+				valid = value == "caldera" || value == "lake" || value == "ruins" || value == "peak" || value == "random";
 				if (valid)
-					options.Map = value == "caldera" ? MapKind::Caldera : value == "lake" ? MapKind::FrozenLake : RandomBrawlMap;
+					options.Map = value == "caldera" ? MapKind::Caldera : value == "lake" ? MapKind::FrozenLake : value == "ruins" ? MapKind::SkyRuins : value == "peak" ? MapKind::StormPeak : RandomBrawlMap;
 				i++;
 			}
 			else if (argument == "--brawl-mode" && hasValue)
@@ -209,6 +210,52 @@ namespace Game
 					options.Rules.BotLevel = uint8_t(level - std::begin(Levels));
 				i++;
 			}
+			else if (argument == "--teams" && hasValue)
+			{
+				uint32_t teams = 0;
+				valid = ParseNumber(value, teams) && (teams == 0 || (teams >= 2 && teams <= MaxTeams));
+				if (valid)
+					options.Rules.Teams = uint8_t(teams);
+				i++;
+			}
+			else if ((argument == "--health" || argument == "--mana") && hasValue)
+			{
+				uint32_t amount = 0;
+				const bool health = argument == "--health";
+				valid = ParseNumber(value, amount) && amount >= (health ? MinBrawlHealth : MinBrawlMana) && amount <= (health ? MaxBrawlHealth : MaxBrawlMana);
+				if (valid)
+					(health ? options.Rules.Health : options.Rules.Mana) = uint16_t(amount);
+				i++;
+			}
+			else if (argument == "--damage" && hasValue)
+			{
+				uint32_t percent = 0;
+				valid = ParseNumber(value, percent) && percent >= MinDamagePercent && percent <= MaxDamagePercent;
+				if (valid)
+					options.Rules.Damage = uint16_t(percent);
+				i++;
+			}
+			else if ((argument == "--cast-speed" || argument == "--cooldown-speed" || argument == "--move-speed" || argument == "--mana-regen" || argument == "--knockback") && hasValue)
+			{
+				uint32_t percent = 0;
+				uint16_t& field = argument == "--cast-speed" ? options.Rules.CastSpeed : argument == "--cooldown-speed" ? options.Rules.CooldownSpeed : argument == "--move-speed" ? options.Rules.MoveSpeed : argument == "--mana-regen" ? options.Rules.ManaRegen : options.Rules.Knockback;
+				valid = ParseNumber(value, percent) && percent <= 1000;
+				if (valid)
+					field = uint16_t(percent);
+				i++;
+			}
+			else if (argument == "--random-spells")
+				options.Rules.RandomSpells = true;
+			else if (argument == "--no-apex")
+				options.Rules.Apex = false;
+			else if (argument == "--apex-draft")
+				options.Rules.ApexDraft = true;
+			else if (argument == "--no-crumble")
+				options.Rules.Crumble = false;
+			else if (argument == "--no-winner-card")
+				options.Rules.WinnerCard = false;
+			else if (argument == "--spectate")
+				options.Rules.Seats[0] = SpectatorSeat;
 			else if (argument == "--goal" && hasValue)
 			{
 				uint32_t goal = 0;
@@ -385,10 +432,31 @@ namespace Game
 				options.Leviathan = true;
 			else if (argument == "--profile-gpu")
 				options.ProfileGpu = true;
+			else if (argument == "--no-steam")
+				options.Steam = false;
+			else if (uint64_t lobby = 0; argument == "+connect_lobby" && hasValue && ParseNumber(value, lobby))
+			{
+				options.ConnectLobby = lobby;
+				i++;
+			}
 			else
 				valid = false;
 			if (!valid)
 				RDN_LOG_ERROR("Ignoring the invalid argument {} ({})", argument, usage);
+		}
+		if (options.Rules.Teams >= 2 && options.StartMode == GameMode::Brawl)
+		{
+			std::array<uint32_t, MaxTeams> members{};
+			members[0] = options.Rules.Seats[0] == SpectatorSeat ? 0u : 1u;
+			for (uint32_t bot = 0; bot < options.Rules.Bots; bot++)
+			{
+				uint8_t smallest = 0;
+				for (uint8_t team = 1; team < options.Rules.Teams; team++)
+					if (members[team] < members[smallest])
+						smallest = team;
+				members[smallest]++;
+				options.Rules.TeamBots[smallest]++;
+			}
 		}
 		return options;
 	}

@@ -124,6 +124,8 @@ namespace Game
 			m_Match.Update(*this, dt);
 		else if (IsHub())
 			UpdateHub(dt);
+		if (const ArenaState arena = GetArena(); arena.Plan)
+			SinkFallenProps(m_Level, *arena.Plan, arena.Clock);
 		FlushDestroyed();
 		m_Tick++;
 		RecordHistory();
@@ -143,6 +145,14 @@ namespace Game
 		else if (IsHub())
 			status.HubFalls = uint16_t(std::min<uint32_t>(m_HubFalls, UINT16_MAX));
 		return status;
+	}
+
+	ArenaState World::GetArena() const
+	{
+		if (!m_Level.Skyborne || m_Settings.Mode != GameMode::Brawl)
+			return {};
+		const BrawlStatus& brawl = m_Match.GetBrawl();
+		return { &brawl.Plan, brawl.Clock, brawl.Phase == BrawlPhase::Fight };
 	}
 
 	bool World::AreRivals(uint32_t a, uint32_t b) const
@@ -169,12 +179,12 @@ namespace Game
 		const PlayerTraits& traits = controller->Traits;
 		CollectBodies(transform->Position, m_Bodies);
 		const Vec2 origin = transform->Position;
-		const PlayerActions actions = SimulatePlayer(m_Level, *transform, controller->State, traits, input, GetTickSeconds(), m_Bodies);
+		const PlayerActions actions = SimulatePlayer(m_Level, *transform, controller->State, traits, input, GetTickSeconds(), m_Bodies, GetArena());
 		if (actions.Teleported())
 			Emit({ WorldEventType::Teleported, controller->PlayerId, uint8_t(actions.Portal) });
-		if (actions.Fell)
+		if (actions.Fell && IsHub())
 			m_HubFalls++;
-		if (actions.Landed)
+		if (actions.Landed && IsHub())
 			Notify(controller->PlayerId, LandingLines[m_HubFalls % std::size(LandingLines)], true);
 		if (actions.Dodged)
 			m_Match.ArmEcho(controller->PlayerId);
@@ -189,6 +199,7 @@ namespace Game
 		}
 		if (actions.Released == 0)
 			return actions;
+		m_Match.NoteCast(controller->PlayerId);
 		if (IsHub())
 			StargazeAt(*controller, origin, actions);
 		Health* life = m_Entities.TryGet<Health>(player);
@@ -235,6 +246,7 @@ namespace Game
 			context.Target = GetGroundTarget(m_Level, context.Origin, context.Direction, actions.AimDistance, ability.Range);
 			context.PvpScale = skill.PvpScale;
 			context.RangeScale = skill.RangeScale;
+			context.Charge = IsCharged(skill) ? actions.Charge : 0.0f;
 			ExecuteAbility(*this, skill.Ability, context);
 			if (slot > 0 && ability.Kind != AbilityKind::Dash && ability.Kind != AbilityKind::Ward && m_Match.ConsumeEcho(controller->PlayerId))
 				m_Echoes.push_back({ player, skill.Ability, context, EchoDelay });
@@ -402,6 +414,7 @@ namespace Game
 		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
 		if (!controller || !controller->State.Alive)
 			return;
+		const bool hazard = killer == NoPlayer;
 		if (IsDamageBrawl())
 		{
 			uint8_t credited = ability;
@@ -433,6 +446,7 @@ namespace Game
 		Emit({ WorldEventType::PlayerDied, victim, uint8_t(std::min<uint32_t>(killer, 255u)) });
 		if (!IsPvp())
 			return;
+		m_Match.NoteKnockout(*this, victim, killer, hazard);
 		m_Kills.push_back({ killer, victim, ability });
 		m_Match.OnPlayerKilled(*this, player, victim, killer);
 	}
@@ -461,6 +475,12 @@ namespace Game
 	{
 		if (IsPvp())
 			m_Match.Watch(*this, player, direction);
+	}
+
+	bool World::JoinMatch(Entity player)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && m_Settings.Mode == GameMode::Brawl && m_Match.JoinMatch(*this, player, controller->PlayerId);
 	}
 
 	bool World::PickBrawlSpell(Entity player, uint32_t slot, AbilityId spell)
@@ -937,18 +957,24 @@ namespace Game
 			perks |= PerkSplit;
 		if (ability.Id == AbilityId::ArcLightning && HasCard(context.Cards, CardId::Pinball))
 			perks |= PerkPinball;
-		if (ability.Id == AbilityId::Frostbite && HasCard(context.Cards, CardId::BlackIce))
+		if (ability.Id == AbilityId::FrostSpear && HasCard(context.Cards, CardId::BlackIce))
 			perks |= PerkSlick;
+		if (ability.Id == AbilityId::FrostSpear && context.Charge >= 0.999f)
+			perks |= PerkBurst;
 		const bool overcharged = ability.Id == AbilityId::ArcLightning && HasCard(context.Cards, CardId::Overcharge);
-		const float push = ability.Id == AbilityId::ChainHook ? (HasCard(context.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) : ability.Push;
+		const bool spear = ability.Id == AbilityId::FrostSpear;
+		const ChargedShot shot = spear ? SpearShot(context.Charge) : ChargedShot{ .Radius = ability.ProjectileRadius, .Push = ability.Push, .Chill = ability.Chill };
+		const float push = ability.Id == AbilityId::ChainHook ? (HasCard(context.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) : shot.Push;
+		const float lifetime = (pattern.Speed > 0.0f ? ChargedRange(ability, context.Charge) / pattern.Speed : 0.0f) * context.RangeScale;
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, position, AngleOf(direction));
-		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = context.Owner, .Tag = context.Tag, .Variant = uint8_t(ability.Id) });
+		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = context.Owner, .Tag = context.Tag, .Variant = uint8_t(ability.Id), .Scale = ScaleByte(shot.Size) });
 		m_Entities.Add<Projectile>(entity, Projectile{
 			.Velocity = direction * pattern.Speed,
-			.Lifetime = GetProjectileLifetime(ability, pattern.Speed) * context.RangeScale,
-			.Radius = ability.ProjectileRadius,
-			.Damage = damage,
+			.Lifetime = lifetime,
+			.Span = lifetime,
+			.Radius = shot.Radius,
+			.Damage = spear ? ScaleDamage(damage, shot.DamageScale) : damage,
 			.Side = context.Side,
 			.Pierce = pattern.Pierce,
 			.Chain = uint8_t(ability.Chain + (overcharged ? 1 : 0)),
@@ -957,7 +983,7 @@ namespace Game
 			.CritMultiplier = context.CritMultiplier,
 			.LifeSteal = context.LifeSteal,
 			.ImpactRadius = ability.ImpactRadius * context.AreaScale,
-			.Chill = ability.Chill + ((perks & PerkSlick) != 0 && IsDamageBrawl() ? BlackIceChill : 0.0f),
+			.Chill = shot.Chill + ((perks & PerkSlick) != 0 && IsDamageBrawl() ? BlackIceChill : 0.0f),
 			.Stun = ability.Stun,
 			.PvpScale = context.PvpScale,
 			.Push = push * context.PushScale,
@@ -965,7 +991,7 @@ namespace Game
 			.Damages = ability.Damages,
 			.Ability = uint8_t(ability.Id),
 			.Source = context.Source,
-			.Floor = FloorAt(m_Level.Map, context.Origin),
+			.Floor = LaunchFloor(m_Level, context.Origin),
 			.Perks = perks,
 		});
 		if (context.Side == Team::Players)
@@ -982,7 +1008,7 @@ namespace Game
 		m_Entities.Add<Transform>(entity, position, AngleOf(projectile.Velocity));
 		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = owner, .Tag = tag, .Variant = projectile.Ability, .Scale = ScaleByte(scale) });
 		Projectile copy = projectile;
-		copy.Floor = FloorAt(m_Level.Map, position, projectile.Floor);
+		copy.Floor = m_Level.Relief.IsEmpty() ? FloorAt(m_Level.Map, position, projectile.Floor) : projectile.Floor;
 		m_Entities.Add<Projectile>(entity, copy);
 		return entity;
 	}
@@ -1540,10 +1566,10 @@ namespace Game
 			m_Mission.OnKilled(*this, position, IsBossKind(enemy.Type));
 	}
 
-	bool World::ConsumeRevive()
+	bool World::ConsumeRevive(uint32_t playerId)
 	{
 		if (IsPvp())
-			return m_Match.CanRespawn();
+			return m_Match.CanRespawn(playerId);
 		return m_Settings.Mode != GameMode::Mission || m_Mission.ConsumeRevive();
 	}
 

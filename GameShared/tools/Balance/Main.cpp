@@ -46,6 +46,7 @@ namespace
 		std::string Out = "balance";
 		MapKind Map = MapKind::Caldera;
 		BrawlMode Mode = BrawlMode::Damage;
+		bool WinnerCard = true;
 	};
 
 	struct Share
@@ -206,9 +207,15 @@ namespace
 			}
 			else if (argument == "--map" && hasValue)
 			{
-				if (value != "caldera" && value != "lake" && value != "both")
+				if (value != "caldera" && value != "lake" && value != "ruins" && value != "peak" && value != "all")
 					return false;
-				options.Map = value == "caldera" ? MapKind::Caldera : value == "lake" ? MapKind::FrozenLake : RandomBrawlMap;
+				options.Map = value == "caldera" ? MapKind::Caldera : value == "lake" ? MapKind::FrozenLake : value == "ruins" ? MapKind::SkyRuins : value == "peak" ? MapKind::StormPeak : RandomBrawlMap;
+			}
+			else if (argument == "--winner-card" && hasValue)
+			{
+				if (value != "on" && value != "off")
+					return false;
+				options.WinnerCard = value == "on";
 			}
 			else if (argument == "--out" && hasValue)
 				options.Out = value;
@@ -247,6 +254,7 @@ namespace
 		settings.Mode = GameMode::Brawl;
 		settings.Rules.Rounds = options.Rounds;
 		settings.Rules.Mode = options.Mode;
+		settings.Rules.WinnerCard = options.WinnerCard;
 		settings.Players = options.Players;
 		World world(settings);
 		BotSquad squad;
@@ -582,7 +590,7 @@ namespace
 		md << stamp << " \xC2\xB7 " << totals.Matches << " matches";
 		if (totals.Unfinished > 0)
 			md << " (" << totals.Unfinished << " hit the time limit)";
-		md << " \xC2\xB7 " << (damage ? "damage" : "knockback") << " mode \xC2\xB7 " << (options.Map == RandomBrawlMap ? "Caldera and Frozen Lake" : GetMapDef(options.Map).Name) << " \xC2\xB7 " << options.Players << " bots per match \xC2\xB7 " << unsigned(options.Rounds) << " rounds \xC2\xB7 " << skill << " bots \xC2\xB7 " << totals.Rounds << " rounds played \xC2\xB7 " << Fixed(totals.FightMinutes / 60.0, 1) << " hours of fighting \xC2\xB7 " << Fixed(seconds / 60.0, 1) << " minutes to simulate\n\n";
+		md << " \xC2\xB7 " << (damage ? "damage" : "knockback") << " mode \xC2\xB7 " << (options.Map == RandomBrawlMap ? "every brawl map" : GetMapDef(options.Map).Name) << " \xC2\xB7 " << options.Players << " bots per match \xC2\xB7 " << unsigned(options.Rounds) << " rounds \xC2\xB7 " << skill << " bots \xC2\xB7 " << totals.Rounds << " rounds played \xC2\xB7 " << Fixed(totals.FightMinutes / 60.0, 1) << " hours of fighting \xC2\xB7 " << Fixed(seconds / 60.0, 1) << " minutes to simulate\n\n";
 		md << "Every bot draws three spells at random, so each spell sits in about a third of the seats. The ratio compares how often a spell's owners win a round with how often they would by chance. 1.00 is fair, and the target band is 0.90 to 1.10. The range is a 95% confidence interval.\n\n";
 		md << "## Spells\n\n";
 		md << "| Spell | Seats | Round win ratio | 95% range | Match win ratio | " << (damage ? "Points ratio | " : "") << knockout << " per owner-minute | Share of " << (damage ? "kills" : "ring-outs") << " | Casts per owner-minute | Hits per cast | " << (damage ? "Damage per owner-minute | " : "") << "Verdict |\n";
@@ -731,7 +739,7 @@ namespace
 			uint64_t dealt = totals.HazardDamage;
 			for (const SpellTotals& stats : totals.Spells)
 				dealt += stats.Damage;
-			md << "- " << Fixed(double(dealt - totals.HazardDamage) / std::max(totals.SeatMinutes, 1e-9), 0) << " spell damage per seat-minute. " << Percent(double(totals.HazardDamage) / double(std::max<uint64_t>(dealt, 1))) << " of all damage came from the " << (options.Map == MapKind::FrozenLake ? "water" : "lava") << ".\n";
+			md << "- " << Fixed(double(dealt - totals.HazardDamage) / std::max(totals.SeatMinutes, 1e-9), 0) << " spell damage per seat-minute. " << Percent(double(totals.HazardDamage) / double(std::max<uint64_t>(dealt, 1))) << " of all damage came from the " << (options.Map == MapKind::FrozenLake ? "water" : options.Map == MapKind::SkyRuins ? "sky" : options.Map == MapKind::StormPeak ? "storm and the lightning" : options.Map == RandomBrawlMap ? "hazards" : "lava") << ".\n";
 		}
 		else
 			md << "- " << Percent(double(totals.Knockouts) / deaths) << " of falls into the lava were credited to a spell. The other " << Percent(double(totals.Falls) / deaths) << " were walked, crumbled or burned without a recent shove.\n";
@@ -748,7 +756,7 @@ namespace
 				md << "- Bots holding both Gravity Well and Comet chained the comet onto their own well " << Fixed(both.Seats > 0 ? double(totals.Combos) / double(both.Seats) : 0.0, 2) << " times per round. " << Percent(double(totals.ComboHits) / chains) << " of chains landed the comet on a rival and " << Percent(double(totals.ComboRingOuts) / chains) << (damage ? " killed someone.\n" : " rang someone out.\n");
 			}
 		}
-		md << "\nRun with: Balance --mode " << BrawlModeNames[size_t(options.Mode)] << " --matches " << (options.Matches == UINT32_MAX ? totals.Matches : options.Matches) << " --players " << options.Players << " --rounds " << unsigned(options.Rounds) << " --skill " << skill << " --map " << (options.Map == MapKind::Caldera ? "caldera" : options.Map == MapKind::FrozenLake ? "lake" : "both") << " --seed " << options.Seed << "\n";
+		md << "\nRun with: Balance --mode " << BrawlModeNames[size_t(options.Mode)] << " --matches " << (options.Matches == UINT32_MAX ? totals.Matches : options.Matches) << " --players " << options.Players << " --rounds " << unsigned(options.Rounds) << " --skill " << skill << " --map " << (options.Map == MapKind::Caldera ? "caldera" : options.Map == MapKind::FrozenLake ? "lake" : options.Map == MapKind::SkyRuins ? "ruins" : options.Map == MapKind::StormPeak ? "peak" : "all") << " --seed " << options.Seed << "\n";
 	}
 }
 
@@ -757,7 +765,7 @@ int main(int argc, char** argv)
 	Options options;
 	if (!ParseOptions(argc, argv, options))
 	{
-		std::printf("usage: Balance [--mode damage|knockback] [--matches n] [--hours h] [--players 2..12] [--rounds 3..15] [--skill easy|normal|hard|mixed] [--map caldera|lake|both] [--threads n] [--seed n] [--out path]\n");
+		std::printf("usage: Balance [--mode damage|knockback] [--matches n] [--hours h] [--players 2..12] [--rounds 3..15] [--skill easy|normal|hard|mixed] [--map caldera|lake|ruins|peak|all] [--winner-card on|off] [--threads n] [--seed n] [--out path]\n");
 		return 1;
 	}
 	{

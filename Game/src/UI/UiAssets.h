@@ -140,6 +140,7 @@ namespace Game
 		EchoRipples,
 		UnstableOrb,
 		Meditation,
+		Eye,
 		Count,
 	};
 

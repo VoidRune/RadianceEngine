@@ -54,6 +54,8 @@ namespace Game
 		std::string PbrTest;
 		bool ProfileGpu = false;
 		bool Leviathan = false;
+		bool Steam = true;
+		std::optional<uint64_t> ConnectLobby;
 	};
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv);

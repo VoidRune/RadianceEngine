@@ -1,6 +1,7 @@
 #include "MainMenuState.h"
 #include "App/GameApp.h"
 #include "Audio/GameAudio.h"
+#include "Online/SteamPlatform.h"
 #include "Rendering/MenuBackdrop.h"
 #include "States/SessionState.h"
 #include "UI/SettingsUi.h"
@@ -79,6 +80,7 @@ namespace Game
 		m_Port = std::to_string(settings.Port);
 		m_Kit = int(settings.Kit);
 		m_Unlimited = settings.UnlimitedMaterials;
+		m_FriendsCanJoin = settings.FriendsCanJoin;
 		app.GetGameAudio().EnterMenu();
 	}
 
@@ -118,6 +120,10 @@ namespace Game
 	void MainMenuState::Update(float dt)
 	{
 		m_Time += dt;
+		SteamPlatform& steam = m_App.GetSteam();
+		steam.SetPresence({});
+		if (std::string error = steam.TakeError(); !error.empty())
+			m_Message = std::move(error);
 		const Ui& ui = m_App.GetUi();
 		const glm::vec2 mouse = glm::clamp(ui.GetMouse() / glm::max(ui.GetSize(), glm::vec2(1.0f)) * 2.0f - 1.0f, glm::vec2(-1.0f), glm::vec2(1.0f));
 		m_Parallax += (mouse - m_Parallax) * (1.0f - std::exp(-dt * 1.2f));
@@ -280,7 +286,8 @@ namespace Game
 
 	void MainMenuState::DrawHostPage(Ui& ui, UiRect area)
 	{
-		area = PageHeader(ui, area, "Open a Rift", "Host a game. Friends follow your rift with your address and port.");
+		const bool steam = m_App.GetSteam().IsReady();
+		area = PageHeader(ui, area, "Open a Rift", steam ? "Host a game. Steam friends can join you, or use your address." : "Host a game. Friends follow your rift with your address and port.");
 		UiDrawList& draw = ui.Draw();
 		const UiRect hub = area.CutTop(108.0f);
 		ui.Card(hub, 0.0f, 0.0f);
@@ -298,6 +305,11 @@ namespace Game
 		area.CutTop(20.0f);
 		if (ui.Checkbox(Ui::MakeId("unlimited"), area.CutTop(30.0f), "Unlimited crafting materials (testing)", m_Unlimited))
 			m_App.GetSettings().UnlimitedMaterials = m_Unlimited;
+		if (steam)
+		{
+			area.CutTop(10.0f);
+			ui.Checkbox(Ui::MakeId("friends"), area.CutTop(30.0f), "Steam friends can join without an invite", m_FriendsCanJoin);
+		}
 		const UiRect go = area.CutBottom(54.0f);
 		const std::string who = "You enter as " + (m_Name.empty() ? std::string("Player") : m_Name) + ", " + (m_HasSave && !m_Fresh ? std::string("with your saved gear") : std::string("the ") + GetKit(StarterKit(m_Kit)).Name);
 		draw.TextAligned(area.CutBottom(34.0f), who, Theme::Body(14.5f, Theme::Muted), { 0.5f, 0.5f });
@@ -318,6 +330,46 @@ namespace Game
 		draw.TextAligned(area.CutBottom(34.0f), who, Theme::Body(14.5f, Theme::Muted), { 0.5f, 0.5f });
 		if (ui.Button(Ui::MakeId("join"), go, "Step Through", ButtonKind::Primary, !m_Address.empty(), UiIcon::MagicPortal))
 			StartSession(false);
+		if (m_App.GetSteam().IsReady())
+		{
+			area.CutTop(10.0f);
+			DrawFriendGames(ui, area);
+		}
+	}
+
+	void MainMenuState::DrawFriendGames(Ui& ui, UiRect area)
+	{
+		constexpr float Row = 50.0f;
+		UiDrawList& draw = ui.Draw();
+		SteamPlatform& steam = m_App.GetSteam();
+		FieldLabel(ui, area, "STEAM FRIENDS PLAYING");
+		if (steam.IsJoining())
+		{
+			draw.TextWrapped(area.CutTop(30.0f), "Joining through Steam...", Theme::Body(15.0f, Theme::AccentLight));
+			return;
+		}
+		uint32_t shown = 0;
+		for (const SteamFriend& person : steam.GetFriends())
+		{
+			if (person.Activity != FriendActivity::Joinable && person.Activity != FriendActivity::Playing)
+				break;
+			if (area.H < Row)
+				break;
+			UiRect row = area.CutTop(Row).Shrink(0.0f, 4.0f);
+			ui.Card(row, 0.0f, 0.0f);
+			row = row.Shrink(14.0f, 0.0f);
+			const UiRect button = row.CutRight(120.0f).Shrink(0.0f, 5.0f);
+			if (person.Activity == FriendActivity::Joinable && ui.Button(Ui::MakeId("friend.join", person.Id), button, "Join", ButtonKind::Primary))
+			{
+				m_App.SaveCharacter(PrepareProfile());
+				steam.JoinLobby(person.Lobby);
+			}
+			draw.TextFit({ row.X, row.Y + 4.0f, row.W - 12.0f, 20.0f }, person.Name, Theme::Bold(16.0f, Theme::Text));
+			draw.TextFit({ row.X, row.Y + 23.0f, row.W - 12.0f, 16.0f }, person.Activity == FriendActivity::Joinable ? "In a game you can join" : "Playing, not in a party", Theme::Body(13.0f, Theme::Muted));
+			shown++;
+		}
+		if (shown == 0)
+			draw.TextWrapped(area.CutTop(44.0f), "No Steam friends are playing right now. When one is, join them here or from your Steam friends list.", Theme::Body(14.0f, Theme::Faint));
 	}
 
 	void MainMenuState::DrawCharacterPage(Ui& ui, UiRect area)
@@ -380,7 +432,7 @@ namespace Game
 		draw.TextWrapped({ area.X, area.Y + 28.0f, area.W, 60.0f }, shown.Description, Theme::Body(15.0f, Theme::Text));
 	}
 
-	void MainMenuState::StartSession(bool host)
+	CharacterProfile MainMenuState::PrepareProfile()
 	{
 		Settings& settings = m_App.GetSettings();
 		settings.PlayerName = m_Name.empty() ? "Player" : m_Name;
@@ -388,21 +440,28 @@ namespace Game
 		const int port = m_Port.empty() ? int(DefaultPort) : std::atoi(m_Port.c_str());
 		settings.Port = uint16_t(std::clamp(port, 1024, 65535));
 		settings.Kit = StarterKit(m_Kit);
+		settings.FriendsCanJoin = m_FriendsCanJoin;
 		m_App.RememberSettings(SettingsGroup::Identity);
+		CharacterProfile profile = m_App.LoadCharacter(settings.PlayerName, settings.Kit, m_HasSave && m_Fresh);
+		if (profile.Style != m_Style)
+		{
+			profile.Style = m_Style;
+			if (m_HasSave && !m_Fresh)
+				m_App.SaveCharacter(profile);
+		}
+		return profile;
+	}
 
+	void MainMenuState::StartSession(bool host)
+	{
 		SessionConfig config;
+		config.Profile = PrepareProfile();
+		const Settings& settings = m_App.GetSettings();
 		config.Host = host;
 		config.Port = settings.Port;
 		config.Address = settings.JoinAddress;
 		config.Map = settings.Map;
 		config.StartMode = GameMode::Hub;
-		config.Profile = m_App.LoadCharacter(settings.PlayerName, settings.Kit, m_HasSave && m_Fresh);
-		if (config.Profile.Style != m_Style)
-		{
-			config.Profile.Style = m_Style;
-			if (m_HasSave && !m_Fresh)
-				m_App.SaveCharacter(config.Profile);
-		}
 		m_App.GetGameAudio().PlayUi(Cue::UiRift, 0.9f);
 		m_App.ChangeState(std::make_unique<SessionState>(m_App, config));
 	}

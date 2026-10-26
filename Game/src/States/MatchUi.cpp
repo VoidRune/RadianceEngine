@@ -55,6 +55,22 @@ namespace Game
 		const uint32_t self = m_Client.GetPlayerId();
 		if (session.Mode == GameMode::Brawl)
 		{
+			const bool watching = m_Client.IsSpectating();
+			if (session.Rules.Teams >= 2)
+			{
+				if (status.WinningTeam >= MaxTeams)
+				{
+					title = "Draw";
+					text = "No team came out on top";
+					return false;
+				}
+				const uint8_t mine = m_Client.GetTeam(self);
+				const bool won = mine == status.WinningTeam;
+				const uint16_t rounds = status.TeamScores[status.WinningTeam];
+				title = watching || mine == NoTeam ? std::string(GetTeamName(status.WinningTeam)) + " Wins" : won ? "Victory" : "Defeat";
+				text = std::string(won ? "Your team rules " : std::string("The ") + GetTeamName(status.WinningTeam) + " team rules ") + TermsFor(session.Map).Title + " with " + std::to_string(rounds) + (rounds == 1 ? " round won" : " rounds won");
+				return won;
+			}
 			if (status.Winner == NoPlayer)
 			{
 				title = "Draw";
@@ -69,7 +85,7 @@ namespace Game
 				text = std::string("You rule ") + TermsFor(session.Map).Title + points;
 				return true;
 			}
-			title = "Defeat";
+			title = watching ? "Match Over" : "Defeat";
 			text = PlayerName(status.Winner) + " rules " + TermsFor(session.Map).Title + points;
 			return false;
 		}
@@ -221,7 +237,7 @@ namespace Game
 		if (!royale && session.Rules.Teams)
 		{
 			const float pill = 150.0f;
-			for (uint8_t team = 0; team < TeamCount; team++)
+			for (uint8_t team = 0; team < std::min<uint8_t>(session.Rules.Teams, 2); team++)
 			{
 				const UiRect box{ center + (team == 0 ? -pill - 8.0f : 8.0f), y, pill, 32.0f };
 				const UiColor color = WithAlpha(TeamColor(team));
@@ -459,13 +475,23 @@ namespace Game
 		const bool royale = status.Mode == GameMode::Royale;
 		const bool brawl = status.Mode == GameMode::Brawl;
 		const bool damage = brawl && m_Client.GetSession().Rules.Mode == BrawlMode::Damage;
-		std::vector<PlayerInfo> players = m_Client.GetPlayers();
+		std::vector<PlayerInfo> players;
+		for (const PlayerInfo& player : m_Client.GetPlayers())
+			if (!player.Spectator)
+				players.push_back(player);
 		if (royale)
 			std::stable_sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return (a.Placement == 0) != (b.Placement == 0) ? b.Placement == 0 : a.Placement != b.Placement ? a.Placement < b.Placement : a.Kills > b.Kills; });
 		else if (brawl)
 			std::stable_sort(players.begin(), players.end(), [this](const PlayerInfo& a, const PlayerInfo& b) { return BrawlRanksAbove(a, b); });
 		else
 			std::stable_sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.Kills != b.Kills ? a.Kills > b.Kills : a.Deaths < b.Deaths; });
+		const std::vector<uint8_t> teams = TeamOrder();
+		if (!teams.empty())
+			std::stable_sort(players.begin(), players.end(), [&](const PlayerInfo& a, const PlayerInfo& b)
+			{
+				const auto place = [&](uint8_t team) { return size_t(std::find(teams.begin(), teams.end(), team) - teams.begin()); };
+				return place(a.Team) < place(b.Team);
+			});
 		std::vector<const char*> labels;
 		if (brawl)
 			labels = damage ? std::vector<const char*>{ "Points", "Rounds", "Kills", "Assists", "Damage" } : std::vector<const char*>{ "Points", "Rounds", "Kills" };
@@ -484,7 +510,10 @@ namespace Game
 		constexpr float RowHeight = 30.0f;
 		constexpr float ColumnWidth = 74.0f;
 		const float columns = float(labels.size()) * ColumnWidth;
-		const float height = 168.0f + float(players.size()) * RowHeight;
+		uint32_t bands = 0;
+		for (size_t i = 0; i < players.size() && !teams.empty(); i++)
+			bands += i == 0 || players[i].Team != players[i - 1].Team ? 1u : 0u;
+		const float height = 168.0f + float(players.size()) * RowHeight + float(bands) * 34.0f;
 		const UiRect panel = UiRect::Centered({ ui.GetSize().x * 0.5f, ui.GetSize().y * 0.5f + 40.0f }, { 380.0f + columns, height });
 		ui.Panel(panel, 12.0f, false);
 		std::string title;
@@ -507,16 +536,33 @@ namespace Game
 		for (size_t i = 0; i < labels.size(); i++)
 			draw.TextAligned({ header.Right() - columns + float(i) * ColumnWidth, header.Y, ColumnWidth, header.H }, labels[i], headStyle, { 0.5f, 0.5f });
 		ui.Separator(table.CutTop(6.0f));
+		size_t place = 0;
 		for (size_t i = 0; i < players.size(); i++)
 		{
 			const PlayerInfo& player = players[i];
+			if (!teams.empty() && (i == 0 || player.Team != players[i - 1].Team))
+			{
+				place = 0;
+				table.CutTop(4.0f);
+				const UiRect band = table.CutTop(30.0f);
+				const UiColor color = player.Team < MaxTeams ? WithAlpha(TeamColor(player.Team)) : Theme::Muted;
+				const bool winners = player.Team == status.WinningTeam;
+				draw.Rect(band, { .Fill = WithAlpha(Darken(color, 0.72f), 0.75f), .FillBottom = WithAlpha(Darken(color, 0.85f), 0.4f), .Border = WithAlpha(color, winners ? 0.95f : 0.45f), .BorderWidth = winners ? 1.6f : 1.0f, .Chamfer = 6.0f });
+				UiRect label = band.Shrink(12.0f, 0.0f);
+				if (winners)
+					draw.Icon(UiIcon::Crown, label.CutLeft(20.0f).Shrink(0.0f, 6.0f), { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold });
+				draw.TextAligned(label.Shrink(winners ? 6.0f : 0.0f, 0.0f), GetTeamName(player.Team), Theme::Bold(16.0f, Lighten(color, 0.45f)), { 0.0f, 0.5f });
+				if (player.Team < MaxTeams)
+					draw.TextAligned(label, std::to_string(status.TeamScores[player.Team]) + (brawl ? (status.TeamScores[player.Team] == 1 ? " round won" : " rounds won") : " kills"), Theme::Bold(15.0f, Theme::Text), { 1.0f, 0.5f });
+			}
+			place++;
 			const UiRect row = table.CutTop(RowHeight);
 			const bool you = player.PlayerId == m_Client.GetPlayerId();
 			if (you)
 				draw.Rect(row, { .Fill = Rgba(0.75f, 0.65f, 1.0f, 0.07f), .Border = WithAlpha(Theme::Edge, 0.6f), .BorderWidth = 1.0f, .Chamfer = 6.0f });
-			const std::string place = royale ? (player.Placement > 0 ? Ordinal(player.Placement) : "-") : std::to_string(i + 1);
-			const bool first = royale ? player.Placement == 1 : i == 0;
-			draw.TextAligned({ row.X + 8.0f, row.Y, 52.0f, row.H }, place, Theme::Bold(15.0f, first ? Theme::AccentLight : Theme::Text), { 0.0f, 0.5f });
+			const std::string placeText = royale ? (player.Placement > 0 ? Ordinal(player.Placement) : "-") : std::to_string(place);
+			const bool first = royale ? player.Placement == 1 : teams.empty() && i == 0;
+			draw.TextAligned({ row.X + 8.0f, row.Y, 52.0f, row.H }, placeText, Theme::Bold(15.0f, first ? Theme::AccentLight : Theme::Text), { 0.0f, 0.5f });
 			if (first)
 				draw.Icon(UiIcon::Crown, { row.X + 40.0f, row.Center().y - 8.0f, 16.0f, 16.0f }, { .Color = Theme::AccentLight, .ColorBottom = Theme::Accent });
 			const UiColor color = WithAlpha(ColorOf(player.PlayerId));

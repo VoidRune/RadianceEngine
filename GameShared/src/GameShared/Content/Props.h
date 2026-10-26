@@ -132,6 +132,23 @@ namespace Game
 		ChessTable,
 		IcePillar,
 		SnowRock,
+		RuinColumn,
+		RuinBrokenColumn,
+		RuinStump,
+		RuinDrum,
+		RuinCapital,
+		RuinArch,
+		RuinWall,
+		RuinWallShort,
+		RuinPedestal,
+		RuinRubble,
+		StormSpire,
+		Cairn,
+		StandingStone,
+		GlyphStone,
+		PrayerPole,
+		StoneGate,
+		GraniteBoulder,
 		Count,
 	};
 
@@ -838,6 +855,116 @@ namespace Game
 			Sphere({}, 0.0f, { 0.75f, 0.75f }, 0.6f, StoneDark),
 			Sphere({}, 0.38f, { 0.62f, 0.62f }, 0.24f, 0xE8F0F6),
 		};
+
+		inline constexpr uint32_t Limestone = 0xD9CCB0;
+		inline constexpr uint32_t LimestoneShade = 0xB6A787;
+
+		inline constexpr PropCollider RuinColumnColliders[] = { Circle(0.45f) };
+		inline constexpr PropPart RuinColumnParts[] = {
+			Box({}, 0.0f, { 0.47f, 0.47f }, 0.3f, LimestoneShade),
+			Cylinder({}, 0.3f, { 0.32f, 0.32f }, 2.7f, Limestone),
+			Box({}, 3.0f, { 0.44f, 0.44f }, 0.3f, LimestoneShade),
+		};
+
+		inline constexpr PropPart RuinBrokenColumnParts[] = {
+			Box({}, 0.0f, { 0.47f, 0.47f }, 0.3f, LimestoneShade),
+			Cylinder({}, 0.3f, { 0.32f, 0.32f }, 1.3f, Limestone),
+		};
+
+		inline constexpr PropCollider RuinStumpColliders[] = { Circle(0.45f) };
+		inline constexpr PropPart RuinStumpParts[] = {
+			Box({}, 0.0f, { 0.47f, 0.47f }, 0.3f, LimestoneShade),
+			Cylinder({}, 0.3f, { 0.32f, 0.32f }, 0.42f, Limestone),
+		};
+
+		inline constexpr PropCollider RuinDrumColliders[] = { Rect({ 0.41f, 0.34f }) };
+		inline constexpr PropPart RuinDrumParts[] = {
+			CylinderX({}, 0.0f, { 0.4f, 0.34f }, 0.68f, Limestone),
+		};
+
+		inline constexpr PropCollider RuinCapitalColliders[] = { Rect({ 0.5f, 0.52f }, Block::Movement) };
+		inline constexpr PropPart RuinCapitalParts[] = {
+			Box({}, 0.0f, { 0.45f, 0.45f }, 0.45f, LimestoneShade, 0.12f),
+		};
+
+		inline constexpr PropCollider RuinArchColliders[] = { Rect({ 0.32f, 0.32f }, Block::All, { -1.25f, 0.0f }), Rect({ 0.32f, 0.32f }, Block::All, { 1.25f, 0.0f }) };
+		inline constexpr PropPart RuinArchParts[] = {
+			Box({ -1.25f, 0.0f }, 0.0f, { 0.3f, 0.3f }, 1.9f, Limestone),
+			Box({ 1.25f, 0.0f }, 0.0f, { 0.3f, 0.3f }, 1.9f, Limestone),
+			Box({}, 1.9f, { 1.55f, 0.3f }, 1.0f, LimestoneShade),
+		};
+
+		inline constexpr PropCollider RuinWallColliders[] = { Rect({ 1.3f, 0.26f }, Block::All, { 0.0f, 0.07f }) };
+		inline constexpr PropPart RuinWallParts[] = {
+			Box({ -0.4f, 0.0f }, 0.0f, { 0.9f, 0.25f }, 1.4f, Limestone),
+			Box({ 0.85f, 0.0f }, 0.0f, { 0.45f, 0.25f }, 0.9f, LimestoneShade),
+		};
+
+		inline constexpr PropCollider RuinWallShortColliders[] = { Rect({ 0.81f, 0.26f }, Block::All, { 0.0f, 0.35f }), Rect({ 0.26f, 0.35f }, Block::All, { 0.54f, -0.25f }) };
+		inline constexpr PropPart RuinWallShortParts[] = {
+			Box({ 0.0f, 0.35f }, 0.0f, { 0.8f, 0.25f }, 1.0f, Limestone),
+			Box({ 0.54f, -0.25f }, 0.0f, { 0.25f, 0.35f }, 0.8f, LimestoneShade),
+		};
+
+		inline constexpr PropCollider RuinPedestalColliders[] = { Rect({ 0.6f, 0.6f }) };
+		inline constexpr PropPart RuinPedestalParts[] = {
+			Box({}, 0.0f, { 0.6f, 0.6f }, 0.35f, LimestoneShade),
+			Box({}, 0.35f, { 0.45f, 0.45f }, 0.45f, Limestone),
+		};
+
+		inline constexpr PropPart RuinRubbleParts[] = {
+			Box({ -0.3f, 0.1f }, 0.0f, { 0.22f, 0.16f }, 0.2f, Limestone, 0.4f),
+			Box({ 0.25f, -0.15f }, 0.0f, { 0.16f, 0.14f }, 0.16f, LimestoneShade, 1.1f),
+		};
+
+		inline constexpr uint32_t StormGlow = 0x9FD8FF;
+
+		inline constexpr PropCollider StormSpireColliders[] = { Circle(0.62f) };
+		inline constexpr PropPart StormSpireParts[] = {
+			Box({}, 0.0f, { 0.6f, 0.6f }, 0.78f, LimestoneShade),
+			Cylinder({}, 0.78f, { 0.32f, 0.32f }, 2.5f, Limestone),
+			Cone({}, 3.28f, { 0.24f, 0.24f }, 0.9f, StormGlow, 0.0f, 1.0f),
+		};
+
+		inline constexpr PropCollider CairnColliders[] = { Circle(0.42f) };
+		inline constexpr PropPart CairnParts[] = {
+			Sphere({}, 0.0f, { 0.42f, 0.38f }, 0.34f, StoneDark),
+			Sphere({ 0.04f, -0.02f }, 0.3f, { 0.3f, 0.28f }, 0.26f, StoneDark, 0.6f),
+			Sphere({ -0.02f, 0.02f }, 0.53f, { 0.2f, 0.18f }, 0.2f, StoneDark, 1.2f),
+		};
+
+		inline constexpr uint32_t Granite = 0x6E6F72;
+		inline constexpr uint32_t GraniteDark = 0x4C4E53;
+
+		inline constexpr PropCollider StandingStoneColliders[] = { Rect({ 0.44f, 0.26f }) };
+		inline constexpr PropPart StandingStoneParts[] = {
+			Box({}, 0.0f, { 0.42f, 0.24f }, 2.4f, Granite),
+			Box({ 0.0f, -0.25f }, 1.2f, { 0.12f, 0.02f }, 0.8f, StormGlow, 0.0f, 0.6f),
+		};
+
+		inline constexpr PropCollider GlyphStoneColliders[] = { Circle(0.36f) };
+		inline constexpr PropPart GlyphStoneParts[] = {
+			Box({}, 0.0f, { 0.3f, 0.2f }, 1.0f, Granite),
+			Box({ 0.0f, -0.21f }, 0.45f, { 0.1f, 0.02f }, 0.36f, StormGlow, 0.0f, 0.6f),
+		};
+
+		inline constexpr PropCollider PrayerPoleColliders[] = { Circle(0.22f) };
+		inline constexpr PropPart PrayerPoleParts[] = {
+			Cylinder({}, 0.0f, { 0.06f, 0.06f }, 2.6f, WoodDark),
+			Box({ 0.0f, 0.22f }, 1.7f, { 0.02f, 0.2f }, 0.7f, ClothBlue),
+		};
+
+		inline constexpr PropCollider StoneGateColliders[] = { Circle(0.34f, Block::All, { -1.15f, 0.0f }), Circle(0.34f, Block::All, { 1.15f, 0.0f }) };
+		inline constexpr PropPart StoneGateParts[] = {
+			Box({ -1.15f, 0.0f }, 0.0f, { 0.3f, 0.3f }, 2.5f, Granite),
+			Box({ 1.15f, 0.0f }, 0.0f, { 0.3f, 0.3f }, 2.5f, Granite),
+			Box({}, 2.5f, { 1.65f, 0.34f }, 0.45f, GraniteDark),
+		};
+
+		inline constexpr PropCollider GraniteBoulderColliders[] = { Circle(0.62f) };
+		inline constexpr PropPart GraniteBoulderParts[] = {
+			Sphere({}, -0.1f, { 0.7f, 0.6f }, 1.0f, Granite, 0.4f),
+		};
 	}
 
 	inline constexpr PropDef Props[] = {
@@ -931,6 +1058,23 @@ namespace Game
 		{ PropId::ChessTable, "Chess table", PropData::ChessTableColliders, PropData::ChessTableParts },
 		{ PropId::IcePillar, "Ice pillar", PropData::IcePillarColliders, PropData::IcePillarParts, true },
 		{ PropId::SnowRock, "Snowy rock", PropData::SnowRockColliders, PropData::SnowRockParts },
+		{ PropId::RuinColumn, "Ruined column", PropData::RuinColumnColliders, PropData::RuinColumnParts, true },
+		{ PropId::RuinBrokenColumn, "Broken ruin column", PropData::RuinColumnColliders, PropData::RuinBrokenColumnParts, true },
+		{ PropId::RuinStump, "Column stump", PropData::RuinStumpColliders, PropData::RuinStumpParts },
+		{ PropId::RuinDrum, "Fallen column drum", PropData::RuinDrumColliders, PropData::RuinDrumParts },
+		{ PropId::RuinCapital, "Fallen capital", PropData::RuinCapitalColliders, PropData::RuinCapitalParts },
+		{ PropId::RuinArch, "Ruined arch", PropData::RuinArchColliders, PropData::RuinArchParts, true },
+		{ PropId::RuinWall, "Ruined wall", PropData::RuinWallColliders, PropData::RuinWallParts, true },
+		{ PropId::RuinWallShort, "Ruined wall fragment", PropData::RuinWallShortColliders, PropData::RuinWallShortParts },
+		{ PropId::RuinPedestal, "Ruined pedestal", PropData::RuinPedestalColliders, PropData::RuinPedestalParts },
+		{ PropId::RuinRubble, "Ruin rubble", {}, PropData::RuinRubbleParts },
+		{ PropId::StormSpire, "Storm spire", PropData::StormSpireColliders, PropData::StormSpireParts, true },
+		{ PropId::Cairn, "Cairn", PropData::CairnColliders, PropData::CairnParts },
+		{ PropId::StandingStone, "Standing stone", PropData::StandingStoneColliders, PropData::StandingStoneParts, true },
+		{ PropId::GlyphStone, "Glyph stone", PropData::GlyphStoneColliders, PropData::GlyphStoneParts },
+		{ PropId::PrayerPole, "Prayer pole", PropData::PrayerPoleColliders, PropData::PrayerPoleParts, true },
+		{ PropId::StoneGate, "Pilgrim gate", PropData::StoneGateColliders, PropData::StoneGateParts, true },
+		{ PropId::GraniteBoulder, "Granite boulder", PropData::GraniteBoulderColliders, PropData::GraniteBoulderParts },
 	};
 
 	constexpr bool PropsMatchIds()

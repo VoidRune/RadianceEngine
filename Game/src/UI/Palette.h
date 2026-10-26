@@ -27,6 +27,8 @@ namespace Game
 	inline constexpr glm::vec3 TeamColors[] = {
 		{ 0.25f, 0.55f, 1.00f },
 		{ 1.00f, 0.32f, 0.25f },
+		{ 0.40f, 0.88f, 0.36f },
+		{ 1.00f, 0.76f, 0.22f },
 	};
 
 	inline constexpr glm::vec3 RarityColors[] = {

@@ -1,9 +1,11 @@
 #pragma once
 #include "App/AppState.h"
+#include "Online/SteamPlatform.h"
 #include "Rendering/LevelRenderer.h"
 #include "Rendering/Characters.h"
 #include "Rendering/Effects.h"
 #include "Rendering/Lighting.h"
+#include "Rendering/SpellVisuals.h"
 #include "UI/UiTypes.h"
 #include <GameShared/Client/GameClient.h>
 #include <GameShared/Save/CharacterProfile.h>
@@ -29,6 +31,9 @@ namespace Game
 		bool Host = true;
 		uint16_t Port = DefaultPort;
 		std::string Address;
+		uint64_t RelayHost = 0;
+		std::string HostName;
+		uint32_t LobbyTicket = 0;
 		MapKind Map = MapKind::Town;
 		GameMode StartMode = GameMode::Hub;
 		CharacterProfile Profile;
@@ -92,6 +97,7 @@ namespace Game
 			float SinceHit = 1e9f;
 			float FallAge = -1.0f;
 			float FallFrom = 0.0f;
+			float SpearAge = -1.0f;
 			EntityState Last;
 			CharacterAnimator Animator;
 		};
@@ -126,6 +132,15 @@ namespace Game
 			float Speed = 0.0f;
 			bool Aloft = false;
 			bool Seen = false;
+		};
+
+		struct SpearPath
+		{
+			Vec2 Start;
+			Vec2 Last;
+			float Facing = 0.0f;
+			float Size = 1.0f;
+			uint32_t Seed = 0;
 		};
 
 		struct Notice
@@ -190,6 +205,10 @@ namespace Game
 		LevelView ComputeView() const;
 		void DrawEntity(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawPlayer(WorldRenderer& renderer, const EntityState& entity) const;
+		IceSpearLook ChargingSpear(const EntityState& caster, float age) const;
+		void SpearMoments(EntityFx& fx, const EntityState& entity, float dt);
+		void DrawSpearCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
+		GroundDecal FrostLane(const SpearPath& path) const;
 		void DrawEnemy(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawProjectile(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawEffect(WorldRenderer& renderer, const EntityState& entity) const;
@@ -202,6 +221,8 @@ namespace Game
 		void DrawOverlay();
 		void DrawStatus();
 		void DrawHud();
+		void DrawSpectatorBar();
+		void DrawScoreboard();
 		void DrawAbilityBar(const UiRect& area);
 		void DrawUpgradeChoice();
 		void DrawInventory();
@@ -223,6 +244,7 @@ namespace Game
 		void DrawKillFeed();
 		void DrawMinimap();
 		void DrawStorm(WorldRenderer& renderer) const;
+		void DrawPeak(WorldRenderer& renderer) const;
 		void UpdateMatchFeedback(float dt);
 		void UpdateBrawlFeedback();
 		void DrawBrawlStatus();
@@ -241,10 +263,21 @@ namespace Game
 		void DrawDraggedSpell();
 		void DrawSpellbook();
 		void DrawCalderaGate();
+		void DrawGateMatch(UiRect area);
+		void DrawGateCustom(UiRect area);
+		void DrawGateTeams(UiRect area);
+		void DrawGateFooter(UiRect area);
 		void DrawBotRules(UiRect& area);
 		void DrawArenaChoice(UiRect& area);
 		void DrawModeChoice(UiRect& area);
+		void DrawTeamChoice(UiRect& area);
+		void SetBrawlTeams(uint8_t teams);
+		void TidyBrawlSeats();
+		void AddBrawlBot(int delta);
+		std::array<uint32_t, MaxTeams> CountTeamMembers() const;
+		static constexpr int SeatPayload = 32;
 		BrawlMode ShownBrawlMode() const;
+		bool WonBrawlRound(uint32_t playerId) const;
 		void DescribeBrawlSpell(UiTooltip& tooltip, AbilityId spell) const;
 		MapKind ChosenArena() const;
 		std::string EnterLabel() const;
@@ -262,8 +295,12 @@ namespace Game
 		void CommitChessMove(uint8_t from, uint8_t to, Chess::Piece promotion);
 		Chess::Position ShownChessPosition() const;
 		void DrawLavaWarning();
+		void DrawSkyWarnings();
+		void UpdateStorm(const BrawlStatus& brawl);
 		bool DescribeOutcome(std::string& title, std::string& text) const;
 		bool BrawlRanksAbove(const PlayerInfo& a, const PlayerInfo& b) const;
+		void SortStandings(std::vector<PlayerInfo>& players) const;
+		std::vector<uint8_t> TeamOrder() const;
 		std::string PlayerName(uint32_t playerId) const;
 		glm::vec3 ColorOf(uint32_t playerId) const;
 		bool DrawItemSource(const UiRect& area, bool gems, uint32_t selectedId, ItemRef& picked);
@@ -272,6 +309,11 @@ namespace Game
 		void DrawConnecting();
 		void DrawNetworkWindow();
 		void ReturnToMenu(std::string message);
+		void UpdateSteam(float dt);
+		Presence DescribePresence() const;
+		void DrawInvitePage(glm::vec2 center);
+		void DrawAchievementsPage(glm::vec2 center);
+		void DrawAchievementToasts();
 
 		GameApp& m_App;
 		SessionConfig m_Config;
@@ -282,7 +324,18 @@ namespace Game
 		bool m_Paused = false;
 		bool m_PauseSettings = false;
 		bool m_PauseWardrobe = false;
+		bool m_PauseInvite = false;
+		bool m_PauseAchievements = false;
 		float m_PauseTime = 0.0f;
+		uint32_t m_LobbyTicket = 0;
+		struct Toast
+		{
+			Achievement Id = Achievement::FirstFling;
+			float Age = 0.0f;
+		};
+		std::vector<Toast> m_Toasts;
+		std::vector<std::pair<uint64_t, float>> m_Invited;
+		size_t m_InviteScroll = 0;
 		bool m_ShowNetStats = false;
 		bool m_ShowInventory = false;
 		float m_Aim = 0.0f;
@@ -299,6 +352,8 @@ namespace Game
 		std::unique_ptr<CharacterLibrary> m_Characters;
 		std::unique_ptr<EffectSystem> m_Effects;
 		std::optional<uint32_t> m_MeteorMesh;
+		SpellMeshes m_SpellMeshes;
+		std::unordered_map<uint32_t, SpearPath> m_SpearPaths;
 		std::array<std::vector<uint32_t>, size_t(Critter::Count)> m_Critters;
 		std::array<std::vector<uint32_t>, 12> m_ChessMeshes;
 		uint32_t m_ChessSeen = UINT32_MAX;
@@ -371,6 +426,7 @@ namespace Game
 		MapKind m_RoyaleMap = MapKind::Ashlands;
 		MatchRules m_BrawlRules;
 		int m_BrawlArena = 0;
+		int m_GateTab = 0;
 		CollapsePlan m_SeenPlan;
 		bool m_HasPlan = false;
 		float m_SeenClock = -1e5f;
@@ -378,6 +434,10 @@ namespace Game
 		std::vector<uint8_t> m_Risen;
 		std::vector<uint8_t> m_Fallen;
 		float m_CrumbleCooldown = 0.0f;
+		float m_Flash = 0.0f;
+		float m_StormClock = -1e9f;
+		float m_RitualPulse = 0.0f;
+		float m_LastSpireStrike = 0.0f;
 		BrawlPhase m_SeenBrawlPhase = BrawlPhase::Draft;
 		uint8_t m_SeenRound = 0;
 		uint8_t m_FoughtRound = 0;

@@ -14,6 +14,7 @@ namespace Game
 		bool Usable = false;
 		uint8_t Level = 1;
 		float CastTime = 0.0f;
+		float ChargeTime = 0.0f;
 		float Cooldown = 0.0f;
 		float ManaCost = 0.0f;
 		float MoveScale = 1.0f;

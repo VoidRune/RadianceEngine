@@ -1,4 +1,6 @@
 #include "GameAudio.h"
+#include "Rendering/SpellVisuals.h"
+#include <GameShared/Content/Brawl.h>
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/Content/Items.h>
 #include <GameShared/Content/Terrain.h>
@@ -74,6 +76,10 @@ namespace Game
 				return AmbienceScene::Caldera;
 			case MapKind::FrozenLake:
 				return AmbienceScene::FrozenLake;
+			case MapKind::SkyRuins:
+				return AmbienceScene::SkyRuins;
+			case MapKind::StormPeak:
+				return AmbienceScene::StormPeak;
 			default:
 				return AmbienceScene::None;
 			}
@@ -150,6 +156,12 @@ namespace Game
 		case AmbienceScene::FrozenLake:
 			space = { 1.3f, 0.55f, 0.02f, 0.4f };
 			break;
+		case AmbienceScene::SkyRuins:
+			space = { 0.9f, 0.6f, 0.01f, 0.25f };
+			break;
+		case AmbienceScene::StormPeak:
+			space = { 1.6f, 0.5f, 0.03f, 0.35f };
+			break;
 		default:
 			break;
 		}
@@ -199,6 +211,8 @@ namespace Game
 	void GameAudio::Update(float dt)
 	{
 		m_Time += dt;
+		m_CrackCooldown = std::max(m_CrackCooldown - dt, 0.0f);
+		m_ThunderCooldown = std::max(m_ThunderCooldown - dt, 0.0f);
 		m_Music->Update(dt);
 		m_Soundscape->Update(dt, m_Focus, m_Ground);
 	}
@@ -381,6 +395,19 @@ namespace Game
 				m_NextThunder = 5.0f + 7.0f * m_Random.Float();
 			}
 		}
+		if (session.Mode == GameMode::Brawl && session.Map == MapKind::SkyRuins && status.Brawl.Phase == BrawlPhase::Fight)
+		{
+			const Gust gust = GustAt(status.Brawl.Plan, client.GetArenaClock(client.GetPresentTick()));
+			storm = 0.3f * gust.Warning * (1.0f - gust.Strength) + 0.85f * gust.Strength;
+		}
+		if (session.Mode == GameMode::Brawl && session.Map == MapKind::StormPeak)
+		{
+			const bool live = status.Brawl.Phase == BrawlPhase::Fight || status.Brawl.Phase == BrawlPhase::Over;
+			const float clock = live ? client.GetArenaClock(client.GetPresentTick()) : 0.0f;
+			const StormRing ring = RingAt(status.Brawl.Plan, clock);
+			const float outside = ring.Active ? std::clamp((Length(m_Focus - ring.Center) - ring.Radius + 2.0f) / 4.0f, 0.0f, 1.0f) : 0.0f;
+			storm = std::clamp(0.12f + 0.35f * (live ? StormBuild(status.Brawl.Plan, clock) : 0.0f) + 0.45f * outside, 0.12f, 0.85f);
+		}
 		m_Soundscape->SetStorm(storm);
 	}
 
@@ -509,6 +536,19 @@ namespace Game
 		}
 	}
 
+	void GameAudio::PlayLightning(Vec2 position, float distance)
+	{
+		if (distance < 16.0f && m_CrackCooldown <= 0.0f)
+		{
+			PlayAt(Cue::ShockHit, position, 0.6f, 0.5f + 0.15f * m_Random.Float());
+			m_CrackCooldown = 0.12f;
+		}
+		if (m_ThunderCooldown > 0.0f)
+			return;
+		PlayAt(Cue::Thunder, position, std::clamp(1.0f - distance / 40.0f, 0.25f, 0.8f), 0.85f + 0.25f * m_Random.Float(), std::min(distance * 0.015f, 0.4f), 6.0f);
+		m_ThunderCooldown = 0.7f;
+	}
+
 	void GameAudio::PlayCrumble(Vec2 position, bool ice)
 	{
 		if (ice)
@@ -609,6 +649,8 @@ namespace Game
 				tracked.Loop.Stop(0.08f);
 				tracked.Loop = {};
 			}
+			if ((before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::FrostSpear)) || (entity.Has(EntityFlags::Attacking) && entity.Variant == uint8_t(AbilityId::FrostSpear)))
+				ChargeSpear(entity, before, tracked, self, dt);
 			if (!dead && !revived && moved > 3.0f)
 				PlayAt(Cue::TeleportIn, entity.Position, 0.6f);
 			else if (!dead && !entity.Has(EntityFlags::Dashing))
@@ -767,9 +809,16 @@ namespace Game
 		case AbilityId::ArcLightning:
 			PlayAt(Cue::ShockLaunch, at, 0.75f * loud, 1.1f);
 			break;
-		case AbilityId::Frostbite:
-			PlayAt(Cue::IceLaunch, at, 0.7f * loud, 1.25f);
+		case AbilityId::FrostSpear:
+		{
+			const float power = std::clamp((entity.GetScale() - 1.0f) / (SpearFullSize - 1.0f), 0.0f, 1.0f);
+			PlayAt(Cue::IceLaunch, at, (0.6f + 0.35f * power) * loud, 1.3f - 0.4f * power);
+			if (power > 0.4f)
+				PlayAt(Cue::WhooshHeavy, at, 0.65f * power * loud, 1.15f);
+			if (power >= 0.999f)
+				PlayAt(Cue::Glass, at, 0.45f * loud, 1.25f);
 			break;
+		}
 		case AbilityId::Swap:
 			PlayAt(Cue::ManaStart, at, 0.6f * loud, 1.35f);
 			PlayAt(Cue::WhooshLight, at, 0.4f * loud, 1.3f);
@@ -849,9 +898,13 @@ namespace Game
 		case AbilityId::ArcLightning:
 			PlayAt(Cue::ShockHit, at, 0.55f, 1.1f);
 			break;
-		case AbilityId::Frostbite:
-			PlayAt(Cue::IceImpact, at, 0.6f, 1.2f);
+		case AbilityId::FrostSpear:
+		{
+			const float power = std::clamp((entity.GetScale() - 1.0f) / (SpearFullSize - 1.0f), 0.0f, 1.0f);
+			PlayAt(Cue::IceImpact, at, 0.55f + 0.35f * power, 1.25f - 0.4f * power);
+			PlayAt(Cue::Glass, at, 0.3f + 0.4f * power, 1.3f - 0.35f * power);
 			break;
+		}
 		case AbilityId::Swap:
 			PlayAt(Cue::TeleportIn, at, 0.4f, 1.3f);
 			break;
@@ -1170,8 +1223,9 @@ namespace Game
 		case AbilityId::ArcLightning:
 			tracked.Loop = PlayAt(Cue::ShockBuildup, at, 0.8f * loud, ability == AbilityId::Shockwave ? 0.85f : 1.1f);
 			break;
-		case AbilityId::Frostbite:
-			tracked.Loop = PlayAt(Cue::IceBuildup, at, 0.7f * loud, 1.25f);
+		case AbilityId::FrostSpear:
+			PlayAt(Cue::IceBuildup, at, 0.55f * loud, 1.15f);
+			tracked.Loop = PlayAt(Cue::IceLoop, at, 0.3f * loud, 0.8f);
 			break;
 		case AbilityId::GravityWell:
 		case AbilityId::Swap:
@@ -1182,6 +1236,52 @@ namespace Game
 			break;
 		default:
 			break;
+		}
+	}
+
+	void GameAudio::ChargeSpear(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt)
+	{
+		const float loud = self ? 1.0f : 0.75f;
+		const Vec2 at = entity.Position;
+		const bool held = before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::FrostSpear);
+		if (!entity.Has(EntityFlags::Attacking) || entity.Variant != uint8_t(AbilityId::FrostSpear) || entity.Has(EntityFlags::Dead))
+		{
+			if (before.GetOvercharge() > 0.9f)
+			{
+				PlayAt(Cue::Glass, at, 0.8f * loud, 0.95f);
+				PlayAt(Cue::IceImpact, at, 0.6f * loud, 0.75f);
+			}
+			else if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
+				PlayAt(Cue::GlassLight, at, 0.5f * loud, 0.9f);
+			tracked.Crackle = 0.0f;
+			return;
+		}
+		const float power = entity.GetChargePower();
+		const float over = entity.GetOvercharge();
+		tracked.Loop.SetPitch(0.8f + 0.55f * power + 0.35f * over);
+		tracked.Loop.SetVolume((0.3f + 0.45f * power) * loud, 0.05f);
+		if (!held)
+			return;
+		const float was = before.GetChargePower();
+		if (was < 1.0f && power >= 1.0f)
+		{
+			PlayAt(Cue::Bell, at, 0.4f * loud, 1.9f);
+			PlayAt(Cue::GlassLight, at, 0.5f * loud, 1.7f);
+		}
+		else
+			for (size_t i = 0; i < std::size(SpearCrownSteps); i++)
+				if (was < SpearCrownSteps[i] && power >= SpearCrownSteps[i])
+					PlayAt(Cue::GlassLight, at, 0.35f * loud, 1.15f + 0.18f * float(i));
+		if (over <= 0.0f)
+		{
+			tracked.Crackle = 0.0f;
+			return;
+		}
+		tracked.Crackle -= dt;
+		if (tracked.Crackle <= 0.0f)
+		{
+			PlayAt(Cue::GlassLight, at, (0.2f + 0.35f * over) * loud, 1.5f + 0.6f * over);
+			tracked.Crackle = 0.3f - 0.22f * over;
 		}
 	}
 

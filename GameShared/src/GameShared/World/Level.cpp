@@ -142,8 +142,13 @@ namespace Game
 		}
 
 		Shapes.clear();
-		for (const PlacedProp& prop : Props)
-			AppendPropShapes(prop, Shapes);
+		ShapeProps.clear();
+		Sunk.clear();
+		for (uint32_t i = 0; i < Props.size(); i++)
+		{
+			AppendPropShapes(Props[i], Shapes);
+			ShapeProps.resize(Shapes.size(), i);
+		}
 		for (const WallSegment& wall : Walls)
 			Shapes.push_back(MakeWallShape(wall));
 		Boundaries.clear();
@@ -220,6 +225,10 @@ namespace Game
 			return BuildCalderaLevel(seed);
 		case MapKind::FrozenLake:
 			return BuildFrozenLakeLevel(seed);
+		case MapKind::SkyRuins:
+			return BuildSkyRuinsLevel(seed);
+		case MapKind::StormPeak:
+			return BuildStormPeakLevel(seed);
 		default:
 			return BuildCavesLevel(seed);
 		}

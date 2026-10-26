@@ -1,0 +1,16 @@
+"lang"
+{
+	"Language"	"english"
+	"Tokens"
+	{
+		"#Status_Menu"		"In the main menu"
+		"#Status_Joining"	"Joining a game"
+		"#Status_Hub"		"In Emberhold"
+		"#Status_Draft"		"Picking spells for %map%"
+		"#Status_Brawl"		"Spellbrawl: %map%, round %round% of %rounds%"
+		"#Status_Watching"	"Watching a Spellbrawl on %map%"
+		"#Status_Results"	"Spellbrawl results on %map%"
+		"#Status_Arena"		"Fighting in the %map%"
+		"#Status_Mission"	"On a mission in %map%"
+	}
+}

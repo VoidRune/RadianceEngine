@@ -159,6 +159,7 @@ project "Game"
 		"dependencies/imgui",
 		"dependencies",
 		"../Dependencies",
+		"../Dependencies/Steamworks/public",
 	}
 
 	links
@@ -166,11 +167,14 @@ project "Game"
 		"GameShared",
 		"RadianceEngine",
 		"TimbreAudio",
+		"../Dependencies/Steamworks/redistributable_bin/win64/steam_api64",
 	}
 
 	postbuildcommands
 	{
 		'{COPYFILE} %[../Dependencies/GameNetworkingSockets/bin/Windows/*.dll] %[%{cfg.targetdir}]',
+		'{COPYFILE} %[../Dependencies/Steamworks/redistributable_bin/win64/steam_api64.dll] %[%{cfg.targetdir}]',
+		'{COPYFILE} %[steam_appid.txt] %[%{cfg.targetdir}]',
 	}
 
 	filter "system:windows"

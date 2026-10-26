@@ -55,6 +55,7 @@ namespace Game
 		bool IsReady() const { return !m_Collapse.empty(); }
 		float Clearance(Vec2 position) const;
 		float CollapseIn(Vec2 position) const;
+		std::optional<Vec2> Route(Vec2 from, Vec2 to) const;
 		float Slide(Vec2 position) const;
 		float GetClock() const { return m_Clock; }
 
@@ -62,17 +63,21 @@ namespace Game
 		int32_t Index(int32_t x, int32_t y) const { return y * m_Width + x; }
 		void BuildCells(const World& world);
 		void PlanCollapse(const World& world);
-		void RefreshClearance();
+		void RefreshClearance(const World& world);
 
 		int32_t m_Width = 0;
 		int32_t m_Height = 0;
 		std::vector<int32_t> m_SampleCell;
+		std::vector<float> m_Floor;
+		std::vector<uint8_t> m_Storm;
+		std::vector<float> m_Strike;
 		std::vector<float> m_CellTime;
 		std::vector<float> m_Collapse;
 		std::vector<float> m_Clearance;
 		std::vector<float> m_ToDanger;
 		std::vector<float> m_ToSafety;
 		std::vector<float> m_Slide;
+		std::vector<uint8_t> m_Cover;
 		uint32_t m_LevelSeed = 0;
 		MapKind m_LevelKind = MapKind::Count;
 		uint32_t m_PlanSeed = 0;
@@ -140,6 +145,7 @@ namespace Game
 			uint32_t Target = NoPlayer;
 			Vec2 Point;
 			int32_t FollowSlot = -1;
+			float Charge = 0.0f;
 		};
 
 		struct Seen
@@ -166,13 +172,14 @@ namespace Game
 		float Harm(float damage, const Rival& rival, AbilityId spell = AbilityId::Count) const;
 		float HitChance(float travel, float distance, const Rival& rival) const;
 		Vec2 Lead(const Rival& rival, float delay, float speed) const;
-		Vec2 SafePoint(const BotArena& arena, float reach, float minimum) const;
+		Vec2 SafePoint(const BotArena& arena, float reach, float minimum, Vec2 drift = {}) const;
 		Vec2 SafeDirection(const BotArena& arena, Vec2 from, float step) const;
 		int32_t ComboSlot(uint32_t slot, float castTime) const;
 		bool Planted(const BotArena& arena) const;
 		void Steer(PlayerInput& input) const;
-		void PressDodge(PlayerInput& input, Vec2 direction);
-		void Cast(PlayerInput& input, uint32_t slot, float aim, float distance);
+		void RouteGoal(const World& world, const BotArena& arena);
+		void PressDodge(const BotArena& arena, PlayerInput& input, Vec2 direction, bool path = true);
+		void Cast(PlayerInput& input, uint32_t slot, float aim, float distance, float charge = 0.0f);
 		bool Ready(uint32_t slot) const;
 		AbilityId SpellIn(uint32_t slot) const;
 		const Rival* FindRival(uint32_t playerId) const;
@@ -187,6 +194,7 @@ namespace Game
 
 		Vec2 m_Position;
 		Vec2 m_Push;
+		Vec2 m_Wind;
 		float m_Health = 1.0f;
 		int32_t m_Life = 0;
 		float m_SelfFling = 1.0f;
@@ -194,6 +202,7 @@ namespace Game
 		bool m_Alive = false;
 		bool m_Burning = false;
 		bool m_DamageMode = false;
+		float m_Knockback = 1.0f;
 		const PlayerState* m_State = nullptr;
 		const PlayerTraits* m_Traits = nullptr;
 		BrawlLoadout m_Loadout;
@@ -204,6 +213,12 @@ namespace Game
 
 		Vec2 m_Goal;
 		bool m_HasGoal = false;
+		const Level* m_Terrain = nullptr;
+		Vec2 m_Route;
+		Vec2 m_RouteGoal;
+		float m_RouteTime = 0.0f;
+		bool m_RouteValid = false;
+		bool m_Routed = false;
 		Vec2 m_Sidestep;
 		float m_SidestepTime = 0.0f;
 		uint32_t m_Target = NoPlayer;
@@ -216,6 +231,8 @@ namespace Game
 		float m_CastStretch = 1.0f;
 		uint32_t m_CastTarget = NoPlayer;
 		Vec2 m_CastOffset;
+		float m_ChargeUntil = 0.0f;
+		float m_ChargeSpeed = 0.0f;
 		float m_Aim = 0.0f;
 		float m_AimDistance = 0.0f;
 		float m_Wander = 0.0f;

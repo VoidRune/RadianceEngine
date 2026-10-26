@@ -172,6 +172,7 @@ namespace Game
 		bool Checkbox(UiId id, const UiRect& rect, std::string_view label, bool& value);
 		bool Slider(UiId id, const UiRect& rect, float& value, float min, float max, std::string_view text);
 		bool Choice(UiId id, const UiRect& rect, int& index, std::span<const char* const> options);
+		bool Tabs(UiId id, const UiRect& rect, int& index, std::span<const char* const> labels);
 		bool TextField(UiId id, const UiRect& rect, std::string& text, size_t maxLength, std::string_view placeholder = {}, bool (*accept)(uint32_t) = nullptr);
 		UiTooltip& Tooltip();
 

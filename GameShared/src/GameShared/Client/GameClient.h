@@ -34,6 +34,7 @@ namespace Game
 		static constexpr uint32_t PredictedNetIdBase = 0x80000000u;
 
 		bool Connect(const std::string& address, const CharacterProfile& profile);
+		bool ConnectRelay(uint64_t host, const CharacterProfile& profile);
 		void ConnectLocal(ConnectionId connection, const CharacterProfile& profile);
 		void Disconnect();
 
@@ -71,6 +72,8 @@ namespace Game
 		void ChooseCard(uint32_t choice);
 		void SetBrawlReady(bool ready);
 		void Spectate(int32_t direction);
+		void JoinMatch();
+		bool IsSpectating() const;
 		void ReturnToHub();
 		void OpenChest();
 		void UseGateway();
@@ -101,6 +104,9 @@ namespace Game
 		const SessionInfo& GetSession() const { return m_Session; }
 		uint32_t GetTravelCount() const { return m_Travels; }
 		std::vector<ServerNotice> TakeNotices() { return std::exchange(m_Notices, {}); }
+		std::vector<Achievement> TakeAchievements() { return std::exchange(m_Achieved, {}); }
+		void AdoptAchievements(AchievementMask mask);
+		bool IsRelayed() const { return m_Relayed; }
 		std::vector<KillRecord> TakeKills() { return std::exchange(m_Kills, {}); }
 		bool IsHostile(const EntityState& entity) const;
 		uint8_t GetTeam(uint32_t playerId) const;
@@ -112,6 +118,7 @@ namespace Game
 		uint32_t GetTickRate() const { return m_Welcome.TickRate; }
 		double GetRenderTick() const { return m_RenderTick; }
 		double GetPresentTick() const { return m_PresentTick; }
+		float GetArenaClock(double tick) const;
 		double GetInterpolationDelay() const { return m_InterpolationDelay; }
 		uint32_t GetLatestTick() const { return m_Snapshots.empty() ? 0 : m_Snapshots.back().Tick; }
 		float GetSnapshotAge() const { return m_SnapshotAge; }
@@ -134,6 +141,7 @@ namespace Game
 			float Lifetime = 0.0f;
 			float Radius = 0.0f;
 			uint8_t Pierce = 0;
+			uint8_t Scale = 16;
 			bool Explodes = false;
 			bool Caught = false;
 			bool Reflected = false;
@@ -164,11 +172,13 @@ namespace Game
 		void OnSnapshot(ServerSnapshot&& snapshot);
 		void TrackFeats(const LocalPlayerState& local);
 		void Earn(Honor honor);
+		void Achieve(Achievement id, uint32_t detail = 0);
 		void OnTravel(const ServerTravel& travel);
 		void ResetView();
 		void Reconcile(const ServerSnapshot& snapshot);
 		void PredictTick(PlayerInput input);
 		void CollectBodies(uint32_t ticksAhead, std::vector<BodyCircle>& bodies) const;
+		ArenaState ArenaFor(uint32_t ticksAhead) const;
 		void PredictAbility(const SkillTraits& skill, uint16_t tag, const PlayerActions& actions, const PlayerTraits& traits);
 		void PredictRecast(AbilityId ability, const PlayerActions& actions);
 		void ReleaseHits();
@@ -192,6 +202,7 @@ namespace Game
 		NetClient m_Net;
 		ClientState m_State = ClientState::Disconnected;
 		bool m_Local = false;
+		bool m_Relayed = false;
 		CharacterProfile m_Profile;
 		std::string m_DisconnectReason;
 		ServerWelcome m_Welcome;
@@ -204,6 +215,7 @@ namespace Game
 		uint32_t m_FeatsVersion = 0;
 		uint32_t m_StyleVersion = 0;
 		std::vector<ServerNotice> m_Notices;
+		std::vector<Achievement> m_Achieved;
 		std::vector<KillRecord> m_Kills;
 		std::unique_ptr<Level> m_Level;
 		uint32_t m_Teleports = 0;
