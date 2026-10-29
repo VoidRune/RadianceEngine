@@ -142,6 +142,7 @@ namespace Game
 			float Radius = 0.0f;
 			uint8_t Pierce = 0;
 			uint8_t Scale = 16;
+			uint8_t Blast = 16;
 			bool Explodes = false;
 			bool Caught = false;
 			bool Reflected = false;

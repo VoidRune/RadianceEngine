@@ -46,6 +46,14 @@ namespace Game
 			break;
 		}
 		case AbilityKind::Ground:
+			if (id == AbilityId::EarthSpike)
+			{
+				AbilityContext thrust = context;
+				thrust.Origin = context.Target;
+				StrikeArea(world, ability, damage, thrust);
+				world.SpawnEffect(ability, thrust, context.Target, context.Tag);
+				break;
+			}
 			world.SpawnPendingStrike(ability, context.Target, damage, context);
 			if (id == AbilityId::Firebomb)
 			{
@@ -93,6 +101,8 @@ namespace Game
 				wake.DamageScale *= brawlDamage ? AfterimageDamage : 1.0f;
 				world.SpawnCardStrike(AbilityId::Shockwave, context.Departure, AngleOf(context.Direction), AfterimageDelay, AfterimageRadius, AfterimagePush * context.PushScale, 0, false, wake);
 			}
+			break;
+		case AbilityKind::Shield:
 			break;
 		}
 	}

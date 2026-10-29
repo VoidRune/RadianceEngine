@@ -87,6 +87,12 @@ namespace Game
 		void StartCast(const EntityState& entity, Tracked& tracked, bool self);
 		void StartWindup(const EntityState& entity, Tracked& tracked);
 		void ChargeSpear(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt);
+		void ChargeFireball(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt);
+		void ChargeObsidian(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self);
+		void GuardSounds(const EntityState& entity, const EntityState& before, bool self);
+		void PlayGuardHit(const HitEvent& hit);
+		void WardSounds(const EntityState& entity, const EntityState& before, bool self);
+		void PlayWardHit(const HitEvent& hit);
 		void PlayAggro(const EntityState& entity);
 		void PlayFootstep(const EntityState& entity, Tracked& tracked, float moved, float volume);
 		void PlayMonsterStep(const EntityState& entity, Tracked& tracked, float moved);

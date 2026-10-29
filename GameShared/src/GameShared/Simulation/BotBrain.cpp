@@ -34,6 +34,11 @@ namespace Game
 		constexpr float RollClearance = 0.3f;
 		constexpr float RollTurns[] = { 0.4f, -0.4f, 0.8f, -0.8f };
 		constexpr float BlinkReach = 3.5f;
+		constexpr float BraceLinger = 0.25f;
+		constexpr float BraceShove = 12.0f;
+		constexpr float BraceBlast = 15.0f;
+		constexpr float BraceSlack = 4.0f;
+		constexpr float BraceMargin = 0.6f;
 		constexpr float BloodHealth = 0.7f;
 		constexpr float BloodPrice = 0.15f;
 		constexpr float BloodMagicFloor = 0.25f;
@@ -102,31 +107,40 @@ namespace Game
 		constexpr BrawlSpells BalancedSets[] = {
 			{ AbilityId::Gust, AbilityId::Warp, AbilityId::Comet },
 			{ AbilityId::FrostSpear, AbilityId::Gust, AbilityId::Warp },
-			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::MirrorWard },
+			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::DiamondWard },
 			{ AbilityId::Shockwave, AbilityId::Swap, AbilityId::Warp },
 			{ AbilityId::Firebomb, AbilityId::StormStrike, AbilityId::Warp },
-			{ AbilityId::SplittingBolt, AbilityId::Gust, AbilityId::MirrorWard },
+			{ AbilityId::ObsidianShards, AbilityId::Gust, AbilityId::DiamondWard },
+			{ AbilityId::EarthSpike, AbilityId::Comet, AbilityId::Warp },
+			{ AbilityId::PurpleFireball, AbilityId::Gust, AbilityId::Warp },
+			{ AbilityId::HexShield, AbilityId::FrostSpear, AbilityId::Warp },
 		};
 		constexpr BrawlSpells BruiserSets[] = {
 			{ AbilityId::Gust, AbilityId::Shockwave, AbilityId::Warp },
-			{ AbilityId::Gust, AbilityId::Shockwave, AbilityId::MirrorWard },
+			{ AbilityId::Gust, AbilityId::Shockwave, AbilityId::DiamondWard },
 			{ AbilityId::Gust, AbilityId::Swap, AbilityId::Warp },
 			{ AbilityId::ChainHook, AbilityId::Gust, AbilityId::Shockwave },
 			{ AbilityId::ChainHook, AbilityId::Firebomb, AbilityId::Warp },
+			{ AbilityId::EarthSpike, AbilityId::Shockwave, AbilityId::Warp },
+			{ AbilityId::PurpleFireball, AbilityId::ChainHook, AbilityId::Shockwave },
+			{ AbilityId::HexShield, AbilityId::Gust, AbilityId::Shockwave },
+			{ AbilityId::ObsidianShards, AbilityId::Shockwave, AbilityId::Warp },
 		};
 		constexpr BrawlSpells SniperSets[] = {
 			{ AbilityId::FrostSpear, AbilityId::Comet, AbilityId::Warp },
 			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::Warp },
-			{ AbilityId::FrostSpear, AbilityId::ArcLightning, AbilityId::MirrorWard },
-			{ AbilityId::StormStrike, AbilityId::SplittingBolt, AbilityId::Warp },
+			{ AbilityId::FrostSpear, AbilityId::ArcLightning, AbilityId::DiamondWard },
+			{ AbilityId::StormStrike, AbilityId::Comet, AbilityId::Warp },
 			{ AbilityId::Firebomb, AbilityId::ArcLightning, AbilityId::Warp },
+			{ AbilityId::PurpleFireball, AbilityId::StormStrike, AbilityId::DiamondWard },
+			{ AbilityId::HexShield, AbilityId::ArcLightning, AbilityId::Comet },
 		};
 		constexpr BrawlSpells TricksterSets[] = {
 			{ AbilityId::Swap, AbilityId::GravityWell, AbilityId::Warp },
-			{ AbilityId::GravityWell, AbilityId::Comet, AbilityId::MirrorWard },
+			{ AbilityId::GravityWell, AbilityId::Comet, AbilityId::DiamondWard },
 			{ AbilityId::Swap, AbilityId::FrostSpear, AbilityId::GravityWell },
 			{ AbilityId::ChainHook, AbilityId::Swap, AbilityId::Warp },
-			{ AbilityId::SplittingBolt, AbilityId::GravityWell, AbilityId::Firebomb },
+			{ AbilityId::ObsidianShards, AbilityId::GravityWell, AbilityId::Firebomb },
 		};
 
 		constexpr const char* BotNames[] = {
@@ -157,10 +171,13 @@ namespace Game
 				return 0.18f;
 			case AbilityId::Firebomb:
 				return 0.14f;
-			case AbilityId::SplittingBolt:
+			case AbilityId::ObsidianShards:
 				return 0.1f;
 			case AbilityId::StormStrike:
 				return 0.12f;
+			case AbilityId::EarthSpike:
+			case AbilityId::PurpleFireball:
+				return 0.13f;
 			default:
 				return 1e9f;
 			}
@@ -171,9 +188,9 @@ namespace Game
 			switch (style)
 			{
 			case BotStyle::Bruiser:
-				return spell == AbilityId::Gust || spell == AbilityId::Shockwave || spell == AbilityId::ChainHook ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
+				return spell == AbilityId::Gust || spell == AbilityId::Shockwave || spell == AbilityId::ChainHook || spell == AbilityId::ObsidianShards ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
 			case BotStyle::Sniper:
-				return spell == AbilityId::FrostSpear || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike || spell == AbilityId::SplittingBolt ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : spell == AbilityId::Gust ? 0.85f : 1.0f;
+				return spell == AbilityId::FrostSpear || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : spell == AbilityId::Gust ? 0.85f : 1.0f;
 			case BotStyle::Trickster:
 				return spell == AbilityId::Swap || spell == AbilityId::GravityWell || spell == AbilityId::ChainHook ? 1.4f : spell == AbilityId::Firebomb ? 1.15f : 1.0f;
 			default:
@@ -643,7 +660,7 @@ namespace Game
 			rival.Chilled = other.State.Chill > 0.0f;
 			rival.Marked = match.GetMarkedBy(other.PlayerId) == m_PlayerId;
 			rival.Mobility = Mobility(other);
-			rival.Warded = other.State.Ward > 0.0f;
+			rival.Warded = IsWarded(other.State);
 			rival.Shielded = other.State.Invulnerable > 0.0f || other.State.DashDistance > 0.0f;
 			rival.CanDodge = other.State.DodgeCooldown <= 0.6f;
 			rival.Points = match.GetPoints(other.PlayerId);
@@ -651,7 +668,6 @@ namespace Game
 		});
 
 		m_Missiles.clear();
-		m_HasBolt = false;
 		entities.Each<Projectile>([&](Entity entity, Projectile& projectile)
 		{
 			const Replicated* replicated = entities.TryGet<Replicated>(entity);
@@ -659,16 +675,7 @@ namespace Game
 			if (!replicated || !place || projectile.Lifetime <= 0.0f)
 				return;
 			if (replicated->Owner == m_PlayerId)
-			{
-				if (projectile.Ability == uint8_t(AbilityId::SplittingBolt) && projectile.Source == self)
-				{
-					m_HasBolt = true;
-					m_Bolt = place->Position;
-					m_BoltVelocity = projectile.Velocity;
-					m_BoltLifetime = projectile.Lifetime;
-				}
 				return;
-			}
 			if (match.AreAllies(m_PlayerId, replicated->Owner))
 				return;
 			m_Missiles.push_back({ replicated->NetId, place->Position, projectile.Velocity, projectile.Radius, projectile.Lifetime, AbilityId(projectile.Ability), projectile.Damage });
@@ -791,7 +798,7 @@ namespace Game
 		const SkillTraits& skill = m_Traits->Skills[slot];
 		m_Casting = int32_t(slot);
 		m_ChargeUntil = m_Time + skill.CastTime + charge * std::max(skill.ChargeTime - skill.CastTime, 0.0f);
-		m_ChargeSpeed = SpearShot(charge).Speed;
+		m_ChargeSpeed = ChargedShotOf(GetAbility(skill.Ability), charge).Speed;
 		m_CastNoise = Noise(params.AimNoise);
 		m_CastStretch = 1.0f + Noise(params.AimNoise * 0.6f);
 		m_CastAim = aim + m_CastNoise;
@@ -921,7 +928,7 @@ namespace Game
 
 	bool BotBrain::Evade(const World& world, const BotArena& arena, PlayerInput& input)
 	{
-		if (m_State->Ward > 0.0f || m_State->Invulnerable > 0.0f || m_State->DashDistance > 0.0f)
+		if (IsWarded(*m_State) || m_State->Invulnerable > 0.0f || m_State->DashDistance > 0.0f)
 			return false;
 		const SkillParams& params = ParamsOf(m_Profile.Skill);
 		const float speed = m_Traits->MoveSpeed;
@@ -955,15 +962,16 @@ namespace Game
 			const Vec2 hitLanding = m_Position + Normalize(missile.Velocity) * (11.5f * m_SelfFling * LandingDrag * arena.Slide(m_Position) / PushFriction);
 			const bool hurts = m_DamageMode && (missile.Damage >= DodgeDamage || missile.Damage >= m_Life);
 			const bool dangerous = missile.Ability == AbilityId::ChainHook || arena.Clearance(hitLanding) < 0.5f || hurts;
-			if (m_State->CastSlot < 0 && (dangerous || m_Profile.Style == BotStyle::Trickster))
-				for (uint32_t slot = 1; slot < AbilitySlots; slot++)
-					if (SpellIn(slot) == AbilityId::MirrorWard && Ready(slot))
-					{
-						Cast(input, slot, AngleOf(-relative), Length(relative));
-						m_CastTarget = NoPlayer;
-						input.Move = side;
-						return true;
-					}
+			if (Brace(input, relative, time + BraceLinger, m_DamageMode ? float(missile.Damage) : BraceShove))
+			{
+				input.Move = side;
+				return true;
+			}
+			if ((dangerous || m_Profile.Style == BotStyle::Trickster) && RaiseWard(input, relative))
+			{
+				input.Move = side;
+				return true;
+			}
 			input.Move = side;
 			if (time < 0.3f && dangerous)
 			{
@@ -1001,6 +1009,10 @@ namespace Game
 			const float exit = (zone.Radius + 0.4f - Dot(offset, out)) / std::max(speed, 0.1f);
 			if (exit > zone.Remaining && m_Random.Float() < params.DodgeChance)
 			{
+				if (distance > HexShieldOverhead + 0.2f && Brace(input, zone.Center - m_Position, zone.Remaining + BraceLinger, m_DamageMode ? BraceBlast : BraceShove))
+					return true;
+				if (zone.Remaining < GetAbility(AbilityId::DiamondWard).Ward - 0.3f && RaiseWard(input, zone.Center - m_Position))
+					return true;
 				if (m_State->DodgeCooldown > 0.0f)
 					Blink(arena, input, out);
 				else
@@ -1010,6 +1022,49 @@ namespace Game
 		}
 		(void)world;
 		return false;
+	}
+
+	bool BotBrain::RaiseWard(PlayerInput& input, Vec2 threat)
+	{
+		if (m_State->CastSlot >= 0)
+			return false;
+		for (uint32_t slot = 1; slot < AbilitySlots; slot++)
+			if (SpellIn(slot) == AbilityId::DiamondWard && Ready(slot))
+			{
+				Cast(input, slot, AngleOf(-threat), Length(threat));
+				m_CastTarget = NoPlayer;
+				return true;
+			}
+		return false;
+	}
+
+	bool BotBrain::Brace(PlayerInput& input, Vec2 threat, float until, float wear)
+	{
+		const int32_t slot = GuardSlot(*m_Traits);
+		if (slot < 0 || m_State->DashDistance > 0.0f || m_State->IsStunned() || LengthSquared(threat) < 1e-6f)
+			return false;
+		const bool up = IsGuarding(*m_State, *m_Traits);
+		const float left = GuardLeft(*m_State, *m_Traits);
+		if (up && wear > left + BraceSlack && m_State->DodgeCooldown <= 0.0f)
+			return false;
+		if (!up)
+		{
+			const SkillTraits& skill = m_Traits->Skills[size_t(slot)];
+			if (!CanCast(*m_State, *m_Traits, uint32_t(slot)) || left < wear * BraceMargin)
+				return false;
+			if (m_DamageMode && m_Traits->BloodRate <= 0.0f && m_State->Mana - skill.ManaCost < m_Reserve)
+				return false;
+			m_CastNoise = Noise(ParamsOf(m_Profile.Skill).AimNoise * 0.5f);
+		}
+		m_Casting = slot;
+		m_CastTarget = NoPlayer;
+		m_CastAim = AngleOf(threat) + m_CastNoise;
+		m_CastDistance = Length(threat);
+		m_GuardUntil = std::max(m_GuardUntil, m_Time + until);
+		input.Buttons |= uint8_t(SlotButton(uint32_t(slot)));
+		input.Aim = m_CastAim;
+		input.AimDistance = m_CastDistance;
+		return true;
 	}
 
 	bool BotBrain::Blink(const BotArena& arena, PlayerInput& input, Vec2 direction)
@@ -1067,44 +1122,6 @@ namespace Game
 			return false;
 		input.Buttons |= uint8_t(SlotButton(uint32_t(slot)));
 		m_Yanking = false;
-		return true;
-	}
-
-	bool BotBrain::Split(PlayerInput& input)
-	{
-		const int32_t slot = m_State->RecastSlot;
-		if (!m_HasBolt || !m_SplitArmed || slot < 0 || AbilityId(m_State->RecastAbility) != AbilityId::SplittingBolt)
-			return false;
-		const float speed = Length(m_BoltVelocity);
-		if (speed < 1e-3f)
-			return false;
-		const Vec2 heading = m_BoltVelocity / speed;
-		const AbilityDef& bolt = GetAbility(AbilityId::SplittingBolt);
-		const AbilityDef& shard = GetAbility(AbilityId::BoltShard);
-		const uint32_t count = HasCard(m_Loadout.Cards, CardId::Fivefold) ? FivefoldShards : BoltShards;
-		const float spread = BoltShardSpread * float(BoltShards - 1) / float(count - 1);
-		bool caught = false;
-		for (const Rival& rival : m_Rivals)
-		{
-			if (rival.Warded)
-				continue;
-			const Vec2 offset = rival.Position - m_Bolt;
-			const float along = Dot(offset, heading);
-			if (along > 0.0f && along < speed * m_BoltLifetime && std::abs(Dot(offset, Vec2(-heading.y, heading.x))) < bolt.ProjectileRadius + PlayerRadius)
-				return false;
-			const Vec2 ahead = offset + rival.Velocity * (Length(offset) / shard.ProjectileSpeed);
-			const float distance = Length(ahead);
-			if (distance > shard.ProjectileRange + PlayerRadius || distance < 0.4f)
-				continue;
-			const float bearing = AngleBetween(AngleOf(heading), AngleOf(ahead));
-			const float tolerance = std::atan2(shard.ProjectileRadius + PlayerRadius * 0.8f, distance);
-			for (uint32_t i = 0; i < count; i++)
-				caught = caught || std::abs(bearing - spread * (float(i) - float(count - 1) * 0.5f)) < tolerance;
-		}
-		if (!caught)
-			return false;
-		input.Buttons |= uint8_t(SlotButton(uint32_t(slot)));
-		m_SplitArmed = false;
 		return true;
 	}
 
@@ -1201,23 +1218,38 @@ namespace Game
 			if (IsCharged(skill))
 			{
 				const float span = std::max(skill.ChargeTime - skill.CastTime, 0.0f);
+				const float fullRange = ChargedShotOf(def, 1.0f).Range;
+				const bool volley = spell == AbilityId::ObsidianShards;
 				for (const Rival& rival : m_Rivals)
 				{
 					if (rival.Warded)
 						continue;
 					const float gap = Length(rival.Position - m_Position);
-					const float needed = std::clamp((gap + 0.4f - def.ProjectileRange - def.SpawnOffset) / (SpearFullRange - def.ProjectileRange), 0.0f, 1.0f);
+					const float needed = volley ? 0.0f : std::clamp((gap + 0.4f - def.ProjectileRange - def.SpawnOffset) / (fullRange - def.ProjectileRange), 0.0f, 1.0f);
 					for (const float power : { needed, std::max(needed, 0.5f), 1.0f })
 					{
-						const ChargedShot shot = SpearShot(power);
+						const ChargedShot shot = ChargedShotOf(def, power);
 						const float hold = skill.CastTime + power * span;
 						const Vec2 point = Lead(rival, hold, shot.Speed);
 						const Vec2 offset = point - m_Position;
 						const float distance = Length(offset);
 						if (distance < 0.3f || distance > shot.Range + def.SpawnOffset - 0.2f || !HasLineOfFire(level, m_Position, point))
 							continue;
-						float value = LandingValue(arena, point, offset / distance * (shot.Push * rival.Fling)) + 0.08f + (setupReady() ? 0.12f : 0.0f);
-						value += Harm(damage * shot.DamageScale, rival, spell);
+						float hits = 1.0f;
+						if (volley)
+						{
+							const uint32_t shards = ShardsFormed(power);
+							const float tolerance = std::atan2(shot.Radius + PlayerRadius * 0.8f, distance);
+							hits = 0.0f;
+							for (uint32_t i = 0; i < shards; i++)
+								hits += std::abs(ObsidianStep * (float(i) - float(shards - 1) * 0.5f)) < tolerance ? 1.0f : 0.0f;
+						}
+						float value = LandingValue(arena, point, offset / distance * (shot.Push * hits * rival.Fling)) + (shot.Chill > 0.0f ? 0.08f + (setupReady() ? 0.12f : 0.0f) : 0.0f);
+						value += Harm(damage * shot.DamageScale * hits, rival, spell);
+						if (shot.Blast > 0.0f)
+							for (const Rival& other : m_Rivals)
+								if (other.PlayerId != rival.PlayerId && !other.Warded && LengthSquared(other.Position - point) < shot.Blast * shot.Blast)
+									value += 0.6f * (LandingValue(arena, other.Position, Normalize(other.Position - point) * (shot.Push * other.Fling)) + Harm(damage * shot.DamageScale, other, spell));
 						charge = power;
 						consider(HitChance(hold + distance / shot.Speed, distance, rival) * value * weight - threshold, AngleOf(offset), distance, rival.PlayerId, point);
 					}
@@ -1325,6 +1357,40 @@ namespace Game
 		}
 		case AbilityKind::Ground:
 		{
+			if (spell == AbilityId::EarthSpike)
+			{
+				const float quick = std::clamp(0.85f / skill.CastTime, 1.0f, 2.2f);
+				const float lane = def.Width * 0.5f + PlayerRadius;
+				for (const Rival& rival : m_Rivals)
+				{
+					if (rival.Warded)
+						continue;
+					const Vec2 position = rival.Position + rival.Velocity * (skill.CastTime * 0.6f);
+					const Vec2 inward = SafeDirection(arena, position, 0.75f);
+					const Vec2 away = LengthSquared(position - m_Position) > 1e-4f ? Normalize(position - m_Position) : FromAngle(m_Aim);
+					const Vec2 drive = LengthSquared(inward) > 0.5f ? -inward : away;
+					for (const float behind : { 0.4f, 1.4f })
+					{
+						const Vec2 origin = position - drive * behind;
+						const Vec2 offset = origin - m_Position;
+						const float distance = Length(offset);
+						if (distance > def.Range - 0.2f || !HasLineOfFire(level, m_Position, origin))
+							continue;
+						float value = LandingValue(arena, position, drive * (def.Push * rival.Fling)) + Harm(damage, rival, spell);
+						for (const Rival& other : m_Rivals)
+						{
+							const Vec2 along = other.Position - origin;
+							const float ahead = Dot(along, drive);
+							if (other.PlayerId == rival.PlayerId || other.Warded || ahead < -PlayerRadius || ahead > def.Reach + PlayerRadius || std::abs(Dot(along, Perpendicular(drive))) > lane)
+								continue;
+							value += 0.6f * (LandingValue(arena, other.Position, drive * (def.Push * other.Fling)) + Harm(damage, other));
+						}
+						const float chance = std::clamp((0.22f + 0.65f * (1.0f - rival.Mobility)) * quick * (behind > 1.0f ? 1.0f : 0.9f) + (rival.CanDodge ? 0.0f : 0.2f), 0.18f, 0.9f);
+						consider(chance * value * weight - threshold, AngleOf(offset), distance, rival.PlayerId, drive * 1.5f);
+					}
+				}
+				break;
+			}
 			const int32_t follow = def.Push < 0.0f && m_ComboArmed ? ComboSlot(slot, skill.CastTime) : -1;
 			for (const Rival& rival : m_Rivals)
 			{
@@ -1633,7 +1699,6 @@ namespace Game
 			m_FollowSlot = -1;
 			m_ComboArmed = m_Random.Float() < ParamsOf(m_Profile.Skill).Combo;
 			m_Yanking = false;
-			m_SplitArmed = false;
 		}
 		m_PhaseTime += dt;
 		Perceive(world, self);
@@ -1656,7 +1721,7 @@ namespace Game
 				m_Casting = -1;
 			Yank(input);
 			const bool urgent = Escape(world, arena, input) || Recover(arena, input) || Evade(world, arena, input);
-			const bool holding = !urgent && (FollowUp(arena, input, tally) || Split(input));
+			const bool holding = !urgent && FollowUp(arena, input, tally);
 			m_Planting = !urgent && m_SidestepTime <= 0.0f && Planted(arena);
 			m_Think -= dt;
 			if (m_Think <= 0.0f || !m_HasGoal)
@@ -1680,8 +1745,6 @@ namespace Game
 							m_EchoSpell = SpellIn(uint32_t(chosen.Slot));
 							m_EchoUntil = m_Time + m_Traits->Skills[size_t(chosen.Slot)].CastTime + EchoChamberDelay + 0.1f;
 						}
-						if (SpellIn(uint32_t(chosen.Slot)) == AbilityId::SplittingBolt)
-							m_SplitArmed = m_Random.Float() < 0.5f + 0.5f * params.Combo;
 						const AbilityDef& def = GetAbility(SpellIn(uint32_t(chosen.Slot)));
 						if (def.Kind == AbilityKind::Ground && def.Push < 0.0f)
 						{
@@ -1700,6 +1763,8 @@ namespace Game
 			const bool echoing = m_State->CastSlot < 0 && m_Time < m_EchoUntil;
 			const bool charging = !echoing && m_State->CastSlot >= 0 && m_Casting == m_State->CastSlot && IsCharged(m_Traits->Skills[size_t(m_Casting)]);
 			if (charging && m_Time < m_ChargeUntil)
+				input.Buttons |= uint8_t(SlotButton(uint32_t(m_Casting)));
+			if (m_State->CastSlot >= 0 && m_Casting == m_State->CastSlot && IsGuard(m_Traits->Skills[size_t(m_Casting)]) && m_Time < m_GuardUntil)
 				input.Buttons |= uint8_t(SlotButton(uint32_t(m_Casting)));
 			if ((m_State->CastSlot >= 0 && m_Casting >= 0) || echoing)
 			{

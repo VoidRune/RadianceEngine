@@ -9,6 +9,7 @@ crosshair.svg by Delapouite
 door.svg by Delapouite
 exit-door.svg by Delapouite
 fencer.svg by Delapouite
+fire-spell-cast.svg by Delapouite
 greaves.svg by Delapouite
 healing.svg by Delapouite
 ring.svg by Delapouite
@@ -111,3 +112,4 @@ chess-queen.svg by Skoll
 chess-rook.svg by Skoll
 heart-plus.svg by Zeromancer (CC0)
 eye.svg was drawn for this game and is not from game-icons.net (CC0)
+hex-shield.svg was drawn for this game and is not from game-icons.net (CC0)

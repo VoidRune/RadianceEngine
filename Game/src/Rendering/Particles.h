@@ -38,6 +38,8 @@ namespace Game
 		Slash,
 		Snowflake,
 		Beam,
+		Inferno,
+		Hex,
 	};
 
 	enum class DecalShape : uint8_t
@@ -53,6 +55,7 @@ namespace Game
 		Fracture,
 		Charge,
 		FrostLane,
+		Fissure,
 	};
 
 	enum class ParticleAlign : uint8_t
@@ -60,6 +63,7 @@ namespace Game
 		Billboard,
 		Velocity,
 		Ground,
+		Plane,
 	};
 
 	enum class SpawnShape : uint8_t
@@ -118,6 +122,21 @@ namespace Game
 		uint32_t Seed = 0;
 	};
 
+	struct GlassFacet
+	{
+		glm::vec3 A{ 0.0f };
+		glm::vec3 B{ 0.0f };
+		glm::vec3 C{ 0.0f };
+		glm::vec3 Color{ 1.0f };
+		float Opacity = 0.1f;
+		glm::vec3 Edge{ 1.0f };
+		float Glint = 1.0f;
+		float Crack = 0.0f;
+		float Flash = 0.0f;
+		float Fade = 1.0f;
+		uint32_t Seed = 0;
+	};
+
 	struct GroundDecal
 	{
 		glm::vec3 Center{ 0.0f };
@@ -140,6 +159,7 @@ namespace Game
 		static constexpr uint32_t MaxBatchesPerFrame = 2048;
 		static constexpr uint32_t MaxSprites = 4096;
 		static constexpr uint32_t MaxDecals = 512;
+		static constexpr uint32_t MaxFacets = 2048;
 
 		ParticleSystem(Rdn::Device& device, Rdn::ResourceAllocator& allocator);
 		~ParticleSystem();
@@ -151,6 +171,7 @@ namespace Game
 		void BeginFrame();
 		void DrawSprite(const ParticleSprite& sprite);
 		void DrawDecal(const GroundDecal& decal);
+		void DrawFacet(const GlassFacet& facet);
 		void Advance(float dt);
 		float GetTime() const { return m_Time; }
 		void Clear();
@@ -206,6 +227,16 @@ namespace Game
 			glm::uvec4 Info;
 		};
 
+		struct FacetGpu
+		{
+			glm::vec4 A;
+			glm::vec4 B;
+			glm::vec4 C;
+			glm::vec4 Color;
+			glm::vec4 Edge;
+			glm::uvec4 Info;
+		};
+
 		struct GraphBuffers
 		{
 			Rdn::RGBuffer State;
@@ -220,7 +251,7 @@ namespace Game
 		std::unique_ptr<Rdn::ComputePipeline> CreateCompute(const char* path);
 		Rdn::Shader* CompileShader(const char* path);
 		std::unique_ptr<Rdn::Pipeline> CreateDraw(Rdn::Shader* vertex, Rdn::Shader* fragment, std::vector<Rdn::Format> formats, std::vector<Rdn::ColorComponent> masks = {}, Rdn::BlendMode blend = Rdn::BlendMode::Premultiplied, std::vector<Rdn::BlendMode> blends = {});
-		void RecordDraws(Rdn::CommandBuffer& cmd, const Rdn::PassContext& context, Rdn::RGImage depth, const Rdn::Pipeline& particles, const Rdn::Pipeline& sprites, bool light, uint32_t spriteCount, uint32_t frameIndex) const;
+		void RecordDraws(Rdn::CommandBuffer& cmd, const Rdn::PassContext& context, Rdn::RGImage depth, const Rdn::Pipeline& particles, const Rdn::Pipeline& sprites, bool light, uint32_t spriteCount, uint32_t facetCount, uint32_t frameIndex) const;
 
 		Rdn::Device& m_Device;
 		Rdn::ResourceAllocator& m_Allocator;
@@ -234,6 +265,7 @@ namespace Game
 		std::unique_ptr<Rdn::Pipeline> m_LightDraw;
 		std::unique_ptr<Rdn::Pipeline> m_SpriteLightDraw;
 		std::unique_ptr<Rdn::Pipeline> m_DecalDraw;
+		std::unique_ptr<Rdn::Pipeline> m_FacetDraw;
 		std::unique_ptr<Rdn::GpuBuffer> m_State;
 		std::unique_ptr<Rdn::GpuBuffer> m_Particles;
 		std::unique_ptr<Rdn::GpuBuffer> m_Lists;
@@ -242,14 +274,17 @@ namespace Game
 		std::unique_ptr<Rdn::GpuRingBuffer> m_SpawnBuffer;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_SpriteBuffer;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_DecalBuffer;
+		std::unique_ptr<Rdn::GpuRingBuffer> m_FacetBuffer;
 		std::unique_ptr<Rdn::Sampler> m_DepthSampler;
 		std::vector<SpawnGpu> m_Pending;
 		std::vector<SpriteGpu> m_Sprites;
 		std::vector<DecalGpu> m_Decals;
+		std::vector<FacetGpu> m_Facets;
 		uint32_t m_FrameSpawns = 0;
 		uint32_t m_FrameBatches = 0;
 		uint32_t m_FrameSprites = 0;
 		uint32_t m_FrameDecals = 0;
+		uint32_t m_FrameFacets = 0;
 		bool m_Uploaded = false;
 		bool m_Simulated = false;
 		uint32_t m_QueuedCount = 0;

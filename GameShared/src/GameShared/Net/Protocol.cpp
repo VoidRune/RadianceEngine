@@ -73,6 +73,7 @@ namespace Game
 			writer.Write(skill.AreaScale);
 			writer.Write(skill.ExtraProjectiles);
 			writer.Write(skill.RangeScale);
+			writer.Write(skill.Durability);
 		}
 
 		bool ReadSkill(ByteReader& reader, SkillTraits& skill)
@@ -89,6 +90,7 @@ namespace Game
 			skill.AreaScale = reader.Read<float>();
 			skill.ExtraProjectiles = reader.Read<uint8_t>();
 			skill.RangeScale = reader.Read<float>();
+			skill.Durability = reader.Read<float>();
 			return skill.Ability <= AbilityId::Count;
 		}
 
@@ -240,6 +242,8 @@ namespace Game
 			writer.Write(state.DashSpeed);
 			writer.Write(state.Push);
 			writer.Write(state.Ward);
+			writer.Write(state.WardLeft);
+			writer.Write(state.WardShatter);
 			writer.Write(state.Invulnerable);
 			writer.Write(state.PortalCooldown);
 			WriteBytes(writer, state.Cooldowns);
@@ -247,6 +251,8 @@ namespace Game
 			writer.Write(state.Mana);
 			writer.Write(state.CastTimer);
 			writer.Write(state.Charge);
+			writer.Write(state.CastPoint);
+			writer.Write(state.CastAim);
 			writer.Write(state.Stun);
 			writer.Write(state.Chill);
 			writer.Write(state.Slick);
@@ -267,7 +273,9 @@ namespace Game
 			writer.Write(state.RecastAbility);
 			writer.Write(state.ManaStall);
 			writer.Write(state.Still);
-			writer.Write(uint8_t((state.Alive ? 1 : 0) | (state.Airborne ? 2 : 0)));
+			writer.Write(state.GuardLost);
+			writer.Write(state.GuardIdle);
+			writer.Write(uint8_t((state.Alive ? 1 : 0) | (state.Airborne ? 2 : 0) | (state.GuardUp ? 4 : 0)));
 		}
 
 		bool ReadState(ByteReader& reader, PlayerState& state)
@@ -277,6 +285,8 @@ namespace Game
 			state.DashSpeed = reader.Read<float>();
 			state.Push = reader.ReadVec2();
 			state.Ward = reader.Read<float>();
+			state.WardLeft = reader.Read<float>();
+			state.WardShatter = reader.Read<float>();
 			state.Invulnerable = reader.Read<float>();
 			state.PortalCooldown = reader.Read<float>();
 			ReadBytes(reader, state.Cooldowns);
@@ -284,6 +294,8 @@ namespace Game
 			state.Mana = reader.Read<float>();
 			state.CastTimer = reader.Read<float>();
 			state.Charge = reader.Read<float>();
+			state.CastPoint = reader.ReadVec2();
+			state.CastAim = reader.ReadVec2();
 			state.Stun = reader.Read<float>();
 			state.Chill = reader.Read<float>();
 			state.Slick = reader.Read<float>();
@@ -304,9 +316,12 @@ namespace Game
 			state.RecastAbility = reader.Read<uint8_t>();
 			state.ManaStall = reader.Read<float>();
 			state.Still = reader.Read<float>();
+			state.GuardLost = reader.Read<float>();
+			state.GuardIdle = reader.Read<float>();
 			const uint8_t life = reader.Read<uint8_t>();
 			state.Alive = (life & 1u) != 0;
 			state.Airborne = (life & 2u) != 0;
+			state.GuardUp = (life & 4u) != 0;
 			return !reader.Failed() && state.CastSlot >= -1 && state.CastSlot < int8_t(AbilitySlots) && state.RecastSlot >= -1 && state.RecastSlot < int8_t(AbilitySlots) && (state.RecastAbility == UINT8_MAX || state.RecastAbility < uint8_t(AbilityId::Count));
 		}
 	}
@@ -845,6 +860,14 @@ namespace Game
 			{
 				writer.Write(uint8_t(entity.Flags >> 16));
 				writer.Write(entity.Charge);
+				if (entity.Warded())
+					writer.Write(entity.Ward);
+				if (entity.AimsFromPoint())
+				{
+					writer.Write(QuantizePosition(entity.CastPoint.x));
+					writer.Write(QuantizePosition(entity.CastPoint.y));
+					writer.Write(QuantizeAngle(entity.CastAim));
+				}
 			}
 		}
 
@@ -857,7 +880,7 @@ namespace Game
 			writer.Write(QuantizePosition(hit.Position.x));
 			writer.Write(QuantizePosition(hit.Position.y));
 			writer.Write(hit.Damage);
-			writer.Write(uint8_t((hit.Critical ? 1 : 0) | (hit.OnPlayer ? 2 : 0) | (uint32_t(hit.Damages) << 2)));
+			writer.Write(uint8_t((hit.Critical ? 1 : 0) | (hit.OnPlayer ? 2 : 0) | (uint32_t(hit.Damages) << 2) | (hit.Guarded ? 0x40 : 0) | (hit.Warded ? 0x80 : 0)));
 			writer.Write(uint8_t(hit.Attacker < MaxPlayers ? hit.Attacker : UINT8_MAX));
 		}
 	}
@@ -969,6 +992,14 @@ namespace Game
 			{
 				entity.Flags |= uint32_t(reader.Read<uint8_t>()) << 16;
 				entity.Charge = reader.Read<uint8_t>();
+				if (entity.Warded())
+					entity.Ward = reader.Read<uint8_t>();
+				if (entity.AimsFromPoint())
+				{
+					entity.CastPoint.x = DequantizePosition(reader.Read<uint16_t>());
+					entity.CastPoint.y = DequantizePosition(reader.Read<uint16_t>());
+					entity.CastAim = DequantizeAngle(reader.Read<uint16_t>());
+				}
 			}
 			if (uint8_t(entity.Kind) >= uint8_t(EntityKind::Count))
 				return false;
@@ -987,7 +1018,9 @@ namespace Game
 			const uint8_t flags = reader.Read<uint8_t>();
 			hit.Critical = (flags & 1) != 0;
 			hit.OnPlayer = (flags & 2) != 0;
-			hit.Damages = Element(std::min<uint32_t>(flags >> 2, uint32_t(Element::Count) - 1));
+			hit.Damages = Element(std::min<uint32_t>((flags >> 2) & 0xFu, uint32_t(Element::Count) - 1));
+			hit.Guarded = (flags & 0x40) != 0;
+			hit.Warded = (flags & 0x80) != 0;
 			const uint8_t attacker = reader.Read<uint8_t>();
 			hit.Attacker = attacker < MaxPlayers ? attacker : NoPlayer;
 		}

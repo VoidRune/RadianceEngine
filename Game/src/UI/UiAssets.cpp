@@ -197,14 +197,17 @@ namespace Game
 		case AbilityId::GravityWell: return UiIcon::MagicSwirl;
 		case AbilityId::ArcLightning: return UiIcon::LightningArc;
 		case AbilityId::Swap: return UiIcon::MagicPortal;
-		case AbilityId::MirrorWard: return UiIcon::CheckedShield;
+		case AbilityId::DiamondWard: return UiIcon::CutDiamond;
 		case AbilityId::FrostSpear: return UiIcon::IceSpear;
 		case AbilityId::ChainHook: return UiIcon::SpearHook;
 		case AbilityId::Firebomb: return UiIcon::HighShot;
-		case AbilityId::SplittingBolt: return UiIcon::SplitArrows;
+		case AbilityId::ObsidianShards: return UiIcon::VoidShard;
 		case AbilityId::StormStrike: return UiIcon::ArcingBolt;
 		case AbilityId::Ignite: return UiIcon::Fireball;
 		case AbilityId::ShatterBurst: return UiIcon::Snowflake;
+		case AbilityId::EarthSpike: return UiIcon::EarthCrack;
+		case AbilityId::PurpleFireball: return UiIcon::FireSpellCast;
+		case AbilityId::HexShield: return UiIcon::HexShield;
 		default: return UiIcon::Gems;
 		}
 	}
@@ -234,7 +237,7 @@ namespace Game
 		case CardId::Whiplash: return UiIcon::Sprint;
 		case CardId::ClusterBomb: return UiIcon::ArrowCluster;
 		case CardId::StickyFire: return UiIcon::Fireball;
-		case CardId::Fivefold: return UiIcon::StrikingArrows;
+		case CardId::RazorGlass: return UiIcon::StrikingArrows;
 		case CardId::SeekerShards: return UiIcon::Crosshair;
 		case CardId::ForkedLightning: return UiIcon::LightningArc;
 		case CardId::StaticCharge: return UiIcon::Padlock;

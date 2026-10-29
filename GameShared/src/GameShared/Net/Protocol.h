@@ -22,7 +22,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 38;
+	constexpr uint32_t ProtocolVersion = 43;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -65,6 +65,8 @@ namespace Game
 		Marked = 1 << 14,
 		Barrier = 1 << 15,
 		Leyline = 1u << 16,
+		Shattered = 1u << 17,
+		WardShattered = 1u << 18,
 	};
 
 	enum class ActionType : uint8_t
@@ -265,8 +267,16 @@ namespace Game
 		uint8_t Health = 255;
 		uint32_t Flags = 0;
 		uint8_t Charge = 0;
+		uint8_t Ward = 0;
+		Vec2 CastPoint;
+		float CastAim = 0.0f;
 
 		bool Has(EntityFlags flag) const { return (Flags & uint32_t(flag)) != 0; }
+		bool Warded() const { return Kind == EntityKind::Player && Has(EntityFlags::Warded) && !Has(EntityFlags::Dead); }
+		float GetWard() const { return float(Ward) / 255.0f; }
+		bool AimsFromPoint() const { return Kind == EntityKind::Player && Has(EntityFlags::Attacking) && Variant == uint8_t(AbilityId::EarthSpike); }
+		bool Guarding() const { return Kind == EntityKind::Player && Has(EntityFlags::Attacking) && Variant == uint8_t(AbilityId::HexShield) && !Has(EntityFlags::Dead); }
+		float GetGuard() const { return float(Charge) / 255.0f; }
 		float GetScale() const { return float(Scale) / 16.0f; }
 		float GetChargePower() const { return float(std::min(Charge, ChargeFull)) / float(ChargeFull); }
 		float GetOvercharge() const { return Charge > ChargeFull ? float(Charge - ChargeFull) / float(255 - ChargeFull) : 0.0f; }
@@ -279,6 +289,11 @@ namespace Game
 		if (power < 1.0f)
 			return uint8_t(std::lround(std::clamp(power, 0.0f, 1.0f) * float(EntityState::ChargeFull)));
 		return uint8_t(EntityState::ChargeFull + std::lround(std::clamp(over, 0.0f, 1.0f) * float(255 - EntityState::ChargeFull)));
+	}
+
+	inline uint8_t PackGuard(float left, float durability)
+	{
+		return durability > 0.0f ? uint8_t(std::lround(std::clamp(left / durability, 0.0f, 1.0f) * 255.0f)) : uint8_t(0);
 	}
 
 	struct LocalPlayerState

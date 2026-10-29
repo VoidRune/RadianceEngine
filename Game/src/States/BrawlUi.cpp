@@ -18,7 +18,6 @@ namespace Game
 {
 	namespace
 	{
-		constexpr glm::vec3 WardGold{ 1.0f, 0.86f, 0.48f };
 		constexpr glm::vec3 LavaGlow{ 1.0f, 0.42f, 0.12f };
 		constexpr glm::vec3 FrostGlow{ 0.3f, 0.62f, 1.0f };
 		constexpr glm::vec3 MarkGlow{ 0.66f, 0.4f, 1.0f };
@@ -89,7 +88,7 @@ namespace Game
 			{ AbilityId::GravityWell, 7, { { 0.85f, 0.05f }, { 0.4f, 0.65f }, { -0.35f, 0.55f }, { -0.55f, -0.1f }, { -0.1f, -0.45f }, { 0.25f, -0.1f }, { 0.0f, 0.1f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 } } },
 			{ AbilityId::ArcLightning, 6, { { -0.15f, 0.9f }, { 0.3f, 0.25f }, { -0.2f, 0.05f }, { 0.25f, -0.5f }, { -0.1f, -0.9f }, { 0.65f, 0.55f } }, 5, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 1, 5 } } },
 			{ AbilityId::Swap, 6, { { -0.8f, 0.3f }, { 0.8f, 0.3f }, { 0.5f, 0.6f }, { 0.8f, -0.3f }, { -0.8f, -0.3f }, { -0.5f, -0.6f } }, 4, { { 0, 1 }, { 1, 2 }, { 3, 4 }, { 4, 5 } } },
-			{ AbilityId::MirrorWard, 6, { { 0.0f, 0.85f }, { 0.65f, 0.5f }, { 0.55f, -0.3f }, { 0.0f, -0.85f }, { -0.55f, -0.3f }, { -0.65f, 0.5f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 0 } } },
+			{ AbilityId::DiamondWard, 6, { { 0.0f, 0.92f }, { 0.58f, -0.12f }, { 0.0f, -0.62f }, { -0.58f, -0.12f }, { 0.32f, 0.22f }, { -0.32f, 0.22f } }, 8, { { 0, 4 }, { 4, 1 }, { 1, 2 }, { 2, 3 }, { 3, 5 }, { 5, 0 }, { 1, 3 }, { 4, 5 } } },
 			{ AbilityId::FrostSpear, 6, { { -0.85f, -0.62f }, { -0.3f, -0.22f }, { 0.25f, 0.18f }, { 0.82f, 0.6f }, { 0.4f, 0.57f }, { 0.67f, 0.21f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 4 }, { 4, 3 }, { 2, 5 }, { 5, 3 } } },
 		};
 
@@ -256,10 +255,12 @@ namespace Game
 				return Format("%d, then %d on the skip", int(def.BrawlDamage), int(GetAbility(AbilityId::FirebombSkip).BrawlDamage));
 			case AbilityId::StormStrike:
 				return Format("%d, then %d on the jump", int(def.BrawlDamage), int(GetAbility(AbilityId::StormJump).BrawlDamage));
-			case AbilityId::SplittingBolt:
-				return Format("%d, or %d per shard", int(def.BrawlDamage), int(GetAbility(AbilityId::BoltShard).BrawlDamage));
+			case AbilityId::ObsidianShards:
+				return Format("%d per shard, %d for a full volley", int(def.BrawlDamage), int(def.BrawlDamage) * int(ObsidianVolley));
 			case AbilityId::FrostSpear:
 				return Format("%d tapped, up to %d charged, %d burst", int(def.BrawlDamage), int(SpearFullDamage), int(SpearBurstDamage));
+			case AbilityId::PurpleFireball:
+				return Format("%d tapped, up to %d charged, to everyone in the blast", int(def.BrawlDamage), int(FireballFullDamage));
 			default:
 				return def.Chain > 0 ? Format("%d per rival", int(def.BrawlDamage)) : std::to_string(def.BrawlDamage);
 			}
@@ -268,10 +269,12 @@ namespace Game
 		std::string SpellSummary(AbilityId id, BrawlMode mode)
 		{
 			const AbilityDef& def = GetAbility(id);
+			if (def.Kind == AbilityKind::Shield)
+				return mode == BrawlMode::Damage ? Format("Absorbs %.0f, %.0f mana   %.0f s if broken", double(HexShieldDurability), double(def.BrawlMana), double(HexShieldBreakCooldown)) : Format("Blocks shoves   %.0f s if broken", double(HexShieldBreakCooldown));
 			if (mode == BrawlMode::Damage)
 			{
 				const std::string cost = def.BrawlMana > 0.0f ? Format("%.0f mana", double(def.BrawlMana)) : std::string("free");
-				const std::string effect = id == AbilityId::FrostSpear ? Format("%d-%d dmg", int(def.BrawlDamage), int(SpearFullDamage)) : def.BrawlDamage > 0 ? Format("%d dmg", int(def.BrawlDamage)) : def.Ward > 0.0f ? std::string("Reflects") : std::string("Teleports");
+				const std::string effect = id == AbilityId::ObsidianShards ? Format("%d dmg x%u", int(def.BrawlDamage), unsigned(ObsidianVolley)) : def.ChargeTime > 0.0f ? Format("%d-%d dmg", int(def.BrawlDamage), int(ChargedShotOf(def, 1.0f).DamageScale * float(def.BrawlDamage) + 0.5f)) : def.BrawlDamage > 0 ? Format("%d dmg", int(def.BrawlDamage)) : def.Ward > 0.0f ? Format("Holds %.0f", double(DiamondWardDurability)) : std::string("Teleports");
 				return Format("%s, %s   %g s", effect.c_str(), cost.c_str(), double(def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown));
 			}
 			switch (id)
@@ -280,10 +283,11 @@ namespace Game
 				return Format("Hooks and pulls   %.0f s", double(def.Cooldown));
 			case AbilityId::Firebomb:
 				return Format("Shove %.0f twice   %.1f s", double(def.Push), double(def.Cooldown));
-			case AbilityId::SplittingBolt:
-				return Format("Shove %.0f, splits   %.0f s", double(def.Push), double(def.Cooldown));
+			case AbilityId::ObsidianShards:
+				return Format("Shove %.1f x%u   %.1f s", double(def.Push), unsigned(ObsidianVolley), double(def.Cooldown));
 			case AbilityId::FrostSpear:
-				return Format("Shove %.0f-%.0f, charge   %.0f s", double(def.Push), double(SpearFullPush), double(def.Cooldown));
+			case AbilityId::PurpleFireball:
+				return Format("Shove %.0f-%.0f, charge   %.0f s", double(def.Push), double(ChargedShotOf(def, 1.0f).Push), double(def.Cooldown));
 			case AbilityId::StormStrike:
 				return Format("Shove %.0f, jumps   %.1f s", double(def.Push), double(def.Cooldown));
 			default:
@@ -362,7 +366,7 @@ namespace Game
 				return "Chain";
 			case AbilityId::Swap:
 				return "Swap";
-			case AbilityId::MirrorWard:
+			case AbilityId::DiamondWard:
 				return "Block";
 			case AbilityId::FrostSpear:
 				return "Charge";
@@ -370,10 +374,16 @@ namespace Game
 				return "Hook";
 			case AbilityId::Firebomb:
 				return "Lob";
-			case AbilityId::SplittingBolt:
-				return "Split";
+			case AbilityId::ObsidianShards:
+				return "Volley";
 			case AbilityId::StormStrike:
 				return "Strike";
+			case AbilityId::EarthSpike:
+				return "Rupture";
+			case AbilityId::PurpleFireball:
+				return "Blast";
+			case AbilityId::HexShield:
+				return "Shield";
 			default:
 				return "";
 			}
@@ -416,6 +426,42 @@ namespace Game
 			tooltip.Space(2.0f).Text(def.Description, Theme::Text, 15.0f).Space(4.0f);
 			tooltip.Pair("Role", ActionWord(id));
 			const bool damage = mode == BrawlMode::Damage;
+			if (def.Kind == AbilityKind::Shield)
+			{
+				if (damage)
+				{
+					tooltip.Pair("Mana", Format("%.0f to raise, %.1f per point it soaks up", double(def.BrawlMana), double(HexShieldManaPerPoint)));
+					tooltip.Pair("Holds", Format("%.0f damage, then it shatters", double(HexShieldDurability)));
+				}
+				else
+					tooltip.Pair("Holds", "a few hard shoves, then it shatters");
+				tooltip.Pair("Covers", Format("%.0f degrees in front of you", double(2.0f * def.HalfArc * 57.2958f)));
+				tooltip.Pair("Overflow", "a blow it can't hold gets through in part");
+				tooltip.Pair("Mends", Format("%.0f%% a second, %.0f s after you lower it", double(HexShieldMendRate * 100.0f), double(HexShieldMendDelay)));
+				tooltip.Pair("Raise again", Format("%.1f s after lowering", double(def.Cooldown)));
+				tooltip.Pair("Shattered", Format("reforms after %.0f s", double(HexShieldBreakCooldown)));
+				tooltip.Space(2.0f).Muted("Hold to keep it up. You walk slowly behind it and can't cast until you let go, and a dodge drops it");
+				return;
+			}
+			if (def.Kind == AbilityKind::Ward)
+			{
+				const float cooldown = damage && def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown;
+				if (damage)
+				{
+					tooltip.Pair("Mana", Format("%.0f", double(def.BrawlMana)));
+					tooltip.Pair("Holds", Format("%.0f damage, from every side", double(DiamondWardDurability)));
+				}
+				else
+					tooltip.Pair("Holds", "a few hard shoves, from every side");
+				tooltip.Pair("Lasts", Format("%.1f s, or until it shatters", double(def.Ward)));
+				tooltip.Pair("Reflects", "spells it can hold fly back at their caster");
+				tooltip.Pair("Overflow", "a blow it can't hold shatters it and the rest gets through");
+				tooltip.Pair("Cast time", "instant");
+				tooltip.Pair("Cooldown", Format("%.1f s", double(cooldown)));
+				tooltip.Pair("Shattered", Format("%.1f s before you can recast it", double(cooldown * DiamondWardBreakCooldown)));
+				tooltip.Space(2.0f).Muted("Cast it on the move");
+				return;
+			}
 			if (damage)
 			{
 				if (def.BrawlDamage > 0)
@@ -423,7 +469,23 @@ namespace Game
 				tooltip.Pair("Mana", def.BrawlMana > 0.0f ? Format("%.0f", double(def.BrawlMana)) : std::string("free"));
 			}
 			const float shove = damage ? DamagePushScale : 1.0f;
-			if (def.ChargeTime > 0.0f)
+			if (id == AbilityId::PurpleFireball)
+			{
+				tooltip.Pair("Shove", Format(damage ? "%.1f to %.1f, outward" : "%.0f to %.0f, outward", double(def.Push * shove), double(FireballFullPush * shove)));
+				tooltip.Pair("Range", Format("%.1f to %.1f", double(def.ProjectileRange), double(FireballFullRange)));
+				tooltip.Pair("Blast", Format("%.1f to %.1f across", double(2.0f * def.ImpactRadius), double(2.0f * FireballFullBlast)));
+				tooltip.Pair("Full charge", Format("%.1f s", double(def.ChargeTime)));
+				tooltip.Pair("Hold longer", Format("it tears loose after %.0f s", double(ChargeCrackSeconds)));
+			}
+			else if (id == AbilityId::ObsidianShards)
+			{
+				tooltip.Pair("Shove", Format(damage ? "%.1f per shard" : "%.0f per shard", double(def.Push * shove)));
+				tooltip.Pair("Shards", Format("one more every %.2f s, up to %u", double((def.ChargeTime - def.CastTime) / float(ObsidianVolley - 1)), unsigned(ObsidianVolley)));
+				tooltip.Pair("Full volley", Format("fires by itself after %.2f s", double(def.ChargeTime)));
+				tooltip.Pair("Spread", Format("%.0f degrees", double(ObsidianStep * float(ObsidianVolley - 1) * 57.2958f)));
+				tooltip.Pair("Range", Format("%.1f", double(def.ProjectileRange)));
+			}
+			else if (def.ChargeTime > 0.0f)
 			{
 				tooltip.Pair("Shove", Format(damage ? "%.1f to %.1f" : "%.0f to %.0f", double(def.Push * shove), double(SpearFullPush * shove)));
 				tooltip.Pair("Range", Format("%.1f to %.1f", double(def.ProjectileRange), double(SpearFullRange)));
@@ -439,12 +501,15 @@ namespace Game
 				tooltip.Pair("Pull", "to you and past you");
 			if (id == AbilityId::ChainHook)
 				tooltip.Pair("Press again", "yank yourself to the hook");
-			else if (id == AbilityId::SplittingBolt)
-				tooltip.Pair("Press again", Format("split into %u shards", unsigned(BoltShards)));
 			else if (id == AbilityId::Firebomb)
 				tooltip.Pair("Skips", Format(damage ? "%.1f further, shove %.1f" : "%.1f further, shove %.0f", double(FirebombSkipDistance), double(GetAbility(AbilityId::FirebombSkip).Push * shove)));
 			else if (id == AbilityId::StormStrike)
 				tooltip.Pair("Jumps", Format("once, up to %.1f", double(GetAbility(AbilityId::StormJump).Range)));
+			else if (id == AbilityId::EarthSpike)
+			{
+				tooltip.Pair("Steer", Format("%.1f s after you pick the spot", double(def.CastTime)));
+				tooltip.Pair("Spike", Format("%.1f long, skewers every rival on it", double(def.Reach)));
+			}
 			if (def.Kind == AbilityKind::Projectile && def.ChargeTime <= 0.0f)
 				tooltip.Pair("Range", Format("%.1f", double(def.ProjectileRange)));
 			else if (def.Kind == AbilityKind::Ground || def.Kind == AbilityKind::Dash)
@@ -455,7 +520,7 @@ namespace Game
 				tooltip.Pair("Jumps", std::to_string(def.Chain));
 			tooltip.Pair("Cast time", def.CastTime > 0.0f ? Format("%.2f s", double(def.CastTime)) : std::string("instant"));
 			tooltip.Pair("Cooldown", Format("%.1f s", double(damage && def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown)));
-			tooltip.Space(2.0f).Muted(def.ChargeTime > 0.0f ? "You walk at half speed while charging, and a dodge drops the spear" : def.CastMove <= 0.01f ? "You stand still while casting" : def.CastMove >= 0.99f ? "Cast it on the move" : "You slow down while casting");
+			tooltip.Space(2.0f).Muted(id == AbilityId::PurpleFireball ? "You walk slowly while charging, and a dodge snuffs the fireball out" : id == AbilityId::ObsidianShards ? "You slow down while charging, and a dodge shatters the shards" : def.ChargeTime > 0.0f ? "You walk at half speed while charging, and a dodge drops the spear" : def.CastMove <= 0.01f ? "You stand still while casting" : def.CastMove >= 0.99f ? "Cast it on the move" : "You slow down while casting");
 		}
 	}
 
@@ -659,13 +724,6 @@ namespace Game
 
 	void SessionState::DrawBrawlPlayer(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
 	{
-		if (entity.Has(EntityFlags::Warded))
-		{
-			const float pulse = 0.75f + 0.25f * std::sin(m_Time * 9.0f + float(entity.NetId));
-			DrawGlow(renderer, base + glm::vec3(0.0f, 0.9f, 0.0f), 1.15f, WardGold * (0.3f * pulse), 0.6f);
-			for (uint32_t i = 0; i < 3; i++)
-				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.25f + 0.6f * float(i), 0.0f), 0.78f - 0.14f * std::abs(float(i) - 1.0f), WardGold * (0.8f * pulse), 0.03f);
-		}
 		if (entity.Has(EntityFlags::Burning))
 		{
 			const float flicker = 0.7f + 0.3f * std::sin(m_Time * 17.0f + float(entity.NetId) * 1.3f);

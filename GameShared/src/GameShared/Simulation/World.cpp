@@ -149,10 +149,12 @@ namespace Game
 
 	ArenaState World::GetArena() const
 	{
-		if (!m_Level.Skyborne || m_Settings.Mode != GameMode::Brawl)
+		if (m_Settings.Mode != GameMode::Brawl)
 			return {};
 		const BrawlStatus& brawl = m_Match.GetBrawl();
-		return { &brawl.Plan, brawl.Clock, brawl.Phase == BrawlPhase::Fight };
+		if (!m_Level.Skyborne)
+			return { .Clock = brawl.Clock, .Field = &brawl.Plan };
+		return { &brawl.Plan, brawl.Clock, brawl.Phase == BrawlPhase::Fight, &brawl.Plan };
 	}
 
 	bool World::AreRivals(uint32_t a, uint32_t b) const
@@ -192,16 +194,9 @@ namespace Game
 		{
 			if (!actions.HasRecast(slot))
 				continue;
-			if (actions.RecastAbility == AbilityId::SplittingBolt)
-				SplitBolts(*this, player, controller->PlayerId);
-			else if (actions.RecastAbility == AbilityId::ChainHook)
+			if (actions.RecastAbility == AbilityId::ChainHook)
 				ReelIn(*this, player, controller->PlayerId, actions.RecastPoint);
 		}
-		if (actions.Released == 0)
-			return actions;
-		m_Match.NoteCast(controller->PlayerId);
-		if (IsHub())
-			StargazeAt(*controller, origin, actions);
 		Health* life = m_Entities.TryGet<Health>(player);
 		if (actions.BloodCost > 0.0f && life && life->Current > 1)
 		{
@@ -210,6 +205,13 @@ namespace Game
 			if (const Replicated* replicated = m_Entities.TryGet<Replicated>(player))
 				RecordHit({ replicated->NetId, transform->Position, uint16_t(price), false, true, Element::Physical, NoPlayer });
 		}
+		if (actions.Raised)
+			m_Match.NoteCast(controller->PlayerId);
+		if (actions.Released == 0)
+			return actions;
+		m_Match.NoteCast(controller->PlayerId);
+		if (IsHub())
+			StargazeAt(*controller, origin, actions);
 		const float healthFraction = life ? float(std::max(life->Current, 0)) / float(std::max(life->Max, 1)) : 1.0f;
 
 		AbilityContext context;
@@ -243,7 +245,8 @@ namespace Game
 				context.DamageScale *= (HasCard(context.Cards, CardId::Whiplash) ? WhiplashDamage : 1.0f) * (HasCard(context.Cards, CardId::LongChain) ? LongChainDamage : 1.0f);
 			context.AreaScale = traits.AreaScale * skill.AreaScale;
 			context.ExtraProjectiles = uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles);
-			context.Target = GetGroundTarget(m_Level, context.Origin, context.Direction, actions.AimDistance, ability.Range);
+			context.Direction = AimsFromPoint(skill.Ability) ? actions.CastAim : actions.Direction;
+			context.Target = AimsFromPoint(skill.Ability) ? actions.CastPoint : GetGroundTarget(m_Level, context.Origin, context.Direction, actions.AimDistance, ability.Range);
 			context.PvpScale = skill.PvpScale;
 			context.RangeScale = skill.RangeScale;
 			context.Charge = IsCharged(skill) ? actions.Charge : 0.0f;
@@ -961,9 +964,12 @@ namespace Game
 			perks |= PerkSlick;
 		if (ability.Id == AbilityId::FrostSpear && context.Charge >= 0.999f)
 			perks |= PerkBurst;
+		const bool seeking = ability.Id == AbilityId::ObsidianShards && HasCard(context.Cards, CardId::SeekerShards);
+		if (seeking)
+			perks |= PerkSeek;
 		const bool overcharged = ability.Id == AbilityId::ArcLightning && HasCard(context.Cards, CardId::Overcharge);
-		const bool spear = ability.Id == AbilityId::FrostSpear;
-		const ChargedShot shot = spear ? SpearShot(context.Charge) : ChargedShot{ .Radius = ability.ProjectileRadius, .Push = ability.Push, .Chill = ability.Chill };
+		const bool charged = IsChargedShot(ability.Id);
+		const ChargedShot shot = ChargedShotOf(ability, context.Charge);
 		const float push = ability.Id == AbilityId::ChainHook ? (HasCard(context.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) : shot.Push;
 		const float lifetime = (pattern.Speed > 0.0f ? ChargedRange(ability, context.Charge) / pattern.Speed : 0.0f) * context.RangeScale;
 		const Entity entity = m_Entities.Create();
@@ -974,19 +980,19 @@ namespace Game
 			.Lifetime = lifetime,
 			.Span = lifetime,
 			.Radius = shot.Radius,
-			.Damage = spear ? ScaleDamage(damage, shot.DamageScale) : damage,
+			.Damage = charged ? ScaleDamage(damage, shot.DamageScale * (seeking ? SeekerDamage : 1.0f)) : damage,
 			.Side = context.Side,
-			.Pierce = pattern.Pierce,
+			.Pierce = uint8_t(pattern.Pierce + CardPierce(ability.Id, context.Cards)),
 			.Chain = uint8_t(ability.Chain + (overcharged ? 1 : 0)),
 			.Rewind = context.Rewind,
 			.CritChance = context.CritChance,
 			.CritMultiplier = context.CritMultiplier,
 			.LifeSteal = context.LifeSteal,
-			.ImpactRadius = ability.ImpactRadius * context.AreaScale,
+			.ImpactRadius = shot.Blast * context.AreaScale,
 			.Chill = shot.Chill + ((perks & PerkSlick) != 0 && IsDamageBrawl() ? BlackIceChill : 0.0f),
 			.Stun = ability.Stun,
 			.PvpScale = context.PvpScale,
-			.Push = push * context.PushScale,
+			.Push = push * context.PushScale * (seeking ? SeekerPush : 1.0f),
 			.Swap = ability.Swap,
 			.Damages = ability.Damages,
 			.Ability = uint8_t(ability.Id),

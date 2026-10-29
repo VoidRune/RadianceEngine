@@ -45,6 +45,9 @@ namespace Game
 		constexpr glm::vec3 SpearIce{ 0.32f, 0.72f, 1.3f };
 		constexpr float SpearLaneSize = 1.5f;
 		constexpr float SpearLaneSeconds = 2.8f;
+		constexpr float SpearLaneStep = 0.55f;
+		constexpr float SpikeRiftSeconds = 3.5f;
+		constexpr float SpikeRuinSeconds = 0.42f;
 		constexpr float BodyGravity = 26.0f;
 		constexpr float BodyClimb = 16.0f;
 		constexpr float BodySnap = 2.5f;
@@ -98,6 +101,11 @@ namespace Game
 			default:
 				return 2.0f;
 			}
+		}
+
+		float FlightLift(AbilityId ability)
+		{
+			return ability == AbilityId::FrostSpear ? SpearHoldHeight : ability == AbilityId::PurpleFireball ? FireballHoldHeight : ability == AbilityId::ObsidianShards ? ObsidianHoldHeight : ProjectileHeight;
 		}
 
 		bool IsItemLoot(const EntityState& entity)
@@ -324,6 +332,11 @@ namespace Game
 		m_DamageNumbers.clear();
 		m_ProjectileHeights.clear();
 		m_BodyHeights.clear();
+		m_SpikeRuins.clear();
+		m_Shields.clear();
+		m_ShieldShards.clear();
+		m_Wards.clear();
+		m_WardShards.clear();
 		m_LevelRenderer = LevelRenderer{};
 		m_CameraPlaced = false;
 		m_HoveredPortal = -1;
@@ -549,7 +562,7 @@ namespace Game
 	float SessionState::LaunchHeight(const EntityState& entity) const
 	{
 		const Vec2 back = FromAngle(entity.Facing) * -0.25f;
-		const float lift = AbilityOf(entity) == AbilityId::FrostSpear ? SpearHoldHeight : ProjectileHeight;
+		const float lift = FlightLift(AbilityOf(entity));
 		for (int32_t step = 0; step < 10; step++)
 			if (const Vec2 point = entity.Position + back * float(step); !IsOpenAir(point))
 				return GroundHeight(point) + lift;
@@ -974,6 +987,9 @@ namespace Game
 	void SessionState::UpdateEffects(float dt)
 	{
 		m_Effects->Update(dt);
+		for (SpikeRuin& ruin : m_SpikeRuins)
+			ruin.Age += dt;
+		std::erase_if(m_SpikeRuins, [](const SpikeRuin& ruin) { return ruin.Age >= SpikeRuinSeconds; });
 		for (auto& [netId, fx] : m_Fx)
 		{
 			fx.Seen = false;
@@ -991,7 +1007,17 @@ namespace Game
 			else if (entity.Kind == EntityKind::Player && entity.Has(EntityFlags::Dashing) && !fx.Last.Has(EntityFlags::Dashing) && !entity.Has(EntityFlags::Dead))
 				m_Effects->Burst(Fx::Dodge, Ground(entity.Position, 0.1f));
 			if (!inserted && entity.Kind == EntityKind::Player)
+			{
 				SpearMoments(fx, entity, dt);
+				SpikeMoments(fx, entity, dt);
+				FireballMoments(fx, entity, dt);
+				ObsidianMoments(fx, entity, dt);
+			}
+			if (entity.Kind == EntityKind::Player)
+			{
+				ShieldMoments(entity, dt);
+				WardMoments(entity, dt);
+			}
 			if (!inserted && entity.Kind == EntityKind::Player && !entity.Has(EntityFlags::Dead))
 			{
 				if (entity.Has(EntityFlags::Flung) && !fx.Last.Has(EntityFlags::Flung))
@@ -1032,6 +1058,16 @@ namespace Game
 		}
 		for (const HitEvent& hit : m_Client.GetNewHits())
 		{
+			if (hit.Warded)
+			{
+				WardStruck(hit);
+				continue;
+			}
+			if (hit.Guarded)
+			{
+				ShieldStruck(hit);
+				continue;
+			}
 			const auto it = m_Fx.find(hit.Target);
 			if (it != m_Fx.end())
 				it->second.SinceHit = 0.0f;
@@ -1059,16 +1095,18 @@ namespace Game
 				const AbilityId ability = AbilityOf(fx.Last);
 				const bool spear = ability == AbilityId::FrostSpear;
 				if (const std::optional<Fx> impact = ProjectileImpactFor(ability))
-					m_Effects->Burst(*impact, ProjectilePoint(fx.Last), glm::vec3(0.0f, 1.0f, 0.0f), spear ? 0.6f + 0.4f * fx.Last.GetScale() : 1.0f);
+					m_Effects->Burst(*impact, ProjectilePoint(fx.Last), ability == AbilityId::ObsidianShards ? Heading(fx.Last.Facing) : glm::vec3(0.0f, 1.0f, 0.0f), spear ? 0.6f + 0.4f * fx.Last.GetScale() : 1.0f);
 				if (spear)
 					m_Effects->Impact(ability, Ground(fx.Last.Position), fx.Last.Facing, fx.Last.GetScale(), SpearIce, fx.Last.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
 				if (const auto path = m_SpearPaths.find(it->first); path != m_SpearPaths.end())
 				{
 					path->second.Last = fx.Last.Position;
-					m_Effects->Mark(FrostLane(path->second), SpearLaneSeconds, 0.01f);
+					m_Effects->Mark(FrostLane(path->second), SpearLaneSeconds, 0.01f, 1.0f, 1.0f, 0.25f, 1.2f);
 					m_SpearPaths.erase(path);
 				}
 			}
+			else if (fx.Last.Kind == EntityKind::Effect && !fx.Last.Has(EntityFlags::Pending) && AbilityOf(fx.Last) == AbilityId::EarthSpike)
+				EndSpike(fx.Last);
 			else if (fx.Last.Kind == EntityKind::Dummy && !fx.Last.Has(EntityFlags::Falling) && DummyKind(fx.Last.Variant) != DummyKind::Balloon)
 			{
 				const glm::vec3 splash = Ground(fx.Last.Position, 0.15f);
@@ -1081,6 +1119,14 @@ namespace Game
 			}
 			it = m_Fx.erase(it);
 		}
+		std::erase_if(m_Shields, [](const auto& item) { return !item.second.Seen; });
+		for (auto& [netId, view] : m_Shields)
+			view.Seen = false;
+		std::erase_if(m_Wards, [](const auto& item) { return !item.second.Seen; });
+		for (auto& [netId, view] : m_Wards)
+			view.Seen = false;
+		UpdateHexShards(m_ShieldShards, dt);
+		UpdateDiamondShards(m_WardShards, dt);
 		UpdateAnimators(dt);
 
 		for (auto& [netId, flight] : m_ProjectileHeights)
@@ -1094,7 +1140,7 @@ namespace Game
 			flight.Seen = true;
 			if (inserted || IsOpenAir(entity.Position))
 				continue;
-			const float target = GroundHeight(entity.Position) + (AbilityOf(entity) == AbilityId::FrostSpear ? SpearHoldHeight : ProjectileHeight);
+			const float target = GroundHeight(entity.Position) + FlightLift(AbilityOf(entity));
 			flight.Height = target >= flight.Height ? std::min(target, flight.Height + ProjectileClimb * dt) : std::max(target, flight.Height - ProjectileSink * dt);
 		}
 		std::erase_if(m_ProjectileHeights, [](const auto& item) { return !item.second.Seen; });
@@ -1160,8 +1206,10 @@ namespace Game
 			const bool hurtsUs = hit.OnPlayer && (!IsPvpMode(mode) || hit.Target == m_Client.GetPlayerNetId());
 			if ((mode == GameMode::Brawl || mode == GameMode::Hub) && !hurtsUs && hit.Attacker != m_Client.GetPlayerId())
 				continue;
+			if ((hit.Guarded || hit.Warded) && mode == GameMode::Brawl && m_Client.GetSession().Rules.Mode == BrawlMode::Knockback)
+				continue;
 			const float drift = std::fmod(float(m_HitCounter++) * 0.618034f, 1.0f) - 0.5f;
-			m_DamageNumbers.push_back({ .Position = hit.Position, .Drift = drift * 0.9f, .Damage = hit.Damage, .Critical = hit.Critical, .OnPlayer = hurtsUs, .Damages = hit.Damages });
+			m_DamageNumbers.push_back({ .Position = hit.Position, .Drift = drift * 0.9f, .Damage = hit.Damage, .Critical = hit.Critical, .OnPlayer = hurtsUs && !hit.Guarded && !hit.Warded, .Damages = hit.Damages, .Guarded = hit.Guarded, .Warded = hit.Warded });
 		}
 		if (m_DamageNumbers.size() > MaxDamageNumbers)
 			m_DamageNumbers.erase(m_DamageNumbers.begin(), m_DamageNumbers.end() - MaxDamageNumbers);
@@ -1334,6 +1382,8 @@ namespace Game
 
 	void SessionState::OnEntityAppeared(const EntityState& entity)
 	{
+		if (entity.Kind == EntityKind::Effect && !entity.Has(EntityFlags::Pending) && AbilityOf(entity) == AbilityId::EarthSpike)
+			EruptSpike(entity);
 		if (entity.Kind == EntityKind::Effect && entity.Has(EntityFlags::Pending) && AbilityOf(entity) == AbilityId::Firebomb)
 			if (const EntityState* body = FindBody(entity.Owner))
 				m_Lobs[entity.NetId] = HandOf(*body);
@@ -1345,11 +1395,21 @@ namespace Game
 		const AbilityId ability = AbilityOf(entity);
 		const AbilityDef& def = GetAbility(ability);
 		const float scale = ability == AbilityId::StormJump ? 0.7f : entity.GetScale();
-		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, EffectColor(entity), entity.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+		const bool fireball = ability == AbilityId::PurpleFireball;
+		const float blast = fireball ? std::clamp((def.ImpactRadius * scale - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f) : 0.0f;
+		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, fireball ? FireballColor(blast) : EffectColor(entity), entity.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
 		const std::optional<Fx> fx = EffectBurstFor(ability);
 		if (!fx)
 			return;
-		const glm::vec3 center = Ground(entity.Position, 0.5f);
+		const glm::vec3 center = Ground(entity.Position, fireball ? FireballBlastHeight : 0.5f);
+		if (fireball)
+		{
+			const float violet = FireballViolet(blast);
+			if (violet < 0.999f)
+				m_Effects->Burst(Fx::Explosion, center, Heading(entity.Facing), 0.8f * scale, glm::vec3(1.0f - violet));
+			m_Effects->Burst(*fx, center, Heading(entity.Facing), scale, glm::vec3(std::max(violet, 0.15f)));
+			return;
+		}
 		const glm::vec3 forward = Heading(entity.Facing);
 		switch (def.Shape)
 		{
@@ -1450,8 +1510,15 @@ namespace Game
 				const AbilityId ability = AbilityOf(entity);
 				if (const std::optional<Fx> trail = TrailFor(ability))
 				{
-					const glm::vec3 tint = ability == AbilityId::PiercingShot ? glm::vec3(0.5f, 1.8f, 0.5f) : CreditOf(ability) == AbilityId::SplittingBolt ? glm::vec3(1.3f, 0.35f, 0.6f) : glm::vec3(1.0f);
-					m_Effects->Trail(*trail, entity.NetId, ProjectilePoint(entity), dt, ability == AbilityId::FrostSpear ? entity.GetScale() : 1.0f, tint);
+					glm::vec3 tint = ability == AbilityId::PiercingShot ? glm::vec3(0.5f, 1.8f, 0.5f) : glm::vec3(1.0f);
+					if (ability == AbilityId::PurpleFireball)
+					{
+						const float violet = FireballViolet(FireballPowerOf(entity.GetScale()));
+						tint = glm::vec3(violet);
+						if (violet < 0.999f)
+							m_Effects->Trail(Fx::FireTrail, uint64_t(entity.NetId) | (12ull << 40), ProjectilePoint(entity), dt, entity.GetScale(), glm::vec3(1.0f - violet));
+					}
+					m_Effects->Trail(*trail, entity.NetId, ProjectilePoint(entity), dt, IsChargedShot(ability) ? entity.GetScale() : 1.0f, tint);
 				}
 				if (ability == AbilityId::FrostSpear && entity.GetScale() >= SpearLaneSize)
 				{
@@ -1459,10 +1526,28 @@ namespace Game
 					SpearPath& path = it->second;
 					if (!fresh && std::abs(AngleBetween(path.Facing, entity.Facing)) > 0.3f)
 					{
-						m_Effects->Mark(FrostLane(path), SpearLaneSeconds, 0.01f);
+						m_Effects->Mark(FrostLane(path), SpearLaneSeconds, 0.01f, 1.0f, 1.0f, 0.25f, 1.2f);
 						path = { path.Last, path.Last, entity.Facing, path.Size, path.Seed * 31u + 7u };
 					}
 					path.Last = entity.Position;
+					const Vec2 span = path.Last - path.Start;
+					const float length = Length(span);
+					for (; path.Grown + SpearLaneStep <= length; path.Grown += SpearLaneStep)
+					{
+						const uint32_t n = path.Seed * 7u + uint32_t(path.Grown / SpearLaneStep);
+						const auto unit = [n](uint32_t salt)
+						{
+							uint32_t x = (n ^ salt * 0x9E3779B9u) * 0x85EBCA6Bu;
+							x ^= x >> 13;
+							x *= 0xC2B2AE35u;
+							return float((x ^ x >> 16) & 0xFFFFu) / 65535.0f;
+						};
+						const Vec2 along = span / length;
+						const float sign = n % 2u ? 1.0f : -1.0f;
+						const Vec2 out = Vec2(-along.y, along.x) * sign;
+						const Vec2 at = path.Start + along * (path.Grown + SpearLaneStep * 0.5f) + out * (path.Size * (0.06f + 0.1f * unit(1u)));
+						m_Effects->Spike(Ground(at), path.Size * (0.1f + 0.07f * unit(2u)), AngleOf(out) + 0.6f * (unit(3u) - 0.5f), 0.35f + 0.35f * unit(4u), n, SpearLaneSeconds * (0.8f + 0.2f * unit(5u)));
+					}
 				}
 				break;
 			}
@@ -1497,8 +1582,37 @@ namespace Game
 					m_Effects->Trail(Fx::SpearAura, uint64_t(entity.NetId) | (6ull << 40), look.Center, dt, 0.6f + 0.4f * look.Size);
 					m_Effects->Converge(uint64_t(entity.NetId) | (7ull << 40), look.Center, 1.0f + 0.35f * look.Size, (24.0f + 64.0f * look.Power) * (1.0f - 0.7f * look.Over), 0.32f, dt, 0.8f + 0.25f * look.Size);
 				}
+				if (entity.Has(EntityFlags::Attacking) && !entity.Has(EntityFlags::Dead) && entity.Variant == uint8_t(AbilityId::PurpleFireball))
+				{
+					const auto fx = m_Fx.find(entity.NetId);
+					const FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? std::max(fx->second.FireballAge, 0.0f) : 0.0f);
+					const float violet = FireballViolet(look.Power);
+					const float size = 0.6f + 0.4f * look.Size;
+					m_Effects->Trail(Fx::FireballKindle, uint64_t(entity.NetId) | (12ull << 40), look.Center, dt, size, glm::vec3(1.0f - violet));
+					m_Effects->Trail(Fx::FireballAura, uint64_t(entity.NetId) | (13ull << 40), look.Center, dt, size, glm::vec3(violet));
+					const glm::vec3 streak = glm::mix(glm::vec3(0.75f, 0.32f, 0.08f), glm::vec3(0.45f, 0.18f, 0.8f), violet);
+					const float reach = 0.9f + 0.45f * look.Size;
+					const float surface = 1.4f * FireballBallRadius * look.Size * look.Grow;
+					m_Effects->Converge(uint64_t(entity.NetId) | (14ull << 40), look.Center, reach, (26.0f + 70.0f * look.Power) * (1.0f - 0.6f * look.Over), 0.3f, dt, 0.9f + 0.3f * look.Size, ParticleKind::Streak, streak, 0.35f, std::clamp(1.0f - surface / reach, 0.3f, 1.0f));
+				}
+				if (entity.Has(EntityFlags::Attacking) && !entity.Has(EntityFlags::Dead) && entity.Variant == uint8_t(AbilityId::ObsidianShards))
+				{
+					const auto fx = m_Fx.find(entity.NetId);
+					std::array<ObsidianLook, ObsidianVolley> shards;
+					const uint32_t formed = ChargingShards(entity, fx != m_Fx.end() ? std::max(fx->second.ObsidianAge, 0.0f) : 0.0f, shards);
+					if (formed < ObsidianVolley)
+						m_Effects->Converge(uint64_t(entity.NetId) | (15ull << 40), shards[formed].Center, 0.7f, 34.0f, 0.16f, dt, 0.7f, ParticleKind::Streak, ObsidianSheen * 0.5f, 0.25f, 0.85f);
+				}
 				if (entity.Has(EntityFlags::Burning) && !entity.Has(EntityFlags::Dead))
 					m_Effects->Trail(Fx::Campfire, uint64_t(entity.NetId) | (3ull << 40), Ground(entity.Position, 0.05f), dt, 0.55f);
+				if (entity.AimsFromPoint() && !entity.Has(EntityFlags::Dead))
+				{
+					const auto fx = m_Fx.find(entity.NetId);
+					const float progress = std::clamp((fx != m_Fx.end() ? std::max(fx->second.SpikeAge, 0.0f) : 0.0f) / GetAbility(AbilityId::EarthSpike).CastTime, 0.0f, 1.0f);
+					const Vec2 front = entity.CastPoint + SpikeAimOf(entity) * (GetAbility(AbilityId::EarthSpike).Reach * (0.3f + 0.7f * progress));
+					m_Effects->Trail(Fx::SpikeTremor, uint64_t(entity.NetId) | (10ull << 40), Ground(entity.CastPoint, 0.05f), dt, 0.7f + 0.6f * progress);
+					m_Effects->Trail(Fx::SpikeTremor, uint64_t(entity.NetId) | (11ull << 40), Ground(front, 0.05f), dt, 0.4f);
+				}
 				break;
 			default:
 				break;
@@ -1733,7 +1847,10 @@ namespace Game
 			const float size = fire.Kind == FireKind::Campfire ? 0.9f : fire.Kind == FireKind::Lantern ? 0.32f : 0.16f;
 			renderer.DrawSprite({ .Position = fire.Position + glm::vec3(0.0f, fire.Kind == FireKind::Campfire ? 0.25f : 0.02f, 0.0f), .Size = size * fire.Scale, .Color = glm::vec4(glm::vec3(1.0f, 0.55f, 0.22f) * flicker, 0.35f), .Shape = ParticleShape::Glow, .Softness = 1.0f });
 		}
-		m_Effects->Draw(renderer);
+		m_Effects->Draw(renderer, m_SpellMeshes);
+		DrawSpikeRuins(renderer);
+		DrawShields(renderer);
+		DrawWards(renderer);
 		for (const EntityState& entity : m_Client.GetEntities())
 			DrawEntity(renderer, entity);
 		DrawCorpses(renderer);
@@ -1749,7 +1866,7 @@ namespace Game
 			if (state.CastSlot >= 0)
 			{
 				const AbilityDef& ability = GetAbility(m_Client.GetTraits().Skills[size_t(state.CastSlot)].Ability);
-				if (ability.Kind == AbilityKind::Ground)
+				if (ability.Kind == AbilityKind::Ground && !AimsFromPoint(ability.Id))
 				{
 					const Vec2 point = GetGroundTarget(*level, self->Position, FromAngle(m_Aim), m_AimDistance, ability.Range);
 					DrawRuneCircle(renderer, { .Center = Ground(point), .Radius = ability.ImpactRadius * m_Client.GetTraits().AreaScale, .Color = SkillColor(ability.Id), .Intensity = 0.6f, .Spin = 0.6f, .Seed = 7u });
@@ -1864,6 +1981,21 @@ namespace Game
 			DrawSpearCharge(renderer, entity, base);
 			return;
 		}
+		if (casting == AbilityId::EarthSpike)
+		{
+			DrawSpikeAim(renderer, entity);
+			return;
+		}
+		if (casting == AbilityId::PurpleFireball)
+		{
+			DrawFireballCharge(renderer, entity, base);
+			return;
+		}
+		if (casting == AbilityId::ObsidianShards)
+		{
+			DrawObsidianCharge(renderer, entity, base);
+			return;
+		}
 		const glm::vec3 glow = SkillColor(casting);
 		const float pulse = 0.6f + 0.4f * std::sin(m_Time * 14.0f);
 		if (GetAbility(casting).Gem)
@@ -1901,15 +2033,15 @@ namespace Game
 	{
 		const Vec2 span = path.Last - path.Start;
 		const float length = std::max(Length(span), 0.05f);
-		const float width = 0.22f * path.Size;
+		const float width = 0.3f * path.Size;
 		GroundDecal lane;
 		lane.Center = Ground((path.Start + path.Last) * 0.5f);
 		lane.Yaw = length > 0.06f ? AngleOf(span) : path.Facing;
-		lane.Extent = glm::vec2(length * 0.5f + 0.3f * width, width);
+		lane.Extent = glm::vec2(length * 0.5f + width, width);
 		lane.Depth = std::min(0.75f + 0.08f * length, 1.4f);
 		lane.Shape = DecalShape::FrostLane;
 		lane.Color = glm::vec4(0.35f, 0.65f, 1.0f, 0.6f);
-		lane.Tint = glm::vec4(0.75f, 0.88f, 1.0f, 0.42f);
+		lane.Tint = glm::vec4(0.78f, 0.88f, 1.0f, 0.9f);
 		lane.Roughness = 0.25f;
 		lane.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
 		lane.Seed = path.Seed;
@@ -1961,7 +2093,7 @@ namespace Game
 		frost.Depth = 0.6f;
 		frost.Shape = DecalShape::Frost;
 		frost.Color = glm::vec4(0.35f, 0.6f, 0.95f, 0.35f);
-		frost.Tint = glm::vec4(0.7f, 0.85f, 1.0f, 0.18f + 0.12f * look.Power);
+		frost.Tint = glm::vec4(0.78f, 0.88f, 1.0f, 0.45f + 0.35f * look.Power);
 		frost.Roughness = 0.3f;
 		frost.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
 		frost.Seed = entity.NetId;
@@ -1973,6 +2105,535 @@ namespace Game
 			const ChargedShot shot = SpearShot(look.Power);
 			DrawLaneTelegraph(renderer, base + Heading(entity.Facing) * spear.SpawnOffset, entity.Facing, shot.Range, 2.0f * shot.Radius + 0.12f, SpearIce, 0.28f + 0.3f * look.Power, -1.0f);
 		}
+	}
+
+	FireballLook SessionState::ChargingFireball(const EntityState& caster, float age) const
+	{
+		const float power = caster.GetChargePower();
+		const float over = caster.GetOvercharge();
+		const float shake = over * over;
+		const float phase = float(caster.NetId % 97u);
+		FireballLook look;
+		look.Size = FireballShot(power).Size;
+		look.Grow = 1.0f - std::pow(1.0f - std::clamp(age / 0.25f, 0.0f, 1.0f), 3.0f);
+		look.Forward = Heading(caster.Facing);
+		look.Center = BodyBase(caster) + glm::vec3(0.0f, FireballHoldHeight + 0.04f * std::sin(m_Time * 2.7f + phase), 0.0f) + look.Forward * (FireballHoldReach + 0.6f * FireballBallRadius * look.Size * look.Grow)
+			+ glm::vec3(std::sin(m_Time * 61.0f + phase), std::sin(m_Time * 47.0f + 1.3f), std::cos(m_Time * 57.0f)) * (0.04f * shake);
+		look.Power = power;
+		look.Over = over;
+		look.Flash = power >= 1.0f ? std::exp(-over * ChargeCrackSeconds * 7.0f) : 0.0f;
+		return look;
+	}
+
+	void SessionState::FireballMoments(EntityFx& fx, const EntityState& entity, float dt)
+	{
+		const auto charging = [](const EntityState& state) { return state.Has(EntityFlags::Attacking) && state.Variant == uint8_t(AbilityId::PurpleFireball) && !state.Has(EntityFlags::Dead); };
+		const bool was = charging(fx.Last);
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		if (charging(entity))
+		{
+			fx.FireballAge = was && fx.FireballAge >= 0.0f ? fx.FireballAge + dt : 0.0f;
+			if (!was)
+				return;
+			const float before = fx.Last.GetChargePower();
+			const float after = entity.GetChargePower();
+			const FireballLook look = ChargingFireball(entity, fx.FireballAge);
+			if (before < 1.0f && after >= 1.0f)
+			{
+				m_Effects->Burst(Fx::FireballReady, look.Center, up, 0.8f + 0.2f * look.Size);
+				m_Effects->Burst(Fx::FireballRing, Ground(entity.Position, 0.05f), up, 1.0f);
+			}
+			else if (before < FireballSteps[0] && after >= FireballSteps[0])
+				m_Effects->Burst(Fx::FireBurst, look.Center, up, 0.4f);
+			else if (before < FireballSteps[1] && after >= FireballSteps[1])
+				m_Effects->Burst(Fx::FireballReady, look.Center, up, 0.4f);
+			return;
+		}
+		if (was)
+		{
+			const FireballLook look = ChargingFireball(fx.Last, std::max(fx.FireballAge, 0.0f));
+			const float scale = 0.6f + 0.4f * look.Size;
+			if (fx.Last.GetOvercharge() > 0.9f)
+			{
+				m_Effects->Burst(Fx::FireballSputter, look.Center, up, scale);
+				m_Effects->Burst(Fx::FireballRelease, look.Center, look.Forward, 0.7f * scale);
+			}
+			else if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
+				m_Effects->Burst(Fx::FireballSputter, look.Center, up, 0.5f * scale);
+			else if (look.Power < 0.35f)
+				m_Effects->Burst(Fx::FireBurst, look.Center, look.Forward, 0.5f);
+			else
+			{
+				m_Effects->Burst(Fx::FireballRelease, look.Center, look.Forward, scale);
+				if (look.Power > 0.8f)
+					m_Effects->Burst(Fx::FireballRing, Ground(fx.Last.Position, 0.05f), up, 0.8f);
+			}
+		}
+		fx.FireballAge = -1.0f;
+	}
+
+	void SessionState::DrawFireballCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
+	{
+		const auto fx = m_Fx.find(entity.NetId);
+		const FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? std::max(fx->second.FireballAge, 0.0f) : 0.0f);
+		DrawPurpleFireball(renderer, look, m_Time, entity.NetId);
+		const glm::vec3 color = FireballColor(look.Power);
+		DrawRuneCircle(renderer, { .Center = base, .Radius = (0.75f + 0.4f * look.Power) * look.Grow, .Color = color, .Intensity = 0.2f + 0.28f * look.Power + 0.12f * look.Flash, .Spin = 1.2f + 1.0f * look.Power + 2.5f * look.Over, .Progress = look.Power, .Appear = look.Grow, .Seed = entity.NetId });
+		DrawGroundGlow(renderer, Ground(Vec2(look.Center.x, look.Center.z)), 0.8f + 0.9f * look.Power, color * (0.08f + 0.14f * look.Power + 0.1f * look.Flash), 1.0f);
+		if (entity.NetId != m_Client.GetPlayerNetId())
+			return;
+		const AbilityDef& def = GetAbility(AbilityId::PurpleFireball);
+		const ChargedShot shot = FireballShot(look.Power);
+		const Vec2 aim = FromAngle(entity.Facing);
+		DrawLaneTelegraph(renderer, base + Heading(entity.Facing) * def.SpawnOffset, entity.Facing, shot.Range, 2.0f * shot.Radius + 0.12f, color, 0.24f + 0.26f * look.Power, -1.0f);
+		DrawGroundRing(renderer, Ground(entity.Position + aim * (def.SpawnOffset + shot.Range)), shot.Blast, color, 0.45f + 0.4f * look.Power, 0.025f, 18.0f, 0.4f);
+	}
+
+	uint32_t SessionState::ChargingShards(const EntityState& caster, float age, std::array<ObsidianLook, ObsidianVolley>& shards) const
+	{
+		constexpr float Slots[] = { 0.0f, 1.0f, -1.0f, 2.0f, -2.0f };
+		static_assert(std::size(Slots) == ObsidianVolley);
+		const AbilityDef& def = GetAbility(AbilityId::ObsidianShards);
+		const float power = caster.GetChargePower();
+		const uint32_t formed = ShardsFormed(power);
+		const float steps = power * float(ObsidianVolley - 1);
+		const float interval = (def.ChargeTime - def.CastTime) / float(ObsidianVolley - 1);
+		const auto progress = [&](uint32_t k)
+		{
+			if (k == 0)
+				return std::clamp(age / ObsidianFirstForm, 0.0f, 1.0f);
+			return std::clamp((steps - float(k) + ObsidianFormWindow) / ObsidianFormWindow, 0.0f, 1.0f);
+		};
+		const auto shift = [](uint32_t count) { return count % 2u == 0u ? -0.5f : 0.0f; };
+		const float centre = formed < ObsidianVolley ? glm::mix(shift(formed), shift(formed + 1), glm::smoothstep(0.0f, 1.0f, progress(formed))) : shift(formed);
+		const float phase = float(caster.NetId % 97u);
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		const glm::vec3 pivot = BodyBase(caster) + up * ObsidianHoldHeight + Heading(caster.Facing) * (ObsidianHoldReach - ObsidianFanRadius - 0.06f * power);
+		for (uint32_t k = 0; k < ObsidianVolley; k++)
+		{
+			const float form = progress(k);
+			const float locked = form < 1.0f ? -1.0f : k == 0 ? age - ObsidianFirstForm : (steps - float(k)) * interval;
+			const float recoil = locked >= 0.0f ? std::sin(std::min(locked / ObsidianRecoilSeconds, 1.0f) * Pi) * std::exp(-locked * 6.0f) : 0.0f;
+			const float pull = 1.0f - glm::smoothstep(0.0f, 1.0f, form);
+			const float slot = Slots[k] + centre;
+			const float angle = caster.Facing + 2.0f * ObsidianStep * slot;
+			const float tremble = form < 1.0f ? 0.0f : 0.006f + 0.012f * power;
+			ObsidianLook& look = shards[k];
+			look.Forward = Heading(angle);
+			const glm::vec3 rest = pivot + look.Forward * ObsidianFanRadius + up * ((k % 2u ? 0.06f : -0.03f) * std::min(float(k), 1.0f) + 0.025f * std::sin(m_Time * 4.0f + float(k) * 1.7f + phase));
+			look.From = rest + look.Forward * ObsidianPullReach + up * 0.15f;
+			look.Center = rest + look.Forward * (ObsidianPullReach * pull - 0.08f * recoil) + up * (0.15f * pull)
+				+ glm::vec3(std::sin(m_Time * 53.0f + float(k) * 2.3f), std::sin(m_Time * 47.0f + float(k)), std::cos(m_Time * 59.0f + float(k) * 1.1f)) * tremble;
+			look.Roll = 0.5f * float(k) + phase + 0.5f * std::sin(m_Time * 2.6f + float(k)) + 5.0f * pull * pull;
+			look.Grow = form > 0.0f ? std::pow(form, 0.6f) * (1.0f + 0.12f * recoil) : 0.0f;
+			look.Glint = form < 1.0f ? 0.4f + 0.6f * form : std::exp(-locked * 9.0f);
+			look.Form = form;
+			look.Ground = BodyBase(caster).y;
+			look.Variant = caster.NetId + k;
+		}
+		return formed;
+	}
+
+	void SessionState::ObsidianMoments(EntityFx& fx, const EntityState& entity, float dt)
+	{
+		const auto charging = [](const EntityState& state) { return state.Has(EntityFlags::Attacking) && state.Variant == uint8_t(AbilityId::ObsidianShards) && !state.Has(EntityFlags::Dead); };
+		const bool was = charging(fx.Last);
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		std::array<ObsidianLook, ObsidianVolley> shards;
+		if (charging(entity))
+		{
+			fx.ObsidianAge = was && fx.ObsidianAge >= 0.0f ? fx.ObsidianAge + dt : 0.0f;
+			const uint32_t before = was ? ShardsFormed(fx.Last.GetChargePower()) : 0u;
+			std::array<ObsidianLook, ObsidianVolley> previous;
+			if (was)
+				ChargingShards(fx.Last, std::max(fx.ObsidianAge - dt, 0.0f), previous);
+			const uint32_t formed = ChargingShards(entity, fx.ObsidianAge, shards);
+			for (uint32_t k = before; k < formed; k++)
+				m_Effects->Burst(Fx::ObsidianForm, shards[k].Center, up, 0.8f);
+			for (uint32_t k = 0; k < ObsidianVolley; k++)
+				if (shards[k].Grow > 0.0f && (!was || previous[k].Grow <= 0.0f))
+					m_Effects->Burst(Fx::ObsidianForm, shards[k].Center, up, 0.45f);
+			return;
+		}
+		if (was)
+		{
+			const uint32_t formed = ChargingShards(fx.Last, std::max(fx.ObsidianAge, 0.0f), shards);
+			if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling) || entity.Has(EntityFlags::Dead))
+				for (uint32_t k = 0; k < formed; k++)
+					m_Effects->Burst(Fx::ObsidianCrumble, shards[k].Center, up, 0.5f);
+			else
+			{
+				const glm::vec3 forward = Heading(fx.Last.Facing);
+				const float volley = float(formed) / float(ObsidianVolley);
+				m_Effects->Burst(Fx::ObsidianRelease, shards[0].Center, forward, 0.6f + 0.5f * volley);
+				GroundDecal blast;
+				blast.Center = Ground(fx.Last.Position) + forward * 0.3f;
+				blast.Yaw = fx.Last.Facing;
+				blast.Extent = glm::vec2(1.2f + 0.8f * volley);
+				blast.Depth = 0.75f;
+				blast.Shape = DecalShape::Sector;
+				blast.Color = glm::vec4(ObsidianSheen * (0.35f + 0.35f * volley), 1.0f);
+				blast.Params = glm::vec4(-1.0f, 1.0f, 0.5f * ObsidianStep * float(formed - 1) + 0.12f, 0.0f);
+				m_Effects->Mark(blast, 0.2f, 0.01f, 0.45f, 1.0f, 0.08f);
+			}
+		}
+		fx.ObsidianAge = -1.0f;
+	}
+
+	void SessionState::DrawObsidianCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
+	{
+		const auto fx = m_Fx.find(entity.NetId);
+		std::array<ObsidianLook, ObsidianVolley> shards;
+		const uint32_t formed = ChargingShards(entity, fx != m_Fx.end() ? std::max(fx->second.ObsidianAge, 0.0f) : 0.0f, shards);
+		for (uint32_t k = 0; k < ObsidianVolley; k++)
+			if (shards[k].Grow > 0.0f)
+				DrawObsidianShard(renderer, m_SpellMeshes, shards[k], m_Time, entity.NetId + k);
+		const float power = entity.GetChargePower();
+		DrawRuneCircle(renderer, { .Center = base, .Radius = (0.5f + 0.25f * power) * shards[0].Grow, .Color = ObsidianSheen, .Intensity = 0.06f + 0.1f * power, .Spin = 2.4f + 2.0f * power, .Progress = power, .Appear = std::min(shards[0].Grow, 1.0f), .Seed = entity.NetId });
+		if (entity.NetId != m_Client.GetPlayerNetId())
+			return;
+		const AbilityDef& def = GetAbility(AbilityId::ObsidianShards);
+		const float halfArc = std::max(0.5f * ObsidianStep * float(formed - 1), 0.04f);
+		DrawSectorTelegraph(renderer, base, entity.Facing, def.ProjectileRange + def.SpawnOffset, halfArc, ObsidianSheen, 0.18f + 0.16f * power, -1.0f);
+	}
+
+	Vec2 SessionState::SpikeAimOf(const EntityState& caster) const
+	{
+		const Vec2 aim = FromAngle(caster.CastAim);
+		if (caster.NetId != m_Client.GetPlayerNetId() || m_Paused)
+			return aim;
+		return SteerSpike(caster.CastPoint, aim, caster.Position + FromAngle(m_Aim) * m_AimDistance);
+	}
+
+	void SessionState::SpikeMoments(EntityFx& fx, const EntityState& entity, float dt)
+	{
+		if (!entity.AimsFromPoint() || entity.Has(EntityFlags::Dead))
+		{
+			fx.SpikeAge = -1.0f;
+			return;
+		}
+		if (fx.SpikeAge >= 0.0f && fx.Last.AimsFromPoint())
+		{
+			fx.SpikeAge += dt;
+			return;
+		}
+		fx.SpikeAge = 0.0f;
+		m_Effects->Burst(Fx::SpikeTremor, Ground(entity.CastPoint, 0.05f), glm::vec3(0.0f, 1.0f, 0.0f), 1.5f);
+	}
+
+	void SessionState::EruptSpike(const EntityState& spike)
+	{
+		const glm::vec3 base = Ground(spike.Position);
+		const glm::vec3 thrust = glm::normalize(Heading(spike.Facing) * std::sin(SpikeTilt) + glm::vec3(0.0f, std::cos(SpikeTilt), 0.0f));
+		m_Effects->Burst(Fx::SpikeEruption, base + glm::vec3(0.0f, 0.1f, 0.0f), thrust);
+		GroundDecal soil;
+		soil.Center = base;
+		soil.Yaw = spike.Facing;
+		soil.Extent = glm::vec2(1.15f);
+		soil.Depth = 0.75f;
+		soil.Shape = DecalShape::Scorch;
+		soil.Color = glm::vec4(0.0f);
+		soil.Tint = glm::vec4(0.11f, 0.085f, 0.065f, 0.55f);
+		soil.Roughness = 0.95f;
+		soil.Seed = spike.NetId;
+		m_Effects->Mark(soil, SpikeRiftSeconds, 0.02f, 0.55f, 1.0f, 0.12f);
+		GroundDecal cracks = soil;
+		cracks.Extent = glm::vec2(1.6f);
+		cracks.Shape = DecalShape::Cracks;
+		cracks.Color = glm::vec4(SkillColor(AbilityId::EarthSpike) * 1.1f, 1.0f);
+		cracks.Tint = glm::vec4(0.04f, 0.035f, 0.03f, 0.85f);
+		cracks.Params = glm::vec4(0.3f, 0.0f, 0.0f, 0.0f);
+		m_Effects->Mark(cracks, SpikeRiftSeconds, 0.02f, 0.45f, 1.0f, 0.1f, 3.0f);
+		m_Effects->Mark(SpikeRift(spike, 0.25f), SpikeRiftSeconds, 0.02f, 0.3f, 1.0f, 0.08f, 2.5f);
+	}
+
+	void SessionState::EndSpike(const EntityState& spike)
+	{
+		const glm::vec3 base = Ground(spike.Position);
+		const glm::vec3 axis = glm::normalize(Heading(spike.Facing) * std::sin(SpikeTilt) + glm::vec3(0.0f, std::cos(SpikeTilt), 0.0f));
+		m_Effects->Burst(Fx::SpikeCrumble, base + glm::vec3(0.0f, 0.2f, 0.0f));
+		m_Effects->Burst(Fx::SpikeCrumble, base + axis * (SpikeLength * 0.55f), glm::vec3(0.0f, 1.0f, 0.0f), 0.7f);
+		m_SpikeRuins.push_back({ spike.Position, spike.Facing, 0.0f, spike.NetId, SpikeThrust(AgeOf(spike.NetId)) });
+		GroundDecal cracks;
+		cracks.Center = base;
+		cracks.Yaw = spike.Facing;
+		cracks.Extent = glm::vec2(0.95f);
+		cracks.Depth = 0.75f;
+		cracks.Shape = DecalShape::Cracks;
+		cracks.Color = glm::vec4(SkillColor(AbilityId::EarthSpike), 1.0f);
+		cracks.Tint = glm::vec4(0.04f, 0.035f, 0.03f, 0.8f);
+		cracks.Roughness = 0.95f;
+		cracks.Params = glm::vec4(0.25f, 0.0f, 0.0f, 0.0f);
+		cracks.Seed = spike.NetId * 7u + 3u;
+		m_Effects->Mark(cracks, SpikeRiftSeconds * 0.8f, 0.02f, 0.5f, 1.0f, 0.1f, 3.0f);
+	}
+
+	EarthSpikeLook SessionState::SpikeLook(const EntityState& spike) const
+	{
+		const float age = AgeOf(spike.NetId);
+		const float phase = float(spike.NetId % 97u);
+		EarthSpikeLook look;
+		look.Base = Ground(spike.Position);
+		look.Facing = spike.Facing;
+		look.Extend = SpikeThrust(age);
+		look.Collar = SpikeThrust(age * 1.4f);
+		look.Tilt = SpikeTilt + 0.05f * std::exp(-age * 9.0f) * std::sin(age * 50.0f);
+		look.Sway = 0.05f * std::exp(-age * 8.0f) * std::sin(age * 61.0f + phase);
+		look.Scale = spike.GetScale();
+		look.Seed = spike.NetId;
+		return look;
+	}
+
+	GroundDecal SessionState::SpikeRift(const EntityState& spike, float glow) const
+	{
+		const float length = GetAbility(AbilityId::EarthSpike).Reach * spike.GetScale();
+		GroundDecal rift;
+		rift.Center = Ground(spike.Position + FromAngle(spike.Facing) * (length * 0.5f));
+		rift.Yaw = spike.Facing;
+		rift.Extent = glm::vec2(length * 0.5f + 0.15f, 0.55f);
+		rift.Depth = 1.2f;
+		rift.Shape = DecalShape::Fissure;
+		rift.Color = glm::vec4(SkillColor(AbilityId::EarthSpike) * 0.55f, 1.0f);
+		rift.Tint = glm::vec4(0.07f, 0.055f, 0.045f, 0.85f);
+		rift.Roughness = 0.95f;
+		rift.Params = glm::vec4(glow, 1.0f, 1.0f, 0.0f);
+		rift.Seed = spike.NetId;
+		return rift;
+	}
+
+
+	void SessionState::DrawSpikeAim(WorldRenderer& renderer, const EntityState& caster) const
+	{
+		const AbilityDef& def = GetAbility(AbilityId::EarthSpike);
+		const auto fx = m_Fx.find(caster.NetId);
+		const float progress = std::clamp((fx != m_Fx.end() ? std::max(fx->second.SpikeAge, 0.0f) : 0.0f) / def.CastTime, 0.0f, 1.0f);
+		const float facing = AngleOf(SpikeAimOf(caster));
+		const glm::vec3 origin = Ground(caster.CastPoint);
+		const glm::vec3 color = SkillColor(AbilityId::EarthSpike);
+		const float pulse = 0.5f + 0.5f * std::sin(m_Time * 22.0f);
+		GroundDecal soil;
+		soil.Center = origin;
+		soil.Extent = glm::vec2(0.7f + 0.35f * progress);
+		soil.Depth = 0.75f;
+		soil.Shape = DecalShape::Scorch;
+		soil.Color = glm::vec4(0.0f);
+		soil.Tint = glm::vec4(0.11f, 0.085f, 0.065f, 0.3f + 0.25f * progress);
+		soil.Roughness = 0.95f;
+		soil.Seed = caster.NetId;
+		renderer.DrawDecal(soil);
+		GroundDecal cracks = soil;
+		cracks.Extent = glm::vec2(0.55f + 0.75f * progress);
+		cracks.Shape = DecalShape::Cracks;
+		cracks.Color = glm::vec4(color * (0.7f + 0.3f * progress), 1.0f);
+		cracks.Tint = glm::vec4(0.04f, 0.035f, 0.03f, 0.8f);
+		cracks.Params = glm::vec4(0.15f + 0.25f * progress + 0.05f * pulse, 0.0f, 0.0f, 0.0f);
+		renderer.DrawDecal(cracks);
+		DrawGroundRing(renderer, origin, def.Width * 0.5f + 0.15f, color, 0.3f + 0.35f * progress, 0.02f, 10.0f, 0.6f);
+		GroundDecal lane;
+		lane.Center = Ground(caster.CastPoint + FromAngle(facing) * (def.Reach * 0.5f));
+		lane.Yaw = facing;
+		lane.Extent = glm::vec2(def.Reach * 0.5f, def.Width * 0.5f);
+		lane.Depth = 1.4f;
+		lane.Shape = DecalShape::Fissure;
+		lane.Color = glm::vec4(color * (0.35f + 0.3f * progress), 1.0f);
+		lane.Tint = glm::vec4(0.06f, 0.05f, 0.04f, 0.75f);
+		lane.Roughness = 0.95f;
+		lane.Params = glm::vec4(1.0f, 0.3f + 0.7f * progress, 0.0f, 0.0f);
+		lane.Seed = caster.NetId;
+		renderer.DrawDecal(lane);
+	}
+
+	void SessionState::DrawSpikeRuins(WorldRenderer& renderer) const
+	{
+		for (const SpikeRuin& ruin : m_SpikeRuins)
+		{
+			const float t = std::clamp(ruin.Age / SpikeRuinSeconds, 0.0f, 1.0f);
+			const float sink = std::clamp((t - 0.15f) / 0.85f, 0.0f, 1.0f);
+			const float phase = float(ruin.Seed % 97u);
+			EarthSpikeLook look;
+			look.Base = Ground(ruin.Position);
+			look.Facing = ruin.Facing;
+			look.Extend = ruin.Extend * (1.0f - sink * sink);
+			look.Collar = 1.0f - sink;
+			look.Tilt = SpikeTilt + 0.12f * sink;
+			look.Sway = 0.06f * (1.0f - t) * std::sin(m_Time * 53.0f + phase);
+			look.Scale = 1.0f - 0.1f * sink;
+			look.Seed = ruin.Seed;
+			DrawEarthSpike(renderer, m_SpellMeshes, look);
+		}
+	}
+
+	void SessionState::ShieldMoments(const EntityState& entity, float dt)
+	{
+		const bool raised = entity.Guarding();
+		const bool broken = entity.Has(EntityFlags::Shattered);
+		if (!raised && !m_Shields.contains(entity.NetId))
+			return;
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		ShieldView& view = m_Shields[entity.NetId];
+		HexShieldLook& look = view.Look;
+		view.Seen = true;
+		if (raised)
+		{
+			look.Base = BodyBase(entity);
+			look.Facing = entity.Facing;
+			const float guard = entity.GetGuard();
+			if (view.Up)
+			{
+				for (const float step : HexShieldCracks)
+					if (look.Guard > step && guard <= step)
+						m_Effects->Burst(Fx::ShieldCrack, HexShieldPoint(look.Base, look.Facing, glm::vec2(0.0f)), up, 1.0f);
+			}
+			else
+			{
+				look.Seed = entity.NetId * 2654435761u;
+				look.Flash = std::max(look.Flash, 0.7f);
+				if (guard >= 0.98f)
+					look.ScarCount = 0;
+				m_Effects->Burst(Fx::ShieldRaise, HexShieldPoint(look.Base, look.Facing, glm::vec2(0.0f)), Heading(look.Facing), 1.0f);
+			}
+			look.Guard = guard;
+		}
+		if (broken && !view.Broken && look.Raise > 0.05f)
+		{
+			ShatterHexShield(look, m_ShieldShards);
+			glm::vec3 normal;
+			const glm::vec3 middle = HexShieldPoint(look.Base, look.Facing, glm::vec2(0.0f), &normal);
+			m_Effects->Burst(Fx::ShieldShatter, middle, normal, 1.0f);
+			look.Raise = 0.0f;
+			look.ScarCount = 0;
+			look.Guard = 1.0f;
+		}
+		look.Raise = raised ? std::min(look.Raise + dt / HexShieldRaiseSeconds, 1.0f) : std::max(look.Raise - dt / HexShieldLowerSeconds, 0.0f);
+		look.Flash = std::max(look.Flash - dt * 4.0f, 0.0f);
+		for (HexShieldImpact& impact : look.Impacts)
+			impact.Age += dt;
+		view.Up = raised;
+		view.Broken = broken;
+	}
+
+	void SessionState::ShieldStruck(const HitEvent& hit)
+	{
+		const bool shove = m_Client.GetSession().Mode == GameMode::Brawl && m_Client.GetSession().Rules.Mode == BrawlMode::Knockback;
+		const float strength = std::clamp(0.45f + float(hit.Damage) / (shove ? 30.0f : 18.0f), 0.45f, 1.3f);
+		const auto found = m_Shields.find(hit.Target);
+		if (found == m_Shields.end())
+		{
+			m_Effects->Burst(Fx::ShieldImpact, Ground(hit.Position, 1.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.6f + 0.4f * strength);
+			return;
+		}
+		HexShieldLook& look = found->second.Look;
+		const uint32_t key = uint32_t(QuantizePosition(hit.Position.x)) * 73856093u ^ uint32_t(QuantizePosition(hit.Position.y)) * 19349663u;
+		const float height = HexShieldLift + 0.1f + 0.5f * (float(key % 1024u) / 1023.0f - 0.5f);
+		glm::vec2 point = HexShieldLocal(look.Base, look.Facing, glm::vec3(hit.Position.x, look.Base.y + height, hit.Position.y));
+		const float rim = glm::length(point / glm::vec2(HexShieldHalfWidth, HexShieldHalfHeight));
+		if (rim > 0.9f)
+			point *= 0.9f / rim;
+		*std::max_element(look.Impacts.begin(), look.Impacts.end(), [](const HexShieldImpact& a, const HexShieldImpact& b) { return a.Age < b.Age; }) = { point, 0.0f, strength };
+		if (look.ScarCount < HexShieldScarSlots)
+			look.Scars[look.ScarCount++] = point;
+		glm::vec3 normal;
+		const glm::vec3 at = HexShieldPoint(look.Base, look.Facing, point, &normal);
+		m_Effects->Burst(Fx::ShieldImpact, at, normal, 0.7f + 0.4f * strength);
+	}
+
+	void SessionState::DrawShields(WorldRenderer& renderer) const
+	{
+		for (const auto& [netId, view] : m_Shields)
+		{
+			if (view.Look.Raise <= 0.01f)
+				continue;
+			DrawHexShield(renderer, view.Look, m_Time);
+			const Vec2 front = Vec2(view.Look.Base.x, view.Look.Base.z) + FromAngle(view.Look.Facing) * 0.7f;
+			DrawGroundGlow(renderer, Ground(front), 1.0f, HexShieldColor * (0.12f * view.Look.Raise + 0.1f * view.Look.Flash), 1.0f);
+		}
+		DrawHexShards(renderer, m_ShieldShards);
+	}
+
+	void SessionState::WardMoments(const EntityState& entity, float dt)
+	{
+		const bool warded = entity.Warded();
+		if (!warded && !m_Wards.contains(entity.NetId))
+			return;
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		const glm::vec3 chest(0.0f, DiamondImpactHeight, 0.0f);
+		WardView& view = m_Wards[entity.NetId];
+		DiamondWardLook& look = view.Look;
+		view.Seen = true;
+		const glm::vec3 base = BodyBase(entity);
+		if (warded)
+		{
+			const float ward = entity.GetWard();
+			if (!view.Up)
+			{
+				look = DiamondWardLook{};
+				look.Seed = entity.NetId * 2654435761u ^ uint32_t(m_Time * 997.0f);
+				look.Spin = float(look.Seed % 628u) * 0.01f;
+				look.Flash = 1.0f;
+				view.Dropped = 1e3f;
+				m_Effects->Burst(Fx::WardForm, base + chest, up, 1.0f);
+			}
+			else
+				for (const float step : DiamondCracks)
+					if (look.Ward > step && ward <= step)
+						m_Effects->Burst(Fx::WardCrack, base + chest, up, 1.0f);
+			look.Ward = ward;
+			look.Fade = 1.0f;
+			look.Age += dt;
+		}
+		else
+		{
+			if (view.Up)
+				view.Dropped = 0.0f;
+			else
+				view.Dropped += dt;
+			if (entity.Has(EntityFlags::WardShattered) && view.Dropped < 0.2f && look.Fade > 0.3f && !entity.Has(EntityFlags::Dead))
+			{
+				ShatterDiamondWard(look, m_WardShards);
+				m_Effects->Burst(Fx::WardShatter, look.Base + chest, up, 1.0f);
+				look.Fade = 0.0f;
+			}
+			look.Fade = std::max(look.Fade - dt / DiamondFadeSeconds, 0.0f);
+		}
+		look.Base = base;
+		look.Spin += dt * (0.45f + 6.0f * std::pow(1.0f - std::clamp(look.Age / DiamondFormSeconds, 0.0f, 1.0f), 2.0f));
+		look.Flash = std::max(look.Flash - dt * 3.5f, 0.0f);
+		for (DiamondImpact& impact : look.Impacts)
+			impact.Age += dt;
+		view.Up = warded;
+	}
+
+	void SessionState::WardStruck(const HitEvent& hit)
+	{
+		const bool shove = m_Client.GetSession().Mode == GameMode::Brawl && m_Client.GetSession().Rules.Mode == BrawlMode::Knockback;
+		const float strength = std::clamp(0.5f + float(hit.Damage) / (shove ? 30.0f : 16.0f), 0.5f, 1.4f);
+		const auto found = m_Wards.find(hit.Target);
+		const glm::vec3 center = found != m_Wards.end() ? found->second.Look.Base : Ground(hit.Position);
+		const uint32_t key = uint32_t(QuantizePosition(hit.Position.x)) * 73856093u ^ uint32_t(QuantizePosition(hit.Position.y)) * 19349663u;
+		const float height = DiamondImpactHeight + 0.35f * (float(key % 1024u) / 1023.0f - 0.5f);
+		glm::vec3 normal;
+		const glm::vec3 at = DiamondPoint(center, glm::vec3(hit.Position.x, center.y, hit.Position.y), height, &normal);
+		if (found != m_Wards.end())
+		{
+			DiamondWardLook& look = found->second.Look;
+			const glm::vec3 local = DiamondLocal(look, at);
+			*std::max_element(look.Impacts.begin(), look.Impacts.end(), [](const DiamondImpact& a, const DiamondImpact& b) { return a.Age < b.Age; }) = { local, 0.0f, strength };
+			look.Scars[look.ScarCount++ % DiamondScarSlots] = local;
+			look.Flash = std::max(look.Flash, 0.35f * strength);
+		}
+		m_Effects->Burst(Fx::WardDeflect, at, normal, 0.7f + 0.4f * strength);
+	}
+
+	void SessionState::DrawWards(WorldRenderer& renderer) const
+	{
+		for (const auto& [netId, view] : m_Wards)
+		{
+			if (view.Look.Fade <= 0.01f)
+				continue;
+			DrawDiamondWard(renderer, view.Look, m_Time);
+			DrawGroundGlow(renderer, view.Look.Base, 1.15f, DiamondGold * (0.1f * view.Look.Fade + 0.1f * view.Look.Flash), 1.0f);
+		}
+		DrawDiamondShards(renderer, m_WardShards);
 	}
 
 	void SessionState::DrawStunStars(WorldRenderer& renderer, const glm::vec3& center) const
@@ -2242,6 +2903,32 @@ namespace Game
 			DrawGroundGlow(renderer, base, 0.6f + 0.5f * power, SpearIce * (0.22f + 0.25f * power), 1.0f);
 			return;
 		}
+		if (ability == AbilityId::PurpleFireball)
+		{
+			const float power = FireballPowerOf(entity.GetScale());
+			FireballLook look;
+			look.Center = center;
+			look.Forward = Heading(entity.Facing);
+			look.Size = entity.GetScale();
+			look.Power = power;
+			look.Flying = true;
+			DrawPurpleFireball(renderer, look, m_Time, entity.NetId);
+			DrawGroundGlow(renderer, base, 0.7f + 0.8f * power, FireballColor(power) * (0.25f + 0.25f * power), 1.0f);
+			return;
+		}
+		if (ability == AbilityId::ObsidianShards)
+		{
+			ObsidianLook look;
+			look.Center = center;
+			look.Forward = Heading(entity.Facing);
+			look.Roll = m_Time * 7.0f + float(entity.NetId % 97u);
+			look.Glint = 0.35f;
+			look.Ground = base.y;
+			look.Variant = entity.NetId;
+			look.Flying = true;
+			DrawObsidianShard(renderer, m_SpellMeshes, look, m_Time, entity.NetId);
+			return;
+		}
 		switch (ability)
 		{
 		case AbilityId::Arrow:
@@ -2300,6 +2987,17 @@ namespace Game
 			DrawThunder(renderer, entity, age, false);
 			return;
 		}
+		if (ability == AbilityId::EarthSpike)
+		{
+			DrawEarthSpike(renderer, m_SpellMeshes, SpikeLook(entity));
+			return;
+		}
+		if (ability == AbilityId::PurpleFireball)
+		{
+			const float radius = def.ImpactRadius * scale;
+			DrawFireballBlast(renderer, { .Center = Ground(entity.Position, FireballBlastHeight), .Ground = base, .Radius = radius, .Power = std::clamp((radius - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f), .Age = age, .Life = def.EffectDuration }, entity.NetId);
+			return;
+		}
 		if (ability == AbilityId::HookAnchor || ability == AbilityId::HookPull || ability == AbilityId::HookYank)
 		{
 			DrawHook(renderer, entity, age);
@@ -2323,8 +3021,6 @@ namespace Game
 			}
 			break;
 		case AbilityKind::Ward:
-			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.9f, 0.0f), 0.5f + 0.5f * swing, color * (1.6f * (1.0f - t)), 0.05f);
-			DrawGlow(renderer, base + glm::vec3(0.0f, 0.9f, 0.0f), 0.7f * (1.0f - t) + 0.2f, color * (0.6f * (1.0f - t)));
 			break;
 		case AbilityKind::Melee:
 		{
@@ -2672,9 +3368,9 @@ namespace Game
 			if (!point || !onScreen(*point))
 				continue;
 			const float pop = number.Critical ? 1.0f + 0.7f * std::max(0.0f, 1.0f - number.Age / 0.16f) : 1.0f + 0.25f * std::max(0.0f, 1.0f - number.Age / 0.1f);
-			const float fontSize = (number.Critical ? 27.0f : number.OnPlayer ? 21.0f : 18.0f) * pop;
+			const float fontSize = (number.Critical ? 27.0f : number.OnPlayer ? 21.0f : number.Guarded || number.Warded ? 16.0f : 18.0f) * pop;
 			const float alpha = std::clamp((1.0f - t) / 0.35f, 0.0f, 1.0f);
-			UiColor color = number.OnPlayer ? Hex(0xFF5A4E) : number.Critical ? Hex(0xFFE27A) : number.Damages != Element::Physical ? Lighten(WithAlpha(ElementColor(number.Damages)), 0.2f) : Hex(0xF4F1EA);
+			UiColor color = number.Warded ? Hex(0xFFE3A6) : number.Guarded ? Hex(0x9FE6FF) : number.OnPlayer ? Hex(0xFF5A4E) : number.Critical ? Hex(0xFFE27A) : number.Damages != Element::Physical ? Lighten(WithAlpha(ElementColor(number.Damages)), 0.2f) : Hex(0xF4F1EA);
 			TextStyle style = Theme::Floating(fontSize, WithAlpha(color, alpha));
 			style.OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.9f * alpha);
 			style.ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.5f * alpha);
@@ -3418,7 +4114,10 @@ namespace Game
 			}
 			const bool empty = skill.IsEmpty();
 			const float cooldown = dodge ? state.DodgeCooldown : state.Cooldowns[slot];
-			const float ready = skill.Cooldown > 0.0f ? 1.0f - std::clamp(cooldown / skill.Cooldown, 0.0f, 1.0f) : 1.0f;
+			const bool guard = !dodge && IsGuard(skill);
+			const bool shattered = guard && IsGuardBroken(state, traits);
+			const float span = shattered ? GuardBreakCooldown(skill) : skill.Cooldown;
+			const float ready = span > 0.0f ? 1.0f - std::clamp(cooldown / span, 0.0f, 1.0f) : 1.0f;
 			const bool covered = state.Mana + 1e-3f >= skill.ManaCost;
 			const bool overloaded = !dodge && IsOverloaded(state, traits, slot);
 			const bool affordable = covered || overloaded || traits.BloodRate > 0.0f;
@@ -3450,6 +4149,14 @@ namespace Game
 					std::snprintf(text, sizeof(text), cooldown < 3.0f ? "%.1f" : "%.0f", double(cooldown));
 					draw.TextAligned(rect, text, Theme::Floating(19.0f, Hex(0xF4F0FF)), { 0.5f, 0.5f });
 				}
+			}
+			if (guard && !shattered)
+			{
+				const float left = std::clamp(GuardLeft(state, traits) / std::max(skill.Durability, 1e-3f), 0.0f, 1.0f);
+				const UiRect bar{ rect.X + 7.0f, rect.Y + 5.0f, rect.W - 14.0f, 4.0f };
+				const UiColor tone = left > 0.34f ? Hex(0x8FE3FF) : Hex(0xC9A6FF);
+				draw.Rect(bar, { .Fill = Rgba(0.02f, 0.02f, 0.05f, 0.85f), .Chamfer = 1.5f });
+				draw.Rect({ bar.X, bar.Y, bar.W * left, bar.H }, { .Fill = tone, .Glow = WithAlpha(tone, 0.35f), .GlowSize = 5.0f, .Chamfer = 1.5f });
 			}
 			if (!empty && !skill.Usable)
 			{

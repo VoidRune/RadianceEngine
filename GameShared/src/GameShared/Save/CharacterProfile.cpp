@@ -21,13 +21,17 @@ namespace Game
 		static_assert(std::size(BaseKeys) == size_t(ItemBase::Count));
 		constexpr const char* StatKeys[] = { "Damage", "PhysicalDamage", "FireDamage", "ColdDamage", "LightningDamage", "AttackSpeed", "CastSpeed", "CritChance", "CritDamage", "LifeSteal", "AreaSize", "ExtraProjectiles", "Pierce", "ProjectileSpeed", "CooldownRecovery", "GemLevel", "MaxHealth", "MaxMana", "ManaRegen", "Regeneration", "Armor", "FireResist", "ColdResist", "LightningResist", "PoisonResist", "MoveSpeed" };
 		static_assert(std::size(StatKeys) == size_t(Stat::Count));
-		constexpr const char* AbilityKeys[] = { "Bolt", "Orb", "Slash", "Chop", "Stab", "Thrust", "Arrow", "Quarrel", "Fireball", "Meteor", "FrostNova", "IceSpear", "ChainLightning", "Blink", "Cyclone", "GroundSlam", "Volley", "RainOfArrows", "PiercingShot", "Rejuvenate", "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain", "EmberBolt", "Gust", "Comet", "Warp", "Shockwave", "GravityWell", "ArcLightning", "Swap", "MirrorWard", "FrostSpear", "ChainHook", "Firebomb", "SplittingBolt", "StormStrike", "FirebombSkip", "FirebombSkip2", "BoltShard", "StormJump", "HookAnchor", "HookPull", "HookYank", "FirebombFlame", "Ignite", "ShatterBurst" };
+		constexpr const char* AbilityKeys[] = { "Bolt", "Orb", "Slash", "Chop", "Stab", "Thrust", "Arrow", "Quarrel", "Fireball", "Meteor", "FrostNova", "IceSpear", "ChainLightning", "Blink", "Cyclone", "GroundSlam", "Volley", "RainOfArrows", "PiercingShot", "Rejuvenate", "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain", "EmberBolt", "Gust", "Comet", "Warp", "Shockwave", "GravityWell", "ArcLightning", "Swap", "DiamondWard", "FrostSpear", "ChainHook", "Firebomb", "ObsidianShards", "StormStrike", "FirebombSkip", "FirebombSkip2", "StormJump", "HookAnchor", "HookPull", "HookYank", "FirebombFlame", "Ignite", "ShatterBurst", "EarthSpike", "PurpleFireball", "HexShield" };
 		static_assert(std::size(AbilityKeys) == size_t(AbilityId::Count));
 
 		std::optional<AbilityId> AbilityFromKey(const std::string& name)
 		{
 			if (name == "Frostbite")
 				return AbilityId::FrostSpear;
+			if (name == "MirrorWard")
+				return AbilityId::DiamondWard;
+			if (name == "SplittingBolt")
+				return AbilityId::ObsidianShards;
 			const auto key = std::find(std::begin(AbilityKeys), std::end(AbilityKeys), name);
 			return key != std::end(AbilityKeys) ? std::optional<AbilityId>(AbilityId(key - std::begin(AbilityKeys))) : std::nullopt;
 		}

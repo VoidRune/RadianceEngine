@@ -897,8 +897,13 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Stunned);
 				if (controller->State.Static > 0.0f)
 					state.Flags |= uint16_t(EntityFlags::Static);
-				if (controller->State.Ward > 0.0f)
+				if (IsWarded(controller->State))
+				{
 					state.Flags |= uint16_t(EntityFlags::Warded);
+					state.Ward = PackGuard(controller->State.WardLeft, WardDurability(controller->Traits));
+				}
+				if (controller->State.WardShatter > 0.0f)
+					state.Flags |= uint32_t(EntityFlags::WardShattered);
 				if (m_World->GetMatch().IsBurning(controller->PlayerId) && m_Session.Mode == GameMode::Brawl)
 					state.Flags |= uint16_t(EntityFlags::Burning);
 				if (m_World->GetMatch().IsIgnited(controller->PlayerId))
@@ -921,7 +926,16 @@ namespace Game
 					state.Variant = uint8_t(skill.Ability);
 					if (IsCharged(skill))
 						state.Charge = PackCharge(ChargePower(controller->State, skill), ChargeOver(controller->State, skill));
+					if (IsGuard(skill))
+						state.Charge = PackGuard(GuardLeft(controller->State, controller->Traits), skill.Durability);
+					if (AimsFromPoint(skill.Ability))
+					{
+						state.CastPoint = controller->State.CastPoint;
+						state.CastAim = AngleOf(controller->State.CastAim);
+					}
 				}
+				if (IsGuardBroken(controller->State, controller->Traits))
+					state.Flags |= uint32_t(EntityFlags::Shattered);
 			}
 			if (const Dummy* dummy = entities.TryGet<Dummy>(entity))
 			{

@@ -633,8 +633,7 @@ namespace Game
 				PlayAt(Cue::FireImpact, entity.Position, self ? 0.6f : 0.4f, 1.35f);
 				PlayAt(Cue::Soft, entity.Position, self ? 0.5f : 0.3f, 0.7f);
 			}
-			if (Rose(before.Flags, entity.Flags, EntityFlags::Warded) && !dead)
-				PlayAt(Cue::Shield, entity.Position, self ? 0.75f : 0.5f, 1.2f);
+			WardSounds(entity, before, self);
 			if (Rose(before.Flags, entity.Flags, EntityFlags::Falling))
 				PlayAt(Cue::WhooshHeavy, entity.Position, self ? 0.8f : 0.5f, 0.7f);
 			if (Fell(before.Flags, entity.Flags, EntityFlags::Lifted))
@@ -651,6 +650,11 @@ namespace Game
 			}
 			if ((before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::FrostSpear)) || (entity.Has(EntityFlags::Attacking) && entity.Variant == uint8_t(AbilityId::FrostSpear)))
 				ChargeSpear(entity, before, tracked, self, dt);
+			if ((before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::PurpleFireball)) || (entity.Has(EntityFlags::Attacking) && entity.Variant == uint8_t(AbilityId::PurpleFireball)))
+				ChargeFireball(entity, before, tracked, self, dt);
+			if ((before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::ObsidianShards)) || (entity.Has(EntityFlags::Attacking) && entity.Variant == uint8_t(AbilityId::ObsidianShards)))
+				ChargeObsidian(entity, before, tracked, self);
+			GuardSounds(entity, before, self);
 			if (!dead && !revived && moved > 3.0f)
 				PlayAt(Cue::TeleportIn, entity.Position, 0.6f);
 			else if (!dead && !entity.Has(EntityFlags::Dashing))
@@ -819,6 +823,16 @@ namespace Game
 				PlayAt(Cue::Glass, at, 0.45f * loud, 1.25f);
 			break;
 		}
+		case AbilityId::PurpleFireball:
+		{
+			const float power = FireballPowerOf(entity.GetScale());
+			PlayAt(Cue::FireLaunch, at, (0.65f + 0.3f * power) * loud, 1.2f - 0.45f * power);
+			if (power > 0.4f)
+				PlayAt(Cue::WhooshHeavy, at, 0.7f * power * loud, 0.85f);
+			if (power > 0.8f)
+				PlayAt(Cue::Explosion, at, 0.35f * power * loud, 0.6f);
+			break;
+		}
 		case AbilityId::Swap:
 			PlayAt(Cue::ManaStart, at, 0.6f * loud, 1.35f);
 			PlayAt(Cue::WhooshLight, at, 0.4f * loud, 1.3f);
@@ -828,14 +842,16 @@ namespace Game
 			PlayAt(Cue::Coins, at, 0.35f * loud, 1.55f, 0.02f);
 			PlayAt(Cue::Latch, at, 0.4f * loud, 1.2f);
 			break;
-		case AbilityId::SplittingBolt:
-			PlayAt(Cue::ManaStart, at, 0.6f * loud, 0.7f);
-			PlayAt(Cue::ShockLaunch, at, 0.45f * loud, 0.65f);
+		case AbilityId::ObsidianShards:
+		{
+			const float volley = float(std::count_if(client.GetEntities().begin(), client.GetEntities().end(), [&](const EntityState& other) { return other.Kind == EntityKind::Projectile && other.Owner == entity.Owner && other.Tag == entity.Tag && other.Variant == entity.Variant; })) / float(ObsidianVolley);
+			PlayAt(Cue::WhooshHeavy, at, (0.5f + 0.35f * volley) * loud, 1.45f - 0.2f * volley);
+			PlayAt(Cue::Rock, at, (0.3f + 0.3f * volley) * loud, 1.5f);
+			PlayAt(Cue::GlassLight, at, 0.35f * loud, 0.85f, 0.01f);
+			if (volley > 0.99f)
+				PlayAt(Cue::Explosion, at, 0.22f * loud, 1.9f);
 			break;
-		case AbilityId::BoltShard:
-			PlayAt(Cue::GlassLight, at, 0.6f * loud, 1.3f);
-			PlayAt(Cue::ShockHit, at, 0.4f * loud, 1.45f);
-			break;
+		}
 		default:
 			PlayAt(Cue::WhooshLight, at, 0.5f);
 			break;
@@ -863,12 +879,9 @@ namespace Game
 		case AbilityId::ChainLightning:
 			PlayAt(Cue::ShockHit, at, 0.6f);
 			break;
-		case AbilityId::SplittingBolt:
-			PlayAt(Cue::ShockHit, at, 0.55f, 0.75f);
-			PlayAt(Cue::Glass, at, 0.3f);
-			break;
-		case AbilityId::BoltShard:
-			PlayAt(Cue::GlassLight, at, 0.4f, 1.4f);
+		case AbilityId::ObsidianShards:
+			PlayAt(Cue::GlassLight, at, 0.32f, 1.15f + 0.35f * m_Random.Float());
+			PlayAt(Cue::Rock, at, 0.22f, 1.6f + 0.3f * m_Random.Float(), 0.01f);
 			break;
 		case AbilityId::ChainHook:
 			break;
@@ -966,6 +979,20 @@ namespace Game
 			PlayAt(Cue::FireImpact, at, 0.95f);
 			PlayAt(Cue::Explosion, at, 0.4f, 1.2f);
 			break;
+		case AbilityId::PurpleFireball:
+		{
+			const float power = std::clamp((def.ImpactRadius * scale - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f);
+			PlayAt(Cue::Explosion, at, 0.6f + 0.4f * power, 1.25f - 0.5f * power);
+			PlayAt(Cue::FireImpact, at, 0.6f + 0.3f * power, 1.1f - 0.3f * power);
+			if (power > 0.5f)
+				PlayAt(Cue::Rumble, at, 0.7f * power, 0.75f);
+			if (power > 0.9f)
+			{
+				PlayAt(Cue::Thunder, at, 0.5f, 0.7f, 0.02f);
+				PlayAt(Cue::Collapse, at, 0.35f, 0.9f, 0.15f);
+			}
+			break;
+		}
 		case AbilityId::Firebomb:
 		case AbilityId::FirebombSkip:
 		case AbilityId::FirebombSkip2:
@@ -981,6 +1008,14 @@ namespace Game
 			break;
 		case AbilityId::StormJump:
 			PlayAt(Cue::ShockHit, at, 0.65f, 1.3f);
+			break;
+		case AbilityId::EarthSpike:
+			PlayAt(Cue::Rock, at, 1.0f, 0.62f);
+			PlayAt(Cue::HeavyHit, at, 0.75f, 0.55f, 0.01f);
+			PlayAt(Cue::WhooshHeavy, at, 0.5f, 0.55f);
+			PlayAt(Cue::Rumble, at, 0.55f, 0.85f);
+			PlayAt(Cue::Rock, at, 0.55f, 0.85f, def.EffectDuration);
+			PlayAt(Cue::Collapse, at, 0.4f, 1.1f, def.EffectDuration + 0.05f);
 			break;
 		case AbilityId::HookAnchor:
 			PlayAt(Cue::MetalHit, at, 0.45f, 0.8f);
@@ -1081,10 +1116,6 @@ namespace Game
 			break;
 		case AbilityId::Swap:
 			PlayAt(Cue::TeleportIn, at, 0.65f, 1.15f);
-			break;
-		case AbilityId::MirrorWard:
-			PlayAt(Cue::Shield, at, 0.8f, 1.3f);
-			PlayAt(Cue::Bell, at, 0.3f, 1.6f, 0.05f);
 			break;
 		default:
 			break;
@@ -1227,6 +1258,20 @@ namespace Game
 			PlayAt(Cue::IceBuildup, at, 0.55f * loud, 1.15f);
 			tracked.Loop = PlayAt(Cue::IceLoop, at, 0.3f * loud, 0.8f);
 			break;
+		case AbilityId::PurpleFireball:
+			PlayAt(Cue::FireBuildup, at, 0.6f * loud, 0.9f);
+			tracked.Loop = PlayAt(Cue::FireLoop, at, 0.3f * loud, 0.75f);
+			break;
+		case AbilityId::ObsidianShards:
+			PlayAt(Cue::GlassLight, at, 0.4f * loud, 0.8f);
+			tracked.Loop = PlayAt(Cue::IceLoop, at, 0.18f * loud, 0.55f);
+			break;
+		case AbilityId::HexShield:
+			PlayAt(Cue::Shield, at, 0.7f * loud, 1.35f);
+			PlayAt(Cue::GlassLight, at, 0.35f * loud, 1.6f, 0.02f);
+			PlayAt(Cue::Bell, at, 0.12f * loud, 2.2f, 0.04f);
+			tracked.Loop = PlayAt(Cue::IceLoop, at, 0.16f * loud, 1.5f);
+			break;
 		case AbilityId::GravityWell:
 		case AbilityId::Swap:
 			tracked.Loop = PlayAt(Cue::ManaStart, at, 0.8f * loud, ability == AbilityId::Swap ? 1.3f : 0.75f);
@@ -1234,6 +1279,13 @@ namespace Game
 		case AbilityId::Gust:
 			PlayAt(Cue::WhooshLight, at, 0.6f * loud, 0.75f);
 			break;
+		case AbilityId::EarthSpike:
+		{
+			const Vec2 point = entity.AimsFromPoint() ? entity.CastPoint : at;
+			PlayAt(Cue::Rumble, point, 0.55f * loud, 0.75f);
+			PlayAt(Cue::Rock, point, 0.35f * loud, 0.55f, 0.04f);
+			break;
+		}
 		default:
 			break;
 		}
@@ -1283,6 +1335,183 @@ namespace Game
 			PlayAt(Cue::GlassLight, at, (0.2f + 0.35f * over) * loud, 1.5f + 0.6f * over);
 			tracked.Crackle = 0.3f - 0.22f * over;
 		}
+	}
+
+	void GameAudio::ChargeFireball(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt)
+	{
+		const float loud = self ? 1.0f : 0.75f;
+		const Vec2 at = entity.Position;
+		const bool held = before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::PurpleFireball);
+		if (!entity.Has(EntityFlags::Attacking) || entity.Variant != uint8_t(AbilityId::PurpleFireball) || entity.Has(EntityFlags::Dead))
+		{
+			if (before.GetOvercharge() > 0.9f)
+			{
+				PlayAt(Cue::Explosion, at, 0.55f * loud, 1.35f);
+				PlayAt(Cue::FireImpact, at, 0.6f * loud, 0.8f);
+			}
+			else if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
+				PlayAt(Cue::FireImpact, at, 0.45f * loud, 1.2f);
+			tracked.Crackle = 0.0f;
+			return;
+		}
+		const float power = entity.GetChargePower();
+		const float over = entity.GetOvercharge();
+		tracked.Loop.SetPitch(0.75f + 0.35f * power + 0.3f * over);
+		tracked.Loop.SetVolume((0.3f + 0.55f * power) * loud, 0.05f);
+		if (!held)
+			return;
+		const float was = before.GetChargePower();
+		if (was < 1.0f && power >= 1.0f)
+		{
+			PlayAt(Cue::Rumble, at, 0.6f * loud, 0.8f);
+			PlayAt(Cue::Bell, at, 0.35f * loud, 0.55f);
+			PlayAt(Cue::FireImpact, at, 0.5f * loud, 0.7f);
+		}
+		else
+			for (size_t i = 0; i < std::size(FireballSteps); i++)
+				if (was < FireballSteps[i] && power >= FireballSteps[i])
+					PlayAt(Cue::FireImpact, at, 0.35f * loud, 1.3f - 0.2f * float(i));
+		if (over <= 0.0f)
+		{
+			tracked.Crackle = 0.0f;
+			return;
+		}
+		tracked.Crackle -= dt;
+		if (tracked.Crackle <= 0.0f)
+		{
+			PlayAt(Cue::ShockHit, at, (0.15f + 0.3f * over) * loud, 1.4f + 0.5f * over);
+			tracked.Crackle = 0.3f - 0.22f * over;
+		}
+	}
+
+	void GameAudio::ChargeObsidian(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self)
+	{
+		const float loud = self ? 1.0f : 0.75f;
+		const Vec2 at = entity.Position;
+		const bool held = before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::ObsidianShards);
+		if (!entity.Has(EntityFlags::Attacking) || entity.Variant != uint8_t(AbilityId::ObsidianShards) || entity.Has(EntityFlags::Dead))
+		{
+			if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
+				PlayAt(Cue::Glass, at, 0.4f * loud, 0.75f);
+			return;
+		}
+		const float power = entity.GetChargePower();
+		tracked.Loop.SetPitch(0.55f + 0.35f * power);
+		tracked.Loop.SetVolume((0.18f + 0.22f * power) * loud, 0.04f);
+		if (!held)
+			return;
+		for (uint32_t k = ShardsFormed(before.GetChargePower()); k < ShardsFormed(power); k++)
+		{
+			PlayAt(Cue::GlassLight, at, 0.38f * loud, 0.95f + 0.14f * float(k));
+			PlayAt(Cue::Rock, at, 0.16f * loud, 1.7f + 0.1f * float(k), 0.01f);
+		}
+	}
+
+	void GameAudio::GuardSounds(const EntityState& entity, const EntityState& before, bool self)
+	{
+		const float loud = self ? 1.0f : 0.75f;
+		const Vec2 at = entity.Position;
+		const bool shattered = entity.Has(EntityFlags::Shattered) && !before.Has(EntityFlags::Shattered);
+		if (shattered)
+		{
+			PlayAt(Cue::Glass, at, 1.0f * loud, 0.85f);
+			PlayAt(Cue::Glass, at, 0.7f * loud, 1.3f, 0.03f);
+			PlayAt(Cue::IceImpact, at, 0.55f * loud, 0.6f);
+			PlayAt(Cue::Bell, at, 0.45f * loud, 0.7f, 0.02f);
+			PlayAt(Cue::WhooshHeavy, at, 0.45f * loud, 1.4f);
+			PlayAt(Cue::Shield, at, 0.5f * loud, 0.65f, 0.05f);
+			for (uint32_t i = 0; i < 4; i++)
+				PlayAt(Cue::GlassLight, at, (0.32f - 0.06f * float(i)) * loud, 1.7f + 0.18f * float(i), 0.12f + 0.11f * float(i));
+			return;
+		}
+		if (!entity.Has(EntityFlags::Shattered) && before.Has(EntityFlags::Shattered) && self && !entity.Has(EntityFlags::Dead))
+		{
+			PlayAt(Cue::Bell, at, 0.22f, 2.0f);
+			PlayAt(Cue::GlassLight, at, 0.25f, 2.1f, 0.05f);
+		}
+		if (before.Guarding() && !entity.Guarding() && !entity.Has(EntityFlags::Dead))
+		{
+			PlayAt(Cue::GlassLight, at, 0.22f * loud, 1.9f);
+			PlayAt(Cue::WhooshLight, at, 0.18f * loud, 1.6f);
+			return;
+		}
+		if (!before.Guarding() || !entity.Guarding())
+			return;
+		for (const float step : HexShieldCracks)
+			if (before.GetGuard() > step && entity.GetGuard() <= step)
+			{
+				PlayAt(Cue::Glass, at, 0.45f * loud, 1.5f);
+				PlayAt(Cue::IceImpact, at, 0.3f * loud, 1.3f, 0.02f);
+			}
+	}
+
+	void GameAudio::PlayGuardHit(const HitEvent& hit)
+	{
+		const bool self = hit.Target == m_Self;
+		const float loud = self ? 1.0f : 0.7f;
+		const float strength = std::clamp(float(hit.Damage) / 22.0f, 0.2f, 1.0f);
+		const Vec2 at = hit.Position;
+		PlayAt(Cue::GlassLight, at, (0.45f + 0.35f * strength) * loud, 1.25f - 0.3f * strength);
+		PlayAt(Cue::Bell, at, (0.14f + 0.14f * strength) * loud, 1.9f - 0.5f * strength, 0.01f);
+		PlayAt(Cue::Shield, at, (0.2f + 0.2f * strength) * loud, 1.7f - 0.4f * strength);
+		if (strength > 0.55f)
+			PlayAt(Cue::Glass, at, 0.45f * strength * loud, 1.15f, 0.02f);
+	}
+
+	void GameAudio::WardSounds(const EntityState& entity, const EntityState& before, bool self)
+	{
+		const float loud = self ? 1.0f : 0.7f;
+		const Vec2 at = entity.Position;
+		if (entity.Has(EntityFlags::Dead))
+			return;
+		if (Rose(before.Flags, entity.Flags, EntityFlags::Warded))
+		{
+			PlayAt(Cue::GlassLight, at, 0.7f * loud, 1.9f);
+			PlayAt(Cue::GlassLight, at, 0.45f * loud, 2.45f, 0.05f);
+			PlayAt(Cue::Bell, at, 0.32f * loud, 2.0f, 0.02f);
+			PlayAt(Cue::Shield, at, 0.45f * loud, 1.5f);
+			PlayAt(Cue::IceLaunch, at, 0.35f * loud, 1.6f);
+			PlayAt(Cue::WhooshLight, at, 0.3f * loud, 1.8f);
+			return;
+		}
+		if (Rose(before.Flags, entity.Flags, EntityFlags::WardShattered))
+		{
+			PlayAt(Cue::Glass, at, 0.95f * loud, 0.85f);
+			PlayAt(Cue::Glass, at, 0.7f * loud, 1.15f, 0.02f);
+			PlayAt(Cue::IceImpact, at, 0.6f * loud, 0.75f);
+			PlayAt(Cue::Explosion, at, 0.25f * loud, 1.8f);
+			PlayAt(Cue::Bell, at, 0.35f * loud, 1.2f, 0.01f);
+			PlayAt(Cue::WhooshHeavy, at, 0.4f * loud, 1.3f);
+			for (uint32_t i = 0; i < 5; i++)
+				PlayAt(Cue::GlassLight, at, (0.38f - 0.06f * float(i)) * loud, 2.6f - 0.16f * float(i), 0.12f + 0.11f * float(i));
+			return;
+		}
+		if (Fell(before.Flags, entity.Flags, EntityFlags::Warded))
+		{
+			PlayAt(Cue::GlassLight, at, 0.25f * loud, 2.2f);
+			PlayAt(Cue::Bell, at, 0.12f * loud, 2.6f, 0.03f);
+			return;
+		}
+		if (!before.Warded() || !entity.Warded())
+			return;
+		for (const float step : DiamondCracks)
+			if (before.GetWard() > step && entity.GetWard() <= step)
+			{
+				PlayAt(Cue::Glass, at, 0.5f * loud, 1.3f);
+				PlayAt(Cue::IceImpact, at, 0.35f * loud, 1.4f, 0.02f);
+			}
+	}
+
+	void GameAudio::PlayWardHit(const HitEvent& hit)
+	{
+		const bool self = hit.Target == m_Self;
+		const float loud = self ? 1.0f : 0.7f;
+		const float strength = std::clamp(float(hit.Damage) / 20.0f, 0.25f, 1.0f);
+		const Vec2 at = hit.Position;
+		PlayAt(Cue::GlassLight, at, (0.55f + 0.3f * strength) * loud, 1.55f - 0.25f * strength);
+		PlayAt(Cue::Bell, at, (0.16f + 0.1f * strength) * loud, 2.4f - 0.4f * strength, 0.01f);
+		PlayAt(Cue::Glass, at, 0.3f * strength * loud, 1.7f, 0.01f);
+		PlayAt(Cue::WhooshLight, at, 0.25f * loud, 1.6f, 0.02f);
 	}
 
 	void GameAudio::StartWindup(const EntityState& entity, Tracked& tracked)
@@ -1508,6 +1737,16 @@ namespace Game
 		{
 			if (played++ >= MaxHitSounds)
 				break;
+			if (hit.Warded)
+			{
+				PlayWardHit(hit);
+				continue;
+			}
+			if (hit.Guarded)
+			{
+				PlayGuardHit(hit);
+				continue;
+			}
 			const auto it = m_Tracked.find(hit.Target);
 			const EntityKind kind = it != m_Tracked.end() ? it->second.Last.Kind : hit.OnPlayer ? EntityKind::Player : EntityKind::Chaser;
 			const Vec2 at = hit.Position;

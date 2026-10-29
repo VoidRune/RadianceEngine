@@ -521,6 +521,16 @@ namespace Game
 	{
 		if (const std::optional<uint32_t> existing = FindEffectMesh(name))
 			return *existing;
+		m_Device.WaitIdle();
+		m_Materials.push_back({ .Flags = 2u | 64u, .Color = glm::vec4(material.Color, 0.0f), .Params = glm::vec4(material.Roughness, material.Metallic, 1.0f, 0.0f), .Extra = glm::vec4(material.Emission, 0.0f) });
+		UploadMaterials();
+		return AddEffectMesh(name, vertices, indices, uint32_t(m_Materials.size() - 1), flags);
+	}
+
+	uint32_t WorldRenderer::AddEffectMesh(std::string_view name, const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, uint32_t material, uint32_t flags)
+	{
+		if (const std::optional<uint32_t> existing = FindEffectMesh(name))
+			return *existing;
 		if (!m_LevelVertices.empty() || m_DrawMeshes.size() != m_LibraryMeshes)
 		{
 			RDN_LOG_ERROR("Effect mesh {} must be added before any level geometry", name);
@@ -532,11 +542,8 @@ namespace Game
 		m_EffectVertices.insert(m_EffectVertices.end(), vertices.begin(), vertices.end());
 		for (const uint32_t index : indices)
 			m_EffectIndices.push_back(baseVertex + index);
-		const uint32_t slot = uint32_t(m_Materials.size());
-		m_Materials.push_back({ .Flags = 2u | 64u, .Color = glm::vec4(material.Color, 0.0f), .Params = glm::vec4(material.Roughness, material.Metallic, 1.0f, 0.0f), .Extra = glm::vec4(material.Emission, 0.0f) });
-		UploadMaterials();
 		const uint32_t mesh = uint32_t(m_DrawMeshes.size());
-		m_DrawMeshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(indices.size()), .Material = slot, .Flags = flags });
+		m_DrawMeshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(indices.size()), .Material = material, .Flags = flags });
 		m_LibraryMeshes = uint32_t(m_DrawMeshes.size());
 		m_EffectMeshes.emplace_back(std::string(name), mesh);
 		UploadGeometry({}, {});

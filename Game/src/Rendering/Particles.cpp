@@ -59,6 +59,7 @@ namespace Game
 		m_SpawnBuffer = ringBuffer(uint32_t(MaxBatchesPerFrame * sizeof(SpawnGpu)));
 		m_SpriteBuffer = ringBuffer(uint32_t(MaxSprites * sizeof(SpriteGpu)));
 		m_DecalBuffer = ringBuffer(uint32_t(MaxDecals * sizeof(DecalGpu)));
+		m_FacetBuffer = ringBuffer(uint32_t(MaxFacets * sizeof(FacetGpu)));
 		m_DepthSampler = std::make_unique<Rdn::Sampler>();
 		m_Allocator.CreateSampler(m_DepthSampler.get(), Rdn::SamplerDesc{ .MinFilter = Rdn::Filter::Nearest, .MagFilter = Rdn::Filter::Nearest, .AddressMode = Rdn::SamplerAddressMode::ClampToEdge });
 		ResetBuffers();
@@ -71,7 +72,7 @@ namespace Game
 		for (Rdn::GpuBuffer* buffer : { m_State.get(), m_Particles.get(), m_Lists.get(), m_Materials.get() })
 			if (buffer)
 				m_Allocator.ReleaseResource(buffer);
-		for (Rdn::GpuRingBuffer* buffer : { m_Frame.get(), m_SpawnBuffer.get(), m_SpriteBuffer.get(), m_DecalBuffer.get() })
+		for (Rdn::GpuRingBuffer* buffer : { m_Frame.get(), m_SpawnBuffer.get(), m_SpriteBuffer.get(), m_DecalBuffer.get(), m_FacetBuffer.get() })
 			if (buffer)
 				m_Allocator.ReleaseResource(buffer);
 		if (m_DepthSampler)
@@ -79,7 +80,7 @@ namespace Game
 		for (Rdn::ComputePipeline* pipeline : { m_Emit.get(), m_Prepare.get(), m_Simulate.get(), m_Finish.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
-		for (Rdn::Pipeline* pipeline : { m_Draw.get(), m_SpriteDraw.get(), m_LightDraw.get(), m_SpriteLightDraw.get(), m_DecalDraw.get() })
+		for (Rdn::Pipeline* pipeline : { m_Draw.get(), m_SpriteDraw.get(), m_LightDraw.get(), m_SpriteLightDraw.get(), m_DecalDraw.get(), m_FacetDraw.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
 		for (const std::unique_ptr<Rdn::Shader>& shader : m_Shaders)
@@ -137,11 +138,14 @@ namespace Game
 		Rdn::Shader* sprite = CompileShader("res/Shaders/Game/Sprite.vert");
 		Rdn::Shader* decalVertex = CompileShader("res/Shaders/Game/Decal.vert");
 		Rdn::Shader* decalFragment = CompileShader("res/Shaders/Game/Decal.frag");
-		if (!m_Emit || !m_Prepare || !m_Simulate || !m_Finish || !vertex || !fragment || !light || !sprite || !decalVertex || !decalFragment)
+		Rdn::Shader* facetVertex = CompileShader("res/Shaders/Game/Facet.vert");
+		Rdn::Shader* facetFragment = CompileShader("res/Shaders/Game/Facet.frag");
+		if (!m_Emit || !m_Prepare || !m_Simulate || !m_Finish || !vertex || !fragment || !light || !sprite || !decalVertex || !decalFragment || !facetVertex || !facetFragment)
 			return false;
 		using enum Rdn::ColorComponent;
 		m_Draw = CreateDraw(vertex, fragment, { SceneColorFormat, EmissionFormat });
 		m_SpriteDraw = CreateDraw(sprite, fragment, { SceneColorFormat, EmissionFormat });
+		m_FacetDraw = CreateDraw(facetVertex, facetFragment, { SceneColorFormat, EmissionFormat });
 		m_LightDraw = CreateDraw(vertex, light, { ParticleLightFormat }, {}, Rdn::BlendMode::Additive);
 		m_SpriteLightDraw = CreateDraw(sprite, light, { ParticleLightFormat }, {}, Rdn::BlendMode::Additive);
 		using enum Rdn::BlendMode;
@@ -194,6 +198,7 @@ namespace Game
 	{
 		m_Sprites.clear();
 		m_Decals.clear();
+		m_Facets.clear();
 	}
 
 	void ParticleSystem::DrawSprite(const ParticleSprite& sprite)
@@ -221,6 +226,20 @@ namespace Game
 			.Tint = decal.Tint,
 			.Params = decal.Params,
 			.Info = glm::uvec4(uint32_t(decal.Shape), decal.Seed, 0u, 0u),
+		});
+	}
+
+	void ParticleSystem::DrawFacet(const GlassFacet& facet)
+	{
+		if (!m_Ready || m_Facets.size() >= MaxFacets)
+			return;
+		m_Facets.push_back({
+			.A = glm::vec4(facet.A, facet.Crack),
+			.B = glm::vec4(facet.B, facet.Flash),
+			.C = glm::vec4(facet.C, facet.Fade),
+			.Color = glm::vec4(facet.Color, facet.Opacity),
+			.Edge = glm::vec4(facet.Edge, facet.Glint),
+			.Info = glm::uvec4(facet.Seed, 0u, 0u, 0u),
 		});
 	}
 
@@ -268,6 +287,9 @@ namespace Game
 		const uint32_t decals = uint32_t(m_Decals.size());
 		if (decals > 0)
 			std::memcpy(static_cast<uint8_t*>(m_DecalBuffer->GetMappedPtr()) + m_DecalBuffer->GetOffset(frameIndex), m_Decals.data(), decals * sizeof(DecalGpu));
+		const uint32_t facets = uint32_t(m_Facets.size());
+		if (facets > 0)
+			std::memcpy(static_cast<uint8_t*>(m_FacetBuffer->GetMappedPtr()) + m_FacetBuffer->GetOffset(frameIndex), m_Facets.data(), facets * sizeof(FacetGpu));
 
 		const glm::mat4& view = camera.View;
 		const float pixelAngle = 2.0f / (float(std::max(extent.Height, 1u)) * std::max(std::abs(camera.Projection[1][1]), 1e-4f));
@@ -285,6 +307,7 @@ namespace Game
 		m_FrameBatches = batches;
 		m_FrameSprites = sprites;
 		m_FrameDecals = decals;
+		m_FrameFacets = facets;
 	}
 
 	void ParticleSystem::RenderDecals(Rdn::RenderGraph& graph, const GBuffer& gbuffer, uint32_t frameIndex)
@@ -402,7 +425,7 @@ namespace Game
 		m_Parity ^= 1u;
 	}
 
-	void ParticleSystem::RecordDraws(Rdn::CommandBuffer& cmd, const Rdn::PassContext& context, Rdn::RGImage depth, const Rdn::Pipeline& particles, const Rdn::Pipeline& sprites, bool light, uint32_t spriteCount, uint32_t frameIndex) const
+	void ParticleSystem::RecordDraws(Rdn::CommandBuffer& cmd, const Rdn::PassContext& context, Rdn::RGImage depth, const Rdn::Pipeline& particles, const Rdn::Pipeline& sprites, bool light, uint32_t spriteCount, uint32_t facetCount, uint32_t frameIndex) const
 	{
 		const auto frameWrite = Rdn::BufferWrite(4, Rdn::DescriptorType::StorageBuffer, m_Frame->GetHandle(), m_Frame->GetOffset(frameIndex), sizeof(FrameGpu));
 		const auto depthWrite = Rdn::ImageWrite(5, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(depth), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_DepthSampler->GetHandle());
@@ -435,6 +458,18 @@ namespace Game
 			return;
 		}
 		particleLayer(0);
+		if (facetCount > 0)
+		{
+			cmd.BindPipeline(m_FacetDraw->GetHandle());
+			cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_FacetDraw->GetLayout(), 0, Rdn::DescriptorWrite()
+				.AddWrite(frameWrite).AddWrite(depthWrite)
+				.AddWrite(Rdn::BufferWrite(6, Rdn::DescriptorType::StorageBuffer, m_FacetBuffer->GetHandle(), m_FacetBuffer->GetOffset(frameIndex), uint64_t(facetCount) * sizeof(FacetGpu))));
+			for (uint32_t side = 0; side < 2; side++)
+			{
+				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_FacetDraw->GetLayout(), &side, sizeof(side));
+				cmd.Draw(3, facetCount, 0, 0);
+			}
+		}
 		spriteLayer(0);
 		particleLayer(1);
 	}
@@ -459,7 +494,7 @@ namespace Game
 			[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
 			{
 				if (draw)
-					RecordDraws(cmd, context, depth, *m_LightDraw, *m_SpriteLightDraw, true, sprites, frameIndex);
+					RecordDraws(cmd, context, depth, *m_LightDraw, *m_SpriteLightDraw, true, sprites, 0, frameIndex);
 			});
 	}
 
@@ -469,6 +504,7 @@ namespace Game
 			return;
 		m_Simulated = false;
 		const uint32_t sprites = m_FrameSprites;
+		const uint32_t facets = m_FrameFacets;
 		const GraphBuffers buffers = ImportBuffers(graph);
 		graph.AddPass("Particles draw", Rdn::PassType::Graphics,
 			[&](Rdn::PassBuilder& builder)
@@ -483,7 +519,7 @@ namespace Game
 			},
 			[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
 			{
-				RecordDraws(cmd, context, depth, *m_Draw, *m_SpriteDraw, false, sprites, frameIndex);
+				RecordDraws(cmd, context, depth, *m_Draw, *m_SpriteDraw, false, sprites, facets, frameIndex);
 			});
 	}
 }

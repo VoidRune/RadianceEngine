@@ -141,6 +141,8 @@ namespace Game
 		UnstableOrb,
 		Meditation,
 		Eye,
+		FireSpellCast,
+		HexShield,
 		Count,
 	};
 

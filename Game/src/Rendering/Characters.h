@@ -98,6 +98,8 @@ namespace Game
 		bool Loop = false;
 		uint8_t Variants = 1;
 		bool Hold = false;
+		float HoldAt = 0.62f;
+		float HoldReach = 0.28f;
 	};
 
 	struct PropAttachment

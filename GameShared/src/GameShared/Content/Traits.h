@@ -23,6 +23,7 @@ namespace Game
 		uint8_t ExtraProjectiles = 0;
 		float PvpScale = 1.0f;
 		float RangeScale = 1.0f;
+		float Durability = 0.0f;
 
 		bool IsEmpty() const { return Ability == AbilityId::Count; }
 		bool operator==(const SkillTraits&) const = default;

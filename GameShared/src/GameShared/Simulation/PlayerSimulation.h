@@ -19,6 +19,7 @@ namespace Game
 		const CollapsePlan* Plan = nullptr;
 		float Clock = -1e5f;
 		bool Deadly = false;
+		const CollapsePlan* Field = nullptr;
 	};
 
 	struct PlayerActions
@@ -34,10 +35,13 @@ namespace Game
 		Vec2 RecastPoint;
 		Vec2 Direction;
 		float AimDistance = 0.0f;
+		Vec2 CastPoint;
+		Vec2 CastAim;
 		int32_t Portal = -1;
 		bool Dodged = false;
 		bool Fell = false;
 		bool Landed = false;
+		bool Raised = false;
 
 		bool HasReleased(uint32_t slot) const { return (Released & (1u << slot)) != 0; }
 		bool HasRecast(uint32_t slot) const { return (Recast & (1u << slot)) != 0; }
@@ -53,6 +57,22 @@ namespace Game
 	float ChargeOver(const PlayerState& state, const SkillTraits& skill);
 	Vec2 GetHookPoint(const PlayerState& state);
 	Vec2 GetGroundTarget(const Level& level, Vec2 origin, Vec2 direction, float aimDistance, float range);
+	bool AimsFromPoint(AbilityId ability);
+	bool IsSpellGround(const Level& level, const ArenaState& arena, Vec2 position);
+	Vec2 GetSpikeOrigin(const Level& level, const ArenaState& arena, Vec2 origin, Vec2 direction, float aimDistance, float range);
+	Vec2 SteerSpike(Vec2 point, Vec2 aim, Vec2 cursor);
+	bool IsGuard(const SkillTraits& skill);
+	int32_t GuardSlot(const PlayerTraits& traits);
+	bool IsGuarding(const PlayerState& state, const PlayerTraits& traits);
+	bool IsGuardBroken(const PlayerState& state, const PlayerTraits& traits);
+	float GuardLeft(const PlayerState& state, const PlayerTraits& traits);
+	float GuardBreakCooldown(const SkillTraits& skill);
+	void BreakGuard(PlayerState& state, const PlayerTraits& traits);
+	bool GuardContact(Vec2 from, Vec2 to, Vec2 center, float facing, float radius, float& parameter);
+	int32_t WardSlot(const PlayerTraits& traits);
+	bool IsWarded(const PlayerState& state);
+	float WardDurability(const PlayerTraits& traits);
+	void BreakWard(PlayerState& state, const PlayerTraits& traits);
 	bool IsSupported(const Level& level, const ArenaState& arena, Vec2 position);
 	PlayerActions SimulatePlayer(const Level& level, Transform& transform, PlayerState& state, const PlayerTraits& traits, const PlayerInput& input, float dt, std::span<const BodyCircle> bodies = {}, const ArenaState& arena = {});
 }

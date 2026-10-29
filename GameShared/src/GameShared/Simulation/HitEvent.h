@@ -14,5 +14,7 @@ namespace Game
 		bool OnPlayer = false;
 		Element Damages = Element::Physical;
 		uint32_t Attacker = NoPlayer;
+		bool Guarded = false;
+		bool Warded = false;
 	};
 }

@@ -3,6 +3,8 @@
 #include "Rendering/WorldRenderer.h"
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <string>
 
 namespace Game
 {
@@ -68,7 +70,7 @@ namespace Game
 			return bytes.x | bytes.y << 8 | bytes.z << 16 | 0xFF000000u;
 		}
 
-		void AppendCrystal(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, std::span<const CrystalRing> rings, uint32_t sides, float flatten, uint32_t seed)
+		void AppendCrystal(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, std::span<const CrystalRing> rings, uint32_t sides, float flatten, uint32_t seed, const glm::vec3& root, const glm::vec3& tip)
 		{
 			const auto point = [&](size_t ring, uint32_t side)
 			{
@@ -95,7 +97,7 @@ namespace Game
 					normal = -normal;
 				}
 				const float shade = 0.82f + 0.18f * Unit(Mix(seed ^ 0x5BD1E995u, key));
-				const glm::vec3 color = glm::mix(glm::vec3(0.5f, 0.74f, 1.0f), glm::vec3(0.93f, 0.98f, 1.0f), std::pow(std::clamp(along, 0.0f, 1.0f), 1.6f)) * shade;
+				const glm::vec3 color = glm::mix(root, tip, std::pow(std::clamp(along, 0.0f, 1.0f), 1.6f)) * shade;
 				const uint32_t base = uint32_t(vertices.size());
 				for (const glm::vec3& corner : { a, b, c })
 				{
@@ -122,6 +124,290 @@ namespace Game
 					if (rings[ring + 1].Radius > 0.0f)
 						face(a, c, d, along, key * 2u + 1u);
 				}
+		}
+
+		struct RockRing
+		{
+			float Y = 0.0f;
+			float Radius = 0.0f;
+			float X = 0.0f;
+			float Z = 0.0f;
+		};
+
+		uint32_t PackTangent(const glm::vec3& tangent, float sign)
+		{
+			const auto snorm = [](float value) { return uint32_t(int32_t(std::lround(std::clamp(value, -1.0f, 1.0f) * 511.0f))) & 0x3FFu; };
+			return snorm(tangent.x) | (snorm(tangent.y) << 10) | (snorm(tangent.z) << 20) | (sign < 0.0f ? 1u << 30 : 0u);
+		}
+
+		void AppendRock(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, std::span<const RockRing> rings, uint32_t sides, const glm::vec3& origin, const glm::vec3& axis, float size, uint32_t seed)
+		{
+			const glm::vec3 lean = glm::normalize(axis);
+			const glm::vec3 hinge = glm::cross(Up, lean);
+			const float sine = glm::length(hinge);
+			const glm::vec3 pivot = sine > 1e-5f ? hinge / sine : glm::vec3(1.0f, 0.0f, 0.0f);
+			const float cosine = glm::dot(Up, lean);
+			const auto place = [&](const glm::vec3& p)
+			{
+				const glm::vec3 turned = p * cosine + glm::cross(pivot, p) * sine + pivot * (glm::dot(pivot, p) * (1.0f - cosine));
+				return origin + turned * size;
+			};
+			const auto center = [&](size_t ring) { return place(glm::vec3(rings[ring].X, rings[ring].Y, rings[ring].Z)); };
+			const auto point = [&](size_t ring, uint32_t side)
+			{
+				const RockRing& r = rings[ring];
+				glm::vec3 local(r.X, r.Y, r.Z);
+				if (r.Radius > 0.0f)
+				{
+					const uint32_t key = Mix(seed + uint32_t(ring) * 131u, side);
+					const float angle = (float(side) + 0.5f * float(ring % 2) + 0.4f * (Unit(Mix(key, 3u)) - 0.5f)) / float(sides) * 6.2832f;
+					const float radius = r.Radius * (0.68f + 0.55f * Unit(key));
+					local += glm::vec3(std::cos(angle) * radius * 1.12f, (Unit(Mix(key, 5u)) - 0.5f) * 0.1f * r.Radius, std::sin(angle) * radius);
+				}
+				return place(local);
+			};
+			const auto face = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec3& core, uint32_t key)
+			{
+				glm::vec3 normal = glm::cross(b - a, c - a);
+				const float area = glm::length(normal);
+				if (area < 1e-9f)
+					return;
+				normal /= area;
+				const glm::vec3 middle = (a + b + c) / 3.0f;
+				if (glm::dot(normal, middle - core) < 0.0f)
+				{
+					std::swap(b, c);
+					normal = -normal;
+				}
+				const glm::vec3 tangent = std::abs(normal.y) < 0.97f ? glm::normalize(glm::cross(Up, normal)) : glm::vec3(1.0f, 0.0f, 0.0f);
+				const glm::vec3 bitangent = glm::cross(normal, tangent);
+				const float shade = 0.78f + 0.22f * Unit(Mix(seed ^ 0x5BD1E995u, key));
+				const float soil = 1.0f - std::clamp((middle.y + 0.1f) / 0.6f, 0.0f, 1.0f);
+				const glm::vec3 color = glm::mix(glm::vec3(1.0f, 0.93f, 0.84f) * shade, glm::vec3(0.5f, 0.39f, 0.29f) * shade, soil * soil);
+				const glm::vec2 drift(Unit(Mix(key, 17u)) * 3.0f, Unit(Mix(key, 19u)) * 3.0f);
+				const uint32_t base = uint32_t(vertices.size());
+				for (const glm::vec3& corner : { a, b, c })
+				{
+					ModelVertex vertex;
+					vertex.Position = corner;
+					vertex.Normal = normal;
+					vertex.U = glm::dot(corner, tangent) + drift.x;
+					vertex.V = -glm::dot(corner, bitangent) + drift.y;
+					vertex.Tangent = PackTangent(tangent, 1.0f);
+					vertex.Color = PackColor(color);
+					vertices.push_back(vertex);
+				}
+				indices.insert(indices.end(), { base, base + 1, base + 2 });
+			};
+			for (size_t ring = 0; ring + 1 < rings.size(); ring++)
+			{
+				const glm::vec3 core = (center(ring) + center(ring + 1)) * 0.5f;
+				for (uint32_t side = 0; side < sides; side++)
+				{
+					const uint32_t next = (side + 1) % sides;
+					const uint32_t key = uint32_t(ring) * 64u + side;
+					if (rings[ring].Radius > 0.0f)
+						face(point(ring, side), point(ring, next), point(ring + 1, next), core, key * 2u);
+					if (rings[ring + 1].Radius > 0.0f)
+						face(point(ring, side), point(ring + 1, next), point(ring + 1, side), core, key * 2u + 1u);
+				}
+			}
+		}
+
+		constexpr RockRing ShardRings[] = {
+			{ -0.55f, 0.36f, 0.0f, 0.0f },
+			{ 0.0f, 0.34f, 0.02f, 0.0f },
+			{ 0.32f, 0.27f, 0.04f, 0.02f },
+			{ 0.62f, 0.17f, 0.06f, 0.0f },
+			{ 0.86f, 0.07f, 0.08f, -0.01f },
+			{ 1.05f, 0.0f, 0.1f, 0.0f },
+		};
+
+		void BuildEarthSpike(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, uint32_t seed)
+		{
+			constexpr RockRing Main[] = {
+				{ -0.9f, 0.74f, 0.0f, 0.0f },
+				{ -0.3f, 0.73f, 0.02f, 0.03f },
+				{ 0.15f, 0.68f, -0.02f, -0.02f },
+				{ 0.6f, 0.61f, 0.03f, 0.03f },
+				{ 1.05f, 0.53f, 0.0f, 0.0f },
+				{ 1.5f, 0.44f, -0.03f, -0.03f },
+				{ 1.95f, 0.34f, 0.02f, 0.02f },
+				{ 2.4f, 0.24f, 0.0f, 0.0f },
+				{ 2.8f, 0.14f, 0.03f, 0.01f },
+				{ 3.15f, 0.06f, 0.02f, -0.01f },
+				{ SpikeLength, 0.0f, 0.05f, -0.02f },
+			};
+			AppendRock(vertices, indices, Main, 8, glm::vec3(0.0f), Up, 1.0f, seed);
+			for (uint32_t i = 0; i < 2; i++)
+			{
+				const float angle = (i == 0 ? 1.9f : -1.9f) + 0.4f * (Unit(Mix(seed, i * 7u)) - 0.5f);
+				const glm::vec3 out(std::cos(angle), 0.0f, std::sin(angle));
+				const float tilt = 0.45f + 0.2f * Unit(Mix(seed, i * 7u + 1u));
+				AppendRock(vertices, indices, ShardRings, 6, out * 0.3f + Up * 0.1f, Up * std::cos(tilt) + out * std::sin(tilt), 0.5f + 0.15f * Unit(Mix(seed, i * 7u + 2u)), seed * 7u + i * 911u);
+			}
+		}
+
+		void BuildSpikeCollar(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, uint32_t seed)
+		{
+			constexpr uint32_t Shards = 6;
+			for (uint32_t i = 0; i < Shards; i++)
+			{
+				const float angle = 0.95f + (6.2832f - 1.9f) * (float(i) + 0.5f) / float(Shards) + 0.3f * (Unit(Mix(seed, i * 5u)) - 0.5f);
+				const glm::vec3 out(std::cos(angle), 0.0f, std::sin(angle));
+				const float tilt = 0.35f + 0.35f * Unit(Mix(seed, i * 5u + 1u));
+				const float size = 0.34f + 0.36f * Unit(Mix(seed, i * 5u + 2u));
+				AppendRock(vertices, indices, ShardRings, 5 + i % 2, out * (0.55f + 0.3f * Unit(Mix(seed, i * 5u + 3u))), Up * std::cos(tilt) + out * std::sin(tilt), size, seed * 13u + i * 577u);
+			}
+		}
+
+		struct IceRing
+		{
+			float T = 0.0f;
+			float Radius = 0.0f;
+			float Slant = 0.0f;
+		};
+
+		void AppendIce(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, std::span<const IceRing> rings, const glm::vec3& base, const glm::vec3& axis, uint32_t sides, float flatten, float rime, uint32_t seed)
+		{
+			const glm::vec3 across = glm::normalize(glm::cross(axis, std::abs(axis.x) < 0.9f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 0.0f, 1.0f)));
+			const glm::vec3 depth = glm::cross(axis, across);
+			const float chisel = 6.2832f * Unit(Mix(seed, 1u));
+			const glm::vec3 lean = across * std::cos(chisel) + depth * (std::sin(chisel) * flatten);
+			const float length = rings.back().T;
+			const glm::vec3 bottom = base + axis * rings.front().T;
+			const auto point = [&](size_t ring, uint32_t side)
+			{
+				const IceRing& r = rings[ring];
+				if (r.Radius <= 0.0f)
+					return base + axis * r.T + lean * (0.3f * rings[ring - 1].Radius);
+				const uint32_t key = Mix(seed + uint32_t(ring) * 131u, side);
+				const float angle = (float(side) + 0.3f * (Unit(Mix(key, 3u)) - 0.5f)) / float(sides) * 6.2832f;
+				const float radius = r.Radius * (0.88f + 0.24f * Unit(key));
+				return base + axis * (r.T + r.Slant * std::cos(angle - chisel)) + (across * std::cos(angle) + depth * (std::sin(angle) * flatten)) * radius;
+			};
+			const auto face = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, uint32_t key, bool cap)
+			{
+				glm::vec3 normal = glm::cross(b - a, c - a);
+				const float area = glm::length(normal);
+				if (area < 1e-9f)
+					return;
+				normal /= area;
+				const glm::vec3 middle = (a + b + c) / 3.0f;
+				const glm::vec3 core = cap ? bottom + axis * (0.05f * length) : base + axis * glm::dot(middle - base, axis);
+				if (glm::dot(normal, middle - core) < 0.0f)
+				{
+					std::swap(b, c);
+					normal = -normal;
+				}
+				const float along = std::clamp(glm::dot(middle - base, axis) / length, 0.0f, 1.0f);
+				const float shade = 0.8f + 0.2f * Unit(Mix(seed ^ 0x5BD1E995u, key));
+				const glm::vec3 body = glm::mix(glm::vec3(0.4f, 0.66f, 1.0f), glm::vec3(0.93f, 0.98f, 1.0f), std::pow(along, 1.8f));
+				const float foot = std::max(rime, 1.0f - std::clamp(along / 0.18f, 0.0f, 1.0f));
+				const glm::vec3 color = glm::mix(body, glm::vec3(0.84f, 0.91f, 0.98f), foot) * shade;
+				const uint32_t first = uint32_t(vertices.size());
+				for (const glm::vec3& corner : { a, b, c })
+				{
+					ModelVertex vertex;
+					vertex.Position = corner;
+					vertex.Normal = normal;
+					vertex.Color = PackColor(color);
+					vertices.push_back(vertex);
+				}
+				indices.insert(indices.end(), { first, first + 1, first + 2 });
+			};
+			for (uint32_t side = 0; side < sides; side++)
+			{
+				const uint32_t next = (side + 1) % sides;
+				face(bottom, point(0, next), point(0, side), side, true);
+				for (size_t ring = 0; ring + 1 < rings.size(); ring++)
+				{
+					const uint32_t key = uint32_t(ring + 1) * 64u + side;
+					face(point(ring, side), point(ring, next), point(ring + 1, next), key * 2u, false);
+					if (rings[ring + 1].Radius > 0.0f)
+						face(point(ring, side), point(ring + 1, next), point(ring + 1, side), key * 2u + 1u, false);
+				}
+			}
+		}
+
+		struct IceShoot
+		{
+			float X = 0.0f;
+			float Z = 0.0f;
+			float Azimuth = 0.0f;
+			float Lean = 0.0f;
+			float Length = 1.0f;
+			float Radius = 0.1f;
+			float Flatten = 1.0f;
+			float Tip = 0.3f;
+			uint32_t Sides = 6;
+		};
+
+		void AppendIceShoot(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, const IceShoot& shoot, uint32_t seed)
+		{
+			const glm::vec3 axis(std::sin(shoot.Lean) * std::cos(shoot.Azimuth), std::cos(shoot.Lean), std::sin(shoot.Lean) * std::sin(shoot.Azimuth));
+			const float l = shoot.Length;
+			const float r = shoot.Radius * 1.3f;
+			const float tip = shoot.Length * shoot.Tip;
+			const IceRing rings[] = {
+				{ -0.2f * l, 0.9f * r, 0.0f },
+				{ 0.0f, r, 0.0f },
+				{ 0.5f * (l - 1.5f * tip), 0.97f * r, 0.0f },
+				{ l - tip, 0.9f * r, 0.5f * tip },
+				{ l, 0.0f, 0.0f },
+			};
+			AppendIce(vertices, indices, rings, glm::vec3(shoot.X, 0.0f, shoot.Z), axis, shoot.Sides, shoot.Flatten, 0.0f, seed);
+		}
+
+		void AppendIceMound(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, float radius, float height, uint32_t seed)
+		{
+			const IceRing rings[] = {
+				{ -0.05f, radius, 0.0f },
+				{ 0.4f * height, 0.8f * radius, 0.2f * height },
+				{ 0.8f * height, 0.45f * radius, 0.1f * height },
+				{ height, 0.0f, 0.0f },
+			};
+			AppendIce(vertices, indices, rings, glm::vec3(0.0f), Up, 7, 0.85f, 0.85f, seed);
+		}
+
+		void BuildIceCluster(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, uint32_t variant)
+		{
+			std::vector<IceShoot> shoots;
+			float mound = 0.2f;
+			switch (variant)
+			{
+			case 0:
+				shoots = { { 0.0f, 0.0f, 0.0f, 0.08f, 1.0f, 0.12f, 0.85f, 0.3f, 6 }, { 0.05f, 0.03f, 2.2f, 0.55f, 0.5f, 0.07f, 0.9f, 0.35f, 6 }, { -0.04f, -0.05f, -2.0f, 0.7f, 0.36f, 0.06f, 1.0f, 0.4f, 5 } };
+				break;
+			case 1:
+				shoots = { { 0.0f, 0.0f, 0.3f, 0.12f, 1.0f, 0.15f, 0.45f, 0.42f, 5 }, { -0.06f, 0.02f, 3.0f, 0.5f, 0.42f, 0.07f, 0.75f, 0.35f, 6 } };
+				mound = 0.19f;
+				break;
+			case 2:
+				shoots = { { 0.02f, 0.0f, 0.2f, 0.18f, 0.95f, 0.1f, 0.9f, 0.3f, 6 }, { -0.04f, 0.05f, 2.4f, 0.32f, 0.8f, 0.09f, 0.85f, 0.32f, 6 }, { -0.03f, -0.05f, -2.3f, 0.42f, 0.62f, 0.08f, 0.9f, 0.35f, 6 }, { 0.07f, 0.04f, 1.0f, 0.75f, 0.32f, 0.05f, 1.0f, 0.4f, 5 } };
+				mound = 0.23f;
+				break;
+			case 3:
+				shoots = { { 0.0f, 0.0f, 0.0f, 0.1f, 0.72f, 0.09f, 0.9f, 0.32f, 6 } };
+				for (uint32_t i = 0; i < 5; i++)
+				{
+					const float azimuth = float(i) * 1.2566f + 0.4f + 0.3f * (Unit(Mix(97u, i)) - 0.5f);
+					shoots.push_back({ 0.08f * std::cos(azimuth), 0.08f * std::sin(azimuth), azimuth, 0.55f + 0.3f * Unit(Mix(97u, i + 9u)), 0.35f + 0.2f * Unit(Mix(97u, i + 17u)), 0.055f + 0.015f * Unit(Mix(97u, i + 23u)), 0.9f, 0.36f, 5u + i % 2u });
+				}
+				mound = 0.26f;
+				break;
+			case 4:
+				shoots = { { 0.0f, 0.0f, 0.0f, 0.06f, 1.0f, 0.11f, 0.9f, 0.28f, 6 }, { 0.07f, -0.04f, 2.6f, 0.42f, 0.88f, 0.095f, 0.8f, 0.3f, 6 } };
+				mound = 0.18f;
+				break;
+			default:
+				shoots = { { 0.0f, 0.0f, 1.2f, 0.2f, 0.62f, 0.17f, 0.8f, 0.14f, 7 }, { 0.1f, -0.06f, -0.6f, 0.6f, 0.3f, 0.065f, 1.0f, 0.4f, 6 }, { -0.1f, 0.04f, 2.8f, 0.7f, 0.26f, 0.055f, 1.0f, 0.4f, 5 } };
+				mound = 0.24f;
+				break;
+			}
+			for (size_t i = 0; i < shoots.size(); i++)
+				AppendIceShoot(vertices, indices, shoots[i], variant * 7919u + uint32_t(i) * 977u + 5u);
+			AppendIceMound(vertices, indices, mound, mound * 0.32f, variant * 131u + 3u);
 		}
 
 		glm::mat4 Frame(const glm::vec3& origin, const glm::vec3& forward, const glm::vec3& up, float scale)
@@ -153,9 +439,108 @@ namespace Game
 		SpellMeshes meshes;
 		std::vector<ModelVertex> vertices;
 		std::vector<uint32_t> indices;
-		AppendCrystal(vertices, indices, Spear, 6, 0.62f, 17u);
+		AppendCrystal(vertices, indices, Spear, 6, 0.62f, 17u, { 0.5f, 0.74f, 1.0f }, { 0.93f, 0.98f, 1.0f });
 		meshes.Spear = renderer.AddEffectMesh("IceSpear", vertices, indices, ice, MeshVertexTint);
+		const std::optional<uint32_t> cliff = renderer.FindMaterialSlot("GroundCliff");
+		const EffectMaterial granite{ .Color = { 0.4f, 0.38f, 0.36f }, .Roughness = 0.85f, .Metallic = 0.0f };
+		for (uint32_t variant = 0; variant < meshes.Spike.size(); variant++)
+		{
+			vertices.clear();
+			indices.clear();
+			BuildEarthSpike(vertices, indices, 23u + variant * 38u);
+			const std::string name = "EarthSpike" + std::to_string(variant);
+			meshes.Spike[variant] = cliff ? renderer.AddEffectMesh(name, vertices, indices, *cliff, MeshVertexTint) : renderer.AddEffectMesh(name, vertices, indices, granite, MeshVertexTint);
+		}
+		vertices.clear();
+		indices.clear();
+		BuildSpikeCollar(vertices, indices, 41u);
+		meshes.SpikeCollar = cliff ? renderer.AddEffectMesh("EarthSpikeCollar", vertices, indices, *cliff, MeshVertexTint) : renderer.AddEffectMesh("EarthSpikeCollar", vertices, indices, granite, MeshVertexTint);
+		const EffectMaterial clear{ .Color = { 0.9f, 0.96f, 1.0f }, .Roughness = 0.1f, .Metallic = 0.0f };
+		for (uint32_t variant = 0; variant < meshes.Ice.size(); variant++)
+		{
+			vertices.clear();
+			indices.clear();
+			BuildIceCluster(vertices, indices, variant);
+			meshes.Ice[variant] = renderer.AddEffectMesh("IceCluster" + std::to_string(variant), vertices, indices, clear, MeshVertexTint);
+		}
+		constexpr CrystalRing Blade[] = {
+			{ -0.4f, 0.0f, 0.0f },
+			{ -0.3f, 0.06f, 0.15f },
+			{ -0.16f, 0.1f, 0.35f },
+			{ 0.0f, 0.075f, 0.6f },
+			{ 0.16f, 0.11f, 0.8f },
+			{ 0.32f, 0.07f, 1.05f },
+			{ 0.46f, 0.04f, 1.15f },
+			{ 0.6f, 0.0f, 1.2f },
+		};
+		constexpr CrystalRing Flake[] = {
+			{ -0.36f, 0.0f, 0.3f },
+			{ -0.25f, 0.09f, 0.4f },
+			{ -0.08f, 0.13f, 0.62f },
+			{ 0.08f, 0.095f, 0.9f },
+			{ 0.24f, 0.12f, 1.0f },
+			{ 0.4f, 0.055f, 1.3f },
+			{ 0.6f, 0.0f, 1.35f },
+		};
+		constexpr CrystalRing Needle[] = {
+			{ -0.42f, 0.0f, 0.0f },
+			{ -0.32f, 0.05f, 0.1f },
+			{ -0.2f, 0.085f, 0.3f },
+			{ -0.1f, 0.045f, 0.45f },
+			{ 0.05f, 0.09f, 0.6f },
+			{ 0.22f, 0.06f, 0.85f },
+			{ 0.38f, 0.045f, 0.9f },
+			{ 0.6f, 0.0f, 1.0f },
+		};
+		const std::span<const CrystalRing> shards[] = { Blade, Flake, Needle };
+		const EffectMaterial glass{ .Color = { 0.05f, 0.04f, 0.065f }, .Roughness = 0.04f, .Metallic = 0.0f };
+		for (uint32_t variant = 0; variant < meshes.Obsidian.size(); variant++)
+		{
+			vertices.clear();
+			indices.clear();
+			AppendCrystal(vertices, indices, shards[variant], 4, 0.4f, 61u + variant * 29u, { 0.75f, 0.62f, 1.0f }, { 1.0f, 0.95f, 1.0f });
+			meshes.Obsidian[variant] = renderer.AddEffectMesh("ObsidianShard" + std::to_string(variant), vertices, indices, glass, MeshVertexTint);
+		}
 		return meshes;
+	}
+
+	float SpikeThrust(float age)
+	{
+		constexpr float Omega = 48.0f;
+		constexpr float Damping = 0.55f;
+		const float damped = Omega * std::sqrt(1.0f - Damping * Damping);
+		const float t = std::max(age, 0.0f);
+		return 1.0f - std::exp(-Damping * Omega * t) * (std::cos(damped * t) + Damping * Omega / damped * std::sin(damped * t));
+	}
+
+	void DrawEarthSpike(WorldRenderer& renderer, const SpellMeshes& meshes, const EarthSpikeLook& look)
+	{
+		const glm::vec3 heading = Heading(look.Facing);
+		const glm::vec3 side = Heading(look.Facing + HalfPi);
+		const glm::vec4 tint(1.55f, 1.45f, 1.35f, 0.0f);
+		const glm::vec4 rim(0.3f, 0.2f, 0.11f, 0.35f);
+		const uint32_t spike = meshes.Spike[look.Seed % meshes.Spike.size()];
+		if (spike != UINT32_MAX && look.Extend > 0.01f)
+		{
+			const glm::vec3 axis = glm::normalize(Up * std::cos(look.Tilt) + heading * std::sin(look.Tilt) + side * std::sin(look.Sway));
+			const glm::vec3 forward = glm::normalize(heading - axis * glm::dot(heading, axis));
+			const glm::vec3 origin = look.Base + axis * ((look.Extend - 1.0f) * (SpikeLength + 0.2f) * look.Scale);
+			renderer.DrawModel(spike, Frame(origin, forward, axis, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim);
+		}
+		if (meshes.SpikeCollar != UINT32_MAX && look.Collar > 0.01f)
+			renderer.DrawModel(meshes.SpikeCollar, Frame(look.Base + Up * ((look.Collar - 1.0f) * SpikeCollarDepth * look.Scale), heading, Up, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim);
+	}
+
+	void DrawIceCluster(WorldRenderer& renderer, const SpellMeshes& meshes, const IceClusterLook& look)
+	{
+		const uint32_t mesh = meshes.Ice[look.Variant % meshes.Ice.size()];
+		if (mesh == UINT32_MAX || look.Scale < 0.01f)
+			return;
+		const glm::vec3 heading = Heading(look.Yaw);
+		const glm::vec3 axis = Up * std::cos(look.Lean) + heading * std::sin(look.Lean);
+		const glm::vec3 forward = glm::normalize(heading - axis * glm::dot(heading, axis));
+		const glm::vec4 rim(glm::vec3(0.08f, 0.3f, 0.7f) * (0.5f + look.Glow), 1.0f);
+		renderer.DrawModel(mesh, Frame(look.Base - Up * look.Sink, forward, axis, look.Scale), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, look.Frost), 0.04f + 0.14f * look.Glow, look.Base.y, rim);
 	}
 
 	void DrawIceSpear(WorldRenderer& renderer, const SpellMeshes& meshes, const IceSpearLook& look, float time, uint32_t seed)
@@ -200,6 +585,622 @@ namespace Game
 				crack.Seed = key;
 				renderer.DrawSprite(crack);
 			}
+		}
+	}
+
+	void DrawObsidianShard(WorldRenderer& renderer, const SpellMeshes& meshes, const ObsidianLook& look, float time, uint32_t seed)
+	{
+		const uint32_t mesh = meshes.Obsidian[look.Variant % meshes.Obsidian.size()];
+		const float length = ObsidianLength * look.Size * look.Grow;
+		if (length < 0.02f || mesh == UINT32_MAX)
+			return;
+		const glm::vec3 forward = glm::normalize(look.Forward);
+		const glm::vec3 level = std::abs(forward.y) < 0.99f ? glm::normalize(Up - forward * glm::dot(Up, forward)) : glm::vec3(1.0f, 0.0f, 0.0f);
+		const glm::vec3 across = glm::cross(forward, level);
+		const glm::vec3 up = level * std::cos(look.Roll) + across * std::sin(look.Roll);
+		const glm::vec3 origin = look.Center - forward * (0.1f * length);
+		const glm::vec4 rim(ObsidianSheen * (0.9f + 1.0f * look.Glint), 1.0f);
+		renderer.DrawModel(mesh, Frame(origin, forward, up, length), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.03f + 0.12f * look.Glint, look.Ground, rim);
+		const glm::vec3 tip = origin + forward * (0.6f * length);
+		const glm::vec3 middle = origin + forward * (0.1f * length);
+		DrawGlow(renderer, middle, 0.38f * length + 0.06f, ObsidianSheen * ((look.Flying ? 0.07f : 0.14f) + 0.12f * look.Glint), 0.35f);
+		if (look.Flying)
+		{
+			ParticleSprite smear = Stretched(ParticleShape::Beam, origin - forward * (0.25f * length), origin - forward * (2.4f * length), 0.06f * look.Size, glm::vec3(0.035f, 0.025f, 0.05f));
+			smear.Additive = 0.0f;
+			smear.Emission = 0.0f;
+			smear.Color.w = 0.55f;
+			renderer.DrawSprite(smear);
+			ParticleSprite edge = Stretched(ParticleShape::Beam, tip - forward * (0.3f * length), origin - forward * (1.3f * length), 0.014f * look.Size, ObsidianSheen * 0.32f);
+			edge.Emission = 0.5f;
+			renderer.DrawSprite(edge);
+			return;
+		}
+		if (look.Form < 1.0f)
+		{
+			ParticleSprite reel = Stretched(ParticleShape::Beam, look.From, middle, 0.025f, ObsidianSheen * (0.55f * (1.0f - look.Form) + 0.1f));
+			reel.Emission = 0.5f;
+			renderer.DrawSprite(reel);
+		}
+		if (look.Glint > 0.01f)
+			DrawStar(renderer, tip, 0.2f * look.Glint * look.Size, ObsidianSheen * (1.1f * look.Glint), time * 2.0f + float(seed % 13u));
+	}
+
+	float FireballViolet(float power)
+	{
+		const float t = std::clamp((power - 0.1f) / 0.75f, 0.0f, 1.0f);
+		return t * t * (3.0f - 2.0f * t);
+	}
+
+	glm::vec3 FireballColor(float power)
+	{
+		return glm::mix(glm::vec3(1.0f, 0.42f, 0.12f), glm::vec3(0.74f, 0.3f, 1.0f), FireballViolet(power));
+	}
+
+	void DrawPurpleFireball(WorldRenderer& renderer, const FireballLook& look, float time, uint32_t seed)
+	{
+		const float radius = FireballBallRadius * look.Size * look.Grow;
+		if (radius < 0.01f)
+			return;
+		const float violet = FireballViolet(look.Power);
+		const float full = look.Power >= 0.999f ? 1.0f : 0.0f;
+		const float pulse = 0.5f + 0.5f * std::sin(time * (7.0f + 9.0f * look.Over) + float(seed & 255u));
+		const float wobble = 1.0f + 0.04f * pulse + 0.08f * look.Over * std::sin(time * 37.0f + float(seed & 63u));
+		const float energy = 0.8f + 0.2f * look.Power + 0.12f * full * pulse;
+		const glm::vec3 halo = glm::mix(glm::vec3(0.5f, 0.15f, 0.03f), glm::vec3(0.28f, 0.05f, 0.6f), violet);
+		const glm::vec3 outer = glm::mix(glm::vec3(0.42f, 0.09f, 0.02f), glm::vec3(0.12f, 0.01f, 0.3f), violet);
+		const glm::vec3 mid = glm::mix(glm::vec3(0.8f, 0.26f, 0.04f), glm::vec3(0.55f, 0.08f, 0.95f), violet);
+		const glm::vec3 core = glm::mix(glm::vec3(0.4f, 0.2f, 0.06f), glm::vec3(0.3f, 0.08f, 0.42f), violet);
+		const glm::vec3 heart = glm::mix(glm::vec3(0.5f, 0.38f, 0.22f), glm::vec3(0.4f, 0.16f, 0.5f), violet);
+		const glm::vec3 lag = look.Flying ? -look.Forward * (0.25f * radius) : glm::vec3(0.0f);
+		ParticleSprite aura = Sprite(ParticleShape::Glow, look.Center, radius * (1.8f + 0.4f * look.Power), halo * (0.12f + 0.12f * look.Power));
+		aura.Softness = 0.3f;
+		aura.Emission = 0.3f;
+		renderer.DrawSprite(aura);
+		if (look.Flying)
+		{
+			ParticleSprite wake = Stretched(ParticleShape::Beam, look.Center - look.Forward * (radius * 5.0f), look.Center, radius * 1.0f, outer * 0.8f);
+			wake.Emission = 0.4f;
+			renderer.DrawSprite(wake);
+			ParticleSprite streak = Stretched(ParticleShape::Beam, look.Center - look.Forward * (radius * 3.0f), look.Center, radius * 0.5f, mid * 0.6f);
+			streak.Emission = 0.4f;
+			renderer.DrawSprite(streak);
+		}
+		else
+		{
+			const uint32_t wisps = 4u + uint32_t(10.0f * look.Power);
+			for (uint32_t i = 0; i < wisps; i++)
+			{
+				const uint32_t key = Mix(seed, i + 1u);
+				const float period = 0.5f + 0.25f * Unit(key) - 0.15f * look.Power;
+				const float u = std::fmod(time / period + Unit(Mix(key, 3u)), 1.0f);
+				const float start = 6.2832f * Unit(Mix(key, 5u));
+				const float rise = (Unit(Mix(key, 7u)) - 0.5f) * 2.2f * radius;
+				const auto at = [&](float s)
+				{
+					const float angle = start + 3.2f * s;
+					const float distance = radius * (1.0f + 2.4f * std::pow(1.0f - s, 1.4f));
+					return look.Center + glm::vec3(std::cos(angle), 0.0f, std::sin(angle)) * distance + Up * (rise * (1.0f - s));
+				};
+				const float fade = std::sin(3.1416f * u);
+				ParticleSprite wisp = Stretched(ParticleShape::Beam, at(std::max(u - 0.14f, 0.0f)), at(u), 0.035f + 0.025f * look.Size, mid * (fade * (0.5f + 0.5f * look.Power)));
+				wisp.Emission = 0.4f;
+				renderer.DrawSprite(wisp);
+			}
+		}
+		ParticleSprite shell = Sprite(ParticleShape::Inferno, look.Center + lag, radius * 1.65f * wobble, outer * energy);
+		shell.Additive = 0.12f;
+		shell.Emission = 0.25f;
+		shell.Softness = 0.15f;
+		shell.Params = glm::vec4(0.42f, 1.3f + 1.2f * look.Over, 0.7f, 0.85f + 0.15f * look.Power);
+		shell.Seed = seed;
+		renderer.DrawSprite(shell);
+		ParticleSprite flames = Sprite(ParticleShape::Inferno, look.Center + lag * 0.5f, radius * 1.25f * wobble, mid * energy);
+		flames.Emission = 0.35f;
+		flames.Softness = 0.15f;
+		flames.Params = glm::vec4(0.52f, 2.0f + 1.5f * look.Over, -0.95f, 0.7f);
+		flames.Seed = seed * 7u + 3u;
+		renderer.DrawSprite(flames);
+		ParticleSprite ball = Sprite(ParticleShape::Orb, look.Center, radius * 0.8f, core * (0.85f + 0.15f * pulse));
+		ball.Emission = 0.4f;
+		ball.Seed = seed;
+		renderer.DrawSprite(ball);
+		ParticleSprite heat = Sprite(ParticleShape::Glow, look.Center, radius * 0.32f, heart * (0.8f + 0.3f * look.Power));
+		heat.Softness = 0.15f;
+		heat.Emission = 0.4f;
+		renderer.DrawSprite(heat);
+		const float crackle = look.Flying ? 0.0f : std::max(0.45f * full, look.Over);
+		if (crackle > 0.0f)
+		{
+			const uint32_t frame = uint32_t(time * 20.0f);
+			const uint32_t arcs = 1u + uint32_t(crackle * 4.0f);
+			for (uint32_t k = 0; k < arcs; k++)
+			{
+				const uint32_t key = Mix(seed + k * 31u, frame);
+				const float around = 6.2832f * Unit(key);
+				const float tilt = 1.2f * (Unit(Mix(key, 3u)) - 0.5f);
+				const glm::vec3 offset = glm::vec3(std::cos(around) * std::cos(tilt), std::sin(tilt), std::sin(around) * std::cos(tilt)) * (radius * (0.9f + 0.4f * Unit(Mix(key, 5u))));
+				ParticleSprite arc = Sprite(ParticleShape::Lightning, look.Center + offset, radius * 1.1f, glm::vec3(0.6f, 0.3f, 1.1f) * (0.4f + 0.6f * crackle));
+				arc.Rotation = 6.2832f * Unit(Mix(key, 13u));
+				arc.Seed = key;
+				arc.Emission = 0.5f;
+				renderer.DrawSprite(arc);
+			}
+		}
+		if (look.Flash > 0.0f)
+		{
+			ParticleSprite flare = Sprite(ParticleShape::Star, look.Center, radius * 2.0f * look.Flash, glm::vec3(0.55f, 0.3f, 0.85f) * look.Flash);
+			flare.Rotation = time * 0.6f;
+			flare.Emission = 0.5f;
+			renderer.DrawSprite(flare);
+		}
+	}
+
+	void DrawFireballBlast(WorldRenderer& renderer, const FireballBlastLook& look, uint32_t seed)
+	{
+		const float t = std::clamp(look.Age / std::max(look.Life, 0.05f), 0.0f, 1.0f);
+		const float grow = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+		const float fade = (1.0f - t) * (1.0f - t);
+		const float flash = std::exp(-t * 9.0f);
+		const float violet = FireballViolet(look.Power);
+		const glm::vec3 halo = glm::mix(glm::vec3(0.5f, 0.15f, 0.03f), glm::vec3(0.28f, 0.05f, 0.6f), violet);
+		const glm::vec3 outer = glm::mix(glm::vec3(0.5f, 0.12f, 0.03f), glm::vec3(0.17f, 0.02f, 0.42f), violet);
+		const glm::vec3 mid = glm::mix(glm::vec3(0.75f, 0.26f, 0.05f), glm::vec3(0.46f, 0.1f, 0.78f), violet);
+		const glm::vec3 core = glm::mix(glm::vec3(0.6f, 0.36f, 0.14f), glm::vec3(0.45f, 0.2f, 0.65f), violet);
+		DrawGroundGlow(renderer, look.Ground, look.Radius * (0.6f + 0.6f * grow), halo * (0.9f * fade), 1.0f);
+		ParticleSprite billow = Sprite(ParticleShape::Inferno, look.Center, look.Radius * (0.55f + 0.75f * grow), outer * fade);
+		billow.Additive = 0.5f;
+		billow.Emission = 0.25f;
+		billow.Softness = 0.3f;
+		billow.Params = glm::vec4(0.3f, 2.2f, -0.4f, 1.0f);
+		billow.Seed = seed;
+		renderer.DrawSprite(billow);
+		ParticleSprite fire = Sprite(ParticleShape::Inferno, look.Center, look.Radius * (0.45f + 0.65f * grow), mid * (0.7f * fade));
+		fire.Emission = 0.35f;
+		fire.Softness = 0.3f;
+		fire.Params = glm::vec4(0.35f + 0.25f * t, 3.0f, 0.5f, 0.9f);
+		fire.Seed = seed * 7u + 3u;
+		renderer.DrawSprite(fire);
+		ParticleSprite blaze = Sprite(ParticleShape::Glow, look.Center, look.Radius * (0.3f + 0.35f * grow), core * flash);
+		blaze.Softness = 0.25f;
+		blaze.Emission = 0.4f;
+		renderer.DrawSprite(blaze);
+	}
+
+	namespace
+	{
+		struct ShieldFrame
+		{
+			glm::vec3 Center{ 0.0f };
+			glm::vec3 Forward{ 1.0f, 0.0f, 0.0f };
+			glm::vec3 Right{ 0.0f, 0.0f, 1.0f };
+			glm::vec3 Rise{ 0.0f, 1.0f, 0.0f };
+		};
+
+		ShieldFrame ShieldFrameOf(const glm::vec3& base, float facing)
+		{
+			const glm::vec3 forward(std::cos(facing), 0.0f, std::sin(facing));
+			ShieldFrame frame;
+			frame.Center = base + Up * HexShieldLift - forward * HexShieldBack;
+			frame.Forward = forward * std::cos(HexShieldTilt) + Up * std::sin(HexShieldTilt);
+			frame.Rise = Up * std::cos(HexShieldTilt) - forward * std::sin(HexShieldTilt);
+			frame.Right = glm::vec3(-forward.z, 0.0f, forward.x);
+			return frame;
+		}
+	}
+
+	std::span<const HexShieldCell> HexShieldCells()
+	{
+		static const std::vector<HexShieldCell> cells = []
+		{
+			std::vector<HexShieldCell> list;
+			const float size = HexShieldCellSize;
+			for (int32_t column = -9; column <= 9; column++)
+				for (int32_t row = -9; row <= 9; row++)
+				{
+					const glm::vec2 point(1.5f * size * float(column), 1.7320508f * size * (float(row) + 0.5f * float(column & 1)));
+					const float rim = glm::length(point / glm::vec2(HexShieldHalfWidth, HexShieldHalfHeight));
+					if (rim <= 1.0f)
+						list.push_back({ point, rim, Mix(uint32_t(column + 64), uint32_t(row + 64)) });
+				}
+			return list;
+		}();
+		return cells;
+	}
+
+	glm::vec3 HexShieldPoint(const glm::vec3& base, float facing, const glm::vec2& point, glm::vec3* normal)
+	{
+		const ShieldFrame frame = ShieldFrameOf(base, facing);
+		const float length = glm::length(point);
+		const float angle = length / HexShieldSphere;
+		glm::vec3 direction = frame.Forward;
+		if (length > 1e-5f)
+			direction = frame.Forward * std::cos(angle) + (frame.Right * point.x + frame.Rise * point.y) * (std::sin(angle) / length);
+		if (normal)
+			*normal = direction;
+		return frame.Center + direction * HexShieldSphere;
+	}
+
+	glm::vec2 HexShieldLocal(const glm::vec3& base, float facing, const glm::vec3& world)
+	{
+		const ShieldFrame frame = ShieldFrameOf(base, facing);
+		const glm::vec3 offset = world - frame.Center;
+		const float distance = glm::length(offset);
+		if (distance < 1e-4f)
+			return glm::vec2(0.0f);
+		const glm::vec3 direction = offset / distance;
+		const glm::vec2 side(glm::dot(direction, frame.Right), glm::dot(direction, frame.Rise));
+		const float across = glm::length(side);
+		if (across < 1e-5f)
+			return glm::vec2(0.0f);
+		return side * (std::acos(std::clamp(glm::dot(direction, frame.Forward), -1.0f, 1.0f)) * HexShieldSphere / across);
+	}
+
+	void DrawHexShield(WorldRenderer& renderer, const HexShieldLook& look, float time)
+	{
+		if (look.Raise <= 0.01f)
+			return;
+		const float damage = 1.0f - std::clamp(look.Guard, 0.0f, 1.0f);
+		const float weak = std::clamp((0.35f - look.Guard) / 0.35f, 0.0f, 1.0f);
+		const glm::vec3 tint = glm::mix(HexShieldColor, glm::vec3(0.62f, 0.5f, 1.0f), 0.55f * weak);
+		const uint32_t beat = uint32_t(time * 18.0f);
+		for (const HexShieldCell& cell : HexShieldCells())
+		{
+			const float grow = std::clamp((look.Raise - cell.Rim * 0.5f) / 0.5f, 0.0f, 1.0f);
+			if (grow <= 0.01f)
+				continue;
+			const float scale = 1.0f - std::pow(1.0f - grow, 3.0f) + 0.15f * std::sin(grow * 3.1416f);
+			float flash = look.Flash * (1.0f - 0.5f * cell.Rim);
+			float ripple = 0.0f;
+			for (const HexShieldImpact& impact : look.Impacts)
+			{
+				if (impact.Age >= 1.0f)
+					continue;
+				const float reach = glm::length(cell.Point - impact.Point);
+				flash += impact.Strength * std::exp(-reach * reach / 0.05f) * std::exp(-impact.Age * 7.0f);
+				const float front = (reach - impact.Age * 3.2f) / 0.14f;
+				ripple += impact.Strength * 0.85f * std::exp(-front * front) * std::exp(-impact.Age * 3.2f);
+			}
+			float scar = 0.0f;
+			for (uint32_t k = 0; k < std::min<uint32_t>(look.ScarCount, uint32_t(HexShieldScarSlots)); k++)
+			{
+				const glm::vec2 offset = cell.Point - look.Scars[k];
+				scar = std::max(scar, std::exp(-glm::dot(offset, offset) / 0.1f));
+			}
+			const float crack = std::clamp((damage * 1.2f - (0.1f + 0.7f * Unit(cell.Seed) - 0.4f * scar)) / 0.25f, 0.0f, 1.0f);
+			const float flicker = 1.0f - weak * 0.5f * Unit(Mix(cell.Seed, beat));
+			const float shimmer = 0.85f + 0.15f * std::sin(time * 2.6f - cell.Rim * 5.5f + cell.Point.x * 1.7f);
+			glm::vec3 normal;
+			const glm::vec3 center = HexShieldPoint(look.Base, look.Facing, cell.Point, &normal);
+			const float surge = 1.0f + 1.6f * std::min(flash, 1.2f) + 0.8f * ripple;
+			ParticleSprite sprite = Sprite(ParticleShape::Hex, center + normal * (0.045f * ripple), HexShieldCellSize * 0.94f * scale * (1.0f + 0.08f * ripple), tint * (0.4f * shimmer * flicker * surge * (1.0f - 0.3f * cell.Rim * cell.Rim)));
+			sprite.Align = ParticleAlign::Plane;
+			sprite.Axis = normal;
+			sprite.Additive = 0.75f;
+			sprite.Emission = 0.3f;
+			sprite.Softness = 0.04f;
+			sprite.Params = glm::vec4(0.32f, 0.8f + 0.7f * ripple, crack, std::min(flash + 0.55f * ripple + 0.8f * (1.0f - grow), 1.6f));
+			sprite.Seed = cell.Seed ^ look.Seed;
+			renderer.DrawSprite(sprite);
+		}
+		ParticleSprite aura = Sprite(ParticleShape::Glow, HexShieldPoint(look.Base, look.Facing, glm::vec2(0.0f)), 1.15f * look.Raise, tint * (0.05f + 0.06f * look.Flash));
+		aura.Softness = 0.3f;
+		aura.Emission = 0.2f;
+		renderer.DrawSprite(aura);
+	}
+
+	void ShatterHexShield(const HexShieldLook& look, std::vector<HexShieldShard>& shards)
+	{
+		for (const HexShieldCell& cell : HexShieldCells())
+		{
+			glm::vec3 normal;
+			const glm::vec3 center = HexShieldPoint(look.Base, look.Facing, cell.Point, &normal);
+			const uint32_t pieces = Unit(Mix(cell.Seed, 1u)) > 0.55f ? 2u : 1u;
+			for (uint32_t k = 0; k < pieces; k++)
+			{
+				const uint32_t key = Mix(cell.Seed ^ look.Seed, k + 7u);
+				const glm::vec3 scatter = glm::vec3(Unit(Mix(key, 1u)), Unit(Mix(key, 2u)), Unit(Mix(key, 3u))) * 2.0f - 1.0f;
+				HexShieldShard shard;
+				shard.Position = center + scatter * 0.05f;
+				shard.Velocity = normal * (2.2f + 3.2f * Unit(Mix(key, 4u))) + Up * (0.6f + 2.0f * Unit(Mix(key, 5u))) + scatter * 0.9f;
+				shard.Normal = normal;
+				shard.Axis = glm::length(scatter) > 1e-3f ? glm::normalize(scatter) : Up;
+				shard.Spin = (5.0f + 9.0f * Unit(Mix(key, 6u))) * (Unit(Mix(key, 8u)) > 0.5f ? 1.0f : -1.0f);
+				shard.Size = HexShieldCellSize * (pieces > 1 ? 0.55f : 0.8f) * (0.8f + 0.35f * Unit(Mix(key, 9u)));
+				shard.Floor = look.Base.y;
+				shard.Life = 0.75f + 0.55f * Unit(Mix(key, 10u));
+				shard.Seed = key;
+				shards.push_back(shard);
+			}
+		}
+	}
+
+	void UpdateHexShards(std::vector<HexShieldShard>& shards, float dt)
+	{
+		for (HexShieldShard& shard : shards)
+		{
+			shard.Age += dt;
+			shard.Velocity.y -= 8.5f * dt;
+			shard.Velocity *= std::exp(-0.9f * dt);
+			shard.Position += shard.Velocity * dt;
+			if (shard.Position.y < shard.Floor + 0.03f && shard.Velocity.y < 0.0f)
+			{
+				shard.Position.y = shard.Floor + 0.03f;
+				shard.Velocity = glm::vec3(shard.Velocity.x * 0.55f, -shard.Velocity.y * 0.3f, shard.Velocity.z * 0.55f);
+				shard.Spin *= 0.6f;
+			}
+			const float angle = shard.Spin * dt;
+			const glm::vec3& axis = shard.Axis;
+			shard.Normal = shard.Normal * std::cos(angle) + glm::cross(axis, shard.Normal) * std::sin(angle) + axis * (glm::dot(axis, shard.Normal) * (1.0f - std::cos(angle)));
+		}
+		std::erase_if(shards, [](const HexShieldShard& shard) { return shard.Age >= shard.Life; });
+	}
+
+	void DrawHexShards(WorldRenderer& renderer, std::span<const HexShieldShard> shards)
+	{
+		for (const HexShieldShard& shard : shards)
+		{
+			const float t = std::clamp(shard.Age / shard.Life, 0.0f, 1.0f);
+			const float flare = std::exp(-shard.Age * 7.0f);
+			ParticleSprite sprite = Sprite(ParticleShape::Hex, shard.Position, shard.Size * (1.0f - 0.35f * t), HexShieldColor * (0.4f * (1.0f - t * t) + 0.22f * flare));
+			sprite.Align = ParticleAlign::Plane;
+			sprite.Axis = shard.Normal;
+			sprite.Rotation = shard.Spin * shard.Age * 0.3f;
+			sprite.Additive = 0.75f;
+			sprite.Emission = 0.35f;
+			sprite.Softness = 0.03f;
+			sprite.Params = glm::vec4(0.6f, 1.0f, 0.75f, 0.5f * flare);
+			sprite.Seed = shard.Seed;
+			renderer.DrawSprite(sprite);
+		}
+	}
+
+	namespace
+	{
+		constexpr uint32_t DiamondSides = 8;
+
+		struct DiamondFacet
+		{
+			std::array<glm::vec3, 3> Corners{};
+			glm::vec3 Center{ 0.0f };
+			glm::vec3 Normal{ 0.0f, 1.0f, 0.0f };
+			float Delay = 0.0f;
+			uint32_t Seed = 0;
+		};
+
+		glm::vec3 RingPoint(float angle, float radius, float height)
+		{
+			return glm::vec3(std::cos(angle) * radius, height, std::sin(angle) * radius);
+		}
+
+		glm::vec3 SpinY(const glm::vec3& point, float angle)
+		{
+			const float c = std::cos(angle);
+			const float s = std::sin(angle);
+			return glm::vec3(point.x * c - point.z * s, point.y, point.x * s + point.z * c);
+		}
+
+		glm::vec3 Turn(const glm::vec3& point, const glm::vec3& axis, float angle)
+		{
+			const float c = std::cos(angle);
+			return point * c + glm::cross(axis, point) * std::sin(angle) + axis * (glm::dot(axis, point) * (1.0f - c));
+		}
+
+		float DiamondRadius(float height)
+		{
+			constexpr std::array<glm::vec2, 5> profile{ { { DiamondFoot, 0.0f }, { DiamondPavilion, DiamondPavilionRadius }, { DiamondGirdle, DiamondGirdleRadius }, { DiamondCrown, DiamondCrownRadius }, { DiamondApex, 0.0f } } };
+			for (size_t i = 1; i < profile.size(); i++)
+				if (height <= profile[i].x)
+					return std::lerp(profile[i - 1].y, profile[i].y, (height - profile[i - 1].x) / (profile[i].x - profile[i - 1].x)) * std::cos(3.14159265f / float(DiamondSides)) * 1.04f;
+			return 0.0f;
+		}
+
+		std::span<const DiamondFacet> DiamondFacets()
+		{
+			static const std::vector<DiamondFacet> facets = []
+			{
+				std::vector<DiamondFacet> list;
+				const auto add = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c)
+				{
+					DiamondFacet facet;
+					facet.Center = (a + b + c) / 3.0f;
+					glm::vec3 normal = glm::normalize(glm::cross(b - a, c - a));
+					if (glm::dot(normal, glm::vec3(facet.Center.x, 0.0f, facet.Center.z)) < 0.0f)
+					{
+						std::swap(b, c);
+						normal = -normal;
+					}
+					facet.Corners = { a, b, c };
+					facet.Normal = normal;
+					facet.Seed = Mix(uint32_t(list.size()) + 101u, 0x51ED27u);
+					facet.Delay = 0.1f * (facet.Center.y / DiamondApex) + 0.06f * Unit(Mix(facet.Seed, 2u));
+					list.push_back(facet);
+				};
+				const float step = 2.0f * 3.14159265f / float(DiamondSides);
+				const glm::vec3 foot(0.0f, DiamondFoot, 0.0f);
+				const glm::vec3 apex(0.0f, DiamondApex, 0.0f);
+				for (uint32_t i = 0; i < DiamondSides; i++)
+				{
+					const float angle = step * float(i);
+					const glm::vec3 g0 = RingPoint(angle, DiamondGirdleRadius, DiamondGirdle);
+					const glm::vec3 g1 = RingPoint(angle + step, DiamondGirdleRadius, DiamondGirdle);
+					const glm::vec3 p0 = RingPoint(angle - 0.5f * step, DiamondPavilionRadius, DiamondPavilion);
+					const glm::vec3 p1 = RingPoint(angle + 0.5f * step, DiamondPavilionRadius, DiamondPavilion);
+					const glm::vec3 c0 = RingPoint(angle + 0.5f * step, DiamondCrownRadius, DiamondCrown);
+					const glm::vec3 c1 = RingPoint(angle + 1.5f * step, DiamondCrownRadius, DiamondCrown);
+					add(foot, p0, p1);
+					add(p0, g0, p1);
+					add(g0, g1, p1);
+					add(g0, g1, c0);
+					add(c0, g1, c1);
+					add(c0, c1, apex);
+				}
+				return list;
+			}();
+			return facets;
+		}
+	}
+
+	glm::vec3 DiamondPoint(const glm::vec3& base, const glm::vec3& toward, float height, glm::vec3* normal)
+	{
+		glm::vec3 flat(toward.x - base.x, 0.0f, toward.z - base.z);
+		const float length = glm::length(flat);
+		flat = length > 1e-4f ? flat / length : glm::vec3(1.0f, 0.0f, 0.0f);
+		const float y = std::clamp(height, DiamondFoot, DiamondApex);
+		if (normal)
+			*normal = glm::normalize(flat + Up * (y > DiamondGirdle ? 0.45f : -0.6f));
+		return base + flat * DiamondRadius(y) + Up * y;
+	}
+
+	glm::vec3 DiamondLocal(const DiamondWardLook& look, const glm::vec3& world)
+	{
+		return SpinY(world - look.Base, -look.Spin);
+	}
+
+	void DrawDiamondWard(WorldRenderer& renderer, const DiamondWardLook& look, float time)
+	{
+		if (look.Fade <= 0.01f)
+			return;
+		const float damage = 1.0f - std::clamp(look.Ward, 0.0f, 1.0f);
+		const float weak = std::clamp((0.5f - look.Ward) / 0.5f, 0.0f, 1.0f);
+		const uint32_t beat = uint32_t(time * 14.0f);
+		const float span = DiamondFormSeconds - 0.16f;
+		const glm::vec3 body = glm::mix(glm::vec3(1.0f, 0.93f, 0.82f), DiamondViolet, 0.45f * weak);
+		const glm::vec3 edge = glm::mix(DiamondGold, DiamondViolet, 0.35f * weak);
+		for (const DiamondFacet& facet : DiamondFacets())
+		{
+			const float t = std::clamp((look.Age - facet.Delay) / span, 0.0f, 1.0f);
+			if (t <= 0.0f)
+				continue;
+			const float settle = 1.0f - std::pow(1.0f - t, 3.0f);
+			const float size = (0.3f + 0.7f * settle) * (1.0f + 0.1f * std::sin(t * 3.14159265f));
+			const float twist = (1.0f - settle) * (Unit(Mix(facet.Seed, 4u)) - 0.5f) * 2.2f;
+			const glm::vec3 drift = facet.Normal * ((1.0f - settle) * (1.0f + 0.7f * Unit(Mix(facet.Seed, 3u)))) + Up * ((1.0f - settle) * 0.35f);
+			float flash = 0.35f * look.Flash + 1.3f * (1.0f - t);
+			for (const DiamondImpact& impact : look.Impacts)
+				if (impact.Age < 0.8f)
+				{
+					const glm::vec3 offset = facet.Center - impact.Point;
+					flash += impact.Strength * std::exp(-glm::dot(offset, offset) / 0.2f) * std::exp(-impact.Age * 8.0f);
+				}
+			float scar = 0.0f;
+			for (uint32_t k = 0; k < std::min<uint32_t>(look.ScarCount, uint32_t(DiamondScarSlots)); k++)
+			{
+				const glm::vec3 offset = facet.Center - look.Scars[k];
+				scar = std::max(scar, std::exp(-glm::dot(offset, offset) / 0.22f));
+			}
+			const float crack = std::clamp((damage * 1.3f - (0.15f + 0.75f * Unit(facet.Seed)) + 0.45f * scar * damage) / 0.3f, 0.0f, 1.0f);
+			const bool faint = Unit(Mix(facet.Seed, 7u)) < weak * 0.55f;
+			const float flicker = faint ? 0.3f + 0.7f * Unit(Mix(facet.Seed, beat)) : 1.0f;
+			std::array<glm::vec3, 3> corners;
+			for (size_t k = 0; k < 3; k++)
+				corners[k] = look.Base + SpinY(facet.Center + (facet.Corners[k] - facet.Center) * size + drift, look.Spin + twist);
+			GlassFacet glass;
+			glass.A = corners[0];
+			glass.B = corners[1];
+			glass.C = corners[2];
+			glass.Color = body;
+			glass.Opacity = 0.09f * (1.0f - 0.4f * weak);
+			glass.Edge = edge * flicker;
+			glass.Glint = (1.0f - 0.35f * weak) * flicker;
+			glass.Crack = crack;
+			glass.Flash = std::min(flash, 1.5f);
+			glass.Fade = look.Fade * std::min(t * 3.0f, 1.0f) * (faint ? 0.55f + 0.45f * flicker : 1.0f);
+			glass.Seed = facet.Seed ^ look.Seed;
+			renderer.DrawFacet(glass);
+		}
+		const float formed = std::clamp((look.Age - DiamondFormSeconds * 0.6f) / (DiamondFormSeconds * 0.4f), 0.0f, 1.0f);
+		if (formed <= 0.0f)
+			return;
+		const float glimmer = look.Fade * formed;
+		DrawStar(renderer, look.Base + Up * DiamondApex, (0.18f + 0.07f * std::sin(time * 5.3f)) * (1.0f + 0.6f * look.Flash), edge * (0.24f * glimmer), time * 0.6f);
+		const float step = 2.0f * 3.14159265f / float(DiamondSides);
+		for (uint32_t k = 0; k < 3; k++)
+		{
+			const float phase = time * 1.7f + float(k) * 0.333f;
+			const uint32_t pick = Mix(look.Seed + k * 977u, uint32_t(phase));
+			const float twinkle = std::sin(3.14159265f * (phase - std::floor(phase)));
+			const bool crown = (pick & 1u) != 0;
+			const glm::vec3 vertex = RingPoint(step * (float(pick % DiamondSides) + (crown ? 0.5f : 0.0f)), crown ? DiamondCrownRadius : DiamondGirdleRadius, crown ? DiamondCrown : DiamondGirdle);
+			DrawStar(renderer, look.Base + SpinY(vertex, look.Spin), 0.24f * twinkle, glm::vec3(1.0f, 0.95f, 0.85f) * (0.3f * twinkle * glimmer * (1.0f - 0.5f * weak)), time + float(k));
+		}
+		ParticleSprite core = Sprite(ParticleShape::Glow, look.Base + Up * 1.25f, 1.5f, glm::mix(DiamondGold, DiamondViolet, 0.5f) * (glimmer * (0.045f + 0.05f * look.Flash)));
+		core.Softness = 0.35f;
+		core.Emission = 0.15f;
+		renderer.DrawSprite(core);
+	}
+
+	void ShatterDiamondWard(const DiamondWardLook& look, std::vector<DiamondShard>& shards)
+	{
+		for (const DiamondFacet& facet : DiamondFacets())
+		{
+			const uint32_t key = Mix(facet.Seed, look.Seed);
+			std::array<glm::vec3, 3> corners;
+			for (size_t k = 0; k < 3; k++)
+				corners[k] = look.Base + SpinY(facet.Corners[k], look.Spin);
+			const auto jitter = [&](const glm::vec3& a, const glm::vec3& b, uint32_t salt) { return glm::mix(a, b, 0.35f + 0.3f * Unit(Mix(key, salt))); };
+			const glm::vec3 ab = jitter(corners[0], corners[1], 1u);
+			const glm::vec3 bc = jitter(corners[1], corners[2], 2u);
+			const glm::vec3 ca = jitter(corners[2], corners[0], 3u);
+			const std::array<std::array<glm::vec3, 3>, 4> pieces{ { { corners[0], ab, ca }, { ab, corners[1], bc }, { ca, bc, corners[2] }, { ab, bc, ca } } };
+			const glm::vec3 normal = SpinY(facet.Normal, look.Spin);
+			for (uint32_t k = 0; k < pieces.size(); k++)
+			{
+				const uint32_t piece = Mix(key, k + 11u);
+				const std::array<glm::vec3, 3>& triangle = pieces[k];
+				const glm::vec3 center = (triangle[0] + triangle[1] + triangle[2]) / 3.0f;
+				const glm::vec3 scatter = glm::vec3(Unit(Mix(piece, 1u)), Unit(Mix(piece, 2u)), Unit(Mix(piece, 3u))) * 2.0f - 1.0f;
+				DiamondShard shard;
+				for (size_t c = 0; c < 3; c++)
+					shard.Corners[c] = (triangle[c] - center) * 0.8f;
+				shard.Center = center;
+				shard.Velocity = normal * (1.4f + 2.2f * Unit(Mix(piece, 4u))) + Up * (0.4f + 1.5f * Unit(Mix(piece, 5u))) + scatter * 0.6f;
+				shard.Axis = glm::length(scatter) > 1e-3f ? glm::normalize(scatter) : Up;
+				shard.Spin = (5.0f + 9.0f * Unit(Mix(piece, 6u))) * (Unit(Mix(piece, 7u)) > 0.5f ? 1.0f : -1.0f);
+				shard.Floor = look.Base.y;
+				shard.Life = 0.55f + 0.45f * Unit(Mix(piece, 8u));
+				shard.Seed = piece;
+				shards.push_back(shard);
+			}
+		}
+	}
+
+	void UpdateDiamondShards(std::vector<DiamondShard>& shards, float dt)
+	{
+		for (DiamondShard& shard : shards)
+		{
+			shard.Age += dt;
+			shard.Velocity.y -= 9.0f * dt;
+			shard.Velocity *= std::exp(-1.1f * dt);
+			shard.Center += shard.Velocity * dt;
+			if (shard.Center.y < shard.Floor + 0.04f && shard.Velocity.y < 0.0f)
+			{
+				shard.Center.y = shard.Floor + 0.04f;
+				shard.Velocity = glm::vec3(shard.Velocity.x * 0.5f, -shard.Velocity.y * 0.3f, shard.Velocity.z * 0.5f);
+				shard.Spin *= 0.55f;
+			}
+			shard.Angle += shard.Spin * dt;
+		}
+		std::erase_if(shards, [](const DiamondShard& shard) { return shard.Age >= shard.Life; });
+	}
+
+	void DrawDiamondShards(WorldRenderer& renderer, std::span<const DiamondShard> shards)
+	{
+		for (const DiamondShard& shard : shards)
+		{
+			const float t = std::clamp(shard.Age / shard.Life, 0.0f, 1.0f);
+			const float scale = 1.0f - 0.45f * t;
+			GlassFacet glass;
+			glass.A = shard.Center + Turn(shard.Corners[0], shard.Axis, shard.Angle) * scale;
+			glass.B = shard.Center + Turn(shard.Corners[1], shard.Axis, shard.Angle) * scale;
+			glass.C = shard.Center + Turn(shard.Corners[2], shard.Axis, shard.Angle) * scale;
+			glass.Color = glm::vec3(1.0f, 0.93f, 0.85f);
+			glass.Opacity = 0.18f;
+			glass.Edge = DiamondGold;
+			glass.Flash = 1.0f * std::exp(-shard.Age * 8.0f);
+			glass.Fade = 1.0f - std::clamp((t - 0.4f) / 0.6f, 0.0f, 1.0f);
+			glass.Seed = shard.Seed;
+			renderer.DrawFacet(glass);
 		}
 	}
 
@@ -453,32 +1454,6 @@ namespace Game
 			DrawStreak(renderer, center - forward * 1.1f, center, 0.07f, { 0.6f, 1.8f, 0.5f });
 			DrawGlow(renderer, center, 0.25f, { 0.4f, 1.2f, 0.35f });
 			break;
-		case AbilityId::SplittingBolt:
-		{
-			DrawGlow(renderer, center, 0.75f, { 0.45f, 0.06f, 0.16f });
-			renderer.DrawSprite(Stretched(ParticleShape::Beam, center - forward * 0.9f, center, 0.26f, { 1.05f, 0.2f, 0.4f }));
-			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.32f, { 1.3f, 0.28f, 0.52f });
-			core.Seed = seed;
-			renderer.DrawSprite(core);
-			for (uint32_t i = 0; i < 3; i++)
-			{
-				const float angle = time * 5.5f + float(i) * 2.0944f;
-				DrawStar(renderer, center + Heading(angle) * 0.42f + Up * (0.08f * std::sin(time * 6.0f + float(i) * 2.0f)), 0.09f, { 1.0f, 0.28f, 0.52f }, angle);
-			}
-			DrawGlow(renderer, center, marked ? 0.12f : 0.09f, marked ? heart : glm::vec3(1.2f, 0.8f, 0.9f));
-			break;
-		}
-		case AbilityId::BoltShard:
-		{
-			DrawGlow(renderer, center, 0.4f, { 0.42f, 0.05f, 0.14f });
-			ParticleSprite body = Stretched(ParticleShape::Shard, center + forward * 0.3f, center - forward * 0.3f, 0.09f, { 2.2f, 0.5f, 0.9f });
-			body.Additive = 0.5f;
-			body.Emission = 0.8f;
-			body.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-			renderer.DrawSprite(body);
-			DrawStar(renderer, center + forward * 0.34f, 0.13f, { 2.6f, 1.1f, 1.5f });
-			break;
-		}
 		case AbilityId::ChainHook:
 		{
 			DrawGlow(renderer, center, 0.5f, { 0.32f, 0.18f, 0.07f });

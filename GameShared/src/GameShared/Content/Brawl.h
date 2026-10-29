@@ -37,12 +37,15 @@ namespace Game
 		AbilityId::GravityWell,
 		AbilityId::ArcLightning,
 		AbilityId::Swap,
-		AbilityId::MirrorWard,
+		AbilityId::DiamondWard,
 		AbilityId::FrostSpear,
 		AbilityId::ChainHook,
 		AbilityId::Firebomb,
-		AbilityId::SplittingBolt,
+		AbilityId::ObsidianShards,
 		AbilityId::StormStrike,
+		AbilityId::EarthSpike,
+		AbilityId::PurpleFireball,
+		AbilityId::HexShield,
 	};
 	inline constexpr BrawlSpells DefaultBrawlSpells = { AbilityId::Gust, AbilityId::Warp, AbilityId::Comet };
 
@@ -139,7 +142,7 @@ namespace Game
 
 	inline constexpr int32_t BrawlHealth = 100;
 	inline constexpr float BrawlMoveSpeed = 4.5f;
-	inline constexpr float BrawlDodgeCooldown = 2.4f;
+	inline constexpr float BrawlDodgeCooldown = 3.0f;
 	inline constexpr float PushFriction = 3.2f;
 	inline constexpr float PushControlSpeed = 9.0f;
 	inline constexpr float PushControlLoss = 0.85f;
@@ -165,9 +168,34 @@ namespace Game
 	inline constexpr int32_t SpearBurstDamage = 10;
 	inline constexpr float SpearBurstPush = 10.0f;
 	inline constexpr float SpearBurstChill = 1.0f;
+	inline constexpr float FireballFullSpeed = 12.0f;
+	inline constexpr float FireballFullRange = 7.0f;
+	inline constexpr float FireballFullRadius = 0.5f;
+	inline constexpr float FireballFullBlast = 2.6f;
+	inline constexpr float FireballFullPush = 32.0f;
+	inline constexpr int32_t FireballFullDamage = 26;
+	inline constexpr float FireballFullSize = 2.6f;
+	inline constexpr float HexShieldDurability = 30.0f;
+	inline constexpr float HexShieldShoveDurability = 40.0f;
+	inline constexpr float HexShieldMinWear = 4.0f;
+	inline constexpr float HexShieldManaPerPoint = 0.5f;
+	inline constexpr float HexShieldMendDelay = 1.0f;
+	inline constexpr float HexShieldMendRate = 0.25f;
+	inline constexpr float HexShieldBreakCooldown = 7.0f;
+	inline constexpr float HexShieldBrace = 0.25f;
+	inline constexpr float HexShieldOverhead = 0.35f;
+	inline constexpr float DiamondWardDurability = 30.0f;
+	inline constexpr float DiamondWardShoveDurability = 40.0f;
+	inline constexpr float DiamondWardMinWear = 4.0f;
+	inline constexpr float DiamondWardBreakCooldown = 1.3f;
+	inline constexpr float DiamondWardReach = 0.62f;
+	inline constexpr uint8_t DiamondWardReflects = 2;
+	inline constexpr float DiamondWardShatterSeconds = 0.5f;
+	inline constexpr float SpikeAimDeadzone = 0.35f;
+	inline constexpr float SpikeGroundStep = 0.2f;
 	inline constexpr float FirebombSkipDistance = 2.0f;
-	inline constexpr uint32_t BoltShards = 3;
-	inline constexpr float BoltShardSpread = 0.4f;
+	inline constexpr uint32_t ObsidianVolley = 5;
+	inline constexpr float ObsidianStep = 0.14f;
 	inline constexpr float LavaDamagePerSecond = 14.0f;
 	inline constexpr float AfterburnSeconds = 0.8f;
 	inline constexpr float AfterburnDamagePerSecond = 8.0f;
@@ -212,7 +240,7 @@ namespace Game
 	inline constexpr float GustWarning = 2.0f;
 	inline constexpr float GustDuration = 3.2f;
 	inline constexpr float GustRamp = 0.45f;
-	inline constexpr float GustSpeed = 2.2f;
+	inline constexpr float GustSpeed = 0.5f;
 	inline constexpr float IslandDwell = 0.3f;
 	inline constexpr float IslandTravel = 0.2f;
 	inline constexpr float PeakScale = 2.0f;
@@ -664,6 +692,7 @@ namespace Game
 		float Chill = 0.0f;
 		uint8_t Pierce = 0;
 		float Size = 1.0f;
+		float Blast = 0.0f;
 	};
 
 	inline ChargedShot SpearShot(float power)
@@ -683,19 +712,74 @@ namespace Game
 		};
 	}
 
+	inline ChargedShot FireballShot(float power)
+	{
+		const AbilityDef& fireball = GetAbility(AbilityId::PurpleFireball);
+		const float p = std::clamp(power, 0.0f, 1.0f);
+		const auto mix = [p](float tap, float full) { return tap + (full - tap) * p; };
+		return {
+			.Speed = mix(fireball.ProjectileSpeed, FireballFullSpeed),
+			.Range = mix(fireball.ProjectileRange, FireballFullRange),
+			.Radius = mix(fireball.ProjectileRadius, FireballFullRadius),
+			.Push = mix(fireball.Push, FireballFullPush),
+			.DamageScale = mix(float(fireball.BrawlDamage), float(FireballFullDamage)) / float(std::max(fireball.BrawlDamage, 1)),
+			.Size = mix(1.0f, FireballFullSize),
+			.Blast = mix(fireball.ImpactRadius, FireballFullBlast),
+		};
+	}
+
+	inline float FireballPowerOf(float size)
+	{
+		return std::clamp((size - 1.0f) / (FireballFullSize - 1.0f), 0.0f, 1.0f);
+	}
+
+	inline uint32_t ShardsFormed(float power)
+	{
+		return 1u + uint32_t(std::clamp(power, 0.0f, 1.0f) * float(ObsidianVolley - 1) + 1e-3f);
+	}
+
+	inline bool FiresWhenFull(AbilityId id)
+	{
+		return id == AbilityId::ObsidianShards;
+	}
+
+	inline uint8_t CardPierce(AbilityId id, CardMask cards)
+	{
+		return id == AbilityId::ObsidianShards && HasCard(cards, CardId::RazorGlass) ? 1 : 0;
+	}
+
+	inline bool IsChargedShot(AbilityId id)
+	{
+		return id == AbilityId::FrostSpear || id == AbilityId::PurpleFireball || id == AbilityId::ObsidianShards;
+	}
+
+	inline ChargedShot ChargedShotOf(const AbilityDef& ability, float power)
+	{
+		if (ability.Id == AbilityId::FrostSpear)
+			return SpearShot(power);
+		if (ability.Id == AbilityId::PurpleFireball)
+			return FireballShot(power);
+		return { .Speed = ability.ProjectileSpeed, .Range = ability.ProjectileRange, .Radius = ability.ProjectileRadius, .Push = ability.Push, .Chill = ability.Chill, .Blast = ability.ImpactRadius };
+	}
+
 	inline ProjectilePattern ChargedPattern(const AbilityDef& ability, ProjectilePattern pattern, float charge, float speedScale)
 	{
-		if (ability.Id != AbilityId::FrostSpear)
+		if (!IsChargedShot(ability.Id))
 			return pattern;
-		const ChargedShot shot = SpearShot(charge);
+		const ChargedShot shot = ChargedShotOf(ability, charge);
 		pattern.Speed = shot.Speed * speedScale;
 		pattern.Pierce = uint8_t(std::min(pattern.Pierce + shot.Pierce, 8));
+		if (ability.Id == AbilityId::ObsidianShards)
+		{
+			pattern.Count += ShardsFormed(charge) - 1u;
+			pattern.Spread = ObsidianStep * float(pattern.Count - 1);
+		}
 		return pattern;
 	}
 
 	inline float ChargedRange(const AbilityDef& ability, float charge)
 	{
-		return ability.Id == AbilityId::FrostSpear ? SpearShot(charge).Range : ability.ProjectileRange;
+		return ChargedShotOf(ability, charge).Range;
 	}
 
 	inline SkillTraits MakeBrawlSkill(AbilityId id, float cooldownScale, BrawlMode mode)
@@ -709,13 +793,17 @@ namespace Game
 		skill.Cooldown = (mode == BrawlMode::Damage && def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown) * cooldownScale;
 		skill.MoveScale = def.CastMove;
 		skill.ManaCost = mode == BrawlMode::Damage ? def.BrawlMana : 0.0f;
+		if (def.Kind == AbilityKind::Ward)
+			skill.Durability = mode == BrawlMode::Damage ? DiamondWardDurability : DiamondWardShoveDurability;
+		if (def.Kind == AbilityKind::Shield)
+			skill.Durability = mode == BrawlMode::Damage ? HexShieldDurability : HexShieldShoveDurability;
 		return skill;
 	}
 
 	inline bool EchoesInChamber(AbilityId id)
 	{
 		const AbilityKind kind = GetAbility(id).Kind;
-		return kind != AbilityKind::Dash && kind != AbilityKind::Ward;
+		return kind != AbilityKind::Dash && kind != AbilityKind::Ward && kind != AbilityKind::Shield;
 	}
 
 	inline void ApplyApex(PlayerTraits& traits, CardMask cards)

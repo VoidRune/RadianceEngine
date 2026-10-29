@@ -664,10 +664,13 @@ namespace Game
 
 	ArenaState GameClient::ArenaFor(uint32_t ticksAhead) const
 	{
-		if (!m_Level || !m_Level->Skyborne || m_Session.Mode != GameMode::Brawl)
+		if (!m_Level || m_Session.Mode != GameMode::Brawl)
 			return {};
 		const BrawlStatus& brawl = m_Status.Brawl;
-		return { &brawl.Plan, GetArenaClock(double(GetLatestTick()) + double(ticksAhead)), brawl.Phase == BrawlPhase::Fight };
+		const float clock = GetArenaClock(double(GetLatestTick()) + double(ticksAhead));
+		if (!m_Level->Skyborne)
+			return { .Clock = clock, .Field = &brawl.Plan };
+		return { &brawl.Plan, clock, brawl.Phase == BrawlPhase::Fight, &brawl.Plan };
 	}
 
 	float GameClient::GetArenaClock(double tick) const
@@ -716,38 +719,6 @@ namespace Game
 
 	void GameClient::PredictRecast(AbilityId ability, const PlayerActions& actions)
 	{
-		const CardMask cards = m_LocalPlayer.Brawl.Cards;
-		if (ability == AbilityId::SplittingBolt)
-		{
-			const AbilityDef& shard = GetAbility(AbilityId::BoltShard);
-			const uint32_t count = HasCard(cards, CardId::Fivefold) ? FivefoldShards : BoltShards;
-			const float spread = BoltShardSpread * float(BoltShards - 1) / float(count - 1);
-			std::vector<PredictedProjectile> shards;
-			for (PredictedProjectile& bolt : m_PredictedProjectiles)
-			{
-				if (bolt.Ability != AbilityId::SplittingBolt || bolt.Lifetime <= 0.0f)
-					continue;
-				bolt.Lifetime = 0.0f;
-				if (HasCard(cards, CardId::SeekerShards))
-					continue;
-				const float heading = AngleOf(bolt.Velocity);
-				for (uint32_t i = 0; i < count; i++)
-					shards.push_back({
-						.Tag = bolt.Tag,
-						.Index = uint8_t(1 + i),
-						.Ability = AbilityId::BoltShard,
-						.Position = bolt.Position,
-						.Previous = bolt.Position,
-						.Velocity = FromAngle(heading + spread * (float(i) - float(count - 1) * 0.5f)) * shard.ProjectileSpeed,
-						.Lifetime = GetProjectileLifetime(shard, shard.ProjectileSpeed),
-						.Radius = shard.ProjectileRadius,
-						.Floor = bolt.Floor,
-					});
-			}
-			std::erase_if(m_PredictedProjectiles, [](const PredictedProjectile& projectile) { return projectile.Lifetime <= 0.0f; });
-			m_PredictedProjectiles.insert(m_PredictedProjectiles.end(), shards.begin(), shards.end());
-			return;
-		}
 		if (ability != AbilityId::ChainHook)
 			return;
 		uint16_t tag = 0;
@@ -772,9 +743,12 @@ namespace Game
 		{
 		case AbilityKind::Projectile:
 		{
+			if (ability.Id == AbilityId::ObsidianShards && HasCard(m_LocalPlayer.Brawl.Cards, CardId::SeekerShards))
+				return;
 			const float charge = IsCharged(skill) ? actions.Charge : 0.0f;
 			const ProjectilePattern pattern = ChargedPattern(ability, GetProjectilePattern(ability, uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles), traits.ExtraPierce, traits.ProjectileSpeedScale), charge, traits.ProjectileSpeedScale);
-			const ChargedShot shot = ability.Id == AbilityId::FrostSpear ? SpearShot(charge) : ChargedShot{ .Radius = ability.ProjectileRadius };
+			const ChargedShot shot = ChargedShotOf(ability, charge);
+			const float blast = (ability.ImpactRadius > 0.0f ? shot.Blast / ability.ImpactRadius : 1.0f) * traits.AreaScale * skill.AreaScale;
 			for (uint32_t i = 0; i < pattern.Count && i < 16; i++)
 			{
 				const Vec2 heading = ProjectileDirection(pattern, actions.Direction, i);
@@ -790,9 +764,10 @@ namespace Game
 					.Velocity = heading * pattern.Speed,
 					.Lifetime = (pattern.Speed > 0.0f ? ChargedRange(ability, charge) / pattern.Speed : 0.0f) * skill.RangeScale,
 					.Radius = shot.Radius,
-					.Pierce = pattern.Pierce,
+					.Pierce = uint8_t(pattern.Pierce + CardPierce(ability.Id, m_LocalPlayer.Brawl.Cards)),
 					.Scale = uint8_t(std::clamp(std::lround(shot.Size * 16.0f), 1l, 255l)),
-					.Explodes = ability.ImpactRadius > 0.0f,
+					.Blast = uint8_t(std::clamp(std::lround(blast * 16.0f), 1l, 255l)),
+					.Explodes = shot.Blast > 0.0f,
 					.Floor = LaunchFloor(*m_Level, origin),
 				});
 			}
@@ -800,6 +775,11 @@ namespace Game
 		}
 		case AbilityKind::Ground:
 		{
+			if (ability.Id == AbilityId::EarthSpike)
+			{
+				m_PredictedEffects.push_back({ .Tag = tag, .Ability = ability.Id, .Position = actions.CastPoint, .Facing = AngleOf(actions.CastAim), .Remaining = ability.EffectDuration, .Scale = scale });
+				break;
+			}
 			const Vec2 target = GetGroundTarget(*m_Level, origin, actions.Direction, actions.AimDistance, ability.Range);
 			m_PredictedEffects.push_back({ .Tag = tag, .Ability = ability.Id, .Position = target, .Facing = AngleOf(actions.Direction), .Remaining = ability.ImpactDelay, .Scale = scale, .Pending = true });
 			if (ability.Id == AbilityId::Firebomb)
@@ -828,7 +808,6 @@ namespace Game
 
 	void GameClient::StepPredictedEffects(float dt)
 	{
-		const uint8_t areaScale = uint8_t(std::clamp(std::lround(GetTraits().AreaScale * 16.0f), 1l, 255l));
 		for (PredictedProjectile& projectile : m_PredictedProjectiles)
 		{
 			projectile.Previous = projectile.Position;
@@ -847,14 +826,22 @@ namespace Game
 					continue;
 				const float radius = def ? def->Radius * entity.GetScale() : dummy ? DummyRadius : PlayerRadius;
 				float parameter = 0.0f;
-				if (entity.NetId == projectile.LastHit || !SegmentTouchesCircle(projectile.Previous, projectile.Position, entity.Position, radius + projectile.Radius, parameter))
+				const bool warded = entity.Warded();
+				const bool guarded = !warded && entity.Guarding() && entity.NetId != projectile.LastHit && GuardContact(projectile.Previous, projectile.Position, entity.Position, entity.Facing, projectile.Radius, parameter);
+				if (!guarded && (entity.NetId == projectile.LastHit || !SegmentTouchesCircle(projectile.Previous, projectile.Position, entity.Position, (warded ? std::max(radius, DiamondWardReach) : radius) + projectile.Radius, parameter)))
 					continue;
-				if (entity.Has(EntityFlags::Warded))
+				if (warded)
 				{
 					projectile.Position = Lerp(projectile.Previous, projectile.Position, parameter);
 					projectile.Lifetime = 0.0f;
 					projectile.Explodes = false;
 					projectile.Reflected = true;
+					break;
+				}
+				if (guarded)
+				{
+					projectile.Position = Lerp(projectile.Previous, projectile.Position, parameter);
+					projectile.Lifetime = 0.0f;
 					break;
 				}
 				if (projectile.Explodes)
@@ -874,7 +861,7 @@ namespace Game
 				projectile.LastHit = entity.NetId;
 			}
 			if (projectile.Lifetime <= 0.0f && projectile.Explodes)
-				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = projectile.Index, .Ability = projectile.Ability, .Position = projectile.Position, .Remaining = GetAbility(projectile.Ability).EffectDuration, .Scale = areaScale });
+				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = projectile.Index, .Ability = projectile.Ability, .Position = projectile.Position, .Facing = AngleOf(projectile.Velocity), .Remaining = GetAbility(projectile.Ability).EffectDuration, .Scale = projectile.Blast });
 			if (projectile.Lifetime <= 0.0f && projectile.Ability == AbilityId::ChainHook && !projectile.Reflected)
 			{
 				const AbilityId end = projectile.Caught ? AbilityId::HookPull : AbilityId::HookAnchor;
@@ -1076,8 +1063,13 @@ namespace Game
 			self.Flags |= uint16_t(EntityFlags::Stunned);
 		if (m_PredictedState.Static > 0.0f)
 			self.Flags |= uint16_t(EntityFlags::Static);
-		if (m_PredictedState.Ward > 0.0f)
+		if (IsWarded(m_PredictedState))
+		{
 			self.Flags |= uint16_t(EntityFlags::Warded);
+			self.Ward = PackGuard(m_PredictedState.WardLeft, WardDurability(GetTraits()));
+		}
+		if (m_PredictedState.WardShatter > 0.0f)
+			self.Flags |= uint32_t(EntityFlags::WardShattered);
 		if (LengthSquared(m_PredictedState.Push) > 36.0f)
 			self.Flags |= uint16_t(EntityFlags::Flung);
 		if (m_PredictedState.IsFalling())
@@ -1094,7 +1086,16 @@ namespace Game
 			self.Variant = uint8_t(skill.Ability);
 			if (IsCharged(skill))
 				self.Charge = PackCharge(ChargePower(m_PredictedState, skill), ChargeOver(m_PredictedState, skill));
+			if (IsGuard(skill))
+				self.Charge = PackGuard(GuardLeft(m_PredictedState, GetTraits()), skill.Durability);
+			if (AimsFromPoint(skill.Ability))
+			{
+				self.CastPoint = m_PredictedState.CastPoint;
+				self.CastAim = AngleOf(m_PredictedState.CastAim);
+			}
 		}
+		if (IsGuardBroken(m_PredictedState, GetTraits()))
+			self.Flags |= uint32_t(EntityFlags::Shattered);
 		m_View.push_back(self);
 
 		for (const PredictedProjectile& projectile : m_PredictedProjectiles)

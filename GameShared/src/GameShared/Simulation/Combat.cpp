@@ -80,6 +80,9 @@ namespace Game
 			float Radius = 0.0f;
 			Team Side = Team::Players;
 			uint32_t PlayerId = NoPlayer;
+			float Facing = 0.0f;
+			bool Guarded = false;
+			bool Warded = false;
 		};
 
 		std::vector<Target> CollectTargets(EntityRegistry& entities)
@@ -91,7 +94,7 @@ namespace Game
 				const Collider* collider = entities.TryGet<Collider>(entity);
 				const PlayerController* controller = entities.TryGet<PlayerController>(entity);
 				if (transform && collider && IsVulnerable(entities, entity, health))
-					targets.push_back({ entity, transform->Position, collider->Radius, health.Side, controller ? controller->PlayerId : NoPlayer });
+					targets.push_back({ entity, transform->Position, collider->Radius, health.Side, controller ? controller->PlayerId : NoPlayer, transform->Facing, controller && IsGuarding(controller->State, controller->Traits), controller && IsWarded(controller->State) && !controller->State.IsFalling() });
 			});
 			return targets;
 		}
@@ -144,7 +147,7 @@ namespace Game
 			hit.PushReach = projectile.ImpactRadius;
 			StrikeCircle(world, position, projectile.ImpactRadius, hit, projectile.Side, projectile.Rewind);
 			const AbilityDef& ability = GetAbility(AbilityId(projectile.Ability));
-			world.SpawnEffect(ability.Id, position, 0.0f, owner, tag, ability.ImpactRadius > 0.0f ? projectile.ImpactRadius / ability.ImpactRadius : 1.0f);
+			world.SpawnEffect(ability.Id, position, AngleOf(projectile.Velocity), owner, tag, ability.ImpactRadius > 0.0f ? projectile.ImpactRadius / ability.ImpactRadius : 1.0f);
 		}
 
 		void SpearBurst(World& world, const Projectile& projectile, Vec2 position, uint32_t owner)
@@ -288,7 +291,7 @@ namespace Game
 				SwapPlaces(world, hit.Source, target);
 				return true;
 			}
-			if (hit.Push == 0.0f || controller->State.Ward > 0.0f)
+			if (hit.Push == 0.0f || IsWarded(controller->State))
 				return true;
 			const float fraction = float(std::max(health->Current, 0)) / float(std::max(health->Max, 1));
 			Vec2 impulse = PushImpulse(hit, transform->Position);
@@ -305,12 +308,132 @@ namespace Game
 			return true;
 		}
 
-		bool Reflect(World& world, Entity entity, Projectile& projectile, Transform& transform, Entity target, Vec2 point)
+		enum class GuardOutcome : uint8_t
+		{
+			Open,
+			Held,
+			Broke,
+		};
+
+		GuardOutcome Guard(World& world, Entity target, const HitInfo& hit, int32_t& damage, HitInfo& through)
 		{
 			EntityRegistry& entities = world.GetEntities();
-			const PlayerController* controller = entities.TryGet<PlayerController>(target);
-			if (!controller || !controller->State.Alive || controller->State.Ward <= 0.0f)
+			PlayerController* controller = entities.TryGet<PlayerController>(target);
+			const Transform* transform = entities.TryGet<Transform>(target);
+			if (!controller || !transform || !IsGuarding(controller->State, controller->Traits) || controller->State.Invulnerable > 0.0f || controller->State.IsFalling())
+				return GuardOutcome::Open;
+			const AbilityDef& shield = GetAbility(AbilityId::HexShield);
+			const Vec2 position = transform->Position;
+			Vec2 point = hit.GuardPoint;
+			if (!hit.AtGuard)
+			{
+				const Vec2 incoming = hit.Mode == PushMode::Along ? hit.PushDirection * -1.0f : hit.PushOrigin - position;
+				const float distance = Length(incoming);
+				if (distance < 1e-4f || (hit.Mode != PushMode::Along && distance < HexShieldOverhead) || std::abs(AngleBetween(transform->Facing, AngleOf(incoming))) > shield.HalfArc)
+					return GuardOutcome::Open;
+				point = position + incoming * (shield.Reach / distance);
+			}
+			PlayerState& state = controller->State;
+			const PlayerTraits& traits = controller->Traits;
+			const bool brawlDamage = world.UsesBrawlDamage();
+			const float wear = brawlDamage ? std::max(float(damage), 1.0f) : std::max(Length(PushImpulse(hit, position)), HexShieldMinWear);
+			const float left = GuardLeft(state, traits);
+			const float absorbed = std::min(wear, left);
+			state.GuardLost += absorbed;
+			if (brawlDamage)
+				state.Mana = std::max(state.Mana - absorbed * HexShieldManaPerPoint, 0.0f);
+			if (const Replicated* replicated = entities.TryGet<Replicated>(target))
+				world.RecordHit({ replicated->NetId, point, uint16_t(std::lround(absorbed)), false, true, hit.Damages, hit.Attacker, true });
+			if (wear <= left)
+			{
+				if (hit.Push != 0.0f && hit.Mode != PushMode::Pull && !hit.Swap)
+				{
+					HitInfo brace = hit;
+					brace.Push *= HexShieldBrace;
+					ApplyKnockback(world, target, brace, false);
+				}
+				return GuardOutcome::Held;
+			}
+			BreakGuard(state, traits);
+			const float share = (wear - left) / wear;
+			through = hit;
+			through.Push *= share;
+			through.AtGuard = false;
+			damage = damage > 0 ? std::max(1, int32_t(std::lround(float(damage) * share))) : 0;
+			return GuardOutcome::Broke;
+		}
+
+		int32_t StruckDamage(World& world, Entity target, const HitInfo& struck, float crit)
+		{
+			const EntityRegistry& entities = world.GetEntities();
+			const bool pvp = struck.Attacker != NoPlayer && world.IsPvp() && entities.Has<PlayerController>(target);
+			const Dummy* dummy = entities.TryGet<Dummy>(target);
+			const bool unharmed = dummy && (dummy->Kind == DummyKind::Duck || dummy->Kind == DummyKind::Balloon);
+			return struck.Damage > 0 && !unharmed ? std::max(1, ScaleDamage(struck.Damage, crit * (pvp ? struck.PvpScale : 1.0f))) : 0;
+		}
+
+		float WardWear(const World& world, const HitInfo& hit, int32_t damage, Vec2 position)
+		{
+			return world.UsesBrawlDamage() ? std::max(float(damage), 1.0f) : std::max(Length(PushImpulse(hit, position)), DiamondWardMinWear);
+		}
+
+		Vec2 WardPoint(const HitInfo& hit, Vec2 position)
+		{
+			if (hit.AtWard)
+				return hit.GuardPoint;
+			const Vec2 incoming = hit.Mode == PushMode::Along ? hit.PushDirection * -1.0f : hit.PushOrigin - position;
+			const float distance = Length(incoming);
+			return distance > 1e-4f ? position + incoming * (DiamondWardReach / distance) : position;
+		}
+
+		GuardOutcome Soak(World& world, Entity target, PlayerController& controller, float wear, Vec2 point, Element damages, uint32_t attacker, float& share)
+		{
+			PlayerState& state = controller.State;
+			const float left = state.WardLeft;
+			if (const Replicated* replicated = world.GetEntities().TryGet<Replicated>(target))
+				world.RecordHit({ .Target = replicated->NetId, .Position = point, .Damage = uint16_t(std::lround(std::min(wear, left))), .OnPlayer = true, .Damages = damages, .Attacker = attacker, .Warded = true });
+			if (wear <= left)
+			{
+				state.WardLeft = left - wear;
+				if (state.WardLeft <= 1e-4f)
+					BreakWard(state, controller.Traits);
+				return GuardOutcome::Held;
+			}
+			BreakWard(state, controller.Traits);
+			share = (wear - left) / wear;
+			return GuardOutcome::Broke;
+		}
+
+		GuardOutcome Ward(World& world, Entity target, const HitInfo& hit, int32_t& damage, HitInfo& through)
+		{
+			EntityRegistry& entities = world.GetEntities();
+			PlayerController* controller = entities.TryGet<PlayerController>(target);
+			const Transform* transform = entities.TryGet<Transform>(target);
+			if (!controller || !transform || !IsWarded(controller->State) || controller->State.Invulnerable > 0.0f || controller->State.IsFalling())
+				return GuardOutcome::Open;
+			const Vec2 position = transform->Position;
+			float share = 0.0f;
+			if (Soak(world, target, *controller, WardWear(world, hit, damage, position), WardPoint(hit, position), hit.Damages, hit.Attacker, share) == GuardOutcome::Held)
+				return GuardOutcome::Held;
+			through = hit;
+			through.Push *= share;
+			through.AtWard = false;
+			damage = damage > 0 ? std::max(1, int32_t(std::lround(float(damage) * share))) : 0;
+			return GuardOutcome::Broke;
+		}
+
+		bool Reflect(World& world, Entity entity, Projectile& projectile, Transform& transform, Entity target, Vec2 point, const HitInfo& hit)
+		{
+			EntityRegistry& entities = world.GetEntities();
+			PlayerController* controller = entities.TryGet<PlayerController>(target);
+			const Transform* body = entities.TryGet<Transform>(target);
+			if (!controller || !body || !IsWarded(controller->State) || controller->State.IsFalling() || projectile.Reflections >= DiamondWardReflects)
 				return false;
+			const float wear = WardWear(world, hit, StruckDamage(world, target, hit, 1.0f), body->Position);
+			if (wear > controller->State.WardLeft)
+				return false;
+			float share = 0.0f;
+			Soak(world, target, *controller, wear, point, projectile.Damages, hit.Attacker, share);
 			const float speed = Length(projectile.Velocity);
 			Vec2 heading = Normalize(projectile.Velocity) * -1.0f;
 			if (const Transform* caster = entities.TryGet<Transform>(projectile.Source); caster && entities.Has<PlayerController>(projectile.Source) && projectile.Source != target)
@@ -333,6 +456,7 @@ namespace Game
 			projectile.Hits = {};
 			projectile.Hits[0] = target;
 			projectile.HitCount = 1;
+			projectile.Reflections++;
 			transform.Position = point;
 			transform.Facing = AngleOf(heading);
 			if (Replicated* replicated = entities.TryGet<Replicated>(entity))
@@ -340,8 +464,6 @@ namespace Game
 				replicated->Owner = controller->PlayerId;
 				replicated->Tag = 0;
 			}
-			if (const Replicated* warded = entities.TryGet<Replicated>(target))
-				world.RecordHit({ warded->NetId, point, 0, false, true, projectile.Damages });
 			return true;
 		}
 
@@ -471,6 +593,14 @@ namespace Game
 		if (damage.Unmitigated && controller ? !controller->State.Alive || health->IsDead() : !IsVulnerable(entities, target, *health))
 			return false;
 		int32_t amount = damage.Amount;
+		if (controller && !damage.Unmitigated && IsWarded(controller->State) && !controller->State.IsFalling())
+		{
+			const Transform* body = entities.TryGet<Transform>(target);
+			float share = 0.0f;
+			if (Soak(world, target, *controller, float(amount), body ? body->Position : Vec2{}, damage.Damages, damage.Attacker, share) == GuardOutcome::Held)
+				return true;
+			amount = std::max(1, int32_t(std::lround(float(amount) * share)));
+		}
 		if (controller && !damage.Unmitigated)
 			amount = std::max(1, int32_t(std::lround(float(amount) * DamageTakenScale(controller->Traits, damage.Damages, damage.Pvp ? PvpMaxArmorReduction : MaxArmorReduction))));
 		if (controller && damage.Pvp)
@@ -527,15 +657,19 @@ namespace Game
 		return true;
 	}
 
-	bool DealDamage(World& world, Entity target, const HitInfo& hit)
+	bool DealDamage(World& world, Entity target, const HitInfo& struck)
 	{
 		EntityRegistry& entities = world.GetEntities();
-		const bool pvp = hit.Attacker != NoPlayer && world.IsPvp() && entities.Has<PlayerController>(target);
-		const Dummy* dummy = entities.TryGet<Dummy>(target);
-		const bool unharmed = dummy && (dummy->Kind == DummyKind::Duck || dummy->Kind == DummyKind::Balloon);
-		const bool critical = hit.CritChance > 0.0f && world.GetRandom().Float() < hit.CritChance;
-		const float crit = critical ? (pvp && !world.IsDamageBrawl() ? 1.0f + (hit.CritMultiplier - 1.0f) * PvpCritScale : hit.CritMultiplier) : 1.0f;
-		const int32_t damage = hit.Damage > 0 && !unharmed ? std::max(1, ScaleDamage(hit.Damage, crit * (pvp ? hit.PvpScale : 1.0f))) : 0;
+		const bool pvp = struck.Attacker != NoPlayer && world.IsPvp() && entities.Has<PlayerController>(target);
+		const bool critical = struck.CritChance > 0.0f && world.GetRandom().Float() < struck.CritChance;
+		const float crit = critical ? (pvp && !world.IsDamageBrawl() ? 1.0f + (struck.CritMultiplier - 1.0f) * PvpCritScale : struck.CritMultiplier) : 1.0f;
+		int32_t damage = StruckDamage(world, target, struck, crit);
+		HitInfo hit = struck;
+		if (Ward(world, target, struck, damage, hit) == GuardOutcome::Held)
+			return true;
+		const HitInfo warded = hit;
+		if (Guard(world, target, warded, damage, hit) == GuardOutcome::Held)
+			return true;
 		if (const PlayerController* victim = entities.TryGet<PlayerController>(target); victim && victim->State.Alive && victim->State.Invulnerable <= 0.0f)
 			world.NoteBlow(victim->PlayerId, hit.Attacker, hit.Ability, hit.Mode == PushMode::Pull, hit.Returned);
 		if (damage <= 0)
@@ -720,6 +854,8 @@ namespace Game
 		{
 			Entity Handle;
 			float Parameter = 0.0f;
+			bool Guarded = false;
+			bool Warded = false;
 		};
 		std::vector<Contact> contacts;
 		struct Burst
@@ -771,7 +907,11 @@ namespace Game
 				float parameter = 0.0f;
 				if (!IsHostile(world, projectile.Side, owner, target) || alreadyHit(target.Handle) || !TargetPosition(world, target, projectile.Rewind, position))
 					continue;
-				if (SegmentTouchesCircle(start, reached, position, target.Radius + projectile.Radius, parameter))
+				if (target.Warded && SegmentTouchesCircle(start, reached, position, std::max(target.Radius, DiamondWardReach) + projectile.Radius, parameter))
+					contacts.push_back({ target.Handle, parameter, false, true });
+				else if (target.Guarded && GuardContact(start, reached, position, target.Facing, projectile.Radius, parameter))
+					contacts.push_back({ target.Handle, parameter, true });
+				else if (SegmentTouchesCircle(start, reached, position, target.Radius + projectile.Radius, parameter))
 					contacts.push_back({ target.Handle, parameter });
 			}
 			std::sort(contacts.begin(), contacts.end(), [](const Contact& a, const Contact& b) { return a.Parameter < b.Parameter; });
@@ -789,7 +929,11 @@ namespace Game
 			for (const Contact& contact : contacts)
 			{
 				const Vec2 point = Lerp(start, reached, contact.Parameter);
-				if (Reflect(world, entity, projectile, *transform, contact.Handle, point))
+				HitInfo struck = hit;
+				struck.AtGuard = contact.Guarded;
+				struck.AtWard = contact.Warded;
+				struck.GuardPoint = point;
+				if (contact.Warded && Reflect(world, entity, projectile, *transform, contact.Handle, point, struck))
 				{
 					reflected = true;
 					break;
@@ -800,10 +944,21 @@ namespace Game
 					spent = true;
 					break;
 				}
-				if (!DealDamage(world, contact.Handle, hit))
+				if (!DealDamage(world, contact.Handle, struck))
 					continue;
 				if (projectile.Side == Team::Players)
 					world.GetStats().PlayerProjectileHits++;
+				if (contact.Guarded || contact.Warded)
+				{
+					const PlayerController* guard = entities.TryGet<PlayerController>(contact.Handle);
+					if (hook)
+						hooks.push_back({ point, transform->Facing, owner, tag, projectile.Source, guard && (contact.Warded ? !IsWarded(guard->State) : !IsGuarding(guard->State, guard->Traits)) });
+					if (projectile.HitCount < projectile.Hits.size())
+						projectile.Hits[projectile.HitCount++] = contact.Handle;
+					spent = true;
+					last = point;
+					break;
+				}
 				if (hook)
 					hooks.push_back({ point, transform->Facing, owner, tag, projectile.Source, true });
 				if (projectile.Chain > 0 && Chain(world, targets, projectile, contact.Handle, point, owner))
@@ -841,53 +996,6 @@ namespace Game
 			world.SpawnEffect(hooked.Caught ? AbilityId::HookPull : AbilityId::HookAnchor, hooked.Position, hooked.Facing, hooked.Owner, hooked.Tag, 1.0f);
 			if (hooked.Caught)
 				CancelRecast(world, hooked.Source, AbilityId::ChainHook);
-		}
-	}
-
-	void SplitBolts(World& world, Entity caster, uint32_t owner)
-	{
-		EntityRegistry& entities = world.GetEntities();
-		struct Bolt
-		{
-			Entity Handle;
-			Projectile Body;
-			Vec2 Position;
-			uint16_t Tag = 0;
-		};
-		std::vector<Bolt> bolts;
-		entities.Each<Projectile>([&](Entity entity, Projectile& projectile)
-		{
-			const Transform* transform = entities.TryGet<Transform>(entity);
-			const Replicated* replicated = entities.TryGet<Replicated>(entity);
-			if (transform && projectile.Ability == uint8_t(AbilityId::SplittingBolt) && projectile.Source == caster && projectile.Lifetime > 0.0f)
-				bolts.push_back({ entity, projectile, transform->Position, replicated ? replicated->Tag : uint16_t(0) });
-		});
-		const CardMask cards = world.GetMatch().GetCards(owner);
-		const bool seeking = HasCard(cards, CardId::SeekerShards);
-		const uint32_t count = HasCard(cards, CardId::Fivefold) ? FivefoldShards : BoltShards;
-		const float spread = BoltShardSpread * float(BoltShards - 1) / float(count - 1);
-		const AbilityDef& shard = GetAbility(AbilityId::BoltShard);
-		const float scale = 1.0f / std::max(GetAbility(AbilityId::SplittingBolt).Push, 1e-3f);
-		for (const Bolt& bolt : bolts)
-		{
-			const float heading = AngleOf(bolt.Body.Velocity);
-			for (uint32_t i = 0; i < count; i++)
-			{
-				Projectile piece = bolt.Body;
-				piece.Velocity = FromAngle(heading + spread * (float(i) - float(count - 1) * 0.5f)) * shard.ProjectileSpeed;
-				piece.Lifetime = GetProjectileLifetime(shard, shard.ProjectileSpeed);
-				piece.Radius = shard.ProjectileRadius;
-				piece.Push = shard.Push * bolt.Body.Push * scale;
-				if (world.UsesBrawlDamage())
-					piece.Damage = int32_t(std::lround(float(bolt.Body.Damage) * float(shard.BrawlDamage) / float(std::max(GetAbility(AbilityId::SplittingBolt).BrawlDamage, 1)) * (count > BoltShards ? FivefoldDamage : 1.0f) * (seeking ? SeekerDamage : 1.0f)));
-				piece.Ability = uint8_t(AbilityId::BoltShard);
-				piece.Perks = seeking ? PerkSeek : 0;
-				piece.Hits = {};
-				piece.HitCount = 0;
-				piece.Rewind = 0.0f;
-				world.SpawnProjectileCopy(piece, bolt.Position, owner, 1.0f, seeking ? uint16_t(0) : bolt.Tag);
-			}
-			world.DestroyEntity(bolt.Handle);
 		}
 	}
 

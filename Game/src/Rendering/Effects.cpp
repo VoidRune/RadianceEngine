@@ -14,6 +14,7 @@ namespace Game
 	namespace
 	{
 		constexpr float FullSphere = 3.14159265f;
+		constexpr float IceCrumbleSeconds = 0.3f;
 		constexpr glm::vec3 Up{ 0.0f, 1.0f, 0.0f };
 
 		struct FxLayer
@@ -185,6 +186,154 @@ namespace Game
 					{ .Kind = K::Frost, .Count = 20.0f, .Density = 7.0f, .Shape = SpawnShape::Segment, .Radius = 0.06f, .Speed = { 0.1f, 0.3f }, .Life = { 0.25f, 0.45f }, .Size = { 0.07f, 0.12f }, .Tint = { 0.45f, 0.45f, 0.45f } },
 					{ .Kind = K::Mote, .Count = 10.0f, .Density = 4.0f, .Shape = SpawnShape::Segment, .Radius = 0.1f, .Speed = { 0.1f, 0.5f }, .Life = { 0.35f, 0.75f }, .Size = { 0.02f, 0.04f }, .Inherit = 0.08f },
 					{ .Kind = K::IceShard, .Count = 8.0f, .Density = 1.2f, .Shape = SpawnShape::Segment, .Radius = 0.06f, .Speed = { 0.3f, 1.0f }, .Life = { 0.3f, 0.55f }, .Size = { 0.03f, 0.05f } },
+				});
+				set(Fx::SpikeTremor, {
+					{ .Kind = K::Bone, .Count = 16.0f, .Shape = SpawnShape::Disc, .Radius = 0.42f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.35f, .Speed = { 1.0f, 2.4f }, .Life = { 0.35f, 0.6f }, .Size = { 0.03f, 0.06f }, .Tint = { 0.34f, 0.31f, 0.28f } },
+					{ .Kind = K::Dust, .Count = 7.0f, .Shape = SpawnShape::Disc, .Radius = 0.45f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 0.15f, 0.5f }, .Life = { 0.5f, 0.9f }, .Size = { 0.16f, 0.28f }, .Tint = { 1.1f, 1.02f, 0.92f } },
+				});
+				set(Fx::SpikeEruption, {
+					{ .Kind = K::Dust, .Count = 18.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 0.55f, .Direction = { 0.0f, 0.25f, 0.0f }, .Cone = 0.3f, .Speed = { 2.5f, 5.0f }, .Life = { 0.5f, 0.9f }, .Size = { 0.26f, 0.45f }, .Tint = { 0.95f, 0.88f, 0.8f } },
+					{ .Kind = K::Dust, .Count = 5.0f, .Shape = SpawnShape::Ring, .Radius = 0.6f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 1.2f, 2.6f }, .Life = { 0.6f, 1.0f }, .Size = { 0.3f, 0.5f }, .Tint = { 0.9f, 0.84f, 0.76f } },
+					{ .Kind = K::Bone, .Count = 26.0f, .Outward = true, .Radius = 0.45f, .Direction = { 0.0f, 1.4f, 0.0f }, .Cone = 0.7f, .Speed = { 4.0f, 8.5f }, .Life = { 0.8f, 1.3f }, .Size = { 0.04f, 0.08f }, .Tint = { 0.26f, 0.24f, 0.21f } },
+					{ .Kind = K::Bone, .Count = 6.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 3.0f, 5.5f }, .Life = { 0.9f, 1.4f }, .Size = { 0.08f, 0.12f }, .Tint = { 0.2f, 0.18f, 0.16f } },
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.3f, 0.3f }, .Size = { 2.0f, 2.0f }, .Tint = { 0.32f, 0.25f, 0.18f }, .Lift = -0.45f },
+					{ .Kind = K::Bone, .Count = 14.0f, .Aimed = true, .Radius = 0.3f, .Cone = 0.45f, .Speed = { 5.0f, 9.0f }, .Life = { 0.6f, 1.0f }, .Size = { 0.04f, 0.09f }, .Tint = { 0.26f, 0.24f, 0.21f } },
+					{ .Kind = K::Dust, .Count = 6.0f, .Aimed = true, .Radius = 0.3f, .Cone = 0.35f, .Speed = { 2.5f, 4.5f }, .Life = { 0.4f, 0.7f }, .Size = { 0.22f, 0.38f }, .Tint = { 0.9f, 0.84f, 0.76f } },
+				});
+				set(Fx::SpikeCrumble, {
+					{ .Kind = K::Dust, .Count = 12.0f, .Shape = SpawnShape::Disc, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 0.6f, 0.0f }, .Cone = 0.6f, .Speed = { 1.0f, 2.6f }, .Life = { 0.5f, 0.9f }, .Size = { 0.24f, 0.42f }, .Tint = { 0.92f, 0.85f, 0.77f } },
+					{ .Kind = K::Bone, .Count = 22.0f, .Outward = true, .Radius = 0.45f, .Direction = { 0.0f, 1.2f, 0.0f }, .Cone = 0.8f, .Speed = { 2.5f, 6.0f }, .Life = { 0.7f, 1.3f }, .Size = { 0.045f, 0.1f }, .Tint = { 0.24f, 0.22f, 0.19f } },
+				});
+				set(Fx::IceCrumble, {
+					{ .Kind = K::IceShard, .Count = 7.0f, .Outward = true, .Radius = 0.25f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 1.1f, .Speed = { 0.8f, 2.4f }, .Life = { 0.35f, 0.65f }, .Size = { 0.03f, 0.055f } },
+					{ .Kind = K::Frost, .Count = 2.0f, .Radius = 0.2f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.2f, 0.6f }, .Life = { 0.4f, 0.7f }, .Size = { 0.16f, 0.28f }, .Tint = { 0.3f, 0.3f, 0.3f } },
+				});
+				const glm::vec3 plum{ 0.8f, 0.6f, 1.0f };
+				const glm::vec3 violetFlash{ 0.3f, 0.14f, 0.6f };
+				const glm::vec3 violetRing{ 0.34f, 0.13f, 0.8f };
+				set(Fx::FireballKindle, {
+					{ .Kind = K::Fire, .Count = 34.0f, .Radius = 0.12f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.25f, 0.7f }, .Life = { 0.2f, 0.4f }, .Size = { 0.1f, 0.17f }, .Tint = { 0.6f, 0.6f, 0.6f } },
+					{ .Kind = K::Ember, .Count = 8.0f, .Radius = 0.14f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.6f, 1.6f }, .Life = { 0.35f, 0.7f }, .Size = { 0.02f, 0.03f } },
+				});
+				set(Fx::FireballAura, {
+					{ .Kind = K::VioletFire, .Count = 40.0f, .Radius = 0.14f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.55f, .Speed = { 0.3f, 0.85f }, .Life = { 0.22f, 0.42f }, .Size = { 0.12f, 0.2f }, .Tint = { 0.4f, 0.4f, 0.4f } },
+					{ .Kind = K::VioletEmber, .Count = 12.0f, .Radius = 0.16f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.9f, .Speed = { 0.7f, 2.0f }, .Life = { 0.4f, 0.8f }, .Size = { 0.02f, 0.035f } },
+				});
+				set(Fx::FireballReady, {
+					{ .Kind = K::Streak, .Count = 18.0f, .Outward = true, .Radius = 0.35f, .Cone = FullSphere, .Speed = { 3.0f, 6.0f }, .Life = { 0.25f, 0.5f }, .Size = { 0.03f, 0.05f }, .Tint = { 0.4f, 0.18f, 0.62f } },
+					{ .Kind = K::VioletEmber, .Count = 10.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 1.2f, .Speed = { 1.5f, 4.0f }, .Life = { 0.4f, 0.8f }, .Size = { 0.025f, 0.045f } },
+				});
+				set(Fx::FireballRing, {
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.4f, 0.4f }, .Size = { 2.2f, 2.2f }, .Tint = violetRing, .Lift = 0.05f },
+				});
+				set(Fx::FireballRelease, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.12f, 0.12f }, .Size = { 0.8f, 0.8f }, .Tint = violetFlash },
+					{ .Kind = K::VioletFire, .Count = 18.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.5f, .Speed = { 3.0f, 7.0f }, .Life = { 0.15f, 0.3f }, .Size = { 0.15f, 0.28f }, .Tint = { 0.35f, 0.35f, 0.35f } },
+					{ .Kind = K::VioletEmber, .Count = 18.0f, .Aimed = true, .Radius = 0.1f, .Cone = 0.6f, .Speed = { 5.0f, 10.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.02f, 0.04f } },
+					{ .Kind = K::VioletFire, .Count = 12.0f, .Outward = true, .Radius = 0.25f, .Cone = FullSphere, .Speed = { 1.0f, 2.5f }, .Life = { 0.2f, 0.35f }, .Size = { 0.15f, 0.25f }, .Tint = { 0.3f, 0.3f, 0.3f } },
+					{ .Kind = K::Smoke, .Count = 6.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 0.4f, 1.0f }, .Life = { 0.6f, 1.0f }, .Size = { 0.25f, 0.45f }, .Tint = plum },
+				});
+				set(Fx::FireballSputter, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.1f, 0.1f }, .Size = { 0.55f, 0.55f }, .Tint = violetFlash },
+					{ .Kind = K::VioletFire, .Count = 26.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 1.5f, 4.0f }, .Life = { 0.2f, 0.4f }, .Size = { 0.15f, 0.28f }, .Tint = { 0.55f, 0.55f, 0.55f } },
+					{ .Kind = K::VioletEmber, .Count = 30.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 3.0f, 7.0f }, .Life = { 0.4f, 0.8f }, .Size = { 0.025f, 0.045f } },
+					{ .Kind = K::Smoke, .Count = 8.0f, .Outward = true, .Radius = 0.25f, .Cone = FullSphere, .Speed = { 0.5f, 1.2f }, .Life = { 0.7f, 1.2f }, .Size = { 0.3f, 0.5f }, .Tint = plum },
+				});
+				set(Fx::FireballTrail, {
+					{ .Kind = K::VioletFire, .Count = 50.0f, .Density = 8.0f, .Shape = SpawnShape::Segment, .Radius = 0.1f, .Speed = { 0.2f, 0.7f }, .Life = { 0.18f, 0.34f }, .Size = { 0.16f, 0.28f }, .Tint = { 0.55f, 0.55f, 0.55f } },
+					{ .Kind = K::VioletEmber, .Count = 18.0f, .Density = 2.5f, .Shape = SpawnShape::Segment, .Radius = 0.12f, .Speed = { 0.5f, 1.6f }, .Life = { 0.4f, 0.9f }, .Size = { 0.025f, 0.04f }, .Inherit = 0.12f },
+					{ .Kind = K::Smoke, .Count = 10.0f, .Density = 1.2f, .Shape = SpawnShape::Segment, .Radius = 0.1f, .Speed = { 0.1f, 0.4f }, .Life = { 0.5f, 0.9f }, .Size = { 0.18f, 0.3f }, .Tint = plum },
+				});
+				set(Fx::FireballBlast, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.12f, 0.12f }, .Size = { 0.6f, 0.6f }, .Tint = violetFlash },
+					{ .Kind = K::VioletFire, .Count = 5.0f, .Radius = 0.25f, .Speed = { 0.0f, 0.6f }, .Life = { 0.25f, 0.45f }, .Size = { 0.5f, 0.7f }, .Tint = { 0.18f, 0.18f, 0.18f } },
+					{ .Kind = K::VioletFire, .Count = 16.0f, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 0.5f, 0.0f }, .Cone = 0.7f, .Speed = { 2.0f, 5.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.35f, 0.55f }, .Tint = { 0.26f, 0.26f, 0.26f } },
+					{ .Kind = K::VioletEmber, .Count = 34.0f, .Outward = true, .Radius = 0.25f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 5.0f, 11.0f }, .Life = { 0.6f, 1.4f }, .Size = { 0.03f, 0.055f } },
+					{ .Kind = K::Streak, .Count = 22.0f, .Outward = true, .Radius = 0.2f, .Direction = { 0.0f, 0.6f, 0.0f }, .Cone = 1.1f, .Speed = { 8.0f, 14.0f }, .Life = { 0.25f, 0.5f }, .Size = { 0.03f, 0.05f }, .Tint = { 0.7f, 0.35f, 0.95f } },
+					{ .Kind = K::Smoke, .Count = 14.0f, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 0.5f, 0.0f }, .Cone = 0.5f, .Speed = { 0.6f, 1.6f }, .Life = { 0.9f, 1.6f }, .Size = { 0.45f, 0.8f }, .Tint = plum },
+					{ .Kind = K::Bone, .Count = 12.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 1.4f, 0.0f }, .Cone = 0.6f, .Speed = { 3.0f, 7.0f }, .Life = { 0.8f, 1.4f }, .Size = { 0.04f, 0.08f }, .Tint = { 0.25f, 0.22f, 0.22f } },
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.35f, 0.35f }, .Size = { 1.25f, 1.25f }, .Tint = violetRing, .Lift = -0.5f },
+				});
+				const glm::vec3 aether{ 0.35f, 0.75f, 1.0f };
+				const glm::vec3 aetherFlash{ 0.1f, 0.26f, 0.45f };
+				set(Fx::ShieldRaise, {
+					{ .Kind = K::Mote, .Count = 16.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 0.4f, 1.4f }, .Life = { 0.25f, 0.5f }, .Size = { 0.02f, 0.04f } },
+					{ .Kind = K::HexShard, .Count = 5.0f, .Aimed = true, .Radius = 0.25f, .Cone = 0.9f, .Speed = { 0.3f, 1.0f }, .Life = { 0.25f, 0.45f }, .Size = { 0.025f, 0.04f } },
+				});
+				set(Fx::ShieldImpact, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.1f, 0.1f }, .Size = { 0.32f, 0.32f }, .Tint = aetherFlash },
+					{ .Kind = K::Streak, .Count = 12.0f, .Aimed = true, .Radius = 0.05f, .Cone = 0.8f, .Speed = { 2.5f, 6.0f }, .Life = { 0.15f, 0.3f }, .Size = { 0.02f, 0.035f }, .Tint = aether * 0.5f },
+					{ .Kind = K::HexShard, .Count = 5.0f, .Aimed = true, .Radius = 0.08f, .Cone = 0.9f, .Speed = { 1.0f, 3.0f }, .Life = { 0.35f, 0.6f }, .Size = { 0.025f, 0.045f } },
+					{ .Kind = K::Mote, .Count = 10.0f, .Outward = true, .Radius = 0.12f, .Cone = FullSphere, .Speed = { 0.5f, 1.8f }, .Life = { 0.2f, 0.45f }, .Size = { 0.02f, 0.035f } },
+				});
+				set(Fx::ShieldCrack, {
+					{ .Kind = K::HexShard, .Count = 9.0f, .Outward = true, .Radius = 0.3f, .Direction = { 0.0f, 0.5f, 0.0f }, .Cone = 1.2f, .Speed = { 0.8f, 2.4f }, .Life = { 0.4f, 0.7f }, .Size = { 0.03f, 0.05f } },
+					{ .Kind = K::Mote, .Count = 12.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 0.4f, 1.5f }, .Life = { 0.25f, 0.5f }, .Size = { 0.02f, 0.035f } },
+				});
+				set(Fx::ShieldShatter, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.12f, 0.12f }, .Size = { 0.55f, 0.55f }, .Tint = aetherFlash },
+					{ .Kind = K::HexShard, .Count = 30.0f, .Aimed = true, .Radius = 0.55f, .Cone = 1.1f, .Speed = { 2.5f, 6.5f }, .Life = { 0.6f, 1.2f }, .Size = { 0.035f, 0.075f } },
+					{ .Kind = K::HexShard, .Count = 12.0f, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.0f, .Speed = { 1.5f, 4.0f }, .Life = { 0.7f, 1.3f }, .Size = { 0.03f, 0.06f } },
+					{ .Kind = K::Mote, .Count = 24.0f, .Outward = true, .Radius = 0.5f, .Cone = FullSphere, .Speed = { 1.0f, 3.5f }, .Life = { 0.35f, 0.8f }, .Size = { 0.025f, 0.045f } },
+					{ .Kind = K::Streak, .Count = 16.0f, .Aimed = true, .Radius = 0.35f, .Cone = 1.3f, .Speed = { 6.0f, 11.0f }, .Life = { 0.2f, 0.4f }, .Size = { 0.025f, 0.04f }, .Tint = aether * 0.45f },
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.35f, 0.35f }, .Size = { 1.6f, 1.6f }, .Tint = { 0.12f, 0.3f, 0.55f }, .Lift = -0.9f },
+				});
+				const glm::vec3 brilliant{ 0.9f, 0.68f, 0.42f };
+				const glm::vec3 brilliantFlash{ 0.32f, 0.24f, 0.16f };
+				set(Fx::WardForm, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.14f, 0.14f }, .Size = { 0.7f, 0.7f }, .Tint = brilliantFlash },
+					{ .Kind = K::Mote, .Count = 26.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 0.85f, .Direction = { 0.0f, 0.6f, 0.0f }, .Cone = 0.8f, .Speed = { 0.6f, 2.0f }, .Life = { 0.3f, 0.65f }, .Size = { 0.025f, 0.05f }, .Tint = brilliant },
+					{ .Kind = K::Streak, .Count = 14.0f, .Outward = true, .Radius = 0.6f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 4.0f, 8.0f }, .Life = { 0.15f, 0.3f }, .Size = { 0.02f, 0.035f }, .Tint = brilliant * 0.5f },
+					{ .Kind = K::DiamondShard, .Count = 8.0f, .Outward = true, .Radius = 0.7f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 1.0f, .Speed = { 0.8f, 2.0f }, .Life = { 0.3f, 0.55f }, .Size = { 0.025f, 0.045f } },
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.32f, 0.32f }, .Size = { 1.7f, 1.7f }, .Tint = { 0.3f, 0.24f, 0.18f }, .Lift = -0.9f },
+				});
+				set(Fx::WardDeflect, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.08f, 0.08f }, .Size = { 0.28f, 0.28f }, .Tint = brilliantFlash * 0.6f },
+					{ .Kind = K::Streak, .Count = 14.0f, .Aimed = true, .Radius = 0.04f, .Cone = 0.55f, .Speed = { 4.0f, 9.0f }, .Life = { 0.12f, 0.26f }, .Size = { 0.02f, 0.035f }, .Tint = brilliant * 0.55f },
+					{ .Kind = K::DiamondShard, .Count = 5.0f, .Aimed = true, .Radius = 0.06f, .Cone = 0.8f, .Speed = { 1.5f, 3.5f }, .Life = { 0.3f, 0.55f }, .Size = { 0.02f, 0.04f } },
+					{ .Kind = K::Mote, .Count = 8.0f, .Outward = true, .Radius = 0.1f, .Cone = FullSphere, .Speed = { 0.6f, 2.0f }, .Life = { 0.18f, 0.4f }, .Size = { 0.02f, 0.035f }, .Tint = brilliant },
+				});
+				set(Fx::WardCrack, {
+					{ .Kind = K::DiamondShard, .Count = 10.0f, .Outward = true, .Radius = 0.7f, .Direction = { 0.0f, 0.4f, 0.0f }, .Cone = 1.2f, .Speed = { 0.8f, 2.4f }, .Life = { 0.4f, 0.75f }, .Size = { 0.025f, 0.05f } },
+					{ .Kind = K::Mote, .Count = 10.0f, .Outward = true, .Radius = 0.7f, .Cone = FullSphere, .Speed = { 0.4f, 1.4f }, .Life = { 0.25f, 0.5f }, .Size = { 0.02f, 0.035f }, .Tint = brilliant },
+				});
+				set(Fx::WardShatter, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.12f, 0.12f }, .Size = { 0.6f, 0.6f }, .Tint = brilliantFlash },
+					{ .Kind = K::DiamondShard, .Count = 46.0f, .Outward = true, .Radius = 0.75f, .Direction = { 0.0f, 0.5f, 0.0f }, .Cone = 1.3f, .Speed = { 2.5f, 7.0f }, .Life = { 0.6f, 1.2f }, .Size = { 0.03f, 0.07f } },
+					{ .Kind = K::Mote, .Count = 30.0f, .Outward = true, .Radius = 0.7f, .Cone = FullSphere, .Speed = { 1.0f, 3.8f }, .Life = { 0.35f, 0.85f }, .Size = { 0.025f, 0.05f }, .Tint = brilliant },
+					{ .Kind = K::Streak, .Count = 20.0f, .Outward = true, .Radius = 0.6f, .Direction = { 0.0f, 0.3f, 0.0f }, .Cone = 1.4f, .Speed = { 7.0f, 13.0f }, .Life = { 0.18f, 0.38f }, .Size = { 0.025f, 0.04f }, .Tint = brilliant * 0.45f },
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.38f, 0.38f }, .Size = { 2.2f, 2.2f }, .Tint = { 0.32f, 0.25f, 0.2f }, .Lift = -0.9f },
+				});
+				const glm::vec3 glassFlash{ 0.16f, 0.06f, 0.3f };
+				const glm::vec3 glassSpark{ 0.55f, 0.3f, 0.85f };
+				const glm::vec3 soot{ 0.45f, 0.38f, 0.55f };
+				set(Fx::ObsidianForm, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.08f, 0.08f }, .Size = { 0.22f, 0.22f }, .Tint = glassFlash },
+					{ .Kind = K::VioletEmber, .Count = 6.0f, .Outward = true, .Radius = 0.12f, .Cone = FullSphere, .Speed = { 0.6f, 1.8f }, .Life = { 0.12f, 0.25f }, .Size = { 0.012f, 0.022f } },
+					{ .Kind = K::Obsidian, .Count = 3.0f, .Outward = true, .Radius = 0.08f, .Cone = FullSphere, .Speed = { 0.4f, 1.2f }, .Life = { 0.3f, 0.5f }, .Size = { 0.018f, 0.03f } },
+				});
+				set(Fx::ObsidianRelease, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.09f, 0.09f }, .Size = { 0.55f, 0.55f }, .Tint = glassFlash },
+					{ .Kind = K::Streak, .Count = 10.0f, .Aimed = true, .Radius = 0.12f, .Cone = 0.32f, .Speed = { 11.0f, 17.0f }, .Life = { 0.08f, 0.16f }, .Size = { 0.02f, 0.032f }, .Tint = glassSpark * 0.6f },
+					{ .Kind = K::VioletEmber, .Count = 12.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.45f, .Speed = { 5.0f, 10.0f }, .Life = { 0.12f, 0.28f }, .Size = { 0.012f, 0.024f } },
+					{ .Kind = K::Obsidian, .Count = 10.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.5f, .Speed = { 3.0f, 7.0f }, .Life = { 0.35f, 0.6f }, .Size = { 0.02f, 0.04f } },
+					{ .Kind = K::Smoke, .Count = 5.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.6f, .Speed = { 0.8f, 2.0f }, .Life = { 0.3f, 0.55f }, .Size = { 0.16f, 0.28f }, .Tint = soot },
+				});
+				set(Fx::ObsidianTrail, {
+					{ .Kind = K::Obsidian, .Count = 6.0f, .Density = 1.6f, .Shape = SpawnShape::Segment, .Radius = 0.04f, .Speed = { 0.2f, 0.8f }, .Life = { 0.25f, 0.45f }, .Size = { 0.014f, 0.024f }, .Inherit = 0.06f },
+					{ .Kind = K::VioletEmber, .Count = 6.0f, .Density = 1.4f, .Shape = SpawnShape::Segment, .Radius = 0.03f, .Speed = { 0.1f, 0.4f }, .Life = { 0.1f, 0.2f }, .Size = { 0.01f, 0.016f }, .Inherit = 0.04f },
+				});
+				set(Fx::ObsidianImpact, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.06f, 0.06f }, .Size = { 0.16f, 0.16f }, .Tint = glassFlash * 0.7f },
+					{ .Kind = K::Obsidian, .Count = 12.0f, .Aimed = true, .Radius = 0.06f, .Cone = 1.0f, .Speed = { 2.0f, 5.5f }, .Life = { 0.45f, 0.8f }, .Size = { 0.025f, 0.05f } },
+					{ .Kind = K::Obsidian, .Count = 5.0f, .Outward = true, .Radius = 0.06f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.1f, .Speed = { 1.5f, 3.5f }, .Life = { 0.5f, 0.85f }, .Size = { 0.02f, 0.04f } },
+					{ .Kind = K::Streak, .Count = 4.0f, .Outward = true, .Radius = 0.04f, .Cone = FullSphere, .Speed = { 4.0f, 8.0f }, .Life = { 0.06f, 0.12f }, .Size = { 0.012f, 0.02f }, .Tint = glassSpark * 0.35f },
+					{ .Kind = K::VioletEmber, .Count = 3.0f, .Outward = true, .Radius = 0.05f, .Cone = FullSphere, .Speed = { 2.5f, 6.0f }, .Life = { 0.1f, 0.2f }, .Size = { 0.01f, 0.018f } },
+					{ .Kind = K::Dust, .Count = 2.0f, .Radius = 0.08f, .Speed = { 0.2f, 0.6f }, .Life = { 0.3f, 0.5f }, .Size = { 0.1f, 0.16f }, .Tint = soot },
+				});
+				set(Fx::ObsidianCrumble, {
+					{ .Kind = K::Obsidian, .Count = 14.0f, .Outward = true, .Radius = 0.25f, .Cone = FullSphere, .Speed = { 0.5f, 2.0f }, .Life = { 0.45f, 0.8f }, .Size = { 0.018f, 0.035f } },
+					{ .Kind = K::Smoke, .Count = 3.0f, .Radius = 0.2f, .Speed = { 0.2f, 0.6f }, .Life = { 0.4f, 0.7f }, .Size = { 0.15f, 0.25f }, .Tint = soot },
 				});
 				set(Fx::FireBurst, {
 					{ .Kind = K::Fire, .Count = 22.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 0.5f, .Speed = { 1.0f, 3.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.2f, 0.35f } },
@@ -436,6 +585,45 @@ namespace Game
 		gold.Sizes = { 0.5f, 1.0f, 0.8f, 0.3f };
 		gold.Physics = { 0.9f, 1.5f, 1.0f, 1.0f };
 		gold.Motion.x = 1.0f;
+
+		ParticleMaterial& violetFire = define(ParticleKind::VioletFire, ParticleShape::Flame, ParticleAlign::Billboard, 0.4f, 0.6f);
+		SetColors(violetFire, { 1.6f, 0.65f, 2.2f, 0.0f }, { 1.3f, 0.35f, 2.0f, 0.9f }, { 0.6f, 0.1f, 1.25f, 0.6f }, { 0.12f, 0.02f, 0.28f, 0.0f }, { 0.0f, 0.12f, 0.5f, 1.0f });
+		violetFire.Sizes = { 0.5f, 1.0f, 0.85f, 0.4f };
+		violetFire.SizeTimes = { 0.0f, 0.25f, 0.6f, 1.0f };
+		violetFire.Physics = { 3.0f, 2.5f, 4.0f, 1.4f };
+		violetFire.Motion.y = 0.3f;
+
+		ParticleMaterial& violetEmber = define(ParticleKind::VioletEmber, ParticleShape::Spark, ParticleAlign::Velocity, 1.0f, 1.6f);
+		SetColors(violetEmber, { 3.0f, 1.2f, 4.0f, 1.0f }, { 2.4f, 0.6f, 3.6f, 1.0f }, { 1.0f, 0.15f, 2.0f, 0.8f }, { 0.25f, 0.02f, 0.6f, 0.0f }, { 0.0f, 0.4f, 0.8f, 1.0f });
+		violetEmber.Sizes = { 1.0f, 1.0f, 0.8f, 0.3f };
+		violetEmber.Physics = { 1.2f, 1.2f, 5.0f, 1.8f };
+		violetEmber.Look.w = 0.05f;
+
+		ParticleMaterial& streak = define(ParticleKind::Streak, ParticleShape::Spark, ParticleAlign::Velocity, 1.0f, 1.5f);
+		SetColors(streak, { 2.6f, 2.3f, 2.6f, 0.0f }, { 2.2f, 1.8f, 2.2f, 1.0f }, { 1.2f, 0.8f, 1.3f, 0.8f }, { 0.3f, 0.15f, 0.35f, 0.0f }, { 0.0f, 0.15f, 0.7f, 1.0f });
+		streak.Sizes = { 0.6f, 1.0f, 0.9f, 0.4f };
+		streak.Look.w = 0.04f;
+
+		ParticleMaterial& hexShard = define(ParticleKind::HexShard, ParticleShape::Hex, ParticleAlign::Billboard, 0.6f, 0.6f);
+		SetColors(hexShard, { 0.5f, 1.0f, 1.5f, 1.0f }, { 0.32f, 0.75f, 1.3f, 1.0f }, { 0.16f, 0.45f, 0.9f, 0.8f }, { 0.06f, 0.2f, 0.5f, 0.0f }, { 0.0f, 0.3f, 0.7f, 1.0f });
+		hexShard.Sizes = { 1.0f, 1.0f, 0.9f, 0.5f };
+		hexShard.Physics = { -9.0f, 0.6f, 0.0f, 0.0f };
+		hexShard.Collision = { 0.3f, 0.5f, 1.0f, 0.08f };
+		hexShard.Motion.x = 6.0f;
+
+		ParticleMaterial& diamondShard = define(ParticleKind::DiamondShard, ParticleShape::Shard, ParticleAlign::Billboard, 0.55f, 0.55f);
+		SetColors(diamondShard, { 1.5f, 1.35f, 1.1f, 1.0f }, { 1.15f, 1.0f, 1.25f, 1.0f }, { 0.65f, 0.5f, 0.95f, 0.8f }, { 0.25f, 0.18f, 0.45f, 0.0f }, { 0.0f, 0.3f, 0.7f, 1.0f });
+		diamondShard.Sizes = { 1.0f, 1.0f, 0.9f, 0.5f };
+		diamondShard.Physics = { -11.0f, 0.5f, 0.0f, 0.0f };
+		diamondShard.Collision = { 0.3f, 0.5f, 1.0f, 0.08f };
+		diamondShard.Motion.x = 8.0f;
+
+		ParticleMaterial& obsidian = define(ParticleKind::Obsidian, ParticleShape::Shard, ParticleAlign::Billboard, 0.0f, 0.12f);
+		SetColors(obsidian, { 0.2f, 0.12f, 0.32f, 1.0f }, { 0.07f, 0.055f, 0.1f, 1.0f }, { 0.05f, 0.045f, 0.07f, 0.9f }, { 0.04f, 0.035f, 0.05f, 0.0f }, { 0.0f, 0.15f, 0.8f, 1.0f });
+		obsidian.Sizes = { 1.0f, 1.0f, 1.0f, 0.7f };
+		obsidian.Physics = { -13.0f, 0.3f, 0.0f, 0.0f };
+		obsidian.Collision = { 0.3f, 0.6f, 1.0f, 0.06f };
+		obsidian.Motion.x = 9.0f;
 		return materials;
 	}
 
@@ -456,6 +644,8 @@ namespace Game
 			return Fx::IceTrail;
 		case AbilityId::FrostSpear:
 			return Fx::SpearTrail;
+		case AbilityId::PurpleFireball:
+			return Fx::FireballTrail;
 		case AbilityId::Swap:
 			return Fx::ArcaneTrail;
 		case AbilityId::Arrow:
@@ -468,10 +658,8 @@ namespace Game
 		case AbilityId::TomeVolley:
 		case AbilityId::InkSpiral:
 			return Fx::ArcaneTrail;
-		case AbilityId::SplittingBolt:
-			return Fx::ArcaneTrail;
-		case AbilityId::BoltShard:
-			return Fx::ShardTrail;
+		case AbilityId::ObsidianShards:
+			return Fx::ObsidianTrail;
 		case AbilityId::ShardBurst:
 			return Fx::ShardTrail;
 		default:
@@ -493,6 +681,8 @@ namespace Game
 			return Fx::FrostBurst;
 		case AbilityId::FrostSpear:
 			return Fx::SpearShatter;
+		case AbilityId::ObsidianShards:
+			return Fx::ObsidianImpact;
 		case AbilityId::EmberBolt:
 			return Fx::FireBurst;
 		case AbilityId::Swap:
@@ -504,8 +694,6 @@ namespace Game
 			return Fx::ArrowImpact;
 		case AbilityId::Spit:
 			return Fx::PoisonSplash;
-		case AbilityId::SplittingBolt:
-		case AbilityId::BoltShard:
 		case AbilityId::TomeVolley:
 		case AbilityId::InkSpiral:
 			return Fx::ArcaneBurst;
@@ -524,6 +712,8 @@ namespace Game
 			return Fx::BombBurst;
 		case AbilityId::Fireball:
 			return Fx::Explosion;
+		case AbilityId::PurpleFireball:
+			return Fx::FireballBlast;
 		case AbilityId::Meteor:
 		case AbilityId::Comet:
 			return Fx::MeteorImpact;
@@ -537,8 +727,9 @@ namespace Game
 		case AbilityId::Shockwave:
 			return Fx::LightningBurst;
 		case AbilityId::GravityWell:
-		case AbilityId::MirrorWard:
 			return Fx::ArcaneBurst;
+		case AbilityId::DiamondWard:
+			return std::nullopt;
 		case AbilityId::Warp:
 		case AbilityId::Swap:
 			return Fx::Blink;
@@ -578,7 +769,7 @@ namespace Game
 	std::optional<Fx> CastFor(AbilityId ability)
 	{
 		const AbilityDef& def = GetAbility(ability);
-		if (!def.Spell)
+		if (!def.Spell || ability == AbilityId::EarthSpike || ability == AbilityId::PurpleFireball || ability == AbilityId::ObsidianShards || ability == AbilityId::HexShield)
 			return std::nullopt;
 		switch (def.Damages)
 		{
@@ -673,7 +864,7 @@ namespace Game
 		}
 	}
 
-	void EffectSystem::Converge(uint64_t key, const glm::vec3& target, float radius, float rate, float life, float dt, float size)
+	void EffectSystem::Converge(uint64_t key, const glm::vec3& target, float radius, float rate, float life, float dt, float size, ParticleKind kind, const glm::vec3& tint, float swirl, float arrive)
 	{
 		ConvergeState& state = m_Converges[key];
 		state.Touched = true;
@@ -685,13 +876,15 @@ namespace Game
 			const float spin = float(n) * 2.39996f;
 			const float ring = std::sqrt(std::max(1.0f - height * height, 0.0f));
 			const glm::vec3 start = target + glm::vec3(std::cos(spin) * ring, height * 0.75f, std::sin(spin) * ring) * radius;
+			const glm::vec3 around = glm::vec3(-std::sin(spin), 0.0f, std::cos(spin)) * (swirl * radius);
 			ParticleSpawn spawn;
-			spawn.Material = uint32_t(ParticleKind::Mote);
+			spawn.Material = uint32_t(kind);
 			spawn.Count = 1;
 			spawn.Origin = start;
-			spawn.Velocity = (target - start) / life;
-			spawn.Life = { life * 0.95f, life };
+			spawn.Velocity = (target + around - start) / life;
+			spawn.Life = glm::vec2(life * 0.95f, life) * arrive;
 			spawn.Size = glm::vec2(0.03f, 0.05f) * size;
+			spawn.Tint = tint;
 			m_Particles.Spawn(spawn);
 		}
 	}
@@ -716,10 +909,10 @@ namespace Game
 			m_Marks.push_back({ .Decal = decal, .Life = life, .FadeIn = fadeIn, .StartScale = startScale, .EndScale = endScale, .GrowTime = growTime, .Cooling = cooling });
 	}
 
-	void EffectSystem::Spike(const glm::vec3& base, float height, float radius, float yaw, const glm::vec3& color, float life)
+	void EffectSystem::Spike(const glm::vec3& base, float height, float yaw, float lean, uint32_t variant, float life)
 	{
 		if (m_Spikes.size() < 256)
-			m_Spikes.push_back({ .Base = base, .Height = height, .Radius = radius, .Yaw = yaw, .Color = color, .Life = life });
+			m_Spikes.push_back({ .Base = base, .Height = height, .Lean = lean, .Yaw = yaw, .Variant = variant, .Life = life });
 	}
 
 	void EffectSystem::Update(float dt)
@@ -727,12 +920,17 @@ namespace Game
 		for (DecalMark& mark : m_Marks)
 			mark.Age += dt;
 		for (SpikeMark& spike : m_Spikes)
+		{
+			const float crumble = spike.Life - IceCrumbleSeconds;
+			if (spike.Age < crumble && spike.Age + dt >= crumble)
+				Burst(Fx::IceCrumble, spike.Base + Up * (0.3f * spike.Height), Up, spike.Height);
 			spike.Age += dt;
+		}
 		std::erase_if(m_Marks, [](const DecalMark& mark) { return mark.Age >= mark.Life; });
 		std::erase_if(m_Spikes, [](const SpikeMark& spike) { return spike.Age >= spike.Life; });
 	}
 
-	void EffectSystem::Draw(WorldRenderer& renderer) const
+	void EffectSystem::Draw(WorldRenderer& renderer, const SpellMeshes& meshes) const
 	{
 		const auto smooth = [](float edge0, float edge1, float x)
 		{
@@ -753,9 +951,18 @@ namespace Game
 		}
 		for (const SpikeMark& spike : m_Spikes)
 		{
-			const float height = spike.Height * smooth(0.0f, 0.12f, spike.Age) * (1.0f - smooth(spike.Life - 0.45f, spike.Life, spike.Age));
-			if (height > 0.01f)
-				renderer.Draw(MeshKind::Cone, spike.Base + glm::vec3(0.0f, height * 0.5f, 0.0f), { spike.Radius, height * 0.5f, spike.Radius }, spike.Color, spike.Yaw, 0.5f, spike.Base.y, { .Roughness = 0.15f });
+			const float rise = std::max(SpikeThrust(spike.Age * 0.75f), 0.0f);
+			const float melt = smooth(spike.Life - IceCrumbleSeconds, spike.Life, spike.Age);
+			IceClusterLook look;
+			look.Base = spike.Base;
+			look.Yaw = spike.Yaw;
+			look.Lean = spike.Lean;
+			look.Scale = spike.Height * rise * (1.0f - 0.5f * melt);
+			look.Sink = spike.Height * (0.35f * (1.0f - std::min(rise, 1.0f)) + 0.7f * melt);
+			look.Frost = 0.3f * smooth(0.3f, spike.Life, spike.Age) + 0.3f * melt;
+			look.Glow = std::exp(-spike.Age * 4.0f);
+			look.Variant = spike.Variant;
+			DrawIceCluster(renderer, meshes, look);
 		}
 	}
 
@@ -813,10 +1020,10 @@ namespace Game
 		{
 			GroundDecal result = decal(DecalShape::Frost, center, glm::vec2(size));
 			result.Color = glm::vec4(0.35f, 0.6f, 0.95f, 1.0f);
-			result.Tint = glm::vec4(0.7f, 0.85f, 1.0f, 0.28f);
+			result.Tint = glm::vec4(0.78f, 0.88f, 1.0f, 0.85f);
 			result.Roughness = 0.3f;
 			result.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-			Mark(result, life, 0.08f, 0.5f, 1.0f, 0.25f);
+			Mark(result, life, 0.08f, 0.5f, 1.0f, 0.25f, 1.2f);
 		};
 		const auto cracks = [&](const glm::vec3& center, float size, float life, float heat)
 		{
@@ -835,18 +1042,17 @@ namespace Game
 			result.Params = glm::vec4(1.0f, 1.0f, halfArc, 0.0f);
 			Mark(result, life, 0.02f, 1.0f, 1.0f, 0.1f);
 		};
-		const glm::vec3 ice(0.42f, 0.68f, 0.95f);
-		const auto spike = [&](const glm::vec2& point, float height, uint32_t index, float life)
+		const auto spike = [&](const glm::vec2& point, float height, uint32_t index, float life, float yaw, float lean)
 		{
-			Spike({ point.x, heightAt(point), point.y }, height, 0.1f + 0.07f * random(index * 4u + 3u), random(index * 4u + 2u) * 6.2832f, ice, life);
+			Spike({ point.x, heightAt(point), point.y }, height, yaw, lean, uint32_t(random(index * 8u + 3u) * 4096.0f), life * (0.9f + 0.2f * random(index * 8u + 5u)));
 		};
-		const auto spikeRing = [&](uint32_t count, float inner, float outer, float low, float high, float life)
+		const auto spikeRing = [&](uint32_t count, float inner, float outer, float low, float high, float life, float leanLow, float leanHigh)
 		{
 			for (uint32_t i = 0; i < count; i++)
 			{
-				const float angle = (float(i) + random(i * 4u)) / float(count) * 6.2832f;
-				const glm::vec2 point = glm::vec2(ground.x, ground.z) + glm::vec2(std::cos(angle), std::sin(angle)) * (inner + (outer - inner) * random(i * 4u + 1u));
-				spike(point, low + (high - low) * random(i * 4u + 2u), i, life);
+				const float angle = (float(i) + random(i * 8u)) / float(count) * 6.2832f;
+				const glm::vec2 point = glm::vec2(ground.x, ground.z) + glm::vec2(std::cos(angle), std::sin(angle)) * (inner + (outer - inner) * random(i * 8u + 1u));
+				spike(point, low + (high - low) * random(i * 8u + 2u), i, life, angle + 0.5f * (random(i * 8u + 6u) - 0.5f), leanLow + (leanHigh - leanLow) * random(i * 8u + 7u));
 			}
 		};
 		switch (ability)
@@ -861,6 +1067,33 @@ namespace Game
 			scorch(ground, radius * 0.5f, 4.0f, 0.5f);
 			shock(radius, 0.3f);
 			break;
+		case AbilityId::PurpleFireball:
+		{
+			const float power = std::clamp((radius - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f);
+			const float violet = std::clamp(power * 1.25f, 0.0f, 1.0f);
+			GroundDecal burn = decal(DecalShape::Scorch, ground, glm::vec2(radius * (0.55f + 0.1f * power)));
+			burn.Color = glm::vec4(glm::mix(glm::vec3(1.5f, 0.52f, 0.14f), glm::vec3(0.75f, 0.2f, 1.25f), violet), 1.0f);
+			burn.Tint = glm::vec4(0.025f, 0.02f, 0.03f, 0.85f);
+			burn.Roughness = 0.95f;
+			burn.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+			Mark(burn, 5.0f + 3.0f * power, 0.04f, 0.6f, 1.0f, 0.15f, 1.6f);
+			GroundDecal heat = decal(DecalShape::Glow, ground, glm::vec2(radius * 1.1f));
+			heat.Color = glm::vec4(glm::mix(glm::vec3(0.5f, 0.18f, 0.05f), glm::vec3(0.32f, 0.08f, 0.62f), violet) * (0.8f + 0.6f * power), 1.0f);
+			Mark(heat, 0.7f, 0.01f, 0.3f, 1.0f, 0.18f);
+			if (power > 0.35f)
+			{
+				GroundDecal split = decal(DecalShape::Cracks, ground, glm::vec2(radius * 0.95f));
+				split.Color = glm::vec4(glm::mix(glm::vec3(1.3f, 0.4f, 0.1f), glm::vec3(0.6f, 0.15f, 1.0f), violet), 1.0f);
+				split.Tint = glm::vec4(0.03f, 0.025f, 0.03f, 0.85f);
+				split.Roughness = 0.9f;
+				split.Params = glm::vec4(0.6f + 0.4f * power, 0.0f, 0.0f, 0.0f);
+				Mark(split, 4.0f + 3.0f * power, 0.02f, 0.5f, 1.0f, 0.14f, 2.6f);
+			}
+			shock(radius * 1.05f, 0.4f, 0.55f + 0.35f * power);
+			if (power > 0.9f)
+				shock(radius * 1.45f, 0.6f, 0.4f);
+			break;
+		}
 		case AbilityId::FirebombFlame:
 			scorch(ground, radius * 0.5f, 2.5f, 1.0f);
 			break;
@@ -893,7 +1126,7 @@ namespace Game
 			break;
 		case AbilityId::Warp:
 		case AbilityId::Swap:
-		case AbilityId::MirrorWard:
+		case AbilityId::DiamondWard:
 			runes(ground, 1.1f, 0.6f, 0.0f, 0.6f, 1.0f, 0.55f);
 			break;
 		case AbilityId::Firestrike:
@@ -907,18 +1140,19 @@ namespace Game
 		case AbilityId::FrostNova:
 			frost(ground, reach * 0.9f, 3.5f);
 			runes(ground, reach, 0.9f, 0.0f, 0.4f, 1.0f);
-			spikeRing(16, reach * 0.5f, reach * 0.95f, 0.5f, 1.1f, 1.6f);
+			spikeRing(16, reach * 0.5f, reach * 0.95f, 0.5f, 1.1f, 1.6f, 0.3f, 0.65f);
 			break;
 		case AbilityId::FrostSpear:
-			frost(ground, 0.26f * scale, 2.8f);
+			frost(ground, 0.5f * scale, 2.8f);
 			if (scale >= SpearFullSize - 0.05f)
 				shock(SpearBurstRadius, 0.35f, 0.55f);
-			spikeRing(uint32_t(1.5f + 2.5f * scale), 0.12f * scale, 0.42f * scale, 0.14f * scale, 0.3f * scale, 1.1f);
+			spike({ ground.x, ground.z }, 0.26f * scale, 97u, 1.3f, facing, 0.3f);
+			spikeRing(uint32_t(1.5f + 2.5f * scale), 0.16f * scale, 0.4f * scale, 0.11f * scale, 0.24f * scale, 1.2f, 0.35f, 0.75f);
 			break;
 		case AbilityId::CrystalRain:
 			frost(ground, radius, 3.0f);
 			runes(ground, radius, 0.6f, 0.0f, 0.8f, 1.0f);
-			spikeRing(7, 0.0f, radius * 0.85f, 0.3f, 0.7f, 1.2f);
+			spikeRing(7, 0.0f, radius * 0.85f, 0.3f, 0.7f, 1.2f, 0.1f, 0.5f);
 			break;
 		case AbilityId::CrystalSpike:
 		{
@@ -928,8 +1162,8 @@ namespace Game
 			const uint32_t count = std::max(2u, uint32_t(reach / 0.6f));
 			for (uint32_t i = 0; i < count; i++)
 			{
-				const glm::vec3 point = ground + forward * (reach * (float(i) + 0.5f) / float(count)) + side * ((random(i * 4u) - 0.5f) * width * 0.6f);
-				spike({ point.x, point.z }, 0.4f + 0.5f * random(i * 4u + 1u), i, 1.2f);
+				const glm::vec3 point = ground + forward * (reach * (float(i) + 0.5f) / float(count)) + side * ((random(i * 8u) - 0.5f) * width * 0.6f);
+				spike({ point.x, point.z }, 0.4f + 0.5f * random(i * 8u + 1u), i, 1.2f, facing + 0.8f * (random(i * 8u + 6u) - 0.5f), 0.15f + 0.25f * random(i * 8u + 7u));
 			}
 			break;
 		}

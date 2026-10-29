@@ -31,7 +31,7 @@ namespace Game
 		Whiplash,
 		ClusterBomb,
 		StickyFire,
-		Fivefold,
+		RazorGlass,
 		SeekerShards,
 		ForkedLightning,
 		StaticCharge,
@@ -138,7 +138,7 @@ namespace Game
 		{ CardId::Pinball, CardKind::Upgrade, CardRarity::Rare, AbilityId::ArcLightning, "Pinball", "Every jump shoves half again as hard as the one before.", "Every jump hits half again as hard as the one before.", TagStorm },
 		{ CardId::Overcharge, CardKind::Upgrade, CardRarity::Common, AbilityId::ArcLightning, "Overcharge", "Arc Lightning jumps to one more rival.", nullptr, TagStorm },
 		{ CardId::HeartSwap, CardKind::Upgrade, CardRarity::Rare, AbilityId::Swap, "Heart Swap", "Swap also trades health, and with it how far each of you flies.", "If the rival Swap hits has more health than you, you steal up to 15 of it.", TagBlood },
-		{ CardId::ThornedMirror, CardKind::Upgrade, CardRarity::Common, AbilityId::MirrorWard, "Thorned Mirror", "Spells you reflect come back 50% stronger.", nullptr, TagGuard },
+		{ CardId::ThornedMirror, CardKind::Upgrade, CardRarity::Common, AbilityId::DiamondWard, "Razor Facets", "Spells your Diamond Ward reflects come back 50% stronger.", nullptr, TagGuard },
 		{ CardId::BlackIce, CardKind::Upgrade, CardRarity::Common, AbilityId::FrostSpear, "Black Ice", "A rival your Ice Spear hits slides 40% further for a second and a half.", "Ice Spear chills half a second longer, and the rival slides 40% further.", TagFrost },
 		{ CardId::GlassCannon, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Glass Cannon", "Your spells shove 50% harder, but you fly 15% further.", "You deal 40% more damage, but take 10% more.", TagBlood },
 		{ CardId::Featherfall, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Featherfall", "Once per round, the first time you fall into lava, water or the abyss, you bounce back onto solid ground.", nullptr, TagGuard },
@@ -148,8 +148,8 @@ namespace Game
 		{ CardId::Whiplash, CardKind::Upgrade, CardRarity::Rare, AbilityId::ChainHook, "Whiplash", "A rival you hook flies much further past you.", "A rival you hook flies further past you and takes 80% more damage.", TagBlood },
 		{ CardId::ClusterBomb, CardKind::Upgrade, CardRarity::Common, AbilityId::Firebomb, "Cluster Bomb", "Firebomb skips twice and bursts three times, the last time biggest.", nullptr, TagFire },
 		{ CardId::StickyFire, CardKind::Upgrade, CardRarity::Rare, AbilityId::Firebomb, "Sticky Fire", "Every Firebomb landing keeps burning for a second, shoving anyone who walks in.", "Every Firebomb landing keeps burning for a second, scorching anyone who walks in.", TagFire },
-		{ CardId::Fivefold, CardKind::Upgrade, CardRarity::Common, AbilityId::SplittingBolt, "Fivefold", "Splitting Bolt splits into five shards.", "Splitting Bolt splits into five shards that deal 30% less.", TagMana },
-		{ CardId::SeekerShards, CardKind::Upgrade, CardRarity::Rare, AbilityId::SplittingBolt, "Seeker Shards", "The shards of Splitting Bolt curve toward the nearest rival.", "The shards of Splitting Bolt curve toward the nearest rival and deal 25% less.", TagMana },
+		{ CardId::RazorGlass, CardKind::Upgrade, CardRarity::Common, AbilityId::ObsidianShards, "Razor Glass", "Obsidian shards tear through the first rival they hit and fly on.", nullptr, TagMana },
+		{ CardId::SeekerShards, CardKind::Upgrade, CardRarity::Rare, AbilityId::ObsidianShards, "Seeker Shards", "Obsidian shards curve toward the nearest rival, but shove 15% less.", "Obsidian shards curve toward the nearest rival, but deal 40% less and shove 15% less.", TagMana },
 		{ CardId::ForkedLightning, CardKind::Upgrade, CardRarity::Common, AbilityId::StormStrike, "Forked Lightning", "Storm Strike jumps to one more rival.", nullptr, TagStorm },
 		{ CardId::StaticCharge, CardKind::Upgrade, CardRarity::Rare, AbilityId::StormStrike, "Static Charge", "Rivals Storm Strike hits can't dodge for 1.5 seconds.", nullptr, TagStorm },
 		{ CardId::DeepWell, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Deep Well", "50 more maximum mana.", nullptr, TagMana, InDamage },
@@ -172,7 +172,7 @@ namespace Game
 		{ CardId::ManaSingularity, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Mana Singularity", "Spells cost no mana and deal 1% more damage for every 2 mana you hold. Hits drain your mana as well as your health.", nullptr, TagMana, InDamage },
 		{ CardId::MindOverMatter, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Mind over Matter", "Damage drains your mana before your health. After any hit, your mana stops coming back for 2 seconds.", nullptr, TagMana | TagGuard, InDamage },
 		{ CardId::BloodMagic, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Blood Magic", "You have no mana. Spells cost 1 health per 5 mana instead, deal 30% more damage and heal you for all the damage they deal.", nullptr, TagBlood, InDamage },
-		{ CardId::EchoChamber, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Echo Chamber", "Every spell casts again a moment later wherever you aim, but its cooldown is 75% longer. Warp and Mirror Ward don't echo.", nullptr, TagStorm, InDamage },
+		{ CardId::EchoChamber, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Echo Chamber", "Every spell casts again a moment later wherever you aim, but its cooldown is 75% longer. Warp and Diamond Ward don't echo.", nullptr, TagStorm, InDamage },
 		{ CardId::UnstableArcana, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Unstable Arcana", "Your spell slots hold random attack spells from the book at 250% power, and each cast rolls a new one. You never choose which.", nullptr, 0, InDamage },
 		{ CardId::Leyline, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Leyline", "Your spells deal double damage once you have stood still for a second. Moving resets it, but a longer stand keeps the charge up to 1.5 seconds after you move.", nullptr, TagGuard, InDamage },
 	};
@@ -292,7 +292,6 @@ namespace Game
 	inline constexpr float StickyInterval = 0.35f;
 	inline constexpr float StickyRadius = 1.7f;
 	inline constexpr float StickyPush = 9.0f;
-	inline constexpr uint32_t FivefoldShards = 5;
 	inline constexpr float SeekRange = 5.0f;
 	inline constexpr float SeekTurnRate = 8.0f;
 	inline constexpr uint32_t ForkedJumps = 2;
@@ -329,8 +328,8 @@ namespace Game
 	inline constexpr float WhiplashDamage = 1.8f;
 	inline constexpr float LongChainDamage = 1.25f;
 	inline constexpr float ImplosionDamage = 0.45f;
-	inline constexpr float FivefoldDamage = 0.7f;
-	inline constexpr float SeekerDamage = 0.75f;
+	inline constexpr float SeekerDamage = 0.6f;
+	inline constexpr float SeekerPush = 0.85f;
 	inline constexpr int32_t HeartSwapSteal = 15;
 	inline constexpr float DamageCraterDelay = 3.0f;
 	inline constexpr float DamageCraterScale = 0.7f;

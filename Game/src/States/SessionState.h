@@ -98,6 +98,9 @@ namespace Game
 			float FallAge = -1.0f;
 			float FallFrom = 0.0f;
 			float SpearAge = -1.0f;
+			float SpikeAge = -1.0f;
+			float FireballAge = -1.0f;
+			float ObsidianAge = -1.0f;
 			EntityState Last;
 			CharacterAnimator Animator;
 		};
@@ -118,6 +121,24 @@ namespace Game
 			bool Critical = false;
 			bool OnPlayer = false;
 			Element Damages = Element::Physical;
+			bool Guarded = false;
+			bool Warded = false;
+		};
+
+		struct ShieldView
+		{
+			HexShieldLook Look;
+			bool Up = false;
+			bool Broken = false;
+			bool Seen = false;
+		};
+
+		struct WardView
+		{
+			DiamondWardLook Look;
+			float Dropped = 1e3f;
+			bool Up = false;
+			bool Seen = false;
 		};
 
 		struct Flight
@@ -141,6 +162,16 @@ namespace Game
 			float Facing = 0.0f;
 			float Size = 1.0f;
 			uint32_t Seed = 0;
+			float Grown = 0.0f;
+		};
+
+		struct SpikeRuin
+		{
+			Vec2 Position;
+			float Facing = 0.0f;
+			float Age = 0.0f;
+			uint32_t Seed = 0;
+			float Extend = 1.0f;
 		};
 
 		struct Notice
@@ -209,6 +240,26 @@ namespace Game
 		void SpearMoments(EntityFx& fx, const EntityState& entity, float dt);
 		void DrawSpearCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
 		GroundDecal FrostLane(const SpearPath& path) const;
+		FireballLook ChargingFireball(const EntityState& caster, float age) const;
+		void FireballMoments(EntityFx& fx, const EntityState& entity, float dt);
+		void DrawFireballCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
+		uint32_t ChargingShards(const EntityState& caster, float age, std::array<ObsidianLook, ObsidianVolley>& shards) const;
+		void ObsidianMoments(EntityFx& fx, const EntityState& entity, float dt);
+		void DrawObsidianCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
+		Vec2 SpikeAimOf(const EntityState& caster) const;
+		void SpikeMoments(EntityFx& fx, const EntityState& entity, float dt);
+		void EruptSpike(const EntityState& spike);
+		void EndSpike(const EntityState& spike);
+		EarthSpikeLook SpikeLook(const EntityState& spike) const;
+		GroundDecal SpikeRift(const EntityState& spike, float glow) const;
+		void DrawSpikeAim(WorldRenderer& renderer, const EntityState& caster) const;
+		void DrawSpikeRuins(WorldRenderer& renderer) const;
+		void ShieldMoments(const EntityState& entity, float dt);
+		void ShieldStruck(const HitEvent& hit);
+		void DrawShields(WorldRenderer& renderer) const;
+		void WardMoments(const EntityState& entity, float dt);
+		void WardStruck(const HitEvent& hit);
+		void DrawWards(WorldRenderer& renderer) const;
 		void DrawEnemy(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawProjectile(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawEffect(WorldRenderer& renderer, const EntityState& entity) const;
@@ -354,6 +405,11 @@ namespace Game
 		std::optional<uint32_t> m_MeteorMesh;
 		SpellMeshes m_SpellMeshes;
 		std::unordered_map<uint32_t, SpearPath> m_SpearPaths;
+		std::vector<SpikeRuin> m_SpikeRuins;
+		std::unordered_map<uint32_t, ShieldView> m_Shields;
+		std::vector<HexShieldShard> m_ShieldShards;
+		std::unordered_map<uint32_t, WardView> m_Wards;
+		std::vector<DiamondShard> m_WardShards;
 		std::array<std::vector<uint32_t>, size_t(Critter::Count)> m_Critters;
 		std::array<std::vector<uint32_t>, 12> m_ChessMeshes;
 		uint32_t m_ChessSeen = UINT32_MAX;

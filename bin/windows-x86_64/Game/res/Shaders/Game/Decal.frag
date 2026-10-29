@@ -58,6 +58,8 @@ void main()
 	uint shape = decal.Info.x;
 	uint seed = decal.Info.y;
 	vec2 result = vec2(0.0);
+	vec3 albedo = decal.Tint.rgb;
+	float roughness = decal.Extent.w;
 	if (shape == DecalRunes)
 		result.y = RuneCircle(uv, pixel, extent.x, params.x, params.y, params.z, params.w, seed, time);
 	else if (shape == DecalSector)
@@ -73,20 +75,25 @@ void main()
 	}
 	else if (shape == DecalScorch)
 		result = ScorchShape(uv, params.x, seed);
-	else if (shape == DecalFrost)
-		result = FrostShape(uv, params.x, seed, time);
+	else if (shape == DecalFrost || shape == DecalFrostLane)
+	{
+		Rime rime = shape == DecalFrost ? FrostShape(uv, extent.x, pixelWorld, params.x, seed, time) : FrostLaneShape(uv, extent.xy, pixelWorld, params.x, seed, time);
+		result = vec2(rime.Coverage, rime.Glow);
+		albedo *= rime.Shade;
+		if (roughness >= 0.0)
+			roughness = rime.Roughness;
+	}
 	else if (shape == DecalCracks)
 		result = CracksShape(uv, pixel, extent.x, params.x, seed);
 	else if (shape == DecalCharge)
 		result = ChargeShape(uv, pixel, params.x, seed, time);
 	else if (shape == DecalFracture)
 		result = FractureShape(world.xz, pixelWorld, params.x, time);
-	else if (shape == DecalFrostLane)
-		result = FrostLaneShape(uv, extent.xy, pixelWorld, params.x, seed, time);
+	else if (shape == DecalFissure)
+		result = FissureShape(uv, extent.xy, pixelWorld, params.x, params.y, params.z, seed, time);
 	float coverage = clamp(result.x * decal.Tint.a, 0.0, 1.0) * mask;
-	float roughness = decal.Extent.w;
 	float surfaceCoverage = roughness >= 0.0 ? coverage : 0.0;
-	outAlbedo = vec4(decal.Tint.rgb * coverage, coverage);
+	outAlbedo = vec4(albedo * coverage, coverage);
 	outSurface = vec4(0.0, 0.0, roughness * surfaceCoverage, surfaceCoverage);
 	outEmission = vec4(decal.Color.rgb * (max(result.y, 0.0) * decal.Color.a * mask), 0.0);
 }

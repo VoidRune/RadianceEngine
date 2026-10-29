@@ -103,6 +103,8 @@ namespace Game
 		float DashSpeed = 0.0f;
 		Vec2 Push;
 		float Ward = 0.0f;
+		float WardLeft = 0.0f;
+		float WardShatter = 0.0f;
 		float Invulnerable = 0.0f;
 		float PortalCooldown = 0.0f;
 		std::array<float, AbilitySlots> Cooldowns{};
@@ -110,6 +112,8 @@ namespace Game
 		float Mana = 0.0f;
 		float CastTimer = 0.0f;
 		float Charge = 0.0f;
+		Vec2 CastPoint;
+		Vec2 CastAim;
 		float Stun = 0.0f;
 		float Chill = 0.0f;
 		float Slick = 0.0f;
@@ -130,6 +134,9 @@ namespace Game
 		uint8_t RecastAbility = UINT8_MAX;
 		float ManaStall = 0.0f;
 		float Still = 0.0f;
+		float GuardLost = 0.0f;
+		float GuardIdle = 0.0f;
+		bool GuardUp = false;
 		bool Alive = true;
 		bool Airborne = false;
 
@@ -218,6 +225,7 @@ namespace Game
 		float Floor = NoFloor;
 		uint8_t Perks = 0;
 		uint32_t Returned = NoPlayer;
+		uint8_t Reflections = 0;
 	};
 
 	struct Effect

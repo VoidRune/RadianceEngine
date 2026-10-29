@@ -17,6 +17,7 @@ namespace Game
 		Ground,
 		Heal,
 		Ward,
+		Shield,
 	};
 
 	enum class Requirement : uint8_t
@@ -80,15 +81,14 @@ namespace Game
 		GravityWell,
 		ArcLightning,
 		Swap,
-		MirrorWard,
+		DiamondWard,
 		FrostSpear,
 		ChainHook,
 		Firebomb,
-		SplittingBolt,
+		ObsidianShards,
 		StormStrike,
 		FirebombSkip,
 		FirebombSkip2,
-		BoltShard,
 		StormJump,
 		HookAnchor,
 		HookPull,
@@ -96,6 +96,9 @@ namespace Game
 		FirebombFlame,
 		Ignite,
 		ShatterBurst,
+		EarthSpike,
+		PurpleFireball,
+		HexShield,
 		Count,
 	};
 
@@ -194,15 +197,14 @@ namespace Game
 		{ .Id = AbilityId::GravityWell, .Name = "Gravity Well", .Description = "Opens a well at the target that slings everyone inside through its center.", .Kind = AbilityKind::Ground, .Spell = true, .CastTime = 0.3f, .CastMove = 0.35f, .Cooldown = 4.5f, .EffectDuration = 0.45f, .ImpactRadius = 4.0f, .ImpactDelay = 0.5f, .Range = 6.5f, .Push = -1.7f, .BrawlDamage = 8, .BrawlMana = 30.0f },
 		{ .Id = AbilityId::ArcLightning, .Name = "Arc Lightning", .Description = "A bolt that jumps between up to three rivals and jolts each of them.", .Damages = Element::Lightning, .Spell = true, .CastTime = 0.25f, .CastMove = 0.65f, .Cooldown = 4.5f, .ProjectileSpeed = 19.0f, .ProjectileRadius = 0.16f, .ProjectileRange = 6.5f, .Chain = 2, .Push = 9.0f, .BrawlDamage = 8, .BrawlMana = 25.0f },
 		{ .Id = AbilityId::Swap, .Name = "Swap", .Description = "A bolt that trades places with the first rival it touches.", .Spell = true, .CastTime = 0.18f, .CastMove = 0.55f, .Cooldown = 4.0f, .ProjectileSpeed = 18.0f, .ProjectileRadius = 0.22f, .ProjectileRange = 6.5f, .EffectDuration = 0.4f, .Swap = true, .BrawlDamage = 14, .BrawlMana = 15.0f },
-		{ .Id = AbilityId::MirrorWard, .Name = "Mirror Ward", .Description = "For a second nothing can shove you, and spells that hit you fly back at whoever cast them.", .Kind = AbilityKind::Ward, .Spell = true, .CastTime = 0.0f, .CastMove = 1.0f, .Cooldown = 18.0f, .EffectDuration = 0.3f, .Ward = 1.0f, .BrawlDamage = 0, .BrawlMana = 50.0f, .BrawlCooldown = 25.0f },
+		{ .Id = AbilityId::DiamondWard, .Name = "Diamond Ward", .Description = "Instantly encase yourself in a crystal diamond. While it stands nothing harms or shoves you, and spells that strike it fly back at whoever cast them. Every blow it takes wears it down, cracking the facets; a blow it can't hold shatters it, the rest gets through, and a shattered ward takes longer to recast.", .Kind = AbilityKind::Ward, .Spell = true, .CastTime = 0.0f, .CastMove = 1.0f, .Cooldown = 18.0f, .EffectDuration = 0.3f, .Ward = 1.25f, .BrawlDamage = 0, .BrawlMana = 45.0f, .BrawlCooldown = 22.0f },
 		{ .Id = AbilityId::FrostSpear, .Name = "Ice Spear", .Description = "Hold to conjure a spear of ice above you and release to hurl it. A tap flicks a quick shard; the longer you charge, the bigger, faster and farther the spear flies. A full charge pierces and bursts where it stops. Hold too long and it cracks.", .Damages = Element::Cold, .Spell = true, .CastTime = 0.15f, .CastMove = 0.5f, .Cooldown = 4.0f, .ProjectileSpeed = 15.0f, .ProjectileRadius = 0.18f, .ProjectileRange = 4.5f, .Chill = 1.0f, .Push = 6.0f, .BrawlDamage = 6, .BrawlMana = 18.0f, .ChargeTime = 1.2f },
 		{ .Id = AbilityId::ChainHook, .Name = "Chain Hook", .Description = "Throws a hook that drags the first rival it catches to you, and past you. Press again to yank yourself to the hook instead.", .Spell = true, .CastTime = 0.2f, .CastMove = 0.55f, .Cooldown = 4.5f, .ProjectileSpeed = 13.0f, .ProjectileRadius = 0.26f, .ProjectileRange = 6.0f, .EffectDuration = 0.3f, .BrawlDamage = 14, .BrawlMana = 15.0f },
 		{ .Id = AbilityId::Firebomb, .Name = "Firebomb", .Description = "Lobs a bomb that bursts where it lands, skips on and bursts again.", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Spell = true, .CastTime = 0.25f, .CastMove = 0.55f, .Cooldown = 4.0f, .EffectDuration = 0.35f, .ImpactRadius = 2.0f, .ImpactDelay = 0.5f, .Range = 5.0f, .Push = 19.0f, .BrawlDamage = 10, .BrawlMana = 25.0f },
-		{ .Id = AbilityId::SplittingBolt, .Name = "Splitting Bolt", .Description = "A slow, heavy bolt. Press again to split it into three fast shards.", .Spell = true, .CastTime = 0.22f, .CastMove = 0.6f, .Cooldown = 5.0f, .ProjectileSpeed = 8.0f, .ProjectileRadius = 0.34f, .ProjectileRange = 5.0f, .EffectDuration = 0.25f, .Push = 14.0f, .BrawlDamage = 12, .BrawlMana = 25.0f },
+		{ .Id = AbilityId::ObsidianShards, .Name = "Obsidian Shards", .Description = "Hold to tear jagged shards of volcanic glass out of the air in front of you, one after another. Let go to fire them all at once in a tight spray toward the cursor; once five have formed they fire on their own. Every shard strikes on its own, so a full volley up close shreds, while from afar only a shard or two lands.", .Spell = true, .CastTime = 0.1f, .CastMove = 0.65f, .Cooldown = 0.9f, .ProjectileSpeed = 21.0f, .ProjectileRadius = 0.17f, .ProjectileRange = 4.6f, .SpawnOffset = 0.55f, .EffectDuration = 0.2f, .Push = 3.6f, .BrawlDamage = 4, .BrawlMana = 20.0f, .BrawlCooldown = 0.45f, .ChargeTime = 0.55f },
 		{ .Id = AbilityId::StormStrike, .Name = "Storm Strike", .Description = "Lightning hits the target a moment after you cast, then jumps once to the nearest rival.", .Kind = AbilityKind::Ground, .Damages = Element::Lightning, .Spell = true, .CastTime = 0.15f, .CastMove = 0.6f, .Cooldown = 5.0f, .EffectDuration = 0.35f, .ImpactRadius = 1.3f, .ImpactDelay = 0.3f, .Range = 6.5f, .Push = 13.0f, .BrawlDamage = 6, .BrawlMana = 45.0f },
 		{ .Id = AbilityId::FirebombSkip, .Name = "Firebomb", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .EffectDuration = 0.35f, .ImpactRadius = 2.0f, .ImpactDelay = 0.95f, .Push = 19.0f, .Parent = AbilityId::Firebomb, .BrawlDamage = 9 },
 		{ .Id = AbilityId::FirebombSkip2, .Name = "Firebomb", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .EffectDuration = 0.35f, .ImpactRadius = 2.4f, .ImpactDelay = 1.4f, .Push = 22.0f, .Parent = AbilityId::Firebomb, .BrawlDamage = 16 },
-		{ .Id = AbilityId::BoltShard, .Name = "Splitting Bolt", .ProjectileSpeed = 15.0f, .ProjectileRadius = 0.2f, .ProjectileRange = 2.5f, .EffectDuration = 0.2f, .Push = 7.5f, .Parent = AbilityId::SplittingBolt, .BrawlDamage = 5 },
 		{ .Id = AbilityId::StormJump, .Name = "Storm Strike", .Damages = Element::Lightning, .EffectDuration = 0.3f, .Range = 3.5f, .Push = 10.0f, .Parent = AbilityId::StormStrike, .BrawlDamage = 3 },
 		{ .Id = AbilityId::HookAnchor, .Name = "Chain Hook", .EffectDuration = 1.0f, .Parent = AbilityId::ChainHook },
 		{ .Id = AbilityId::HookPull, .Name = "Chain Hook", .EffectDuration = 0.3f, .Parent = AbilityId::ChainHook },
@@ -210,6 +212,9 @@ namespace Game
 		{ .Id = AbilityId::FirebombFlame, .Name = "Firebomb", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .EffectDuration = 0.3f, .ImpactRadius = 1.3f, .Parent = AbilityId::Firebomb, .BrawlDamage = 2 },
 		{ .Id = AbilityId::Ignite, .Name = "Kindling", .Damages = Element::Fire },
 		{ .Id = AbilityId::ShatterBurst, .Name = "Shatter", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Reach = 2.5f, .EffectDuration = 0.35f, .ImpactRadius = 2.5f },
+		{ .Id = AbilityId::EarthSpike, .Name = "Earth Spike", .Description = "Pick a spot and the ground there splits open. Steer the crack with your cursor for a moment, then a massive spike of rock bursts out of it in that direction and skewers every rival in its way.", .Kind = AbilityKind::Ground, .Spell = true, .CastTime = 0.3f, .CastMove = 0.55f, .Cooldown = 5.5f, .Reach = 2.5f, .EffectDuration = 0.7f, .Range = 6.0f, .Shape = StrikeShape::Line, .Width = 1.1f, .Push = 13.0f, .BrawlDamage = 8, .BrawlMana = 30.0f },
+		{ .Id = AbilityId::PurpleFireball, .Name = "Purple Fireball", .Description = "Hold to pour your power into a fireball at your hand and release to hurl it. A tap flings a small ember; the longer you charge, the bigger it swells and the deeper its flames burn, from orange to violet. It explodes on the first rival it touches, on a wall or at the end of its flight, and a full charge blasts a huge area. Hold too long and it tears loose early.", .Damages = Element::Fire, .Spell = true, .CastTime = 0.15f, .CastMove = 0.6f, .Cooldown = 5.0f, .ProjectileSpeed = 12.5f, .ProjectileRadius = 0.2f, .ProjectileRange = 5.0f, .SpawnOffset = 0.6f, .EffectDuration = 0.6f, .ImpactRadius = 1.1f, .Push = 11.0f, .BrawlDamage = 6, .BrawlMana = 25.0f, .ChargeTime = 1.4f },
+		{ .Id = AbilityId::HexShield, .Name = "Hex Shield", .Description = "Hold to raise a curved wall of glowing hexagons in front of you, turned toward your cursor. It soaks up the spells that strike it from the front, cracking as it weakens; a hit it can't hold shatters it, and the rest gets through. Let go to cast or run again. It mends while lowered, but once shattered it takes a long while to reform.", .Kind = AbilityKind::Shield, .Spell = true, .CastTime = 0.0f, .CastMove = 0.55f, .Cooldown = 0.6f, .Reach = 1.0f, .HalfArc = 1.0f, .EffectDuration = 0.3f, .BrawlDamage = 0, .BrawlMana = 10.0f },
 	};
 
 	constexpr bool AbilitiesMatchIds()

@@ -60,6 +60,16 @@ struct DecalInstance
 	uvec4 Info;
 };
 
+struct FacetInstance
+{
+	vec4 A;
+	vec4 B;
+	vec4 C;
+	vec4 Color;
+	vec4 Edge;
+	uvec4 Info;
+};
+
 struct ParticleState
 {
 	uint AliveCount;
@@ -82,6 +92,7 @@ const uint ShapeFlame = 7u;
 const uint AlignBillboard = 0u;
 const uint AlignVelocity = 1u;
 const uint AlignGround = 2u;
+const uint AlignPlane = 3u;
 
 const uint LightLayer = 2u;
 

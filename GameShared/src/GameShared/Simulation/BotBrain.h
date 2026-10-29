@@ -161,8 +161,9 @@ namespace Game
 		bool Recover(const BotArena& arena, PlayerInput& input);
 		bool Evade(const World& world, const BotArena& arena, PlayerInput& input);
 		bool Blink(const BotArena& arena, PlayerInput& input, Vec2 direction);
+		bool Brace(PlayerInput& input, Vec2 threat, float until, float wear);
+		bool RaiseWard(PlayerInput& input, Vec2 threat);
 		bool FollowUp(const BotArena& arena, PlayerInput& input, BotTally& tally);
-		bool Split(PlayerInput& input);
 		bool Yank(PlayerInput& input);
 		void Think(const World& world, const BotArena& arena);
 		void ChooseTarget(const BotArena& arena);
@@ -233,6 +234,8 @@ namespace Game
 		Vec2 m_CastOffset;
 		float m_ChargeUntil = 0.0f;
 		float m_ChargeSpeed = 0.0f;
+		float m_GuardUntil = 0.0f;
+		float m_GuardAim = 0.0f;
 		float m_Aim = 0.0f;
 		float m_AimDistance = 0.0f;
 		float m_Wander = 0.0f;
@@ -247,11 +250,6 @@ namespace Game
 		bool m_HasWell = false;
 		Vec2 m_Well;
 		float m_WellRemaining = 0.0f;
-		bool m_HasBolt = false;
-		Vec2 m_Bolt;
-		Vec2 m_BoltVelocity;
-		float m_BoltLifetime = 0.0f;
-		bool m_SplitArmed = false;
 		Vec2 m_YankTarget;
 		bool m_Yanking = false;
 		bool m_Planting = false;

@@ -4,6 +4,8 @@ const uint ShapeRune = 10u;
 const uint ShapeSlash = 11u;
 const uint ShapeSnowflake = 12u;
 const uint ShapeBeam = 13u;
+const uint ShapeInferno = 14u;
+const uint ShapeHex = 15u;
 
 const uint DecalRunes = 0u;
 const uint DecalSector = 1u;
@@ -16,6 +18,7 @@ const uint DecalCracks = 7u;
 const uint DecalFracture = 8u;
 const uint DecalCharge = 9u;
 const uint DecalFrostLane = 10u;
+const uint DecalFissure = 11u;
 
 const float Tau = 6.28318531;
 
@@ -235,44 +238,6 @@ vec2 ScorchShape(vec2 uv, float heat, uint seed)
 	return vec2(coverage, heat * (cracks * 1.1 + ember * 0.9 + core * 0.25 * heat));
 }
 
-vec2 FrostShape(vec2 uv, float strength, uint seed, float time)
-{
-	float r = length(uv);
-	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.613;
-	float n = Fbm(uv * 3.0 + offset);
-	float edge = (1.0 - smoothstep(0.55, 1.0, r + (n - 0.5) * 0.35)) * (1.0 - smoothstep(0.85, 1.0, r));
-	float angle = atan(uv.y, uv.x);
-	float spikes = pow(abs(sin(angle * 9.0 + n * 3.0)), 14.0) * smoothstep(0.2, 0.9, r) * edge;
-	vec2 cell = floor(uv * 14.0 + 200.0);
-	float sparkleSeed = HashUnit(uint(cell.x) * 7919u + uint(cell.y) * 104729u + seed);
-	float sparkle = step(0.9, sparkleSeed) * pow(0.5 + 0.5 * sin(time * 5.0 + sparkleSeed * 40.0), 8.0) * edge;
-	return vec2(edge * (0.35 + 0.35 * n) * strength, strength * (spikes * 0.7 + sparkle * 1.5 + edge * 0.12));
-}
-
-vec2 FrostLaneShape(vec2 uv, vec2 extent, float pixel, float strength, uint seed, float time)
-{
-	vec2 p = uv * extent;
-	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.613;
-	float along = (p.x + extent.x) / max(2.0 * extent.x, 1e-3);
-	float n = Fbm(p * 2.2 + offset);
-	float fine = Fbm(p * 7.0 - offset);
-	float taper = smoothstep(0.0, min(0.7, extent.x), p.x + extent.x) * (0.7 + 0.3 * along);
-	float halfWidth = extent.y * taper * (0.68 + 0.42 * n);
-	float edge = (1.0 - smoothstep(halfWidth * 0.45, halfWidth, abs(p.y))) * (1.0 - smoothstep(extent.x - 0.4 * extent.y, extent.x, p.x));
-	float streak = 0.0;
-	for (int i = 0; i < 3; i++)
-	{
-		float lane = (HashUnit(seed + uint(i) * 977u) - 0.5) * 1.1 * halfWidth;
-		float wobble = (ValueNoise(vec2(p.x * 1.7, float(i) * 13.0) + offset) - 0.5) * 0.16;
-		float broken = step(0.3, ValueNoise(vec2(p.x * 2.5 + float(i) * 7.0, 3.0 + float(i))));
-		streak = max(streak, Line(abs(p.y - lane - wobble), 0.01 + 0.012 * fine, pixel) * broken);
-	}
-	vec2 cell = floor(p * 9.0 + 200.0);
-	float sparkleSeed = HashUnit(uint(cell.x) * 7919u + uint(cell.y) * 104729u + seed);
-	float sparkle = step(0.93, sparkleSeed) * pow(0.5 + 0.5 * sin(time * 5.0 + sparkleSeed * 40.0), 8.0);
-	return vec2(edge * (0.45 + 0.4 * n + 0.15 * fine) * strength, strength * edge * (streak * 0.5 + sparkle * 1.2 + 0.05));
-}
-
 float CrackPath(float r, uint key, float amplitude)
 {
 	float x = r * 6.0;
@@ -339,6 +304,79 @@ vec2 FractureShape(vec2 p, float pixel, float heat, float time)
 	return vec2(crack, crack * heat * flicker);
 }
 
+struct Rime
+{
+	float Coverage;
+	float Glow;
+	float Shade;
+	float Roughness;
+};
+
+Rime RimeSurface(vec2 p, vec2 vein, float inside, float fringe, float pixel, float glow, uint seed, float time)
+{
+	Rime rime = Rime(0.0, 0.0, 1.0, 0.7);
+	if (inside < -fringe)
+		return rime;
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.613;
+	float e = inside / fringe;
+	float detail = 1.0 - smoothstep(0.012, 0.04, pixel);
+	float n = Fbm(p * 1.9 + offset);
+	float powder = Fbm(p * 7.5 + offset * 1.7) * 0.75 + ValueNoise(p * 23.0 - offset) * 0.25 * detail + 0.125 * (1.0 - detail);
+	float level = clamp(0.62 - 0.55 * e + (n - 0.5) * 0.5, 0.0, 1.2);
+	float soft = max(fwidth(powder), 0.015);
+	float dust = smoothstep(level - soft, level + soft, powder);
+	vec2 warp = vec2(ValueNoise(p * 2.3 + offset), ValueNoise(p * 2.3 + offset + 7.3)) - 0.5;
+	vec2 q = vein + offset + warp * 2.2;
+	float ridge = 1.0 - abs(ValueNoise(q) * 2.0 - 1.0);
+	float twig = 1.0 - abs(ValueNoise(q * 2.7 + 11.0) * 2.0 - 1.0);
+	float feather = max(ridge, twig * 0.985);
+	float reach = smoothstep(0.35, -0.9, e) * smoothstep(-1.0, -0.75, e);
+	float spread = smoothstep(0.45, 0.7, ValueNoise(p * 1.1 + offset + 3.1));
+	float veinSoft = max(fwidth(feather), 0.012);
+	float fern = smoothstep(0.965 - veinSoft, 0.965 + veinSoft, feather) * smoothstep(-1.0, -0.2, e) * (1.0 - smoothstep(0.2, 0.6, e)) * (0.35 + 0.65 * spread) * (1.0 - 0.6 * reach * (1.0 - spread));
+	float frost = max(dust, fern * 0.8);
+	if (frost <= 0.0)
+		return rime;
+	float pool = ValueNoise(p * 4.3 + offset + 5.7);
+	float glaze = smoothstep(0.72, 0.8, pool) * smoothstep(0.35, 0.8, e);
+	float rim = (1.0 - smoothstep(0.0, 0.04, abs(pool - 0.72))) * smoothstep(0.35, 0.8, e);
+	float clearIce = glaze;
+	vec2 cell = floor(p * 13.0 + 300.0);
+	uint key = uint(cell.x) * 7919u + uint(cell.y) * 104729u + seed;
+	vec2 spot = (cell + 0.2 + 0.6 * vec2(HashUnit(key + 1u), HashUnit(key + 2u)) - 300.0) / 13.0;
+	float glintSize = max(0.01, pixel * 0.8);
+	float glint = step(0.85, HashUnit(key)) * exp(-dot(p - spot, p - spot) / (glintSize * glintSize)) * pow(0.5 + 0.5 * sin(time * 3.0 + HashUnit(key + 3u) * 40.0), 6.0) * dust * (1.0 - clearIce);
+	float thick = clamp(0.35 + 0.65 * e, 0.0, 1.0) * (0.75 + 0.5 * (n - 0.5));
+	float grain = mix(0.5, ValueNoise(p * 31.0 + offset * 2.3), detail);
+	rime.Coverage = mix(frost * mix(0.5, 0.96, thick), 0.72, clearIce);
+	rime.Shade = mix(0.86 + 0.2 * thick + 0.25 * (grain - 0.5) + 0.1 * rim, 0.8, clearIce);
+	rime.Roughness = mix(0.75 - 0.2 * thick, 0.05, clearIce);
+	rime.Glow = glow * (0.05 * dust + 0.35 * fern * (1.0 - dust) + 0.1 * rim) + glint * (0.5 + 0.6 * glow);
+	return rime;
+}
+
+Rime FrostShape(vec2 uv, float radius, float pixel, float glow, uint seed, float time)
+{
+	vec2 p = uv * radius;
+	float r = length(p);
+	vec2 offset = vec2(float((seed >> 4) & 255u), float((seed >> 12) & 255u)) * 0.37;
+	float edge = radius * 0.5 * (0.75 + 0.45 * Fbm(p / max(r, 1e-4) * 1.8 + offset));
+	return RimeSurface(p, p * 4.0, edge - r, radius * 0.4, pixel, glow, seed, time);
+}
+
+Rime FrostLaneShape(vec2 uv, vec2 extent, float pixel, float glow, uint seed, float time)
+{
+	vec2 p = uv * extent;
+	float run = max(extent.x - extent.y, 0.0);
+	vec2 anchored = vec2(p.x + run, p.y);
+	vec2 offset = vec2(float((seed >> 4) & 255u), float((seed >> 12) & 255u)) * 0.37;
+	float tail = smoothstep(0.0, 0.9, anchored.x);
+	float radius = extent.y * 0.5 * (0.72 + 0.4 * Fbm(vec2(anchored.x * 1.2, p.y * 2.0) + offset)) * mix(0.4, 1.0, tail);
+	float d = SegmentDistance(p, vec2(-run, 0.0), vec2(run, 0.0));
+	float fresh = clamp(anchored.x / max(2.0 * run, 1e-3), 0.0, 1.0);
+	return RimeSurface(anchored, vec2(anchored.x * 5.0 + step(0.0, p.y) * 37.0, d * 2.2), radius - d, extent.y * 0.42, pixel, glow * mix(0.3, 1.0, fresh * fresh), seed, time);
+}
+
 vec2 CracksShape(vec2 uv, float pixel, float radius, float heat, uint seed)
 {
 	float r = length(uv);
@@ -358,6 +396,42 @@ vec2 CracksShape(vec2 uv, float pixel, float radius, float heat, uint seed)
 	float branch = Line(abs(local - branchPath) / count * Tau * r, width * 0.7, pixel) * step(fork, r) * (1.0 - smoothstep(branchEnd - 0.06, branchEnd, r));
 	float lines = max(crack, branch);
 	return vec2(max(lines, (1.0 - smoothstep(0.0, 0.3, r)) * 0.55), lines * heat * 0.7);
+}
+
+vec2 FissureShape(vec2 uv, vec2 extent, float pixel, float glow, float reach, float torn, uint seed, float time)
+{
+	vec2 p = uv * extent;
+	float span = 2.0 * extent.x;
+	float along = p.x + extent.x;
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.613;
+	float front = reach * span;
+	float opened = 1.0 - smoothstep(front - 0.3, front, along);
+	float wander = (ValueNoise(vec2(along * 2.3, 5.0) + offset) - 0.5) * 0.24 + (ValueNoise(vec2(along * 7.5, 9.0) + offset) - 0.5) * 0.07;
+	float q = p.y - wander;
+	float taper = smoothstep(0.0, 0.3, along) * (1.0 - 0.6 * smoothstep(span - 0.6, span, along));
+	float width = mix(0.024, 0.04, torn) * taper + 0.006;
+	float crack = Line(abs(q), max(width, pixel * 0.6), pixel);
+	float core = Line(abs(q), max(width * 0.4, pixel * 0.5), pixel);
+	float cell = floor(along / 0.5);
+	float local = along - cell * 0.5;
+	uint key = uint(cell + 64.0) * 977u + seed * 31u;
+	float side = HashUnit(key) > 0.5 ? 1.0 : -1.0;
+	float start = 0.08 + 0.2 * HashUnit(key + 7u);
+	float run = local - start;
+	float reachOut = 0.12 + 0.24 * HashUnit(key + 3u);
+	float branch = Line(abs(q - side * run * (0.7 + 0.7 * HashUnit(key + 11u))), max(width * 0.55, pixel * 0.5), pixel) * step(0.0, run) * (1.0 - smoothstep(reachOut * 0.6, reachOut, run));
+	vec2 tip = vec2(span - 0.06, 0.0);
+	vec2 at = vec2(along, q);
+	float chevron = Line(min(SegmentDistance(at, tip, vec2(span - 0.5, 0.3)), SegmentDistance(at, tip, vec2(span - 0.5, -0.3))), max(width * 1.2, pixel * 0.7), pixel) * smoothstep(span - 0.5, span - 0.1, front) * (1.0 - torn);
+	float n = Fbm(p * 2.4 + offset);
+	float halfWidth = extent.y * (0.5 + 0.4 * n) * mix(0.75, 1.0, torn);
+	float band = (1.0 - smoothstep(halfWidth * 0.45, halfWidth, abs(q))) * taper;
+	vec2 grit = floor(p * 11.0 + 300.0);
+	float pebble = step(0.93, HashUnit(uint(grit.x) * 7919u + uint(grit.y) * 104729u + seed)) * band;
+	float lines = max(crack, max(branch * 0.85, chevron)) * opened;
+	float shimmer = 0.75 + 0.25 * sin(time * 8.0 - along * 2.5);
+	float coverage = max(lines, (band * mix(0.22, 0.55, torn) + pebble * 0.35) * opened);
+	return vec2(coverage, glow * opened * (max(core, max(branch * 0.5, chevron)) * shimmer + band * 0.04));
 }
 
 float LightningBolt(vec2 uv, uint seed, float segments, float amplitude, float pixel)
@@ -452,6 +526,64 @@ float BeamShape(vec2 uv)
 	return across * along;
 }
 
+float InfernoShape(vec2 uv, uint seed, vec4 params, float time)
+{
+	float r = length(uv);
+	vec2 offset = vec2(float(seed & 63u), float((seed >> 6) & 63u)) * 0.53;
+	vec2 outward = uv / max(r, 1e-4);
+	float body = clamp(params.x, 0.05, 0.95);
+	vec2 spun = Rotate(uv, time * params.z);
+	float flow = time * params.y;
+	float tongues = Fbm(spun * 2.0 - outward * flow + offset);
+	float lick = ValueNoise(spun * 4.2 - outward * (flow * 1.4) + offset * 1.7 + 9.2);
+	float rise = max(uv.y, 0.0) / max(r, 1e-4);
+	float reach = body + (1.0 - body) * params.w * (1.2 * tongues - 0.2 + 0.12 * lick + 0.35 * rise * tongues);
+	float shell = 1.0 - smoothstep(reach - 0.18 * (1.0 - body) - 0.05, reach, r);
+	float churn = Fbm(spun * 3.4 + vec2(0.0, flow * 0.7) + offset * 2.3);
+	float core = exp(-3.0 * r * r / (body * body));
+	float density = shell * (0.4 + 0.6 * churn) * (0.55 + 0.45 * smoothstep(0.0, body, r)) + core * (0.6 + 0.4 * churn);
+	return density * (1.0 - smoothstep(0.88, 1.0, r));
+}
+
+float HexNorm(vec2 p)
+{
+	p = abs(p);
+	return max(p.y, p.x * 0.8660254 + p.y * 0.5) / 0.8660254;
+}
+
+float HexShape(vec2 uv, uint seed, vec4 params, float pixel)
+{
+	if (params == vec4(0.0))
+		params = vec4(0.85, 0.8, 0.0, 0.0);
+	float h = HexNorm(uv);
+	float edge = (1.0 - h) * 0.8660254;
+	float inside = clamp(edge / max(pixel, 1e-4) + 0.5, 0.0, 1.0);
+	if (inside <= 0.0)
+		return 0.0;
+	float rim = Line(edge, max(0.045, pixel * 0.75), pixel) + 0.45 * exp(-edge * 9.0);
+	float bevel = 0.3 * Line(abs(edge - 0.15), max(0.012, pixel * 0.5), pixel);
+	float glow = params.x * (0.18 + 0.82 * h * h * h) + params.y * (rim + bevel);
+	if (params.z > 0.0)
+	{
+		vec2 q = uv - (vec2(HashUnit(seed * 3u + 1u), HashUnit(seed * 3u + 2u)) - 0.5) * 0.6;
+		float r = length(q);
+		float angle = atan(q.y, q.x);
+		float count = 4.0 + float(seed % 3u);
+		float turn = fract(angle / Tau + HashUnit(seed * 5u + 3u)) * count;
+		float sector = floor(turn);
+		uint key = uint(sector) + seed * 31u;
+		float path = 0.5 + (HashUnit(key) - 0.5) * 0.45 + CrackPath(r, key, 0.55);
+		float reach = params.z * (1.3 + 0.65 * HashUnit(key * 13u + 5u));
+		float width = max(mix(0.035, 0.012, clamp(r / 1.2, 0.0, 1.0)), pixel * 0.6);
+		float crack = Line(abs(turn - sector - path) / count * Tau * r, width, pixel) * (1.0 - smoothstep(reach - 0.15, reach, r));
+		float ring = Line(abs(r - 0.3 - 0.06 * sin(angle * 3.0 + float(seed & 7u))), max(0.012, pixel * 0.5), pixel) * smoothstep(0.35, 0.7, params.z);
+		glow *= 1.0 - 0.3 * params.z;
+		glow += (crack + 0.7 * ring) * (0.9 + 0.6 * params.z) + 0.6 * params.z * exp(-r * r * 60.0);
+	}
+	glow += params.w * (0.55 + 0.45 * (1.0 - h) + 0.5 * rim);
+	return glow * inside;
+}
+
 float ParticleShape(uint shape, vec2 uv, uint seed, vec4 params, float pixel, float time)
 {
 	float r2 = dot(uv, uv);
@@ -501,5 +633,9 @@ float ParticleShape(uint shape, vec2 uv, uint seed, vec4 params, float pixel, fl
 		return SnowflakeShape(uv, pixel);
 	if (shape == ShapeBeam)
 		return BeamShape(uv);
+	if (shape == ShapeInferno)
+		return InfernoShape(uv, seed, params, time);
+	if (shape == ShapeHex)
+		return HexShape(uv, seed, params, pixel);
 	return exp(-4.0 * r2) * edge;
 }

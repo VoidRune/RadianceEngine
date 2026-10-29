@@ -53,8 +53,8 @@ namespace Game
 		{
 		case AbilityId::ChainHook:
 			return { 1.0f, 0.68f, 0.34f };
-		case AbilityId::SplittingBolt:
-			return { 1.0f, 0.3f, 0.48f };
+		case AbilityId::ObsidianShards:
+			return { 0.7f, 0.45f, 0.92f };
 		case AbilityId::Firebomb:
 			return { 1.0f, 0.44f, 0.16f };
 		case AbilityId::Gust:
@@ -63,8 +63,14 @@ namespace Game
 			return { 0.45f, 0.42f, 1.0f };
 		case AbilityId::Swap:
 			return { 0.86f, 0.48f, 1.0f };
-		case AbilityId::MirrorWard:
+		case AbilityId::DiamondWard:
 			return { 1.0f, 0.86f, 0.48f };
+		case AbilityId::EarthSpike:
+			return { 0.93f, 0.6f, 0.3f };
+		case AbilityId::PurpleFireball:
+			return { 0.74f, 0.3f, 1.0f };
+		case AbilityId::HexShield:
+			return { 0.36f, 0.82f, 1.0f };
 		default:
 			break;
 		}

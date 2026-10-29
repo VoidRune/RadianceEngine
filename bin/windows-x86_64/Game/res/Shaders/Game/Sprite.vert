@@ -46,6 +46,15 @@ void main()
 		vec2 rotated = vec2(corner.x * c - corner.y * s, corner.x * s + corner.y * c) * size;
 		if (sprite.Info.y == AlignGround)
 			world = center + vec3(rotated.x, 0.0, rotated.y);
+		else if (sprite.Info.y == AlignPlane)
+		{
+			vec3 normal = sprite.AxisStretch.xyz;
+			normal = dot(normal, normal) > 1e-8 ? normalize(normal) : -Frame.CameraForward.xyz;
+			vec3 right = cross(vec3(0.0, 1.0, 0.0), normal);
+			right = dot(right, right) > 1e-6 ? normalize(right) : Frame.CameraRight.xyz;
+			vec3 up = cross(normal, right);
+			world = center + right * rotated.x + up * rotated.y;
+		}
 		else
 			world = center + Frame.CameraRight.xyz * rotated.x + Frame.CameraUp.xyz * rotated.y;
 	}

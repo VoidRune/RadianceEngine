@@ -318,6 +318,11 @@ namespace Game
 				actions.Overloaded |= uint8_t(1u << slot);
 			state.Cooldowns[slot] = skill.Cooldown;
 			actions.Released |= uint8_t(1u << slot);
+			if (AimsFromPoint(skill.Ability))
+			{
+				actions.CastPoint = state.CastPoint;
+				actions.CastAim = state.CastAim;
+			}
 			const AbilityDef& ability = GetAbility(skill.Ability);
 			if (IsRecastable(skill.Ability) && ability.ProjectileSpeed > 0.0f)
 			{
@@ -339,7 +344,77 @@ namespace Game
 				}
 			}
 			else if (ability.Kind == AbilityKind::Ward)
+			{
 				state.Ward = ability.Ward;
+				state.WardLeft = skill.Durability > 0.0f ? skill.Durability : DiamondWardDurability;
+				state.WardShatter = 0.0f;
+			}
+		}
+
+		bool RaiseGuard(PlayerState& state, PlayerActions& actions, const PlayerTraits& traits, uint32_t slot)
+		{
+			const float cost = traits.Skills[slot].ManaCost;
+			if (state.Mana + ReadyEpsilon < cost && traits.BloodRate <= 0.0f)
+				return false;
+			actions.ManaBefore = state.Mana;
+			if (state.Mana + ReadyEpsilon < cost)
+				actions.BloodCost += (cost - state.Mana) * traits.BloodRate;
+			state.Mana = std::max(state.Mana - cost, 0.0f);
+			state.CastSlot = int8_t(slot);
+			state.CastTimer = 0.0f;
+			state.Charge = 0.0f;
+			state.GuardIdle = 0.0f;
+			actions.Raised = true;
+			return true;
+		}
+
+		void LowerGuard(PlayerState& state, const PlayerTraits& traits)
+		{
+			const size_t slot = size_t(state.CastSlot);
+			state.CastSlot = -1;
+			state.CastTimer = 0.0f;
+			state.Cooldowns[slot] = std::max(state.Cooldowns[slot], traits.Skills[slot].Cooldown);
+			state.GuardIdle = 0.0f;
+			state.GuardUp = false;
+		}
+
+		void TendGuard(PlayerState& state, const PlayerTraits& traits, float dt)
+		{
+			const int32_t slot = GuardSlot(traits);
+			if (slot < 0)
+			{
+				state.GuardLost = 0.0f;
+				state.GuardUp = false;
+				return;
+			}
+			const SkillTraits& skill = traits.Skills[size_t(slot)];
+			const bool up = state.CastSlot == slot;
+			if (state.GuardUp && !up)
+			{
+				state.Cooldowns[size_t(slot)] = std::max(state.Cooldowns[size_t(slot)], skill.Cooldown);
+				state.GuardIdle = 0.0f;
+			}
+			state.GuardUp = up;
+			if (IsGuardBroken(state, traits))
+			{
+				if (state.Cooldowns[size_t(slot)] <= ReadyEpsilon)
+					state.GuardLost = 0.0f;
+				return;
+			}
+			if (up)
+			{
+				state.GuardIdle = 0.0f;
+				return;
+			}
+			state.GuardIdle = std::min(state.GuardIdle + dt, HexShieldMendDelay);
+			if (state.GuardIdle >= HexShieldMendDelay)
+				state.GuardLost = std::max(state.GuardLost - skill.Durability * HexShieldMendRate * dt, 0.0f);
+		}
+
+		bool Interrupts(const PlayerState& state, const PlayerTraits& traits, uint8_t pressed)
+		{
+			const int32_t slot = GuardSlot(traits);
+			return slot >= 0 && state.CastSlot != slot && (pressed & uint8_t(SlotButton(uint32_t(slot)))) != 0 && CanCast(state, traits, uint32_t(slot));
 		}
 	}
 
@@ -362,12 +437,12 @@ namespace Game
 
 	bool IsOverloaded(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
 	{
-		return traits.OverloadEvery > 0 && slot < AbilitySlots && traits.Skills[slot].ManaCost > 0.0f && state.Overload + 1u >= traits.OverloadEvery;
+		return traits.OverloadEvery > 0 && slot < AbilitySlots && traits.Skills[slot].ManaCost > 0.0f && !IsGuard(traits.Skills[slot]) && state.Overload + 1u >= traits.OverloadEvery;
 	}
 
 	bool IsRecastable(AbilityId ability)
 	{
-		return ability == AbilityId::ChainHook || ability == AbilityId::SplittingBolt;
+		return ability == AbilityId::ChainHook;
 	}
 
 	bool IsCharged(const SkillTraits& skill)
@@ -398,6 +473,142 @@ namespace Game
 		return travel >= 1.0f ? target : Lerp(origin, target, std::max(travel - 0.05f, 0.0f));
 	}
 
+	bool AimsFromPoint(AbilityId ability)
+	{
+		return ability == AbilityId::EarthSpike;
+	}
+
+	bool IsSpellGround(const Level& level, const ArenaState& arena, Vec2 position)
+	{
+		if (arena.Field)
+			return !IsBrawlLava(level, *arena.Field, arena.Clock, position);
+		return !IsOverVoid(level, position);
+	}
+
+	Vec2 GetSpikeOrigin(const Level& level, const ArenaState& arena, Vec2 origin, Vec2 direction, float aimDistance, float range)
+	{
+		const Vec2 target = GetGroundTarget(level, origin, direction, aimDistance, range);
+		const float reach = Length(target - origin);
+		for (float back = 0.0f; back < reach; back += SpikeGroundStep)
+			if (const Vec2 point = target - direction * back; IsSpellGround(level, arena, point))
+				return point;
+		return origin;
+	}
+
+	Vec2 SteerSpike(Vec2 point, Vec2 aim, Vec2 cursor)
+	{
+		const Vec2 offset = cursor - point;
+		const float distance = Length(offset);
+		return distance > SpikeAimDeadzone ? offset / distance : aim;
+	}
+
+	bool IsGuard(const SkillTraits& skill)
+	{
+		return !skill.IsEmpty() && GetAbility(skill.Ability).Kind == AbilityKind::Shield;
+	}
+
+	int32_t GuardSlot(const PlayerTraits& traits)
+	{
+		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
+			if (IsGuard(traits.Skills[slot]))
+				return int32_t(slot);
+		return -1;
+	}
+
+	bool IsGuarding(const PlayerState& state, const PlayerTraits& traits)
+	{
+		return state.Alive && state.CastSlot >= 0 && IsGuard(traits.Skills[size_t(state.CastSlot)]);
+	}
+
+	bool IsGuardBroken(const PlayerState& state, const PlayerTraits& traits)
+	{
+		const int32_t slot = GuardSlot(traits);
+		return slot >= 0 && state.GuardLost >= traits.Skills[size_t(slot)].Durability - ReadyEpsilon;
+	}
+
+	float GuardLeft(const PlayerState& state, const PlayerTraits& traits)
+	{
+		const int32_t slot = GuardSlot(traits);
+		return slot >= 0 ? std::max(traits.Skills[size_t(slot)].Durability - state.GuardLost, 0.0f) : 0.0f;
+	}
+
+	float GuardBreakCooldown(const SkillTraits& skill)
+	{
+		const float base = GetAbility(skill.Ability).Cooldown;
+		return HexShieldBreakCooldown * (base > ReadyEpsilon ? skill.Cooldown / base : 1.0f);
+	}
+
+	void BreakGuard(PlayerState& state, const PlayerTraits& traits)
+	{
+		const int32_t slot = GuardSlot(traits);
+		if (slot < 0)
+			return;
+		const SkillTraits& skill = traits.Skills[size_t(slot)];
+		state.GuardLost = skill.Durability;
+		state.GuardIdle = 0.0f;
+		state.Cooldowns[size_t(slot)] = std::max(state.Cooldowns[size_t(slot)], GuardBreakCooldown(skill));
+		if (state.CastSlot == slot)
+		{
+			state.CastSlot = -1;
+			state.CastTimer = 0.0f;
+		}
+	}
+
+	int32_t WardSlot(const PlayerTraits& traits)
+	{
+		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
+			if (!traits.Skills[slot].IsEmpty() && GetAbility(traits.Skills[slot].Ability).Kind == AbilityKind::Ward)
+				return int32_t(slot);
+		return -1;
+	}
+
+	bool IsWarded(const PlayerState& state)
+	{
+		return state.Alive && state.Ward > 0.0f && state.WardLeft > 0.0f;
+	}
+
+	float WardDurability(const PlayerTraits& traits)
+	{
+		const int32_t slot = WardSlot(traits);
+		return slot >= 0 && traits.Skills[size_t(slot)].Durability > 0.0f ? traits.Skills[size_t(slot)].Durability : DiamondWardDurability;
+	}
+
+	void BreakWard(PlayerState& state, const PlayerTraits& traits)
+	{
+		state.Ward = 0.0f;
+		state.WardLeft = 0.0f;
+		state.WardShatter = DiamondWardShatterSeconds;
+		if (const int32_t slot = WardSlot(traits); slot >= 0)
+			state.Cooldowns[size_t(slot)] = std::max(state.Cooldowns[size_t(slot)], traits.Skills[size_t(slot)].Cooldown * DiamondWardBreakCooldown);
+	}
+
+	bool GuardContact(Vec2 from, Vec2 to, Vec2 center, float facing, float radius, float& parameter)
+	{
+		const AbilityDef& shield = GetAbility(AbilityId::HexShield);
+		const Vec2 travel = to - from;
+		const Vec2 offset = from - center;
+		const float reach = shield.Reach + radius;
+		const float along = Dot(offset, travel);
+		const float outside = LengthSquared(offset) - reach * reach;
+		float t = 0.0f;
+		if (outside > 0.0f)
+		{
+			const float span = LengthSquared(travel);
+			const float discriminant = along * along - span * outside;
+			if (span < 1e-10f || along >= 0.0f || discriminant < 0.0f)
+				return false;
+			t = (-along - std::sqrt(discriminant)) / span;
+			if (t > 1.0f)
+				return false;
+		}
+		else if (along >= 0.0f)
+			return false;
+		if (std::abs(AngleBetween(facing, AngleOf(Lerp(from, to, t) - center))) > shield.HalfArc)
+			return false;
+		parameter = t;
+		return true;
+	}
+
 	PlayerActions SimulatePlayer(const Level& level, Transform& transform, PlayerState& state, const PlayerTraits& traits, const PlayerInput& input, float dt, std::span<const BodyCircle> bodies, const ArenaState& arena)
 	{
 		PlayerActions actions;
@@ -413,6 +624,9 @@ namespace Game
 		Cool(state.Slick, dt);
 		Cool(state.StunGuard, dt);
 		Cool(state.Ward, dt);
+		if (state.Ward <= 0.0f)
+			state.WardLeft = 0.0f;
+		Cool(state.WardShatter, dt);
 		Cool(state.Static, dt);
 		Cool(state.ManaStall, dt);
 		if (state.RecastTimer > 0.0f)
@@ -425,6 +639,7 @@ namespace Game
 			state.RecastSlot = -1;
 			state.RecastAbility = UINT8_MAX;
 		}
+		TendGuard(state, traits, dt);
 		if (!state.Alive)
 		{
 			state.DashDistance = 0.0f;
@@ -529,17 +744,28 @@ namespace Game
 		Vec2 lunge;
 		if (state.DashDistance <= 0.0f)
 		{
+			if (state.CastSlot >= 0 && Interrupts(state, traits, pressed))
+				RaiseGuard(state, actions, traits, uint32_t(GuardSlot(traits)));
 			if (state.CastSlot >= 0)
 			{
 				castingSlot = state.CastSlot;
 				const SkillTraits& skill = traits.Skills[size_t(castingSlot)];
 				const float before = state.CastTimer;
-				if (IsCharged(skill))
+				if (IsGuard(skill))
+				{
+					if (!input.IsDown(SlotButton(uint32_t(castingSlot))))
+					{
+						LowerGuard(state, traits);
+						castingSlot = -1;
+					}
+				}
+				else if (IsCharged(skill))
 				{
 					state.CastTimer = std::max(state.CastTimer - dt, 0.0f);
 					state.Charge = std::min(state.Charge + dt, skill.ChargeTime + ChargeCrackSeconds);
 					const bool cracked = state.Charge >= skill.ChargeTime + ChargeCrackSeconds - ReadyEpsilon;
-					if (cracked || (state.CastTimer <= ReadyEpsilon && !input.IsDown(SlotButton(uint32_t(castingSlot)))))
+					const bool full = FiresWhenFull(skill.Ability) && state.Charge >= skill.ChargeTime - ReadyEpsilon;
+					if (cracked || full || (state.CastTimer <= ReadyEpsilon && !input.IsDown(SlotButton(uint32_t(castingSlot)))))
 					{
 						actions.Charge = cracked ? ChargeCrackPower : ChargePower(state, skill);
 						actions.Cracked = cracked;
@@ -550,6 +776,8 @@ namespace Game
 				{
 					state.CastTimer -= dt;
 					lunge = LungeStep(skill, aim, input.AimDistance, before, state.CastTimer);
+					if (AimsFromPoint(skill.Ability))
+						state.CastAim = SteerSpike(state.CastPoint, state.CastAim, transform.Position + aim * input.AimDistance);
 					if (state.CastTimer <= ReadyEpsilon)
 						Release(level, transform.Position, state, actions, traits, uint32_t(castingSlot), aim, input.AimDistance);
 				}
@@ -560,6 +788,19 @@ namespace Game
 				{
 					if (!input.IsDown(SlotButton(slot)) || !CanCast(state, traits, slot))
 						continue;
+					if (IsGuard(traits.Skills[slot]))
+					{
+						if (!RaiseGuard(state, actions, traits, slot))
+							continue;
+						castingSlot = int32_t(slot);
+						break;
+					}
+					if (AimsFromPoint(traits.Skills[slot].Ability))
+					{
+						state.CastPoint = GetSpikeOrigin(level, arena, transform.Position, aim, input.AimDistance, GetAbility(traits.Skills[slot].Ability).Range);
+						const Vec2 away = state.CastPoint - transform.Position;
+						state.CastAim = SteerSpike(state.CastPoint, LengthSquared(away) > 0.01f ? Normalize(away) : aim, transform.Position + aim * input.AimDistance);
+					}
 					if (traits.Skills[slot].CastTime <= ReadyEpsilon && !IsCharged(traits.Skills[slot]))
 						Release(level, transform.Position, state, actions, traits, slot, aim, input.AimDistance);
 					else

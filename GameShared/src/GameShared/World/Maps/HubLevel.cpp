@@ -23,7 +23,7 @@ namespace Game
 		constexpr Vec2 WishSpot = { 22.2f, 33.0f };
 		constexpr Vec2 ChessCenter = { 32.8f, 25.3f };
 		constexpr float ConstellationReach = 6.6f;
-		constexpr AbilityId Constellations[] = { AbilityId::EmberBolt, AbilityId::Gust, AbilityId::Comet, AbilityId::Warp, AbilityId::Shockwave, AbilityId::GravityWell, AbilityId::ArcLightning, AbilityId::Swap, AbilityId::MirrorWard, AbilityId::FrostSpear };
+		constexpr AbilityId Constellations[] = { AbilityId::EmberBolt, AbilityId::Gust, AbilityId::Comet, AbilityId::Warp, AbilityId::Shockwave, AbilityId::GravityWell, AbilityId::ArcLightning, AbilityId::Swap, AbilityId::DiamondWard, AbilityId::FrostSpear };
 		constexpr Vec2 ShrineTethers[][2] = { { { 19.6f, 9.45f }, { 19.7f, 6.5f } }, { { 21.2f, 9.45f }, { 21.9f, 6.5f } }, { { 12.2f, 9.4f }, { 18.6f, 4.4f } } };
 		constexpr Vec2 PierRails[][5] = { { { 19.0f, 27.0f }, { 19.15f, 29.2f }, { 19.15f, 31.4f }, { 19.15f, 33.6f }, { 19.15f, 35.6f } }, { { 23.0f, 27.0f }, { 22.85f, 29.2f }, { 22.85f, 31.4f } } };
 		constexpr size_t PierRailPosts[] = { 5, 3 };

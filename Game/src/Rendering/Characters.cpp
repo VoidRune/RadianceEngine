@@ -87,8 +87,6 @@ namespace Game
 		constexpr float FidgetDelayMin = 4.0f;
 		constexpr float FidgetDelaySpread = 5.0f;
 		constexpr float StrikeSettle = 18.0f;
-		constexpr float HoldPoint = 0.62f;
-		constexpr float HoldReach = 0.28f;
 		constexpr float HoldRelease = 1.7f;
 
 		uint64_t LookKey(const PlayerLook& look)
@@ -488,13 +486,17 @@ namespace Game
 			return { .Windup = Anim::CastFlick, .Variants = 3 };
 		case AbilityId::FrostSpear:
 			return { .Windup = Anim::CastHurl, .Hold = true };
+		case AbilityId::PurpleFireball:
+			return { .Windup = Anim::CastSurge, .Hold = true };
+		case AbilityId::ObsidianShards:
+			return { .Windup = Anim::CastLunge, .Hold = true, .HoldAt = 0.5f, .HoldReach = 0.2f };
+		case AbilityId::HexShield:
+			return { .Windup = Anim::CastWard, .Hold = true, .HoldAt = 1.25f, .HoldReach = 0.14f };
 		case AbilityId::IceSpear:
 			return { Anim::CastLunge };
 		case AbilityId::Fireball:
 		case AbilityId::ArcLightning:
 			return { Anim::CastHurl };
-		case AbilityId::SplittingBolt:
-			return { Anim::CastSurge };
 		case AbilityId::ChainHook:
 			return { Anim::CastLash };
 		case AbilityId::Swap:
@@ -504,6 +506,7 @@ namespace Game
 		case AbilityId::Firebomb:
 			return { Anim::CastLob };
 		case AbilityId::StormStrike:
+		case AbilityId::EarthSpike:
 			return { Anim::CastSmite };
 		case AbilityId::Blink:
 		case AbilityId::Warp:
@@ -516,7 +519,7 @@ namespace Game
 		case AbilityId::Shockwave:
 		case AbilityId::FrostNova:
 			return { Anim::CastNova };
-		case AbilityId::MirrorWard:
+		case AbilityId::DiamondWard:
 			return { Anim::CastWard };
 		case AbilityId::Rejuvenate:
 			return { Anim::UseItem };
@@ -656,8 +659,8 @@ namespace Game
 			float strike = models.GetStrikeTime(*clip);
 			if (strike < 0.05f)
 				strike = duration * 0.4f;
-			m_HoldTime = strike * HoldPoint;
-			layer.Rate = std::clamp(m_HoldTime / HoldReach, 0.6f, 2.5f);
+			m_HoldTime = strike * input.Attack.HoldAt;
+			layer.Rate = std::clamp(m_HoldTime / input.Attack.HoldReach, 0.6f, 3.0f);
 			layer.Loop = false;
 		}
 		else if (!input.Attack.Loop && input.Attack.Release != Anim::Count)

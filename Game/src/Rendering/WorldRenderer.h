@@ -86,6 +86,7 @@ namespace Game
 		bool LoadModels(std::span<const ModelPack> packs, std::string& error);
 		const ModelLibrary& GetModels() const { return m_Models; }
 		uint32_t AddEffectMesh(std::string_view name, const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const EffectMaterial& material, uint32_t flags = 0);
+		uint32_t AddEffectMesh(std::string_view name, const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, uint32_t material, uint32_t flags = 0);
 		std::optional<uint32_t> FindEffectMesh(std::string_view name) const;
 		uint32_t AddLevelGeometry(const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<LevelMeshDesc>& meshes);
 		void ClearLevelGeometry();
@@ -115,6 +116,7 @@ namespace Game
 		void SubmitModel(uint32_t mesh, const ModelInstance& instance, bool shadowOnly = false);
 		void DrawSprite(const ParticleSprite& sprite) { m_Particles->DrawSprite(sprite); }
 		void DrawDecal(const GroundDecal& decal) { m_Particles->DrawDecal(decal); }
+		void DrawFacet(const GlassFacet& facet) { m_Particles->DrawFacet(facet); }
 		void Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex, const std::array<float, 4>& clearColor);
 
 		bool IsReady() const { return m_Pipeline != nullptr; }
