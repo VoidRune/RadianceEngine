@@ -78,6 +78,11 @@ namespace Game
 				visuals = true;
 			}
 		}
+		if (ui.Slider(Ui::MakeId("settings.shake"), row("Screen shake"), settings.ScreenShake, 0.0f, 1.0f, percent(settings.ScreenShake)))
+		{
+			settings.ScreenShake = std::round(settings.ScreenShake * 20.0f) / 20.0f;
+			visuals = true;
+		}
 		visuals |= ui.Checkbox(Ui::MakeId("settings.controls"), row("Hints", 34.0f), "Show the controls in a corner", settings.ShowControls);
 		if (visuals)
 		{

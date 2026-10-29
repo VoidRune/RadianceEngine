@@ -41,6 +41,7 @@ namespace Game
 			uint32_t Tonemap;
 			uint32_t Flags;
 			glm::vec4 Crop;
+			glm::vec4 Danger;
 		};
 
 		glm::vec3 ApplyGrade(const ColorGrade& grade, const glm::vec3& color)
@@ -281,7 +282,7 @@ namespace Game
 		const glm::vec2 rendered(float(extent.Width), float(extent.Height));
 		const glm::vec2 visible(float(output.Width), float(output.Height));
 		const CompositeConstants constants{ BloomStrength, Exposure * SceneExposure * TonemapperExposure[size_t(Tonemap)], uint32_t(Tonemap), (Grading ? FlagGrading : 0u) | (Raw ? FlagRaw : 0u),
-			glm::vec4(visible / rendered, glm::floor((rendered - visible) * 0.5f) / rendered) };
+			glm::vec4(visible / rendered, glm::floor((rendered - visible) * 0.5f) / rendered), glm::vec4(Vignette, Desaturation, 0.0f, 0.0f) };
 		const Rdn::RGImage bloom = lower;
 		graph.AddPass("Composite", Rdn::PassType::Graphics,
 			[&](Rdn::PassBuilder& builder)

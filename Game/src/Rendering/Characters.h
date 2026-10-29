@@ -296,6 +296,6 @@ namespace Game
 		bool m_WasDead = false;
 	};
 
-	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f));
+	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f), const glm::vec4& flash = glm::vec4(0.0f));
 	glm::mat4 ModelTransform(const glm::vec3& base, float facing, float scale);
 }

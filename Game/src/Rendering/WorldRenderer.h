@@ -65,6 +65,7 @@ namespace Game
 		glm::vec4 Shading;
 		glm::uvec4 Info;
 		glm::vec4 Accent{ 0.0f };
+		glm::vec4 Flash{ 0.0f };
 	};
 
 	struct EffectMaterial
@@ -111,8 +112,8 @@ namespace Game
 		void DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw = 0.0f);
 		void DrawLava(const glm::vec4& area, float height, float time);
 		uint32_t AddPalette(const JointMatrices& skin, uint32_t joints);
-		void DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0);
-		ModelInstance MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0) const;
+		void DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0, const glm::vec4& flash = glm::vec4(0.0f));
+		ModelInstance MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0, const glm::vec4& flash = glm::vec4(0.0f)) const;
 		void SubmitModel(uint32_t mesh, const ModelInstance& instance, bool shadowOnly = false);
 		void DrawSprite(const ParticleSprite& sprite) { m_Particles->DrawSprite(sprite); }
 		void DrawDecal(const GroundDecal& decal) { m_Particles->DrawDecal(decal); }

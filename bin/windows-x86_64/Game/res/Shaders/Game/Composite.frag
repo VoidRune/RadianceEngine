@@ -11,6 +11,7 @@ layout(push_constant) uniform PushConstants
 	uint Tonemapper;
 	uint Flags;
 	vec4 Crop;
+	vec4 Danger;
 } pc;
 
 layout(location = 0) in vec2 inUv;
@@ -22,6 +23,7 @@ const uint TonemapNeutral = 2u;
 const uint TonemapSoftClip = 3u;
 const uint FlagGrading = 1u;
 const uint FlagRaw = 2u;
+const vec3 DangerEdge = vec3(0.3, 0.015, 0.025);
 
 vec3 LinearToSrgb(vec3 color)
 {
@@ -105,6 +107,12 @@ void main()
 	{
 		float size = float(textureSize(Grading, 0).x);
 		display = textureLod(Grading, display * ((size - 1.0) / size) + 0.5 / size, 0.0).rgb;
+	}
+	if (pc.Danger.x > 0.0 || pc.Danger.y > 0.0)
+	{
+		display = mix(display, vec3(dot(display, vec3(0.2126, 0.7152, 0.0722))), pc.Danger.y);
+		float edge = smoothstep(0.3, 1.0, length(inUv - 0.5) * 1.41421);
+		display = mix(display, DangerEdge, edge * pc.Danger.x);
 	}
 	outColor = vec4(display, 1.0);
 }

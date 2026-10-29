@@ -31,6 +31,8 @@ namespace Game
 		constexpr glm::vec3 LeylineGlow{ 0.42f, 1.0f, 0.78f };
 		constexpr float CrumbleRange = 18.0f;
 		constexpr float StrikeSight = 24.0f;
+		constexpr float StrikeRumble = 0.5f;
+		constexpr float CrumbleRumble = 0.22f;
 		constexpr float SpireTop = 4.5f;
 		constexpr float SpireSlot = 1.0f;
 		constexpr float RingLead = 1.5f;
@@ -592,6 +594,7 @@ namespace Game
 				if (m_CrumbleCooldown <= 0.0f)
 				{
 					m_App.GetGameAudio().PlayCrumble(Vec2(center.x, center.z), level->Kind == MapKind::FrozenLake);
+					Rumble(center, CrumbleRumble);
 					m_CrumbleCooldown = 0.35f;
 				}
 			}
@@ -612,6 +615,7 @@ namespace Game
 					m_Effects->Burst(Fx::Crumble, point + glm::vec3(0.0f, 0.05f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0.4f * size, glm::vec3(0.7f, 0.74f, 0.8f));
 				}
 				m_Flash = std::max(m_Flash, std::clamp(1.0f - distance / 30.0f, 0.12f, 0.9f) * size);
+				Rumble(point, StrikeRumble * size);
 				m_App.GetGameAudio().PlayLightning(Vec2(point.x, point.z), distance);
 			};
 			for (const LightningBolt& bolt : BoltsOf(brawl.Plan))
@@ -2378,10 +2382,10 @@ namespace Game
 		return { entity.Position.x, Height + bob - Depth * (1.0f - rise * rise * (3.0f - 2.0f * rise)), entity.Position.y };
 	}
 
-	void SessionState::DrawCritter(WorldRenderer& renderer, Critter critter, const glm::mat4& transform, const glm::vec4& tint, float emission, float ground) const
+	void SessionState::DrawCritter(WorldRenderer& renderer, Critter critter, const glm::mat4& transform, const glm::vec4& tint, float emission, float ground, const glm::vec4& flash) const
 	{
 		for (const uint32_t mesh : m_Critters[size_t(critter)])
-			renderer.DrawModel(mesh, transform, NoPalette, tint, emission, ground);
+			renderer.DrawModel(mesh, transform, NoPalette, tint, emission, ground, glm::vec4(0.0f), 0u, flash);
 	}
 
 	void SessionState::DrawBalloon(WorldRenderer& renderer, const EntityState& entity) const
@@ -2437,8 +2441,8 @@ namespace Game
 		const glm::mat4 place = ModelTransform(base, entity.Facing, 1.0f);
 		const glm::mat4 identity(1.0f);
 		const glm::vec3 joint(0.0f, 0.74f, 0.0f);
-		DrawCritter(renderer, Critter::DummyPost, place, tint, shine * 0.5f, base.y);
-		DrawCritter(renderer, Critter::DummyBody, place * glm::translate(identity, joint) * glm::rotate(identity, wobble * 1.15f, glm::vec3(0.0f, 0.0f, 1.0f)) * glm::translate(identity, -joint), tint, shine, base.y);
+		DrawCritter(renderer, Critter::DummyPost, place, tint, shine * 0.5f, base.y, HitLight(entity));
+		DrawCritter(renderer, Critter::DummyBody, place * glm::translate(identity, joint) * glm::rotate(identity, wobble * 1.15f, glm::vec3(0.0f, 0.0f, 1.0f)) * glm::translate(identity, -joint), tint, shine, base.y, HitLight(entity));
 		if (golden)
 			DrawGlow(renderer, base + glm::vec3(0.0f, 1.3f, 0.0f), 0.9f, glm::vec3(1.0f, 0.7f, 0.2f) * (0.25f + 0.1f * std::sin(m_Time * 4.0f)));
 		DrawBrawlPlayer(renderer, entity, Ground(entity.Position));

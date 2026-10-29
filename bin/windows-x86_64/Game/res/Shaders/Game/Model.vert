@@ -9,6 +9,7 @@ struct ModelInstance
 	vec4 Shading;
 	uvec4 Info;
 	vec4 Accent;
+	vec4 Flash;
 };
 
 struct ModelVertex
@@ -39,6 +40,7 @@ layout(location = 7) out vec4 outTangent;
 layout(location = 8) out vec4 outColor;
 layout(location = 9) out vec3 outWorld;
 layout(location = 10) flat out vec4 outAccent;
+layout(location = 11) flat out uint outFlash;
 
 const uint NoPalette = 0xFFFFFFFFu;
 
@@ -89,5 +91,6 @@ void main()
 	outColor = unpackUnorm4x8(vertex.Skin.w);
 	outWorld = world;
 	outAccent = instance.Accent;
+	outFlash = instance.Flash.a > 0.0 ? packUnorm4x8(instance.Flash) : 0u;
 	gl_Position = pc.ViewProjection * vec4(world, 1.0);
 }

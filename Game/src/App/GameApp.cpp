@@ -132,6 +132,8 @@ namespace Game
 				m_Settings.Vsync = value == "1";
 			else if (uint32_t cap = 0; key == "FrameCap" && ParseNumber(value, cap))
 				m_Settings.FrameCap = std::clamp(cap, MinFrameCap, MaxFrameCap);
+			else if (key == "ScreenShake")
+				ReadVolume(value, m_Settings.ScreenShake);
 			else if (key == "ShowControls")
 				m_Settings.ShowControls = value == "1";
 			else if (key == "Gpu")
@@ -158,6 +160,7 @@ namespace Game
 			m_Stored.Vsync = m_Settings.Vsync;
 			m_Stored.FrameCap = m_Settings.FrameCap;
 			m_Stored.ShowControls = m_Settings.ShowControls;
+			m_Stored.ScreenShake = m_Settings.ScreenShake;
 			break;
 		case SettingsGroup::Identity:
 			m_Stored.PlayerName = m_Settings.PlayerName;
@@ -178,7 +181,7 @@ namespace Game
 		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nFriendsCanJoin=" << (m_Stored.FriendsCanJoin ? 1 : 0) << "\nKit=" << GetKit(m_Stored.Kit).Name
 			<< "\nVolume=" << m_Stored.Volume << "\nMusicVolume=" << m_Stored.MusicVolume << "\nEffectsVolume=" << m_Stored.EffectsVolume << "\nMuted=" << (m_Stored.Muted ? 1 : 0)
 			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0) << "\nVsync=" << (m_Stored.Vsync ? 1 : 0)
-			<< "\nFrameCap=" << m_Stored.FrameCap << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\n";
+			<< "\nFrameCap=" << m_Stored.FrameCap << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\nScreenShake=" << m_Stored.ScreenShake << "\n";
 		if (!m_GraphicsGpu.empty())
 			file << "Gpu=" << m_GraphicsGpu << "\n";
 		if (m_GraphicsTier)
@@ -276,6 +279,8 @@ namespace Game
 			m_Settings.Vsync = *options.Vsync;
 		if (options.FrameCap)
 			m_Settings.FrameCap = *options.FrameCap;
+		if (options.ScreenShake)
+			m_Settings.ScreenShake = *options.ScreenShake;
 		m_Settings.ShowPerformance = options.ShowPerformance;
 		m_PresentQueue = std::make_unique<Rdn::PresentQueue>(m_Device.get(), PresentModeFor(m_Settings.Vsync));
 		m_Allocator = std::make_unique<Rdn::ResourceAllocator>(m_Device.get());

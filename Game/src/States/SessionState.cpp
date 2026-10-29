@@ -27,7 +27,36 @@ namespace Game
 {
 	namespace
 	{
-		constexpr float HurtFlashSeconds = 0.15f;
+		constexpr float HurtFlashSeconds = 0.08f;
+		constexpr float FlashCover = 0.65f;
+		constexpr float FlashBright = 1.0f;
+		constexpr float FlashWhite = 0.3f;
+		constexpr float TraumaDecay = 1.5f;
+		constexpr float ShakeOffset = 0.3f;
+		constexpr float ShakeRoll = 0.022f;
+		constexpr float ShakeFrequency = 16.0f;
+		constexpr float KickStiffness = 22.0f;
+		constexpr float KickDamping = 0.75f;
+		constexpr float KickImpulse = 7.0f;
+		constexpr float RumbleReach = 16.0f;
+		constexpr float OwnRumble = 0.7f;
+		constexpr float GuardTrauma = 0.12f;
+		constexpr float HitTrauma = 0.25f;
+		constexpr float HitTraumaScale = 0.4f;
+		constexpr float HitStack = 0.1f;
+		constexpr float HitTraumaDamage = 20.0f;
+		constexpr float HitTraumaPush = 22.0f;
+		constexpr int32_t HeavyHitDamage = 15;
+		constexpr float HeavyHitPush = 16.0f;
+		constexpr float HitStopMin = 0.04f;
+		constexpr float HitStopMax = 0.06f;
+		constexpr float DangerHealth = 0.3f;
+		constexpr float DangerFloor = 0.08f;
+		constexpr float DangerVignette = 0.8f;
+		constexpr float DangerDesaturation = 0.3f;
+		constexpr float DangerFade = 4.0f;
+		constexpr float DangerBeat = 1.1f;
+		constexpr float DangerBeatRise = 0.9f;
 		constexpr float DamageNumberSeconds = 0.9f;
 		constexpr size_t MaxDamageNumbers = 160;
 		constexpr float NoticeSeconds = 3.5f;
@@ -72,6 +101,39 @@ namespace Game
 		constexpr float VictoryPoseSeconds = 1.4f;
 		constexpr float VictoryPoseWindup = 0.28f;
 		constexpr float PlayerRim = 0.4f;
+
+		float Perlin(float x, uint32_t seed)
+		{
+			const float cell = std::floor(x);
+			const float f = x - cell;
+			const auto gradient = [seed](int32_t i)
+			{
+				uint32_t h = uint32_t(i) * 0x9E3779B1u ^ seed * 0x85EBCA77u;
+				h ^= h >> 15;
+				h *= 0x2C1B3C6Du;
+				h ^= h >> 12;
+				return float(h & 0xFFFFu) / 32767.5f - 1.0f;
+			};
+			const float u = f * f * f * (f * (f * 6.0f - 15.0f) + 10.0f);
+			return 2.0f * std::lerp(gradient(int32_t(cell)) * f, gradient(int32_t(cell) + 1) * (f - 1.0f), u);
+		}
+
+		float ImpactRumble(AbilityId ability, float blast)
+		{
+			switch (ability)
+			{
+			case AbilityId::Comet:
+				return 0.5f;
+			case AbilityId::Meteor:
+				return 0.45f;
+			case AbilityId::PurpleFireball:
+				return 0.2f + 0.4f * blast;
+			case AbilityId::EarthSpike:
+				return 0.35f;
+			default:
+				return 0.0f;
+			}
+		}
 
 		UiColor CardIconTint(const CardDef& card)
 		{
@@ -288,6 +350,9 @@ namespace Game
 	{
 		SaveProgress(true);
 		m_Client.Disconnect();
+		PostProcess& post = m_App.GetWorldRenderer().GetPost();
+		post.Vignette = 0.0f;
+		post.Desaturation = 0.0f;
 		m_Server.reset();
 		m_App.GetSteam().CloseLobby(m_LobbyTicket);
 	}
@@ -536,6 +601,7 @@ namespace Game
 		m_App.GetWorldRenderer().GetParticles().Advance(dt);
 		UpdateEffects(dt);
 		UpdateFeedback(dt);
+		UpdateDanger(dt);
 		UpdateWonders();
 		UpdateMatchFeedback(dt);
 		GameAudio& audio = m_App.GetGameAudio();
@@ -863,7 +929,7 @@ namespace Game
 
 	std::optional<glm::vec2> SessionState::ProjectToScreen(const glm::vec3& position) const
 	{
-		const glm::vec4 clip = m_ViewProjection * glm::vec4(position, 1.0f);
+		const glm::vec4 clip = m_Camera.ViewProjection * glm::vec4(position, 1.0f);
 		if (clip.w <= 1e-4f)
 			return std::nullopt;
 		return glm::vec2((clip.x / clip.w * 0.5f + 0.5f) * float(m_Extent.Width), (clip.y / clip.w * 0.5f + 0.5f) * float(m_Extent.Height));
@@ -924,9 +990,27 @@ namespace Game
 		const float far = m_Overview ? 600.0f : 200.0f;
 		glm::mat4 projection = glm::perspectiveLH_ZO(glm::radians(CameraFov), aspect, CameraNear, far);
 		projection[1][1] *= -1.0f;
-		const glm::mat4 view = glm::lookAtLH(eye, focus, glm::vec3(0.0f, 1.0f, 0.0f));
-		m_ViewProjection = projection * view;
-		m_Camera = WorldCamera{ .View = view, .Projection = projection, .ViewProjection = m_ViewProjection, .Eye = eye, .Near = CameraNear, .Far = far };
+		m_ViewProjection = projection * glm::lookAtLH(eye, focus, glm::vec3(0.0f, 1.0f, 0.0f));
+
+		m_Trauma = std::max(m_Trauma - TraumaDecay * dt, 0.0f);
+		m_ShakeClock += dt;
+		const float step = std::min(dt, 1.0f / 30.0f);
+		m_KickSpeed -= (KickStiffness * KickStiffness * m_Kick + 2.0f * KickDamping * KickStiffness * m_KickSpeed) * step;
+		m_Kick += m_KickSpeed * step;
+		glm::vec3 up(0.0f, 1.0f, 0.0f);
+		if (const float strength = m_App.GetSettings().ScreenShake; !m_Overview && strength > 0.0f)
+		{
+			const float shake = m_Trauma * m_Trauma * strength;
+			const glm::vec3 forward = glm::normalize(focus - eye);
+			const glm::vec3 right = glm::normalize(glm::cross(up, forward));
+			const float t = m_ShakeClock * ShakeFrequency;
+			const glm::vec3 offset = (right * Perlin(t, 1u) + glm::cross(forward, right) * Perlin(t, 2u)) * (ShakeOffset * shake * m_Zoom) + glm::vec3(m_Kick.x, 0.0f, m_Kick.y) * (strength * m_Zoom);
+			eye += offset;
+			focus += offset;
+			up = glm::vec3(glm::rotate(glm::mat4(1.0f), ShakeRoll * shake * Perlin(t, 3u), forward) * glm::vec4(up, 0.0f));
+		}
+		const glm::mat4 view = glm::lookAtLH(eye, focus, up);
+		m_Camera = WorldCamera{ .View = view, .Projection = projection, .ViewProjection = projection * view, .Eye = eye, .Near = CameraNear, .Far = far };
 	}
 
 	LevelView SessionState::ComputeView() const
@@ -996,7 +1080,8 @@ namespace Game
 			fx.Hurt = false;
 			fx.SinceHit += dt;
 			fx.Flash = std::max(fx.Flash - dt, 0.0f);
-			fx.Age += dt;
+			fx.Age += fx.Stop > 0.0f ? 0.0f : dt;
+			fx.Stop = std::max(fx.Stop - dt, 0.0f);
 		}
 		for (const EntityState& entity : m_Client.GetEntities())
 		{
@@ -1008,10 +1093,11 @@ namespace Game
 				m_Effects->Burst(Fx::Dodge, Ground(entity.Position, 0.1f));
 			if (!inserted && entity.Kind == EntityKind::Player)
 			{
-				SpearMoments(fx, entity, dt);
-				SpikeMoments(fx, entity, dt);
-				FireballMoments(fx, entity, dt);
-				ObsidianMoments(fx, entity, dt);
+				const float clocked = fx.Stop > 0.0f ? 0.0f : dt;
+				SpearMoments(fx, entity, clocked);
+				SpikeMoments(fx, entity, clocked);
+				FireballMoments(fx, entity, clocked);
+				ObsidianMoments(fx, entity, clocked);
 			}
 			if (entity.Kind == EntityKind::Player)
 			{
@@ -1050,6 +1136,7 @@ namespace Game
 			if (!inserted && entity.Health < fx.LastHealth)
 			{
 				fx.Flash = HurtFlashSeconds;
+				fx.FlashColor = glm::vec3(1.0f);
 				fx.Hurt = true;
 			}
 			fx.LastHealth = entity.Health;
@@ -1068,6 +1155,7 @@ namespace Game
 				ShieldStruck(hit);
 				continue;
 			}
+			FeelHit(hit);
 			const auto it = m_Fx.find(hit.Target);
 			if (it != m_Fx.end())
 				it->second.SinceHit = 0.0f;
@@ -1398,6 +1486,7 @@ namespace Game
 		const bool fireball = ability == AbilityId::PurpleFireball;
 		const float blast = fireball ? std::clamp((def.ImpactRadius * scale - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f) : 0.0f;
 		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, fireball ? FireballColor(blast) : EffectColor(entity), entity.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+		Rumble(Ground(entity.Position), ImpactRumble(ability, blast), entity.Owner);
 		const std::optional<Fx> fx = EffectBurstFor(ability);
 		if (!fx)
 			return;
@@ -1671,6 +1760,74 @@ namespace Game
 		return it != m_Fx.end() ? it->second.Flash / HurtFlashSeconds : 0.0f;
 	}
 
+	glm::vec4 SessionState::HitLight(const EntityState& entity) const
+	{
+		const auto it = m_Fx.find(entity.NetId);
+		if (it == m_Fx.end() || it->second.Flash <= 0.0f)
+			return glm::vec4(0.0f);
+		return glm::vec4(it->second.FlashColor * FlashBright, FlashCover * it->second.Flash / HurtFlashSeconds);
+	}
+
+	void SessionState::AddTrauma(float amount)
+	{
+		m_Trauma = std::min(m_Trauma + amount, 1.0f);
+	}
+
+	void SessionState::Rumble(const glm::vec3& point, float strength, uint32_t owner)
+	{
+		const float falloff = 1.0f - Length(Vec2(point.x, point.z) - Vec2(m_CameraTarget.x, m_CameraTarget.z)) / RumbleReach;
+		if (falloff > 0.0f)
+			m_Trauma = std::max(m_Trauma, std::min(strength * falloff * (owner != NoPlayer && owner == m_Client.GetPlayerId() ? OwnRumble : 1.0f), 1.0f));
+	}
+
+	void SessionState::FeelHit(const HitEvent& hit)
+	{
+		const bool local = hit.Target == m_Client.GetPlayerNetId();
+		if (hit.Guarded || hit.Warded)
+		{
+			if (local)
+				AddTrauma(GuardTrauma);
+			return;
+		}
+		const auto victim = m_Fx.find(hit.Target);
+		if (victim != m_Fx.end())
+		{
+			victim->second.Flash = HurtFlashSeconds;
+			victim->second.FlashColor = glm::mix(ElementColor(hit.Damages), glm::vec3(1.0f), FlashWhite);
+		}
+		const Vec2 push = m_Client.GetPredictedState().Push;
+		const float shove = local ? Length(push) : 0.0f;
+		const EntityState* attacker = FindBody(hit.Attacker);
+		if (hit.Damage >= HeavyHitDamage || hit.Critical || shove >= HeavyHitPush)
+		{
+			const float stop = std::lerp(HitStopMin, HitStopMax, std::clamp(float(hit.Damage - HeavyHitDamage) / float(HeavyHitDamage), 0.0f, 1.0f));
+			if (victim != m_Fx.end())
+				victim->second.Stop = std::max(victim->second.Stop, stop);
+			if (attacker && attacker->NetId != hit.Target)
+				if (const auto it = m_Fx.find(attacker->NetId); it != m_Fx.end())
+					it->second.Stop = std::max(it->second.Stop, stop);
+		}
+		if (!local)
+			return;
+		const float weight = std::min(hit.Damage > 0 ? float(hit.Damage) / HitTraumaDamage : shove / HitTraumaPush, 1.2f);
+		m_Trauma = std::min(std::max(m_Trauma + HitStack, HitTrauma + HitTraumaScale * weight), 1.0f);
+		Vec2 direction = shove > 0.5f ? push / shove : Vec2();
+		if (direction == Vec2() && attacker && LengthSquared(hit.Position - attacker->Position) > 1e-4f)
+			direction = Normalize(hit.Position - attacker->Position);
+		m_KickSpeed += glm::vec2(direction.x, direction.y) * (KickImpulse * std::sqrt(std::min(weight, 1.0f)));
+	}
+
+	void SessionState::UpdateDanger(float dt)
+	{
+		const LocalPlayerState& local = m_Client.GetLocalPlayer();
+		const bool alive = local.Valid && local.State.Alive && local.MaxHealth > 0;
+		const float health = alive ? float(local.Health) / float(local.MaxHealth) : 1.0f;
+		const float target = health < DangerHealth ? 1.0f : 0.0f;
+		m_Danger += (target - m_Danger) * std::min(dt * DangerFade, 1.0f);
+		m_DangerLevel = std::clamp((DangerHealth - health) / (DangerHealth - DangerFloor), 0.0f, 1.0f);
+		m_Heartbeat = std::fmod(m_Heartbeat + dt * (DangerBeat + DangerBeatRise * m_DangerLevel), 1.0f);
+	}
+
 	float SessionState::AgeOf(uint32_t netId) const
 	{
 		const auto it = m_Fx.find(netId);
@@ -1744,7 +1901,7 @@ namespace Game
 				continue;
 			CharacterAnimator::Input input = AnimationInput(fx.Last);
 			input.Hurt = fx.Hurt;
-			fx.Animator.Update(*m_Characters, input, dt);
+			fx.Animator.Update(*m_Characters, input, fx.Stop > 0.0f ? 0.0f : dt);
 		}
 		for (Corpse& corpse : m_Corpses)
 		{
@@ -1765,7 +1922,7 @@ namespace Game
 			color = glm::mix(color, glm::vec3(0.6f, 0.85f, 1.0f), 0.5f);
 		if (entity.Has(EntityFlags::Burning))
 			color = glm::mix(color, glm::vec3(1.0f, 0.5f, 0.28f), 0.45f + 0.15f * std::sin(m_Time * 11.0f + float(entity.NetId)));
-		return glm::vec4(color, FlashOf(entity.NetId) * 0.45f);
+		return glm::vec4(color, 0.0f);
 	}
 
 	void SessionState::DrawCorpses(WorldRenderer& renderer) const
@@ -1834,6 +1991,10 @@ namespace Game
 		}
 		if (m_Lighting.Floating)
 			m_Lighting.Leviathan = LeviathanPass();
+		PostProcess& post = renderer.GetPost();
+		const float beat = std::pow(std::max(std::cos(2.0f * Pi * m_Heartbeat), 0.0f), 6.0f);
+		post.Vignette = m_Danger * DangerVignette * (0.5f + 0.5f * m_DangerLevel) * (0.6f + 0.4f * beat);
+		post.Desaturation = m_Danger * DangerDesaturation * (0.4f + 0.6f * m_DangerLevel);
 		renderer.Begin(m_Camera, m_Lighting, m_Overview ? 0.0f : m_CameraTarget.y, !m_Overview && !m_Lighting.Floating);
 		m_LevelRenderer.Draw(renderer, *level, ComputeView());
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
@@ -1959,7 +2120,7 @@ namespace Game
 		const bool dead = entity.Has(EntityFlags::Dead);
 		const glm::vec3 color = ColorOf(entity.Owner);
 		const glm::vec4 accent(glm::pow(color, glm::vec3(2.2f)), PlayerRim);
-		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, look, *animator, base, entity.Facing, look.Scale, CharacterTint(entity), 0.0f, accent);
+		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, look, *animator, base, entity.Facing, look.Scale, CharacterTint(entity), 0.0f, accent, HitLight(entity));
 		if (dead)
 			return;
 		const bool brawl = m_Client.GetSession().Mode == GameMode::Brawl;
@@ -2659,7 +2820,7 @@ namespace Game
 		const EnemyDef* def = FindEnemyDef(entity.Kind);
 		const AbilityDef& attack = GetAbility(def ? def->Attack : AbilityId::Bite);
 		const float reach = attack.Reach * (elite ? EliteAreaScale : 1.0f);
-		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, *look, *animator, base, entity.Facing, look->Scale * size, CharacterTint(entity), elite ? 0.12f : 0.0f);
+		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, *look, *animator, base, entity.Facing, look->Scale * size, CharacterTint(entity), elite ? 0.12f : 0.0f, glm::vec4(0.0f), HitLight(entity));
 		switch (entity.Kind)
 		{
 		case EntityKind::Chaser:
@@ -2743,7 +2904,7 @@ namespace Game
 			const glm::vec3 arcane(0.75f, 0.55f, 1.0f);
 			const CharacterLook* look = m_Characters->ForEnemy(entity.Kind);
 			if (const CharacterAnimator* animator = AnimatorOf(entity.NetId); look && animator)
-				DrawCharacterModel(renderer, *m_Characters, *look, *animator, base, entity.Facing, look->Scale, CharacterTint(entity), 0.0f);
+				DrawCharacterModel(renderer, *m_Characters, *look, *animator, base, entity.Facing, look->Scale, CharacterTint(entity), 0.0f, glm::vec4(0.0f), HitLight(entity));
 			const uint32_t books = 6;
 			for (uint32_t i = 0; i < books; i++)
 			{
@@ -4493,7 +4654,7 @@ namespace Game
 		title.Shimmer = 0.5f;
 		if (m_PauseSettings)
 		{
-			const UiRect panel = UiRect::Centered(center, { 600.0f, std::min(800.0f, screen.H - 40.0f) });
+			const UiRect panel = UiRect::Centered(center, { 600.0f, std::min(836.0f, screen.H - 40.0f) });
 			ui.Panel(panel, 18.0f);
 			UiRect content = panel.Shrink(36.0f, 30.0f);
 			draw.Text({ content.X, content.Y }, "Attunement", title);

@@ -50,6 +50,7 @@ namespace Game
 		bool Fullscreen = false;
 		bool Vsync = true;
 		uint32_t FrameCap = GraphicsPreset{}.FrameCap;
+		float ScreenShake = 1.0f;
 		bool ShowControls = true;
 		bool ShowPerformance = false;
 		MapKind Map = MapKind::Town;

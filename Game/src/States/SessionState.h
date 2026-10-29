@@ -91,6 +91,8 @@ namespace Game
 		{
 			uint8_t LastHealth = 255;
 			float Flash = 0.0f;
+			glm::vec3 FlashColor{ 1.0f };
+			float Stop = 0.0f;
 			float Age = 0.0f;
 			bool Seen = false;
 			bool Hurt = false;
@@ -210,6 +212,7 @@ namespace Game
 		void UpdateFeedback(float dt);
 		void UpdateWonders();
 		float FlashOf(uint32_t netId) const;
+		glm::vec4 HitLight(const EntityState& entity) const;
 		float AgeOf(uint32_t netId) const;
 		const CharacterAnimator* AnimatorOf(uint32_t netId) const;
 		float BarHeight(const EntityState& entity) const;
@@ -249,6 +252,10 @@ namespace Game
 		Vec2 SpikeAimOf(const EntityState& caster) const;
 		void SpikeMoments(EntityFx& fx, const EntityState& entity, float dt);
 		void EruptSpike(const EntityState& spike);
+		void AddTrauma(float amount);
+		void Rumble(const glm::vec3& point, float strength, uint32_t owner = NoPlayer);
+		void FeelHit(const HitEvent& hit);
+		void UpdateDanger(float dt);
 		void EndSpike(const EntityState& spike);
 		EarthSpikeLook SpikeLook(const EntityState& spike) const;
 		GroundDecal SpikeRift(const EntityState& spike, float glow) const;
@@ -336,7 +343,7 @@ namespace Game
 		void DrawBrawlPlayer(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
 		void DrawDummy(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawBalloon(WorldRenderer& renderer, const EntityState& entity) const;
-		void DrawCritter(WorldRenderer& renderer, Critter critter, const glm::mat4& transform, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f) const;
+		void DrawCritter(WorldRenderer& renderer, Critter critter, const glm::mat4& transform, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& flash = glm::vec4(0.0f)) const;
 		glm::vec3 BalloonAnchor(const EntityState& entity) const;
 		float LeviathanPass() const;
 		void DrawWonders(WorldRenderer& renderer) const;
@@ -491,6 +498,13 @@ namespace Game
 		std::vector<uint8_t> m_Fallen;
 		float m_CrumbleCooldown = 0.0f;
 		float m_Flash = 0.0f;
+		float m_Trauma = 0.0f;
+		float m_ShakeClock = 0.0f;
+		glm::vec2 m_Kick{ 0.0f };
+		glm::vec2 m_KickSpeed{ 0.0f };
+		float m_Danger = 0.0f;
+		float m_DangerLevel = 0.0f;
+		float m_Heartbeat = 0.0f;
 		float m_StormClock = -1e9f;
 		float m_RitualPulse = 0.0f;
 		float m_LastSpireStrike = 0.0f;

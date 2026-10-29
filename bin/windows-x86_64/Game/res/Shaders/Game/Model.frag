@@ -20,6 +20,7 @@ layout(location = 7) in vec4 inTangent;
 layout(location = 8) in vec4 inColor;
 layout(location = 9) in vec3 inWorld;
 layout(location = 10) flat in vec4 inAccent;
+layout(location = 11) flat in uint inFlash;
 
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outSurface;
@@ -344,7 +345,14 @@ void main()
 	if ((flags & MeshLavaGlow) != 0u)
 		heat += HotRock * glow;
 	float fade = DepthFade(pc.Focus.x, inShading.z);
+	vec3 emitted = albedo * glow + heat + material.Extra.rgb * layer.Surface.a;
+	if (inFlash != 0u)
+	{
+		vec4 flash = unpackUnorm4x8(inFlash);
+		emitted = mix(emitted, flash.rgb, flash.a);
+		glow = mix(glow, 1.0, flash.a);
+	}
 	outAlbedo = vec4(albedo * (1.0 - glow), occlusion);
 	outSurface = PackSurface(n, roughness, metallic);
-	outEmission = vec4((albedo * glow + heat + material.Extra.rgb * layer.Surface.a) * (1.0 - fade), cut > 0.0 ? 1.0 : 0.0);
+	outEmission = vec4(emitted * (1.0 - fade), cut > 0.0 ? 1.0 : 0.0);
 }

@@ -47,6 +47,7 @@ namespace Game
 		std::optional<uint8_t> Gi;
 		std::optional<bool> Vsync;
 		std::optional<uint32_t> FrameCap;
+		std::optional<float> ScreenShake;
 		bool ShowPerformance = false;
 		std::optional<float> Exposure;
 		bool Grading = true;

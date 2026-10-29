@@ -24,7 +24,7 @@ namespace Game
 		constexpr float PageWidth = 560.0f;
 		constexpr float PageTop = 112.0f;
 		constexpr float PageHeight = 676.0f;
-		constexpr float SettingsPageHeight = 742.0f;
+		constexpr float SettingsPageHeight = 778.0f;
 		constexpr uint32_t Motes = 44;
 
 		bool NameCharacter(uint32_t codepoint)

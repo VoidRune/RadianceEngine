@@ -56,6 +56,8 @@ namespace Game
 		float BloomStrength = 0.3f;
 		float Exposure = 1.0f;
 		float SceneExposure = 1.0f;
+		float Vignette = 0.0f;
+		float Desaturation = 0.0f;
 		Tonemapper Tonemap = Tonemapper::SoftClip;
 		bool Grading = true;
 		bool Raw = false;

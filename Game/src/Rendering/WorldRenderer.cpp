@@ -921,13 +921,13 @@ namespace Game
 		return offset;
 	}
 
-	void WorldRenderer::DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags)
+	void WorldRenderer::DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags, const glm::vec4& flash)
 	{
 		if (mesh < m_ModelDraws.size())
-			m_ModelDraws[mesh].push_back(MakeModelInstance(mesh, transform, palette, tint, emission, ground, accent, accentFlags));
+			m_ModelDraws[mesh].push_back(MakeModelInstance(mesh, transform, palette, tint, emission, ground, accent, accentFlags, flash));
 	}
 
-	ModelInstance WorldRenderer::MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags) const
+	ModelInstance WorldRenderer::MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags, const glm::vec4& flash) const
 	{
 		const DrawMesh& source = m_DrawMeshes[mesh < m_DrawMeshes.size() ? mesh : 0];
 		const glm::mat4 rows = glm::transpose(transform);
@@ -937,6 +937,7 @@ namespace Game
 			.Shading = glm::vec4(source.Glows ? 1.0f : emission, ground, 0.0f, 0.0f),
 			.Info = glm::uvec4(source.Skinned ? palette : NoPalette, source.Material, source.Layer, source.Flags | accentFlags),
 			.Accent = accent,
+			.Flash = flash,
 		};
 	}
 
