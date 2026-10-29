@@ -912,6 +912,7 @@ namespace Game
 		renderer.SetFrozenLiquid(level.Kind == MapKind::FrozenLake);
 		const TileMap& map = level.Map;
 		m_LavaRuns.clear();
+		m_LavaHaze = level.Kind != MapKind::FrozenLake;
 		for (int32_t y = 0; y < map.GetHeight() && !level.Skyborne; y++)
 		{
 			int32_t start = -1;
@@ -946,9 +947,26 @@ namespace Game
 
 	void LevelRenderer::DrawLava(WorldRenderer& renderer, const LevelView& view) const
 	{
+		glm::vec4 bounds(1e9f, 1e9f, -1e9f, -1e9f);
 		for (const glm::vec4& run : m_LavaRuns)
 			if (run.z >= view.Min.x && run.x <= view.Max.x && run.w >= view.Min.y && run.y <= view.Max.y)
+			{
 				renderer.DrawLava(run, LavaSurface, view.Time);
+				bounds = glm::vec4(glm::min(glm::vec2(bounds), glm::vec2(run)), glm::max(glm::vec2(bounds.z, bounds.w), glm::vec2(run.z, run.w)));
+			}
+		if (!m_LavaHaze || bounds.x > bounds.z)
+			return;
+		bounds = glm::vec4(glm::max(glm::vec2(bounds), glm::vec2(view.Min.x, view.Min.y) - 1.0f), glm::min(glm::vec2(bounds.z, bounds.w), glm::vec2(view.Max.x, view.Max.y) + 1.0f));
+		Distorter haze;
+		haze.Center = glm::vec3((bounds.x + bounds.z) * 0.5f, LavaSurface + LavaHazeLift, (bounds.y + bounds.w) * 0.5f);
+		haze.Shape = DistortionShape::Haze;
+		haze.Align = DistortionAlign::Ground;
+		haze.Extent = glm::vec2(bounds.z - bounds.x, bounds.w - bounds.y) * 0.5f;
+		haze.Strength = LavaHazeStrength;
+		haze.Soft = 0.06f;
+		haze.Params = glm::vec4(1.4f, 0.45f, 0.8f, 0.0f);
+		haze.Seed = 0x5A17u;
+		renderer.DrawDistortion(haze);
 	}
 
 	void LevelRenderer::DrawLoose(WorldRenderer& renderer, const LevelView& view) const

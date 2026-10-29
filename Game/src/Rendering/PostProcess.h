@@ -1,4 +1,5 @@
 #pragma once
+#include "Rendering/Distortion.h"
 #include <RadianceEngine/Graphics/RenderGraph.h>
 #include <RadianceEngine/Graphics/ResourceAllocator.h>
 #include <glm/glm.hpp>
@@ -46,7 +47,7 @@ namespace Game
 		PostProcess(const PostProcess&) = delete;
 		PostProcess& operator=(const PostProcess&) = delete;
 
-		void Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage target, Rdn::Extent2D source, Rdn::Extent2D output);
+		void Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage target, Rdn::Extent2D source, Rdn::Extent2D output, const DistortionView& distortion = {});
 		void SetGrade(const ColorGrade& grade);
 		bool LoadGradingLut(const char* path, std::string& error);
 		const ColorGrade& GetGrade() const { return m_Grade; }
@@ -72,6 +73,7 @@ namespace Game
 		std::unique_ptr<Rdn::ComputePipeline> m_Up;
 		std::unique_ptr<Rdn::Pipeline> m_Composite;
 		std::unique_ptr<Rdn::Sampler> m_Sampler;
+		std::unique_ptr<Rdn::Sampler> m_PointSampler;
 		std::unique_ptr<Rdn::GpuImage> m_GradingLut;
 		ColorGrade m_Grade;
 		bool m_CustomLut = false;

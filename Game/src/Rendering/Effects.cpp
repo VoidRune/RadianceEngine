@@ -901,6 +901,7 @@ namespace Game
 		m_Trails.clear();
 		m_Marks.clear();
 		m_Spikes.clear();
+		m_Waves.clear();
 	}
 
 	void EffectSystem::Mark(const GroundDecal& decal, float life, float fadeIn, float startScale, float endScale, float growTime, float cooling)
@@ -913,6 +914,12 @@ namespace Game
 	{
 		if (m_Spikes.size() < 256)
 			m_Spikes.push_back({ .Base = base, .Height = height, .Lean = lean, .Yaw = yaw, .Variant = variant, .Life = life });
+	}
+
+	void EffectSystem::Shockwave(const glm::vec3& ground, float radius, float life, float strength, float width, float facing, float halfArc)
+	{
+		if (m_Waves.size() < 64)
+			m_Waves.push_back({ .Ground = ground, .Radius = radius, .Life = life, .Strength = strength, .Width = width, .Facing = facing, .HalfArc = halfArc });
 	}
 
 	void EffectSystem::Update(float dt)
@@ -928,6 +935,9 @@ namespace Game
 		}
 		std::erase_if(m_Marks, [](const DecalMark& mark) { return mark.Age >= mark.Life; });
 		std::erase_if(m_Spikes, [](const SpikeMark& spike) { return spike.Age >= spike.Life; });
+		for (WaveMark& wave : m_Waves)
+			wave.Age += dt;
+		std::erase_if(m_Waves, [](const WaveMark& wave) { return wave.Age >= wave.Life; });
 	}
 
 	void EffectSystem::Draw(WorldRenderer& renderer, const SpellMeshes& meshes) const
@@ -963,6 +973,13 @@ namespace Game
 			look.Glow = std::exp(-spike.Age * 4.0f);
 			look.Variant = spike.Variant;
 			DrawIceCluster(renderer, meshes, look);
+		}
+		for (const WaveMark& wave : m_Waves)
+		{
+			const float t = std::clamp(wave.Age / std::max(wave.Life, 1e-3f), 0.0f, 1.0f);
+			const float grow = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+			const float fade = (1.0f - t) * (1.0f - t) * smooth(0.0f, 0.05f, wave.Age);
+			DrawShockwave(renderer, wave.Ground, wave.Radius * (0.08f + 0.92f * grow), wave.Width * (0.6f + 0.8f * t), wave.Strength * fade, wave.Facing, wave.HalfArc);
 		}
 	}
 
@@ -1066,6 +1083,7 @@ namespace Game
 		case AbilityId::FirebombSkip2:
 			scorch(ground, radius * 0.5f, 4.0f, 0.5f);
 			shock(radius, 0.3f);
+			Shockwave(ground, radius * 1.4f, 0.42f, 0.12f, 0.24f);
 			break;
 		case AbilityId::PurpleFireball:
 		{
@@ -1090,8 +1108,12 @@ namespace Game
 				Mark(split, 4.0f + 3.0f * power, 0.02f, 0.5f, 1.0f, 0.14f, 2.6f);
 			}
 			shock(radius * 1.05f, 0.4f, 0.55f + 0.35f * power);
+			Shockwave(ground, radius * (1.35f + 0.25f * power), 0.4f + 0.3f * power, 0.06f + 0.2f * power, 0.22f + 0.25f * power);
 			if (power > 0.9f)
+			{
 				shock(radius * 1.45f, 0.6f, 0.4f);
+				Shockwave(ground, radius * 2.1f, 0.8f, 0.07f, 0.35f);
+			}
 			break;
 		}
 		case AbilityId::FirebombFlame:
@@ -1111,6 +1133,7 @@ namespace Game
 			cracks(ground, radius * 1.05f, 8.0f, 1.0f);
 			shock(radius * 1.1f, 0.45f);
 			runes(ground, radius, 0.7f, 0.0f, 1.0f, 1.15f);
+			Shockwave(ground, radius * 1.8f, 0.6f, 0.26f, 0.45f);
 			break;
 		case AbilityId::Shockwave:
 			shock(reach, 0.4f);
@@ -1123,6 +1146,7 @@ namespace Game
 			break;
 		case AbilityId::Gust:
 			flash(DecalShape::Sector, ground, glm::vec2(reach), facing, def.HalfArc, 0.4f);
+			Shockwave(ground, reach * 1.05f, 0.38f, 0.14f, 0.28f, facing, def.HalfArc);
 			break;
 		case AbilityId::Warp:
 		case AbilityId::Swap:

@@ -153,6 +153,7 @@ namespace Game
 		void Converge(uint64_t key, const glm::vec3& target, float radius, float rate, float life, float dt, float size = 1.0f, ParticleKind kind = ParticleKind::Mote, const glm::vec3& tint = glm::vec3(1.0f), float swirl = 0.0f, float arrive = 1.0f);
 		void Mark(const GroundDecal& decal, float life, float fadeIn = 0.05f, float startScale = 1.0f, float endScale = 1.0f, float growTime = 0.25f, float cooling = 0.0f);
 		void Spike(const glm::vec3& base, float height, float yaw, float lean, uint32_t variant, float life);
+		void Shockwave(const glm::vec3& ground, float radius, float life, float strength, float width = 0.25f, float facing = 0.0f, float halfArc = 3.1416f);
 		void Impact(AbilityId ability, const glm::vec3& ground, float facing, float scale, const glm::vec3& color, uint32_t seed, const HeightAt& heightAt);
 		void Update(float dt);
 		void Draw(WorldRenderer& renderer, const SpellMeshes& meshes) const;
@@ -190,6 +191,18 @@ namespace Game
 			float Age = 0.0f;
 		};
 
+		struct WaveMark
+		{
+			glm::vec3 Ground{ 0.0f };
+			float Radius = 1.0f;
+			float Life = 0.4f;
+			float Strength = 0.1f;
+			float Width = 0.25f;
+			float Facing = 0.0f;
+			float HalfArc = 3.1416f;
+			float Age = 0.0f;
+		};
+
 		struct ConvergeState
 		{
 			float Carry = 0.0f;
@@ -202,6 +215,7 @@ namespace Game
 		std::unordered_map<uint64_t, ConvergeState> m_Converges;
 		std::vector<DecalMark> m_Marks;
 		std::vector<SpikeMark> m_Spikes;
+		std::vector<WaveMark> m_Waves;
 		std::array<float, size_t(Fx::Count)> m_StreamCarry{};
 	};
 }

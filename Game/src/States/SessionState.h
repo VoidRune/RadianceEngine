@@ -349,6 +349,7 @@ namespace Game
 		void DrawWonders(WorldRenderer& renderer) const;
 		void DrawChess();
 		void DrawChessTable(WorldRenderer& renderer) const;
+		void DrawDistortionStage(WorldRenderer& renderer) const;
 		void UpdateChess();
 		void CommitChessMove(uint8_t from, uint8_t to, Chess::Piece promotion);
 		Chess::Position ShownChessPosition() const;

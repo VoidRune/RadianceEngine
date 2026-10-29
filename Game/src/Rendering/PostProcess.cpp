@@ -19,6 +19,8 @@ namespace Game
 		constexpr uint32_t GradingLutSize = 32;
 		constexpr uint32_t FlagGrading = 1;
 		constexpr uint32_t FlagRaw = 2;
+		constexpr uint32_t FlagDistort = 4;
+		constexpr float ChromaticSplit = 0.16f;
 
 		struct DownConstants
 		{
@@ -42,7 +44,10 @@ namespace Game
 			uint32_t Flags;
 			glm::vec4 Crop;
 			glm::vec4 Danger;
+			glm::vec4 Distort;
+			std::array<LensDisk, MaxLenses> Lenses;
 		};
+		static_assert(sizeof(CompositeConstants) == 128);
 
 		glm::vec3 ApplyGrade(const ColorGrade& grade, const glm::vec3& color)
 		{
@@ -94,6 +99,8 @@ namespace Game
 		});
 		m_Sampler = std::make_unique<Rdn::Sampler>();
 		m_Allocator.CreateSampler(m_Sampler.get(), Rdn::SamplerDesc{ .AddressMode = Rdn::SamplerAddressMode::ClampToEdge });
+		m_PointSampler = std::make_unique<Rdn::Sampler>();
+		m_Allocator.CreateSampler(m_PointSampler.get(), Rdn::SamplerDesc{ .MinFilter = Rdn::Filter::Nearest, .MagFilter = Rdn::Filter::Nearest, .AddressMode = Rdn::SamplerAddressMode::ClampToEdge });
 		SetGrade(m_Grade);
 	}
 
@@ -105,8 +112,9 @@ namespace Game
 				m_Allocator.ReleaseResource(pipeline);
 		if (m_Composite)
 			m_Allocator.ReleaseResource(m_Composite.get());
-		if (m_Sampler)
-			m_Allocator.ReleaseResource(m_Sampler.get());
+		for (Rdn::Sampler* sampler : { m_Sampler.get(), m_PointSampler.get() })
+			if (sampler)
+				m_Allocator.ReleaseResource(sampler);
 		if (m_GradingLut)
 			m_Allocator.ReleaseResource(m_GradingLut.get());
 		for (const std::unique_ptr<Rdn::Shader>& shader : m_Shaders)
@@ -217,7 +225,7 @@ namespace Game
 		m_Allocator.SetImageData(m_GradingLut.get(), texels.data(), texels.size() * sizeof(uint16_t), Rdn::ImageLayout::ShaderReadOnlyOptimal);
 	}
 
-	void PostProcess::Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage target, Rdn::Extent2D extent, Rdn::Extent2D output)
+	void PostProcess::Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage target, Rdn::Extent2D extent, Rdn::Extent2D output, const DistortionView& distortion)
 	{
 		if (!m_Composite)
 			return;
@@ -281,21 +289,32 @@ namespace Game
 
 		const glm::vec2 rendered(float(extent.Width), float(extent.Height));
 		const glm::vec2 visible(float(output.Width), float(output.Height));
-		const CompositeConstants constants{ BloomStrength, Exposure * SceneExposure * TonemapperExposure[size_t(Tonemap)], uint32_t(Tonemap), (Grading ? FlagGrading : 0u) | (Raw ? FlagRaw : 0u),
-			glm::vec4(visible / rendered, glm::floor((rendered - visible) * 0.5f) / rendered), glm::vec4(Vignette, Desaturation, 0.0f, 0.0f) };
+		const bool distort = distortion.Active && !Raw;
+		const CompositeConstants constants{ BloomStrength, Exposure * SceneExposure * TonemapperExposure[size_t(Tonemap)], uint32_t(Tonemap), (Grading ? FlagGrading : 0u) | (Raw ? FlagRaw : 0u) | (distort ? FlagDistort : 0u),
+			glm::vec4(visible / rendered, glm::floor((rendered - visible) * 0.5f) / rendered), glm::vec4(Vignette, Desaturation, 0.0f, 0.0f),
+			glm::vec4(distortion.Near, distortion.Far, ChromaticSplit, float(distort ? distortion.LensCount : 0u)), distortion.Lenses };
 		const Rdn::RGImage bloom = lower;
+		const Rdn::RGImage offsets = distort ? distortion.Offsets : scene;
+		const Rdn::RGImage depth = distort ? distortion.Depth : scene;
 		graph.AddPass("Composite", Rdn::PassType::Graphics,
 			[&](Rdn::PassBuilder& builder)
 			{
 				builder.AddColorAttachment(target, Rdn::AttachmentLoadOp::DontCare, Rdn::AttachmentStoreOp::Store);
 				builder.UseImage(scene, Rdn::RGImageUsage::Sampled);
 				builder.UseImage(bloom, Rdn::RGImageUsage::Sampled);
+				if (distort)
+				{
+					builder.UseImage(offsets, Rdn::RGImageUsage::Sampled);
+					builder.UseImage(depth, Rdn::RGImageUsage::Sampled);
+				}
 			},
 			[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
 			{
 				cmd.BindPipeline(m_Composite->GetHandle());
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_Composite->GetLayout(), 0, Rdn::DescriptorWrite()
-					.AddWrite(sampled(0, context.GetImageView(scene))).AddWrite(sampled(1, context.GetImageView(bloom))).AddWrite(sampled(2, m_GradingLut->GetImageView())));
+					.AddWrite(sampled(0, context.GetImageView(scene))).AddWrite(sampled(1, context.GetImageView(bloom))).AddWrite(sampled(2, m_GradingLut->GetImageView()))
+					.AddWrite(sampled(3, context.GetImageView(offsets)))
+					.AddWrite(Rdn::ImageWrite(4, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(depth), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_PointSampler->GetHandle())));
 				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Composite->GetLayout(), &constants, sizeof(constants));
 				cmd.Draw(3, 1, 0, 0);
 			});

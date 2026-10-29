@@ -218,6 +218,8 @@ namespace Game
 		m_Settings.FirstWave = options.FirstWave;
 		m_Settings.Peaceful = options.Peaceful;
 		m_Settings.Leviathan = options.Leviathan;
+		m_Settings.Distortion = options.Distortion;
+		m_Settings.DistortionStage = options.DistortionStage;
 		m_Settings.LootRate = options.LootRate;
 		m_Settings.StartMode = options.StartMode;
 		m_Settings.Tier = options.Tier;
@@ -333,6 +335,7 @@ namespace Game
 		RegisterSpellMeshes(*m_WorldRenderer);
 		m_MenuBackdrop = std::make_unique<MenuBackdrop>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
 		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
+		m_WorldRenderer->GetDistortion().Enabled = m_Settings.Distortion;
 		if (options.Shadows)
 			m_Settings.Shadows = ShadowQuality(*options.Shadows);
 		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);

@@ -278,4 +278,9 @@ namespace Game
 	void DrawProjectileVisual(WorldRenderer& renderer, AbilityId ability, const glm::vec3& center, float facing, const glm::vec3& color, float time, uint32_t seed, const glm::vec3& owner = glm::vec3(0.0f));
 	void DrawChain(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float sag, float glow);
 	void DrawBolt(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float jitter, float width, const glm::vec3& color, float emission = 0.25f);
+
+	void DrawShockwave(WorldRenderer& renderer, const glm::vec3& ground, float radius, float width, float strength, float facing = 0.0f, float halfArc = 3.1416f);
+	void DrawHeatHaze(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength, float frequency, float rise, uint32_t seed);
+	void DrawImplosion(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength, float phase, uint32_t pulses = 3);
+	void DrawGravityLens(WorldRenderer& renderer, const glm::vec3& center, float horizon, float einstein, const glm::vec3& ring, float strength = 1.0f);
 }

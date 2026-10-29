@@ -61,6 +61,8 @@ namespace Game
 		bool UnlimitedMaterials = false;
 		bool Peaceful = false;
 		bool Leviathan = false;
+		bool Distortion = true;
+		uint8_t DistortionStage = 0;
 		uint32_t FirstWave = 1;
 		float LootRate = 1.0f;
 		NetworkSimulation Simulation;

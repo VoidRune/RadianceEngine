@@ -2019,6 +2019,8 @@ namespace Game
 		DrawPeak(renderer);
 		DrawWonders(renderer);
 		DrawChessTable(renderer);
+		if (m_App.GetSettings().DistortionStage != 0)
+			DrawDistortionStage(renderer);
 		const PlayerState& state = m_Client.GetPredictedState();
 		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
 		if (m_AimPoint && self && !m_Paused && !m_Overview && m_HoveredPortal < 0)
@@ -2487,6 +2489,7 @@ namespace Game
 		const glm::vec3 base = Ground(spike.Position);
 		const glm::vec3 thrust = glm::normalize(Heading(spike.Facing) * std::sin(SpikeTilt) + glm::vec3(0.0f, std::cos(SpikeTilt), 0.0f));
 		m_Effects->Burst(Fx::SpikeEruption, base + glm::vec3(0.0f, 0.1f, 0.0f), thrust);
+		m_Effects->Shockwave(base, 1.9f, 0.38f, 0.15f, 0.24f);
 		GroundDecal soil;
 		soil.Center = base;
 		soil.Yaw = spike.Facing;
@@ -4727,5 +4730,32 @@ namespace Game
 			ReturnToMenu({});
 		if (entry("pause.quit", "Quit to Desktop"))
 			m_App.Quit();
+	}
+
+	void SessionState::DrawDistortionStage(WorldRenderer& renderer) const
+	{
+		const glm::vec3 right = glm::normalize(glm::vec3(m_Camera.View[0][0], 0.0f, m_Camera.View[2][0]));
+		const glm::vec3 depth(-right.z, 0.0f, right.x);
+		const auto spot = [&](float across, float along)
+		{
+			const glm::vec3 point = glm::vec3(m_CameraTarget.x, 0.0f, m_CameraTarget.z) + right * across + depth * along;
+			return Ground(Vec2(point.x, point.z));
+		};
+		const auto loop = [&](float period, float offset) { return std::fmod(m_Time / period + offset, 1.0f); };
+		const auto wave = [&](const glm::vec3& ground, float radius, float strength, float t)
+		{
+			const float grow = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+			DrawShockwave(renderer, ground, radius * (0.08f + 0.92f * grow), 0.35f * (0.6f + 0.8f * t), strength * (1.0f - t) * (1.0f - t));
+		};
+		if (m_App.GetSettings().DistortionStage == 2)
+		{
+			for (int i = 0; i < 4; i++)
+				wave(spot(i % 2 == 0 ? -3.2f : 3.2f, i < 2 ? -1.6f : 1.6f), 2.2f, 0.26f, loop(1.6f, 0.17f * float(i)));
+			return;
+		}
+		wave(spot(-5.0f, 0.0f), 1.9f, 0.26f, loop(1.6f, 0.0f));
+		DrawHeatHaze(renderer, spot(-1.9f, 0.0f) + glm::vec3(0.0f, 1.0f, 0.0f), 1.1f, 0.035f, 3.0f, 1.4f, 11u);
+		DrawImplosion(renderer, spot(1.5f, 0.0f) + glm::vec3(0.0f, 1.0f, 0.0f), 1.3f, 0.14f, m_Time * 1.2f);
+		DrawGravityLens(renderer, spot(4.9f, 0.0f) + glm::vec3(0.0f, 1.4f, 0.0f), 0.32f, 0.62f, glm::vec3(0.75f, 0.55f, 1.1f) * 0.7f);
 	}
 }

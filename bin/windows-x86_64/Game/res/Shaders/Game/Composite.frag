@@ -3,6 +3,8 @@
 layout(set = 0, binding = 0) uniform sampler2D Scene;
 layout(set = 0, binding = 1) uniform sampler2D Bloom;
 layout(set = 0, binding = 2) uniform sampler3D Grading;
+layout(set = 0, binding = 3) uniform sampler2D Distortion;
+layout(set = 0, binding = 4) uniform sampler2D SceneDepth;
 
 layout(push_constant) uniform PushConstants
 {
@@ -12,6 +14,8 @@ layout(push_constant) uniform PushConstants
 	uint Flags;
 	vec4 Crop;
 	vec4 Danger;
+	vec4 Distort;
+	vec4 Lenses[4];
 } pc;
 
 layout(location = 0) in vec2 inUv;
@@ -23,6 +27,7 @@ const uint TonemapNeutral = 2u;
 const uint TonemapSoftClip = 3u;
 const uint FlagGrading = 1u;
 const uint FlagRaw = 2u;
+const uint FlagDistort = 4u;
 const vec3 DangerEdge = vec3(0.3, 0.015, 0.025);
 
 vec3 LinearToSrgb(vec3 color)
@@ -91,7 +96,47 @@ void main()
 		outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 		return;
 	}
-	color = (color + textureLod(Bloom, uv, 0.0).rgb * pc.BloomStrength) * pc.Exposure;
+	vec3 glow;
+	if ((pc.Flags & FlagDistort) != 0u)
+	{
+		vec2 size = vec2(textureSize(Scene, 0));
+		vec2 offset = textureLod(Distortion, uv, 0.0).rg;
+		float split = pc.Distort.z * smoothstep(3.0, 16.0, length(offset * size));
+		if (split > 0.0)
+		{
+			vec2 red = uv + offset * (1.0 + split);
+			vec2 green = uv + offset;
+			vec2 blue = uv + offset * (1.0 - split);
+			color = max(vec3(textureLod(Scene, red, 0.0).r, textureLod(Scene, green, 0.0).g, textureLod(Scene, blue, 0.0).b), vec3(0.0));
+			glow = vec3(textureLod(Bloom, red, 0.0).r, textureLod(Bloom, green, 0.0).g, textureLod(Bloom, blue, 0.0).b);
+		}
+		else
+		{
+			color = max(textureLod(Scene, uv + offset, 0.0).rgb, vec3(0.0));
+			glow = textureLod(Bloom, uv + offset, 0.0).rgb;
+		}
+		color += glow * pc.BloomStrength;
+		uint lenses = uint(pc.Distort.w);
+		if (lenses > 0u)
+		{
+			float near = pc.Distort.x;
+			float far = pc.Distort.y;
+			float depth = near * far / (far - textureLod(SceneDepth, uv, 0.0).r * (far - near));
+			for (uint i = 0u; i < lenses; i++)
+			{
+				vec4 disk = pc.Lenses[2u * i];
+				vec4 ring = pc.Lenses[2u * i + 1u];
+				float behind = smoothstep(-0.15, 0.05, depth - ring.w);
+				float r = length((uv - disk.xy) * size);
+				float band = (r - disk.w) / max(0.07 * disk.w, 1.5);
+				color += ring.rgb * (exp(-band * band) * behind);
+				color *= 1.0 - (1.0 - smoothstep(disk.z - 1.0, disk.z + 1.0, r)) * behind;
+			}
+		}
+	}
+	else
+		color += textureLod(Bloom, uv, 0.0).rgb * pc.BloomStrength;
+	color *= pc.Exposure;
 	vec3 display;
 	if (pc.Tonemapper == TonemapAgX)
 		display = AgX(color);

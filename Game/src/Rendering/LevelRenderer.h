@@ -16,6 +16,8 @@ namespace Game
 	inline constexpr float CameraBack = 9.2f;
 	inline constexpr float CameraFocusOffset = 1.1f;
 	inline constexpr float LavaSurface = -0.3f;
+	inline constexpr float LavaHazeLift = 0.12f;
+	inline constexpr float LavaHazeStrength = 0.02f;
 	inline constexpr float LavaWading = -0.42f;
 	inline constexpr float CollapseFallSeconds = 1.1f;
 	inline constexpr float RestoreSeconds = 1.3f;
@@ -149,6 +151,7 @@ namespace Game
 		std::vector<float> m_PropReach;
 		std::vector<float> m_PropTop;
 		std::vector<glm::vec4> m_LavaRuns;
+		bool m_LavaHaze = false;
 	};
 
 	glm::vec3 ToColor(uint32_t rgb);

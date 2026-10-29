@@ -569,6 +569,8 @@ namespace Game
 		renderer.DrawSprite(core);
 		DrawGlow(renderer, look.Center, 0.5f * length, glm::vec3(0.02f, 0.06f, 0.14f) * (0.6f + 0.8f * power + 1.0f * look.Flash), 0.3f);
 		DrawGlow(renderer, tip, (0.06f + 0.05f * power + 0.04f * full * pulse) * look.Size, glm::vec3(0.5f, 0.75f, 1.1f) * (0.4f + 0.4f * power), 0.1f);
+		if (!look.Flying)
+			DrawImplosion(renderer, look.Center, (0.7f + 0.5f * power) * look.Grow, 0.03f + 0.08f * power + 0.03f * look.Over, time * (0.8f + 0.7f * power) + float(seed % 61u) * 0.37f);
 		if (look.Flash > 0.0f)
 			DrawStar(renderer, look.Center, 0.7f * length * look.Flash, glm::vec3(0.7f, 1.0f, 1.4f) * look.Flash, time * 0.7f);
 		if (look.Over > 0.0f)
@@ -653,6 +655,13 @@ namespace Game
 		const glm::vec3 core = glm::mix(glm::vec3(0.4f, 0.2f, 0.06f), glm::vec3(0.3f, 0.08f, 0.42f), violet);
 		const glm::vec3 heart = glm::mix(glm::vec3(0.5f, 0.38f, 0.22f), glm::vec3(0.4f, 0.16f, 0.5f), violet);
 		const glm::vec3 lag = look.Flying ? -look.Forward * (0.25f * radius) : glm::vec3(0.0f);
+		if (look.Flying)
+			DrawHeatHaze(renderer, look.Center - look.Forward * (1.2f * radius), radius * 3.0f, 0.02f + 0.015f * look.Power, 1.6f / radius, 1.8f, seed);
+		else
+		{
+			DrawHeatHaze(renderer, look.Center + Up * (0.6f * radius), radius * 2.4f, 0.012f + 0.016f * look.Power, 1.6f / radius, 1.4f, seed);
+			DrawImplosion(renderer, look.Center, radius * (3.2f + 1.5f * look.Power), 0.04f + 0.1f * look.Power + 0.04f * look.Over, time * (0.9f + 0.9f * look.Power) + float(seed % 61u) * 0.37f);
+		}
 		ParticleSprite aura = Sprite(ParticleShape::Glow, look.Center, radius * (1.8f + 0.4f * look.Power), halo * (0.12f + 0.12f * look.Power));
 		aura.Softness = 0.3f;
 		aura.Emission = 0.3f;
@@ -1542,5 +1551,57 @@ namespace Game
 			}
 			previous = point;
 		}
+	}
+
+	void DrawShockwave(WorldRenderer& renderer, const glm::vec3& ground, float radius, float width, float strength, float facing, float halfArc)
+	{
+		Distorter wave;
+		wave.Center = ground + Up * 0.2f;
+		wave.Shape = DistortionShape::Shockwave;
+		wave.Align = DistortionAlign::Ground;
+		wave.Extent = glm::vec2(radius + 2.5f * width);
+		wave.Yaw = facing;
+		wave.Strength = strength;
+		wave.Soft = 0.12f;
+		wave.Params = glm::vec4(radius, width, halfArc, 0.35f);
+		renderer.DrawDistortion(wave);
+	}
+
+	void DrawHeatHaze(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength, float frequency, float rise, uint32_t seed)
+	{
+		Distorter haze;
+		haze.Center = center;
+		haze.Shape = DistortionShape::Haze;
+		haze.Extent = glm::vec2(radius);
+		haze.Strength = strength;
+		haze.Soft = 0.2f;
+		haze.Params = glm::vec4(frequency, rise, 0.6f * radius, 0.0f);
+		haze.Seed = seed;
+		renderer.DrawDistortion(haze);
+	}
+
+	void DrawImplosion(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength, float phase, uint32_t pulses)
+	{
+		Distorter pull;
+		pull.Center = center;
+		pull.Shape = DistortionShape::Implosion;
+		pull.Extent = glm::vec2(radius);
+		pull.Strength = strength;
+		pull.Soft = 0.2f;
+		pull.Params = glm::vec4(radius, phase, float(pulses), 0.0f);
+		renderer.DrawDistortion(pull);
+	}
+
+	void DrawGravityLens(WorldRenderer& renderer, const glm::vec3& center, float horizon, float einstein, const glm::vec3& ring, float strength)
+	{
+		Distorter lens;
+		lens.Center = center;
+		lens.Shape = DistortionShape::Lens;
+		lens.Extent = glm::vec2(3.2f * einstein);
+		lens.Strength = strength;
+		lens.Soft = 0.25f;
+		lens.Params = glm::vec4(horizon, einstein, 0.0f, 0.0f);
+		lens.Color = ring;
+		renderer.DrawDistortion(lens);
 	}
 }

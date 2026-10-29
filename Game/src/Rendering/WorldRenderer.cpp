@@ -254,6 +254,7 @@ namespace Game
 		m_Deferred = std::make_unique<DeferredLighting>(device, allocator);
 		m_Gi = std::make_unique<RadianceCascades>(device, allocator);
 		m_Post = std::make_unique<PostProcess>(device, allocator, colorFormat);
+		m_Distortion = std::make_unique<ScreenDistortion>(device, allocator);
 		CreateMeshes();
 		EnsureCapacity(16384);
 		EnsureModelCapacity(1024, 4096);
@@ -285,6 +286,7 @@ namespace Game
 		m_Deferred.reset();
 		m_Gi.reset();
 		m_Post.reset();
+		m_Distortion.reset();
 		ReleaseModelData();
 		for (Rdn::GpuRingBuffer* buffer : { m_InstanceBuffer.get(), m_ModelInstanceBuffer.get(), m_PaletteBuffer.get() })
 			if (buffer)
@@ -885,6 +887,7 @@ namespace Game
 		m_LavaQuads.clear();
 		m_Palettes.clear();
 		m_Particles->BeginFrame();
+		m_Distortion->BeginFrame();
 		if (lighting.Grade != m_Post->GetGrade() && !m_Post->HasCustomLut())
 			m_Post->SetGrade(lighting.Grade);
 		m_Camera = camera;
@@ -1104,7 +1107,8 @@ namespace Game
 			m_Particles->Draw(graph, scene, gbuffer.Emission, gbuffer.Depth, frameIndex);
 		m_Post->Raw = IsRawView(m_View);
 		m_Post->SceneExposure = m_Lighting.Exposure;
-		m_Post->Render(graph, scene, gbuffer.Emission, target, extent, output);
+		const DistortionView distortion = IsRawView(m_View) ? DistortionView{} : m_Distortion->Render(graph, gbuffer.Depth, extent, frameIndex, camera, m_Particles->GetTime());
+		m_Post->Render(graph, scene, gbuffer.Emission, target, extent, output, distortion);
 	}
 
 	void WorldRenderer::RenderBackFaces(Rdn::RenderGraph& graph, Rdn::RGImage target, uint32_t boxCount, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex)

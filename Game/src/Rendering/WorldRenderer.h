@@ -1,5 +1,6 @@
 #pragma once
 #include "Rendering/Animation.h"
+#include "Rendering/Distortion.h"
 #include "Rendering/Lighting.h"
 #include "Rendering/ModelLibrary.h"
 #include "Rendering/Particles.h"
@@ -118,6 +119,8 @@ namespace Game
 		void DrawSprite(const ParticleSprite& sprite) { m_Particles->DrawSprite(sprite); }
 		void DrawDecal(const GroundDecal& decal) { m_Particles->DrawDecal(decal); }
 		void DrawFacet(const GlassFacet& facet) { m_Particles->DrawFacet(facet); }
+		void DrawDistortion(const Distorter& distorter) { m_Distortion->Draw(distorter); }
+		ScreenDistortion& GetDistortion() { return *m_Distortion; }
 		void Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex, const std::array<float, 4>& clearColor);
 
 		bool IsReady() const { return m_Pipeline != nullptr; }
@@ -277,5 +280,6 @@ namespace Game
 		std::unique_ptr<DeferredLighting> m_Deferred;
 		std::unique_ptr<RadianceCascades> m_Gi;
 		std::unique_ptr<PostProcess> m_Post;
+		std::unique_ptr<ScreenDistortion> m_Distortion;
 	};
 }

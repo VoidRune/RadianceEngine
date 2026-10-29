@@ -55,6 +55,8 @@ namespace Game
 		std::string PbrTest;
 		bool ProfileGpu = false;
 		bool Leviathan = false;
+		bool Distortion = true;
+		uint8_t DistortionStage = 0;
 		bool Steam = true;
 		std::optional<uint64_t> ConnectLobby;
 	};
