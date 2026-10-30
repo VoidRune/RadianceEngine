@@ -292,11 +292,13 @@ class Shader:
         self.feed(node.inputs['Distance'], distance)
         return node.outputs['AO']
 
-    def finish(self, base, roughness, height=0.0, bump=0.0, bump_distance=0.01, metallic=0.0, emission=None, emission_color=(1.0, 0.4, 0.1), emission_strength=1.0, bake_size=1024, specular=0.5, alpha=None, cutoff=0.5):
+    def finish(self, base, roughness, height=0.0, bump=0.0, bump_distance=0.01, metallic=0.0, emission=None, emission_color=(1.0, 0.4, 0.1), emission_strength=1.0, bake_size=1024, specular=0.5, alpha=None, cutoff=0.5, translucency=0.0, thickness=0.0, thin=None):
         outputs = {}
         channels = [('base', base), ('rough', roughness), ('metal', metallic), ('height', height), ('emit', emission if emission is not None else 0.0)]
         if alpha is not None:
             channels.append(('alpha', alpha))
+        if thin is not None:
+            channels.append(('thin', thin))
         for key, value in channels:
             reroute = self.node('NodeReroute')
             reroute.name = 'OUT_' + key
@@ -330,6 +332,9 @@ class Shader:
         output.name = 'Material Output'
         self.feed(output.inputs['Surface'], bsdf.outputs['BSDF'])
         self.material['bake_size'] = bake_size
+        if translucency > 0.0:
+            self.material['translucency'] = translucency
+            self.material['thickness'] = thickness
         self.material['emit_color'] = list(emission_color)
         self.material['emit_strength'] = emission_strength if emission is not None else 0.0
         return self.material
@@ -447,6 +452,34 @@ def bake_material(material, objects, folder, prefix, ao_distance=0.5, ao_samples
     else:
         scene.world.light_settings.distance = ao_distance
         bake('AO', 'ao', ao_samples)
+    if material.get('thickness', 0.0) > 0.0 or 'OUT_thin' in tree.nodes:
+        thin = tree.nodes.new('ShaderNodeMath')
+        thin.operation = 'SUBTRACT'
+        thin.inputs[0].default_value = 1.0
+        thin.inputs[1].default_value = 0.0
+        added = [thin]
+        if material.get('thickness', 0.0) > 0.0:
+            inside = tree.nodes.new('ShaderNodeAmbientOcclusion')
+            inside.samples = 64
+            inside.inside = True
+            inside.only_local = True
+            inside.inputs['Distance'].default_value = float(material['thickness'])
+            tree.links.new(inside.outputs['AO'], thin.inputs[1])
+            added.append(inside)
+        shade = thin.outputs[0]
+        if 'OUT_thin' in tree.nodes:
+            mask = tree.nodes.new('ShaderNodeMath')
+            added.append(mask)
+            mask.operation = 'MULTIPLY'
+            tree.links.new(shade, mask.inputs[0])
+            tree.links.new(tree.nodes['OUT_thin'].outputs[0], mask.inputs[1])
+            shade = mask.outputs[0]
+        tree.links.new(shade, emission.inputs['Color'])
+        tree.links.new(emission.outputs[0], output.inputs['Surface'])
+        bake('EMIT', 'thin', 16)
+        tree.links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+        for node in added:
+            tree.nodes.remove(node)
     tree.nodes.remove(emission)
     tree.nodes.remove(target)
     for other, node, active in others:
@@ -474,6 +507,10 @@ def bake_material(material, objects, folder, prefix, ao_distance=0.5, ao_samples
         mask = np.repeat(baked['emit'][..., :1], 3, axis=2)
         files['emit'] = os.path.join(folder, base_name + '_emit.png')
         save_png(files['emit'], mask)
+    if material.get('translucency', 0.0) > 0.0:
+        thin = baked['thin'][..., 0] if 'thin' in baked else np.ones(baked['base'].shape[:2], dtype=np.float32)
+        files['thin'] = os.path.join(folder, base_name + '_thin.png')
+        save_png(files['thin'], np.repeat(thin[..., None], 3, axis=2), alpha=thin)
     return files
 
 
@@ -509,7 +546,7 @@ def baked_material(material, files):
     return result
 
 
-def export_gltf(objects, path, emissive, masked=None, armature=None, animations=False):
+def export_gltf(objects, path, emissive, masked=None, armature=None, animations=False, translucent=None):
     select_only(objects + ([armature] if armature else []))
     bpy.ops.export_scene.gltf(
         filepath=path,
@@ -560,6 +597,16 @@ def export_gltf(objects, path, emissive, masked=None, armature=None, animations=
         else:
             material.pop('emissiveFactor', None)
             material.pop('emissiveTexture', None)
+        through = (translucent or {}).get(source)
+        if through:
+            sampler = document['textures'][surface['index']].get('sampler') if surface else None
+            document.setdefault('images', []).append({'uri': os.path.basename(through[1])})
+            texture = {'source': len(document['images']) - 1}
+            if sampler is not None:
+                texture['sampler'] = sampler
+            document.setdefault('textures', []).append(texture)
+            extensions['KHR_materials_diffuse_transmission'] = {'diffuseTransmissionFactor': through[0], 'diffuseTransmissionTexture': {'index': len(document['textures']) - 1}}
+            used.add('KHR_materials_diffuse_transmission')
         if not extensions:
             material.pop('extensions', None)
     if used:
@@ -578,6 +625,8 @@ def bake_and_export(objects, folder, name, ao_distance=0.5, armature=None, anima
     baked = {}
     emissive = {}
     masked = {}
+    translucent = {}
+    placed = spread_apart(objects, 2.0 * ao_distance + 0.5)
     for material in materials:
         if material.get('alpha_cutoff'):
             masked[material.name] = float(material['alpha_cutoff'])
@@ -586,12 +635,38 @@ def bake_and_export(objects, folder, name, ao_distance=0.5, armature=None, anima
         baked[material.name] = baked_material(material, files)
         if 'emit' in files:
             emissive[material.name] = (tuple(material['emit_color']), float(material['emit_strength']))
+        if 'thin' in files:
+            translucent[material.name] = (float(material['translucency']), files['thin'])
+    for root, matrix in placed:
+        root.matrix_world = matrix
+    bpy.context.view_layer.update()
     originals = {obj.name: [slot.material for slot in obj.material_slots] for obj in objects}
     for obj in objects:
         for slot in obj.material_slots:
             slot.material = baked[slot.material.name]
-    export_gltf(objects, os.path.join(folder, name + '.gltf'), emissive, masked, armature, animations)
+    export_gltf(objects, os.path.join(folder, name + '.gltf'), emissive, masked, armature, animations, translucent)
     return originals, baked
+
+
+def spread_apart(objects, gap):
+    roots = []
+    for obj in objects:
+        root = obj
+        while root.parent:
+            root = root.parent
+        if root not in roots:
+            roots.append(root)
+    placed = [(root, root.matrix_world.copy()) for root in roots]
+    x = 0.0
+    for root in roots:
+        members = [obj for obj in objects if obj == root or obj in root.children_recursive]
+        corners = [obj.matrix_world @ Vector(corner) for obj in members for corner in obj.bound_box]
+        low = Vector((min(c.x for c in corners), min(c.y for c in corners), min(c.z for c in corners)))
+        high = Vector((max(c.x for c in corners), max(c.y for c in corners), max(c.z for c in corners)))
+        root.matrix_world = Matrix.Translation((x - low.x, -0.5 * (low.y + high.y), 0.0)) @ root.matrix_world
+        x += high.x - low.x + gap
+    bpy.context.view_layer.update()
+    return placed
 
 
 def restore_materials(objects, originals):

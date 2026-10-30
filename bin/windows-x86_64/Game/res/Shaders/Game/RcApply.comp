@@ -30,6 +30,8 @@ const uint ViewLit = 0u;
 const uint ViewAmbient = 8u;
 const uint ViewIrradiance = 10u;
 
+const float SkyThrough = 0.45;
+
 const ivec2 GatherOffsets[4] = ivec2[](ivec2(0, 1), ivec2(1, 1), ivec2(1, 0), ivec2(0, 0));
 
 vec4 ProbeWeights(bool upper, vec2 coordinate, float spacing, vec2 offset, bool shifted, int band, ivec2 grid, vec3 position, vec3 plane, vec3 n, out ivec2 base, out ivec2 probes[4])
@@ -134,8 +136,12 @@ void main()
 		reflected = mix(sharp, reflected, smoothstep(0.55, 0.75, roughness));
 	}
 	vec3 ambient = CombineAmbient(albedo.rgb, metallic, roughness, n, v, irradiance, reflected) * albedo.a;
-
 	vec4 scene = imageLoad(SceneColor, pixel);
+	float translucency = clamp(scene.a - 1.0, 0.0, 1.0);
+	scene.a = 1.0;
+	if (translucency > 0.0)
+		ambient += sqrt(albedo.rgb) * max(average - shX * n.x - shY * n.y - shZ * n.z, vec3(0.0)) * (translucency * SkyThrough);
+
 	uint view = Rc.Options.x;
 	if (view == ViewLit)
 		scene.rgb += ambient * (1.0 - DepthFade(Rc.Shading.x, world.y)) * (1.0 - Haze(Rc.Shading.w, world.y));

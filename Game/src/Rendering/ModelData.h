@@ -62,6 +62,7 @@ namespace Game
 		float Roughness = 1.0f;
 		float Metallic = 0.0f;
 		float AlphaCutoff = 0.0f;
+		float Translucency = 0.0f;
 		glm::vec3 Min{ 0.0f };
 		glm::vec3 Max{ 0.0f };
 		uint32_t Skeleton = NoSkeleton;

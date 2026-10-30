@@ -700,7 +700,7 @@ def rubber_material(name, tone=(0.95, 0.68, 0.06), bake_size=512, roughness=0.32
     return s.finish(base, s.remap(mottled, 0.3, 0.7, roughness - 0.04, roughness + 0.06), height=mottled, bump=0.02, bump_distance=0.001, specular=0.6, bake_size=bake_size)
 
 
-def crystal_material(name, core=(0.55, 0.3, 1.0), shell=(0.08, 0.05, 0.16), strength=3.0, bake_size=512, veins=0.35, cells=9.0, thickness=0.12):
+def crystal_material(name, core=(0.55, 0.3, 1.0), shell=(0.08, 0.05, 0.16), strength=3.0, bake_size=512, veins=0.35, cells=9.0, thickness=0.12, translucency=0.0):
     s = kit.Shader(name)
     p = local(s)
     _, _, z = s.separate(s.coords('Object'))
@@ -710,7 +710,7 @@ def crystal_material(name, core=(0.55, 0.3, 1.0), shell=(0.08, 0.05, 0.16), stre
     glow = s.clamp01(s.add(s.mul(s.sub(1.0, depth), 0.55), s.mul(edges, veins)))
     glow = s.mul(glow, s.add(0.55, s.mul(s.smooth(0.0, 1.2, z), 0.45)))
     base = s.mix(glow, shell, core)
-    return s.finish(base, 0.12, height=edges, bump=0.08 * veins / 0.35, bump_distance=0.003, emission=glow, emission_color=core, emission_strength=strength, specular=0.7, bake_size=bake_size)
+    return s.finish(base, 0.12, height=edges, bump=0.08 * veins / 0.35, bump_distance=0.003, emission=glow, emission_color=core, emission_strength=strength, specular=0.7, bake_size=bake_size, translucency=translucency, thickness=thickness * 2.0)
 
 
 def eye_material(name, color=(0.75, 0.85, 0.2), strength=3.0):

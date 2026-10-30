@@ -4413,7 +4413,7 @@ namespace Game
 							continue;
 						}
 						const ModelInstance instance = m_Renderer.MakeModelInstance(part.Mesh, place * part.Local, NoPalette, part.Tint, 0.0f, base);
-						if (m_Level.Skyborne && m_Level.Relief.IsEmpty())
+						if ((m_Level.Skyborne && m_Level.Relief.IsEmpty()) || (m_Level.Kind == MapKind::FrozenLake && prop.Id == PropId::IcePillar))
 							m_Scene.Loose.push_back({ MakeItem(part.Mesh, instance, low, high, tall, base), prop.Position });
 						else
 							Insert(part.Mesh, instance, low, high, tall, base);

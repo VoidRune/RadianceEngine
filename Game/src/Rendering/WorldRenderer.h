@@ -37,6 +37,7 @@ namespace Game
 	inline constexpr uint32_t MeshCrystal = 8192;
 	inline constexpr uint32_t MeshIce = 16384;
 	inline constexpr uint32_t MeshCliff = 32768;
+	inline constexpr uint32_t MaterialTranslucent = 256;
 
 	struct LevelMeshDesc
 	{
@@ -69,6 +70,18 @@ namespace Game
 		glm::uvec4 Info;
 		glm::vec4 Accent{ 0.0f };
 		glm::vec4 Flash{ 0.0f };
+		glm::vec4 Dissolve{ 0.0f };
+		glm::vec4 Burn{ 0.0f };
+	};
+
+	struct ModelDissolve
+	{
+		float Amount = 0.0f;
+		glm::vec3 Edge{ 0.0f };
+		float Width = 0.07f;
+		float Scale = 3.0f;
+		float Sweep = 0.0f;
+		float Seed = 0.0f;
 	};
 
 	struct EffectMaterial
@@ -77,6 +90,7 @@ namespace Game
 		float Roughness = 0.5f;
 		float Metallic = 0.0f;
 		glm::vec3 Emission{ 0.0f };
+		float Translucency = 0.0f;
 	};
 
 	class WorldRenderer
@@ -115,11 +129,15 @@ namespace Game
 		void DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw = 0.0f);
 		void DrawLava(const glm::vec4& area, float height, float time);
 		uint32_t AddPalette(const JointMatrices& skin, uint32_t joints);
-		void DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0, const glm::vec4& flash = glm::vec4(0.0f));
-		ModelInstance MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0, const glm::vec4& flash = glm::vec4(0.0f)) const;
+		void DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0, const glm::vec4& flash = glm::vec4(0.0f), const ModelDissolve& dissolve = {});
+		ModelInstance MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette = NoPalette, const glm::vec4& tint = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), float emission = 0.0f, float ground = 0.0f, const glm::vec4& accent = glm::vec4(0.0f), uint32_t accentFlags = 0, const glm::vec4& flash = glm::vec4(0.0f), const ModelDissolve& dissolve = {}) const;
+		static void SetDissolve(ModelInstance& instance, const ModelDissolve& dissolve);
 		void SubmitModel(uint32_t mesh, const ModelInstance& instance, bool shadowOnly = false);
 		void DrawSprite(const ParticleSprite& sprite) { m_Particles->DrawSprite(sprite); }
 		void DrawDecal(const GroundDecal& decal) { m_Particles->DrawDecal(decal); }
+		void DrawLight(const SpellLight& light);
+		bool GetTranslucency() const { return m_Translucency; }
+		void SetTranslucency(bool enabled) { m_Translucency = enabled; }
 		void DrawFacet(const GlassFacet& facet) { m_Glass->Draw(facet); }
 		uint32_t AddShield(const EnergyShield& shield) { return m_Glass->AddShield(shield); }
 		void DrawCell(const EnergyCell& cell) { m_Glass->DrawCell(cell); }
@@ -239,6 +257,11 @@ namespace Game
 		std::unique_ptr<Rdn::Shader> m_CrystalFragmentShader;
 		std::unique_ptr<Rdn::Pipeline> m_CrystalPipeline;
 		std::unique_ptr<Rdn::Pipeline> m_ModelAlphaShadowPipeline;
+		std::unique_ptr<Rdn::Shader> m_DissolveVertexShader;
+		std::unique_ptr<Rdn::Shader> m_DissolveFragmentShader;
+		std::unique_ptr<Rdn::Shader> m_DissolveShadowShader;
+		std::unique_ptr<Rdn::Pipeline> m_DissolvePipeline;
+		std::unique_ptr<Rdn::Pipeline> m_DissolveShadowPipeline;
 		std::unique_ptr<Rdn::GpuBuffer> m_ModelVertices;
 		std::unique_ptr<Rdn::GpuBuffer> m_ModelIndices;
 		std::unique_ptr<Rdn::GpuBuffer> m_MaterialBuffer;
@@ -271,6 +294,7 @@ namespace Game
 		uint32_t m_PaletteCapacity = 0;
 		std::vector<std::vector<ModelInstance>> m_ModelDraws;
 		std::vector<std::vector<ModelInstance>> m_ModelShadowDraws;
+		std::vector<std::vector<ModelInstance>> m_ModelDissolveDraws;
 		std::vector<ModelInstance> m_PackedModels;
 		std::vector<glm::mat4> m_Palettes;
 		WorldCamera m_Camera;
@@ -282,6 +306,9 @@ namespace Game
 		glm::vec2 m_ShadowExtent{ 0.0f };
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelShadowRanges;
+		std::vector<std::pair<uint32_t, uint32_t>> m_ModelDissolveRanges;
+		std::vector<SpellLight> m_Lights;
+		bool m_Translucency = true;
 		std::unique_ptr<ParticleSystem> m_Particles;
 		std::unique_ptr<DeferredLighting> m_Deferred;
 		std::unique_ptr<RadianceCascades> m_Gi;

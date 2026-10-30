@@ -40,6 +40,7 @@ namespace Game
 			float Roughness = 1.0f;
 			float Metallic = 0.0f;
 			float AlphaCutoff = 0.0f;
+			float Translucency = 0.0f;
 			bool DoubleSided = true;
 			bool Water = false;
 			bool Skip = false;

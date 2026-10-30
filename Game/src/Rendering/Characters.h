@@ -1,5 +1,6 @@
 #pragma once
 #include "Rendering/Animation.h"
+#include "Rendering/WorldRenderer.h"
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/Content/Items.h>
 #include <GameShared/Core/Math.h>
@@ -14,7 +15,6 @@
 namespace Game
 {
 	class ModelLibrary;
-	class WorldRenderer;
 
 	enum class Anim : uint8_t
 	{
@@ -300,6 +300,6 @@ namespace Game
 		bool m_WasDead = false;
 	};
 
-	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f), const glm::vec4& flash = glm::vec4(0.0f));
+	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f), const glm::vec4& flash = glm::vec4(0.0f), const ModelDissolve& dissolve = {});
 	glm::mat4 ModelTransform(const glm::vec3& base, float facing, float scale);
 }

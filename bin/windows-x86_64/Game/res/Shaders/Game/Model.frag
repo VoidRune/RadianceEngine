@@ -1,6 +1,9 @@
 #version 450
 #include "GBuffer.glsl"
 #include "Material.glsl"
+#ifdef DISSOLVE
+#include "Dissolve.glsl"
+#endif
 
 layout(push_constant) uniform PushConstants
 {
@@ -21,6 +24,11 @@ layout(location = 8) in vec4 inColor;
 layout(location = 9) in vec3 inWorld;
 layout(location = 10) flat in vec4 inAccent;
 layout(location = 11) flat in uint inFlash;
+#ifdef DISSOLVE
+layout(location = 12) in vec3 inLocal;
+layout(location = 13) flat in vec4 inDissolve;
+layout(location = 14) flat in vec4 inBurn;
+#endif
 
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outSurface;
@@ -41,6 +49,9 @@ const float DyeFloor = 0.014;
 const float TrimLight = 0.3;
 const float TrimGlow = 0.12;
 const float RimPower = 3.5;
+const float CrystalTranslucency = 0.85;
+const float IceTranslucency = 0.3;
+const float CharDepth = 3.0;
 
 struct Layer
 {
@@ -189,6 +200,14 @@ void main()
 	float cut = inCut.y > 0.0 ? inCut.y * clamp((inShading.z - inCut.x) / 0.35, 0.0, 1.0) : 0.0;
 	if (Bayer4(uvec2(gl_FragCoord.xy) + uvec2(4.0 - pc.Focus.zw)) < cut)
 		discard;
+#ifdef DISSOLVE
+	float field = DissolveField(inLocal, inDissolve.z, inDissolve.w, inBurn.w);
+	float threshold = DissolveThreshold(inDissolve.x, inDissolve.y);
+	if (field <= threshold)
+		discard;
+	float burn = DissolveEdge(field, threshold, inDissolve.y);
+	float charred = DissolveEdge(field, threshold, inDissolve.y * CharDepth);
+#endif
 	uint flags = inMaterial.z;
 	bool splat = (flags & MeshSplat) != 0u;
 	bool layered = (flags & MeshLayered) != 0u;
@@ -266,6 +285,7 @@ void main()
 	}
 	if (layered)
 		albedo *= 0.62 + 0.76 * inColor.b;
+	float translucency = 0.0;
 #ifdef CRYSTAL
 	float iceRoughness = -1.0;
 	if ((flags & MeshIce) != 0u)
@@ -276,6 +296,7 @@ void main()
 		crack *= smoothstep(0.6, 0.9, normalize(inNormal).y) * (1.0 - inColor.a);
 		albedo = mix(albedo, IceCrack, crack * 0.7);
 		iceRoughness = mix(mix(0.16, 0.35, crack), 0.85, inColor.a);
+		translucency = IceTranslucency * (1.0 - inColor.a);
 	}
 	if ((flags & MeshCrystal) != 0u)
 	{
@@ -284,6 +305,7 @@ void main()
 		vein *= smoothstep(0.55, 0.85, normalize(inNormal).y);
 		albedo = mix(albedo, crystal * 0.55, vein);
 		heat += crystal * (vein * CrystalGlow);
+		translucency = CrystalTranslucency * vein;
 	}
 #endif
 	float trim = 0.0;
@@ -301,6 +323,11 @@ void main()
 	float occlusion = layer.Surface.r;
 	float roughness = layer.Surface.g;
 	float metallic = layer.Surface.b;
+	if ((material.Flags & MaterialTranslucent) != 0u)
+	{
+		translucency = material.Params.w * metallic;
+		metallic = 0.0;
+	}
 #ifdef CRYSTAL
 	if (iceRoughness >= 0.0)
 		roughness = iceRoughness;
@@ -352,7 +379,12 @@ void main()
 		emitted = mix(emitted, flash.rgb, flash.a);
 		glow = mix(glow, 1.0, flash.a);
 	}
+#ifdef DISSOLVE
+	albedo *= 1.0 - 0.9 * charred;
+	emitted += inBurn.rgb * (burn * burn);
+	translucency *= 1.0 - charred;
+#endif
 	outAlbedo = vec4(albedo * (1.0 - glow), occlusion);
 	outSurface = PackSurface(n, roughness, metallic);
-	outEmission = vec4(emitted * (1.0 - fade), cut > 0.0 ? 1.0 : 0.0);
+	outEmission = vec4(emitted * (1.0 - fade), PackEmissionTag(cut > 0.0, translucency * (1.0 - glow)));
 }

@@ -1,6 +1,7 @@
 #include "Glass.h"
 #include <RadianceEngine/Core/Log.h>
 #include <RadianceEngine/Graphics/ShaderCompiler.h>
+#include <glm/gtc/packing.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -167,7 +168,7 @@ namespace Game
 			.Edge = glm::vec4(facet.Edge, facet.Glint),
 			.Optics = glm::vec4(facet.Ior, facet.Dispersion, facet.Roughness, facet.Floor),
 			.Crack = glm::vec4(facet.CrackOrigin, facet.Wedge, facet.Scatter),
-			.Info = glm::uvec4(facet.Seed, 0u, 0u, 0u),
+			.Info = glm::uvec4(facet.Seed, glm::floatBitsToUint(facet.Dissolve), glm::packHalf2x16(glm::vec2(facet.Burn)), glm::packHalf2x16(glm::vec2(facet.Burn.z, 0.0f))),
 		});
 	}
 

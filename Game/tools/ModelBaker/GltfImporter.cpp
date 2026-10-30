@@ -1011,6 +1011,18 @@ namespace Game
 			for (size_t i = 0; i < size_t(surface->Width) * surface->Height; i++)
 				surface->Pixels[i * 4] = matches ? occlusion->Pixels[i * 4] : uint8_t(255);
 		}
+		if (const auto transmission = material.extensions.find("KHR_materials_diffuse_transmission"); transmission != material.extensions.end() && surface)
+		{
+			const tinygltf::Value& value = transmission->second;
+			result.Translucency = value.Has("diffuseTransmissionFactor") ? float(value.Get("diffuseTransmissionFactor").GetNumberAsDouble()) : 0.0f;
+			const int thinIndex = value.Has("diffuseTransmissionTexture") ? value.Get("diffuseTransmissionTexture").Get("index").GetNumberAsInt() : -1;
+			const std::optional<RgbaImage> thin = image(thinIndex);
+			const bool matches = thin && thin->Width == surface->Width && thin->Height == surface->Height;
+			if (thinIndex >= 0 && !matches)
+				m_Warnings.push_back(folder.string() + ": " + material.name + " has a transmission texture that doesn't match its surface map, it's treated as thin everywhere");
+			for (size_t i = 0; i < size_t(surface->Width) * surface->Height; i++)
+				surface->Pixels[i * 4 + 2] = matches ? thin->Pixels[i * 4 + 3] : uint8_t(255);
+		}
 		std::optional<RgbaImage> alpha;
 		if (result.AlphaCutoff > 0.0f)
 		{
@@ -1160,6 +1172,7 @@ namespace Game
 				mesh.Roughness = scan.Roughness;
 				mesh.Metallic = scan.Metallic;
 				mesh.AlphaCutoff = scan.AlphaCutoff;
+				mesh.Translucency = scan.Translucency;
 				mesh.DoubleSided = scan.DoubleSided;
 				mesh.Water = scan.Water;
 				mesh.Skinned = group.Skeleton != NoSkeleton;

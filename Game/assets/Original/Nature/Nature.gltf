@@ -119,10 +119,10 @@
    "mesh": 19,
    "name": "Flowers_A",
    "rotation": [
-    -0.003666834905743599,
+    -0.0036668344400823116,
     -0.02426195703446865,
     0.14939309656620026,
-    0.9884733557701111
+    0.9884734153747559
    ],
    "translation": [
     0.13734708726406097,
@@ -149,7 +149,7 @@
    "mesh": 21,
    "name": "Flowers_C",
    "rotation": [
-    -0.002643752610310912,
+    -0.002643752843141556,
     -0.017492637038230896,
     0.14941473305225372,
     0.9886163473129272
@@ -239,7 +239,15 @@
     "index": 8
    },
    "alphaMode": "MASK",
-   "alphaCutoff": 0.5
+   "alphaCutoff": 0.5,
+   "extensions": {
+    "KHR_materials_diffuse_transmission": {
+     "diffuseTransmissionFactor": 0.75,
+     "diffuseTransmissionTexture": {
+      "index": 51
+     }
+    }
+   }
   },
   {
    "name": "PineCore",
@@ -279,7 +287,15 @@
     "index": 14
    },
    "alphaMode": "MASK",
-   "alphaCutoff": 0.5
+   "alphaCutoff": 0.5,
+   "extensions": {
+    "KHR_materials_diffuse_transmission": {
+     "diffuseTransmissionFactor": 0.6,
+     "diffuseTransmissionTexture": {
+      "index": 52
+     }
+    }
+   }
   },
   {
    "name": "Stone",
@@ -1323,6 +1339,14 @@
   {
    "sampler": 0,
    "source": 50
+  },
+  {
+   "source": 51,
+   "sampler": 0
+  },
+  {
+   "source": 52,
+   "sampler": 0
   }
  ],
  "images": [
@@ -1580,6 +1604,12 @@
    "mimeType": "image/png",
    "name": "Nature_GrassCards_orm.png",
    "uri": "Nature_GrassCards_orm.png"
+  },
+  {
+   "uri": "Nature_LeafCards_thin.png"
+  },
+  {
+   "uri": "Nature_FrondCards_thin.png"
   }
  ],
  "accessors": [
@@ -4487,6 +4517,7 @@
   }
  ],
  "extensionsUsed": [
+  "KHR_materials_diffuse_transmission",
   "KHR_materials_emissive_strength"
  ]
 }

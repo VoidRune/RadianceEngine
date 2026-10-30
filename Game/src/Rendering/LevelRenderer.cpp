@@ -18,6 +18,9 @@ namespace Game
 		constexpr float StepHeight = 0.125f;
 		constexpr float WallPiece = 1.0f;
 		constexpr glm::vec3 PortalGold = { 1.0f, 0.78f, 0.3f };
+		constexpr float PillarShatterSeconds = 0.9f;
+		constexpr float PillarSink = 0.6f;
+		constexpr glm::vec3 PillarBurn{ 1.1f, 2.8f, 4.6f };
 		constexpr float SightSlope = CameraHeight / (CameraBack + CameraFocusOffset);
 
 		float Hash(int32_t x, int32_t y, int32_t salt = 0)
@@ -974,6 +977,31 @@ namespace Game
 		for (const LooseItem& loose : m_Scene.Loose)
 		{
 			const SceneItem& item = loose.Item;
+			if (!m_Island.IsSky())
+			{
+				const CellCoord cell = CellAt(loose.Anchor);
+				const float since = view.Brawl ? view.Clock - TileCollapseTime(view.Brawl->Plan, cell.X, cell.Y) : -1.0f;
+				if (since >= PillarShatterSeconds || item.Center.x + item.Reach < view.Min.x || item.Center.x - item.Reach > view.Max.x || item.Center.y + item.Reach < view.Min.y || item.Center.y - item.Reach > view.Max.y)
+					continue;
+				ModelInstance instance = item.Instance;
+				if (since > 0.0f)
+				{
+					const float t = since / PillarShatterSeconds;
+					instance.Rows[1].w -= PillarSink * t * t;
+					WorldRenderer::SetDissolve(instance, { .Amount = std::sqrt(t), .Edge = PillarBurn, .Width = 0.08f, .Scale = 3.5f, .Sweep = 2.0f, .Seed = item.Center.x * 0.37f + item.Center.y });
+				}
+				else if (item.Cut)
+				{
+					const Vec2 closest = { std::clamp(view.Focus.x, item.Center.x - item.Extent.x, item.Center.x + item.Extent.x), std::clamp(view.Focus.y, item.Center.y - item.Extent.y, item.Center.y + item.Extent.y) };
+					if (const float cut = CutFactor(view, closest, item.Top); cut > 0.0f)
+					{
+						instance.Shading.z = item.Base + CutHeight;
+						instance.Shading.w = 0.85f * cut;
+					}
+				}
+				renderer.SubmitModel(item.Mesh, instance);
+				continue;
+			}
 			const glm::mat4* carry = m_Island.Carrying(loose.Anchor);
 			if (!carry)
 				continue;

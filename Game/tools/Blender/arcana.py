@@ -148,14 +148,14 @@ def build(target):
     rng = random.Random(47)
     m = {
         'rock': pk.stone_material('CrystalRock', light=(0.22, 0.2, 0.22), dark=(0.09, 0.085, 0.1), moss=0.3, bake_size=1024),
-        'crystal': pk.crystal_material('Crystal', core=(0.3, 0.72, 1.0), shell=(0.03, 0.08, 0.14), strength=3.2, veins=0.12, cells=12.0, thickness=0.2),
+        'crystal': pk.crystal_material('Crystal', core=(0.3, 0.72, 1.0), shell=(0.03, 0.08, 0.14), strength=3.2, veins=0.12, cells=12.0, thickness=0.2, translucency=0.8),
         'stone': pk.stone_material('Stone', bake_size=2048),
         'marble': pk.stone_material('Marble', light=(0.6, 0.58, 0.54), dark=(0.38, 0.36, 0.33), moss=0.35, bake_size=2048),
         'brass': pk.brass_material('Brass', bake_size=1024),
         'bronze': pk.brass_material('Bronze', tone=(0.42, 0.28, 0.14), bake_size=256),
         'wood': pk.wood_material('Wood', light=(0.2, 0.135, 0.08), dark=(0.085, 0.055, 0.035), weathered=0.3, bake_size=512),
         'leather': pk.leather_material('Leather', bake_size=256),
-        'orb': pk.crystal_material('Orb', core=(0.45, 0.6, 1.0), shell=(0.05, 0.08, 0.2), strength=2.0, bake_size=256),
+        'orb': pk.crystal_material('Orb', core=(0.45, 0.6, 1.0), shell=(0.05, 0.08, 0.2), strength=2.0, bake_size=256, translucency=0.6),
         'lens': pk.glow_material('Lens', color=(0.55, 0.75, 1.0), strength=1.2, base=(0.2, 0.3, 0.45), bake_size=128),
         'ember_glass': pk.glow_material('EmberGlass', color=(1.0, 0.45, 0.12), strength=3.5, base=(0.9, 0.4, 0.12), bake_size=128),
     }

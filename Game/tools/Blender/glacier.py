@@ -37,7 +37,7 @@ def ice_material(name, bake_size=1024):
     rough = s.remap(frost, 0.0, 1.0, 0.06, 0.7)
     glow = s.mul(s.clamp01(s.add(s.mul(planes, 0.7), s.mul(edge, 0.25))), s.sub(1.0, frost))
     height = s.add(s.mul(planes, 0.5), s.add(s.mul(frost, 0.4), s.mul(hairline, 0.1)))
-    return s.finish(base, rough, height=height, bump=0.1, bump_distance=0.003, emission=glow, emission_color=(0.3, 0.7, 1.0), emission_strength=0.9, specular=0.8, bake_size=bake_size)
+    return s.finish(base, rough, height=height, bump=0.1, bump_distance=0.003, emission=glow, emission_color=(0.3, 0.7, 1.0), emission_strength=0.9, specular=0.8, bake_size=bake_size, translucency=0.9, thickness=0.45, thin=s.sub(1.0, s.mul(frost, 0.7)))
 
 
 def snow_material(name, bake_size=512):

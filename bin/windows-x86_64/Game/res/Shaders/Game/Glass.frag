@@ -3,6 +3,7 @@
 #include "Brdf.glsl"
 #include "Environment.glsl"
 #include "Glass.glsl"
+#include "Dissolve.glsl"
 
 layout(std430, set = 0, binding = 0) readonly buffer FrameBuffer { GlassFrame Frame; };
 layout(std430, set = 0, binding = 1) readonly buffer FacetBuffer { GlassInstance Facets[]; };
@@ -26,6 +27,10 @@ layout(location = 6) flat in vec3 inSpot;
 
 layout(location = 0) out vec4 outScene;
 layout(location = 1) out vec4 outEmission;
+
+const float FacetDissolveScale = 6.0;
+const float FacetBurnWidth = 0.1;
+const float FacetStagger = 0.35;
 
 vec3 Spectrum(float t)
 {
@@ -161,6 +166,17 @@ void main()
 	float roughness = facet.Optics.z;
 	float floorY = facet.Optics.w;
 	uint seed = facet.Info.x;
+	float dissolve = uintBitsToFloat(facet.Info.y);
+	float burn = 0.0;
+	if (dissolve > 0.0)
+	{
+		float field = mix(DissolveField(inWorld - inSpot, FacetDissolveScale, 0.0, float(seed & 1023u)), float(Hash(seed ^ 0x2F6Bu) & 1023u) / 1023.0, FacetStagger);
+		float threshold = DissolveThreshold(dissolve, FacetBurnWidth);
+		if (field <= threshold)
+			discard;
+		burn = DissolveEdge(field, threshold, FacetBurnWidth);
+		burn *= burn;
+	}
 	vec3 normal = normalize(inNormal);
 	vec3 tangent = normalize(cross(abs(normal.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), normal));
 	vec3 bitangent = cross(normal, tangent);
@@ -299,7 +315,9 @@ void main()
 	vec3 crackLight = (vec3(1.0, 0.95, 0.9) * 0.24 + Spectrum(cosV * 2.0 + float(seed & 255u) / 255.0) * 0.1) * fracture;
 	radiance += facet.Edge.rgb * (edge + flash * (0.08 + 0.2 * inner)) + crackLight + sparkle;
 
+	vec3 burnColor = vec3(unpackHalf2x16(facet.Info.z), unpackHalf2x16(facet.Info.w).x) * burn;
+	radiance += burnColor;
 	outScene = vec4(radiance * fade, fade);
-	vec3 glow = sparkle * 0.6 + facet.Edge.rgb * (edge * 0.5 + flash * 0.25) + crackLight * 0.2;
+	vec3 glow = sparkle * 0.6 + facet.Edge.rgb * (edge * 0.5 + flash * 0.25) + crackLight * 0.2 + burnColor;
 	outEmission = vec4(glow * fade, fade * 0.5);
 }

@@ -565,15 +565,22 @@ namespace Game
 		return TileCollapseTime(plan, cell.X, cell.Y) - clock;
 	}
 
+	inline bool SinksProps(const Level& level)
+	{
+		return level.Skyborne || level.Kind == MapKind::FrozenLake;
+	}
+
 	inline bool PropFallen(const Level& level, const CollapsePlan& plan, float clock, const PlacedProp& prop)
 	{
 		const CellCoord cell = CellAt(prop.Position);
+		if (level.Kind == MapKind::FrozenLake)
+			return prop.Id == PropId::IcePillar && TileCollapseTime(plan, cell.X, cell.Y) <= clock;
 		return level.Skyborne && TileCollapseTime(plan, cell.X, cell.Y) <= clock;
 	}
 
 	inline void SinkFallenProps(Level& level, const CollapsePlan& plan, float clock)
 	{
-		if (!level.Skyborne)
+		if (!SinksProps(level))
 			return;
 		level.Sunk.resize(level.Shapes.size(), 0);
 		uint32_t prop = UINT32_MAX;

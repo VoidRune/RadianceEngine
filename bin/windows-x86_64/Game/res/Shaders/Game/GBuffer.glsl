@@ -1,4 +1,15 @@
 const vec3 DepthColor = vec3(0.0014, 0.0017, 0.0029);
+const float TranslucentRange = 0.45;
+
+float PackEmissionTag(bool cut, float translucency)
+{
+	return cut ? 1.0 : clamp(translucency, 0.0, 1.0) * TranslucentRange;
+}
+
+float UnpackTranslucency(float tag)
+{
+	return tag < 0.5 ? clamp(tag / TranslucentRange, 0.0, 1.0) : 0.0;
+}
 
 vec2 OctWrap(vec2 v)
 {

@@ -403,7 +403,7 @@ def spray_material(name, light=(0.13, 0.22, 0.05), dark=(0.03, 0.07, 0.02), bake
     base = s.mix(s.mul(twig, s.sub(1.0, cover)), base, (0.09, 0.065, 0.04))
     base = s.mix(s.mul(s.smooth(0.15, -0.5, v), 0.5), base, (dark[0] * 0.45, dark[1] * 0.45, dark[2] * 0.45))
     height = s.sub(s.mul(dome, 0.8), s.mul(vein, 0.3))
-    material = s.finish(base, s.remap(patch, 0.0, 1.0, 0.52, 0.7), height=height, bump=0.6, bump_distance=0.004, specular=0.45, bake_size=bake_size, alpha=alpha)
+    material = s.finish(base, s.remap(patch, 0.0, 1.0, 0.52, 0.7), height=height, bump=0.6, bump_distance=0.004, specular=0.45, bake_size=bake_size, alpha=alpha, translucency=0.75, thin=s.sub(1.0, s.mul(s.mul(twig, s.sub(1.0, cover)), 0.8)))
     material['keep_uv'] = True
     material['no_ao'] = True
     material['slots'] = 8
@@ -431,7 +431,7 @@ def frond_material(name, light=(0.05, 0.115, 0.07), dark=(0.007, 0.022, 0.016), 
     base = s.mix(s.mul(s.smooth(0.72, 1.0, t), 0.5), base, (light[0] * 1.5, light[1] * 1.45, light[2] * 1.05))
     base = s.mix(s.mul(stem, 0.7), base, (0.08, 0.06, 0.04))
     base = s.mix(s.mul(s.sub(1.0, s.smooth(0.0, 0.45, t)), 0.5), base, (dark[0] * 0.45, dark[1] * 0.45, dark[2] * 0.45))
-    material = s.finish(base, s.remap(ridge, 0.0, 1.0, 0.78, 0.6), height=ridge, bump=0.45, bump_distance=0.004, bake_size=bake_size, alpha=alpha)
+    material = s.finish(base, s.remap(ridge, 0.0, 1.0, 0.78, 0.6), height=ridge, bump=0.45, bump_distance=0.004, bake_size=bake_size, alpha=alpha, translucency=0.6, thin=s.sub(1.0, s.mul(stem, 0.8)))
     material['keep_uv'] = True
     material['no_ao'] = True
     material['slots'] = 8

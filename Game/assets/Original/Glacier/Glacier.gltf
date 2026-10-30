@@ -117,6 +117,12 @@
    "extensions": {
     "KHR_materials_emissive_strength": {
      "emissiveStrength": 0.9
+    },
+    "KHR_materials_diffuse_transmission": {
+     "diffuseTransmissionFactor": 0.9,
+     "diffuseTransmissionTexture": {
+      "index": 10
+     }
     }
    }
   },
@@ -293,6 +299,10 @@
   {
    "sampler": 0,
    "source": 9
+  },
+  {
+   "source": 10,
+   "sampler": 0
   }
  ],
  "images": [
@@ -345,6 +355,9 @@
    "mimeType": "image/png",
    "name": "Glacier_GlacierRock_orm.png",
    "uri": "Glacier_GlacierRock_orm.png"
+  },
+  {
+   "uri": "Glacier_GlacierIce_thin.png"
   }
  ],
  "accessors": [
@@ -886,6 +899,7 @@
   }
  ],
  "extensionsUsed": [
+  "KHR_materials_diffuse_transmission",
   "KHR_materials_emissive_strength"
  ]
 }

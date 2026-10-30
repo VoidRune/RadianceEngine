@@ -92,6 +92,12 @@
    "extensions": {
     "KHR_materials_emissive_strength": {
      "emissiveStrength": 3.2
+    },
+    "KHR_materials_diffuse_transmission": {
+     "diffuseTransmissionFactor": 0.8,
+     "diffuseTransmissionTexture": {
+      "index": 37
+     }
     }
    }
   },
@@ -162,6 +168,12 @@
    "extensions": {
     "KHR_materials_emissive_strength": {
      "emissiveStrength": 2.0
+    },
+    "KHR_materials_diffuse_transmission": {
+     "diffuseTransmissionFactor": 0.6,
+     "diffuseTransmissionTexture": {
+      "index": 38
+     }
     }
    }
   },
@@ -639,6 +651,14 @@
   {
    "sampler": 0,
    "source": 36
+  },
+  {
+   "source": 37,
+   "sampler": 0
+  },
+  {
+   "source": 38,
+   "sampler": 0
   }
  ],
  "images": [
@@ -826,6 +846,12 @@
    "mimeType": "image/png",
    "name": "Arcana_EmberGlass_orm.png",
    "uri": "Arcana_EmberGlass_orm.png"
+  },
+  {
+   "uri": "Arcana_Crystal_thin.png"
+  },
+  {
+   "uri": "Arcana_Orb_thin.png"
   }
  ],
  "accessors": [
@@ -1831,6 +1857,7 @@
   }
  ],
  "extensionsUsed": [
+  "KHR_materials_diffuse_transmission",
   "KHR_materials_emissive_strength"
  ]
 }

@@ -103,6 +103,10 @@ namespace Game
 			float SpikeAge = -1.0f;
 			float FireballAge = -1.0f;
 			float ObsidianAge = -1.0f;
+			float DeathAge = -1.0f;
+			float SpawnAge = 1e9f;
+			glm::vec3 DeathColor{ 0.0f };
+			Element HitElement = Element::Physical;
 			AbilityId Cast = AbilityId::Count;
 			EntityState Last;
 			CharacterAnimator Animator;
@@ -236,6 +240,8 @@ namespace Game
 		CharacterAnimator::Input AnimationInput(const EntityState& entity) const;
 		void DrawCorpses(WorldRenderer& renderer) const;
 		glm::vec4 CharacterTint(const EntityState& entity) const;
+		glm::vec3 DeathColorOf(const EntityState& entity, const EntityFx& fx) const;
+		ModelDissolve BodyDissolve(const EntityState& entity) const;
 		PlayerLook LookOf(const EntityState& player) const;
 		LevelView ComputeView() const;
 		void DrawEntity(WorldRenderer& renderer, const EntityState& entity) const;
@@ -312,7 +318,7 @@ namespace Game
 		void UpdateCardNews(float dt);
 		void DrawApexNews();
 		void TakeCard(uint32_t choice, CardId card);
-		void DrawCardFace(const UiRect& rect, CardId id, float hover, float fade, std::optional<uint32_t> key, bool taken, float reveal, float burst);
+		void DrawCardFace(const UiRect& rect, CardId id, float hover, float fade, std::optional<uint32_t> key, bool taken, float reveal, float burst, float burnAway = 0.0f);
 		void DrawCardRow(UiRect area, CardMask cards, float size, const char* empty);
 		void DrawSpellStrip(const UiRect& area);
 		bool AcceptSpellDrop(const UiRect& rect, uint32_t slot, bool clicked);

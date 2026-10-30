@@ -624,8 +624,8 @@ namespace Game
 			m_LocalPlayer.Traits = knownTraits;
 		while (!m_PendingInputs.empty() && m_PendingInputs.front().Sequence <= snapshot.LastProcessedInput)
 			m_PendingInputs.pop_front();
-		if (const ArenaState arena = ArenaFor(uint32_t(m_PendingInputs.size())); arena.Plan)
-			SinkFallenProps(*m_Level, *arena.Plan, arena.Clock);
+		if (const ArenaState arena = ArenaFor(uint32_t(m_PendingInputs.size())); arena.Field)
+			SinkFallenProps(*m_Level, *arena.Field, arena.Clock);
 		if (!m_LocalPlayer.Valid)
 		{
 			m_HasPrediction = false;

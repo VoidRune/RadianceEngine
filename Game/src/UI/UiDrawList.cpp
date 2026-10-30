@@ -151,7 +151,7 @@ namespace Game
 		primitive.Uv = glm::vec4(style.Mouse - rect.Center(), style.MedallionY - rect.Center().y, style.MedallionRadius);
 		primitive.Shape = glm::vec4(rect.Size() * 0.5f, style.Chamfer, 0.0f);
 		primitive.Params = glm::vec4(style.Hover, style.Fade, style.Taken, style.Reveal);
-		primitive.Colors = glm::uvec4(PackColor(style.Color), 0u, 0u, 0u);
+		primitive.Colors = glm::uvec4(PackColor(style.Color), glm::floatBitsToUint(style.Dissolve), 0u, 0u);
 		primitive.Info.y = style.Rarity;
 		primitive.Info.z = uint32_t(std::fmod(std::abs(style.Seed), 1.0f) * 1023.0f);
 	}

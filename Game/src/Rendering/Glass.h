@@ -34,6 +34,8 @@ namespace Game
 		float Wedge = 0.0f;
 		float Flash = 0.0f;
 		float Fade = 1.0f;
+		float Dissolve = 0.0f;
+		glm::vec3 Burn{ 0.0f };
 		uint32_t Seed = 0;
 	};
 

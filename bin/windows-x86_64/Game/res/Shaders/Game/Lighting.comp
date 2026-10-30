@@ -30,6 +30,8 @@ layout(std140, set = 0, binding = 5) uniform LightingFrame
 	vec4 Backdrop;
 	vec4 Haze;
 	vec4 Eye;
+	vec4 Translucent;
+	vec4 Lights[32];
 } Frame;
 layout(set = 0, binding = 6) uniform sampler2D ShadowMap;
 layout(set = 0, binding = 11) uniform sampler2D EnvironmentMap;
@@ -51,9 +53,19 @@ const uint ViewAmbient = 8u;
 const uint ViewShadow = 9u;
 const uint ViewIrradiance = 10u;
 const uint ViewGiSource = 11u;
+const uint ViewTranslucency = 12u;
 
 const uint ShadowsOff = 0u;
 const uint ShadowsLow = 1u;
+
+const float WrapLight = 0.45;
+const float BackDistortion = 0.35;
+const float BackPower = 3.0;
+const float BackScale = 1.6;
+const float BackAmbient = 0.15;
+const float SpellAmbient = 0.6;
+const float SkyThrough = 0.45;
+const float SunExtinction = 1.8;
 
 vec3 LinearToSrgb(vec3 color)
 {
@@ -97,6 +109,40 @@ float SunShadow(vec3 position, vec3 normal, float cosI)
 	return sum / 9.0;
 }
 
+float SunThrough(vec3 position, vec3 normal)
+{
+	if (Frame.Options.w == ShadowsOff)
+		return 1.0;
+	vec3 coord = (Frame.ShadowMatrix * vec4(position - normal * 0.03, 1.0)).xyz;
+	if (any(lessThan(coord, vec3(0.0))) || any(greaterThan(coord, vec3(1.0))))
+		return 1.0;
+	float inside = max(coord.z - textureLod(ShadowMap, coord.xy, 0.0).r, 0.0) * Frame.ShadowParams.z;
+	return exp(-SunExtinction * inside);
+}
+
+float BackLight(vec3 n, vec3 v, vec3 l, float ambient)
+{
+	vec3 h = normalize(l + n * BackDistortion);
+	return pow(clamp(dot(v, -h), 0.0, 1.0), BackPower) * BackScale + max(-dot(n, l), 0.0) + ambient;
+}
+
+vec3 SpellTransmission(vec3 position, vec3 n, vec3 v)
+{
+	vec3 total = vec3(0.0);
+	for (uint i = 0u; i < uint(Frame.Translucent.y); i++)
+	{
+		vec4 place = Frame.Lights[i * 2u];
+		vec3 toLight = place.xyz - position;
+		float distance2 = dot(toLight, toLight);
+		float window = max(1.0 - distance2 / (place.w * place.w), 0.0);
+		if (window <= 0.0)
+			continue;
+		vec3 l = toLight * inversesqrt(max(distance2, 1e-6));
+		total += Frame.Lights[i * 2u + 1u].rgb * (window * window / (1.0 + 0.5 * distance2) * BackLight(n, v, l, SpellAmbient));
+	}
+	return total;
+}
+
 void main()
 {
 	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -106,6 +152,7 @@ void main()
 	float depth = texelFetch(DepthBuffer, pixel, 0).r;
 	vec3 result = Frame.Background.rgb;
 	vec3 source = vec3(0.0);
+	float translucency = 0.0;
 	float priority = 2.0;
 	bool floating = Frame.Backdrop.x > 0.5;
 	if (depth >= 1.0 && floating)
@@ -152,11 +199,24 @@ void main()
 		float open = environment ? SkyOpenness(SkyMask, Frame.SkyMaskTransform, position) : 1.0;
 		vec3 environmentIrradiance = environment ? EnvironmentIrradiance(Frame.EnvironmentSh, Frame.EnvironmentParams, n) : vec3(0.0);
 		vec3 skyIrradiance = environment ? environmentIrradiance * open : HemisphereRadiance(Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb, n.y, 1.0);
+		translucency = Frame.Translucent.x > 0.0 ? UnpackTranslucency(emissive.a) : 0.0;
+		vec3 transmitted = vec3(0.0);
+		if (translucency > 0.0)
+		{
+			float through = SunThrough(position, n);
+			float wrap = max((cosI + WrapLight) / (1.0 + WrapLight), 0.0) - max(cosI, 0.0);
+			vec3 sunThrough = Frame.SunRadiance.rgb * (through * (wrap + BackLight(n, v, l, BackAmbient)));
+			transmitted = sqrt(albedo.rgb) * (translucency * InvPi) * (sunThrough + SpellTransmission(position, n, v));
+#ifndef GLOBAL_ILLUMINATION
+			vec3 backSky = environment ? EnvironmentIrradiance(Frame.EnvironmentSh, Frame.EnvironmentParams, -n) * open : HemisphereRadiance(Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb, -n.y, 1.0);
+			transmitted += sqrt(albedo.rgb) * backSky * (translucency * SkyThrough);
+#endif
+		}
 #ifdef GLOBAL_ILLUMINATION
 		vec3 ambient = vec3(0.0);
 		vec2 border = min(vec2(pixel) + 0.5, vec2(size - pixel) - 0.5);
 		float edge = clamp(min(border.x, border.y) / (2.0 * Frame.GiParams.z), 0.0, 1.0);
-		source = albedo.rgb * (sunIrradiance * InvPi + skyIrradiance * albedo.a) * (1.0 - fade) + emission * (Frame.GiParams.x * edge);
+		source = (albedo.rgb * (sunIrradiance * InvPi + skyIrradiance * albedo.a) + transmitted) * (1.0 - fade) + emission * (Frame.GiParams.x * edge);
 #else
 		vec3 ambient;
 		if (environment)
@@ -168,7 +228,7 @@ void main()
 		else
 			ambient = EvaluateAmbient(albedo.rgb, metallic, roughness, albedo.a, n, v, Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb);
 #endif
-		vec3 lit = mix(sun + ambient, DepthColor, fade);
+		vec3 lit = mix(sun + ambient + transmitted, DepthColor, fade);
 
 		result = lit + emission;
 		if (Frame.Backdrop.x > 2.5)
@@ -207,6 +267,9 @@ void main()
 		case ViewIrradiance:
 			result = skyIrradiance;
 			break;
+		case ViewTranslucency:
+			result = vec3(translucency) * 0.25 + transmitted;
+			break;
 		case ViewGiSource:
 			result = source;
 #ifdef GLOBAL_ILLUMINATION
@@ -215,8 +278,10 @@ void main()
 			break;
 		}
 	}
-	imageStore(SceneColor, pixel, vec4(result, 1.0));
 #ifdef GLOBAL_ILLUMINATION
+	imageStore(SceneColor, pixel, vec4(result, 1.0 + translucency));
 	imageStore(GiSource, pixel, vec4(source, priority));
+#else
+	imageStore(SceneColor, pixel, vec4(result, 1.0));
 #endif
 }

@@ -22,6 +22,8 @@ namespace Game
 		constexpr glm::vec3 FrostGlow{ 0.3f, 0.62f, 1.0f };
 		constexpr glm::vec3 MarkGlow{ 0.66f, 0.4f, 1.0f };
 		constexpr glm::vec3 BarrierGlow{ 0.72f, 0.88f, 1.0f };
+		constexpr float CardBurnDelay = 0.2f;
+		constexpr float CardBurnSeconds = 0.85f;
 		constexpr const char* SpellKeys[] = { "RMB", "Q", "R" };
 		static_assert(std::size(SpellKeys) == SkillSlots);
 		constexpr Rdn::KeyCode CardKeys[] = { Rdn::KeyCode::Key1, Rdn::KeyCode::Key2, Rdn::KeyCode::Key3 };
@@ -583,7 +585,16 @@ namespace Game
 				const Vec2 seed = CellSeed({ x, y });
 				const glm::vec3 center(seed.x, level->Skyborne ? 0.05f : LavaSurface + 0.1f, seed.y);
 				if (level->Kind == MapKind::FrozenLake)
+				{
 					m_Effects->Burst(Fx::FrostBurst, center + glm::vec3(0.0f, 0.2f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0.6f);
+					for (const PlacedProp& prop : level->Props)
+						if (const CellCoord cell = CellAt(prop.Position); prop.Id == PropId::IcePillar && cell.X == x && cell.Y == y)
+						{
+							m_Effects->Burst(Fx::IceCrumble, glm::vec3(prop.Position.x, prop.Base + 0.9f, prop.Position.y), glm::vec3(0.0f, 1.0f, 0.0f), 2.4f);
+							m_Effects->Burst(Fx::FrostBurst, glm::vec3(prop.Position.x, prop.Base + 0.3f, prop.Position.y), glm::vec3(0.0f, 1.0f, 0.0f), 1.3f);
+							m_App.GetGameAudio().PlayCrumble(prop.Position, true);
+						}
+				}
 				else if (level->Skyborne)
 					m_Effects->Burst(Fx::Crumble, center, glm::vec3(0.0f, 1.0f, 0.0f), 0.5f);
 				else
@@ -875,6 +886,10 @@ namespace Game
 		}
 		if (brawl.Phase == m_SeenBrawlPhase && brawl.Round == m_SeenRound)
 			return;
+		if (brawl.Phase == BrawlPhase::Countdown && m_SeenBrawlPhase != BrawlPhase::Countdown)
+			for (auto& [netId, fx] : m_Fx)
+				if (fx.Last.Kind == EntityKind::Player)
+					fx.SpawnAge = 0.0f;
 		const uint32_t self = m_Client.GetPlayerId();
 		const bool teams = m_Client.GetSession().Rules.Teams >= 2;
 		switch (brawl.Phase)
@@ -1134,7 +1149,7 @@ namespace Game
 		draw.TextWrapped(text, CardText(card, BrawlMode::Damage), Theme::Body(13.0f, WithAlpha(Theme::Muted, fade)), 0.0f, 1.0f);
 	}
 
-	void SessionState::DrawCardFace(const UiRect& rect, CardId id, float hover, float fade, std::optional<uint32_t> key, bool taken, float reveal, float burst)
+	void SessionState::DrawCardFace(const UiRect& rect, CardId id, float hover, float fade, std::optional<uint32_t> key, bool taken, float reveal, float burst, float burnAway)
 	{
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
@@ -1151,8 +1166,8 @@ namespace Game
 		body.CutTop(face.H * 0.04f);
 		const UiRect iconRect = UiRect::Centered({ body.Center().x, body.Y + iconSize * 0.5f + 6.0f }, { iconSize, iconSize });
 		const float margin = burst > 0.0f ? 120.0f : legendary ? 58.0f : apex ? 52.0f : card.Rarity == CardRarity::Rare ? 36.0f : 28.0f;
-		draw.Card(face, { .Color = rarity, .Rarity = uint32_t(card.Rarity), .Margin = margin, .Hover = lift, .Fade = fade, .Taken = burst, .Reveal = reveal, .Mouse = ui.GetMouse(), .MedallionY = iconRect.Center().y, .MedallionRadius = iconSize * 0.68f, .Seed = float(id) * 0.6180339f });
-		fade *= Smooth(0.0f, 0.35f, reveal);
+		draw.Card(face, { .Color = rarity, .Rarity = uint32_t(card.Rarity), .Margin = margin, .Hover = lift, .Fade = fade, .Taken = burst, .Reveal = reveal, .Dissolve = burnAway, .Mouse = ui.GetMouse(), .MedallionY = iconRect.Center().y, .MedallionRadius = iconSize * 0.68f, .Seed = float(id) * 0.6180339f });
+		fade *= Smooth(0.0f, 0.35f, reveal) * (1.0f - Smooth(0.0f, 0.55f, burnAway));
 		TextStyle tagStyle = Theme::Bold(12.0f, WithAlpha(apex || legendary ? Lighten(rarity, 0.25f) : rarity, fade));
 		tagStyle.Tracking = apex ? 4.0f : 1.8f;
 		const std::string tag = card.Kind == CardKind::Upgrade ? "UPGRADE  \xC2\xB7  " + Upper(GetAbility(card.Spell).Name) : apex ? std::string("APEX") : std::string("WILD CARD");
@@ -1431,10 +1446,12 @@ namespace Game
 				const UiInteraction interaction = ui.Interact(id, rect);
 				const bool taken = m_ChosenCard == i;
 				const float hover = ui.Animate(id, offered && interaction.Hovered);
-				const float fade = ui.Animate(Ui::MakeId("cardfade", i), !m_ChosenCard || taken, 6.0f) * 0.7f + 0.3f;
+				const float burnAway = m_ChosenCard && !taken ? std::clamp((m_TakenAge - CardBurnDelay) / CardBurnSeconds, 0.0f, 1.0f) : 0.0f;
+				if (burnAway >= 1.0f)
+					continue;
 				if (offered && interaction.Clicked)
 					TakeCard(i, card);
-				DrawCardFace(rect, card, hover, fade, offered ? std::optional<uint32_t>(i) : std::nullopt, taken, reveal, taken ? std::max(1.0f - m_TakenAge / 0.9f, 0.0f) : 0.0f);
+				DrawCardFace(rect, card, hover, 1.0f, offered ? std::optional<uint32_t>(i) : std::nullopt, taken, reveal, taken ? std::max(1.0f - m_TakenAge / 0.9f, 0.0f) : 0.0f, burnAway);
 			}
 		}
 		else if (champion)

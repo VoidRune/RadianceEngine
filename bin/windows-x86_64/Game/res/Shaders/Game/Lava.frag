@@ -19,6 +19,8 @@ layout(location = 2) out vec4 outEmission;
 const float Period = 16.0;
 const vec3 CrustColor = vec3(0.034, 0.037, 0.046);
 const vec3 Glow = vec3(1.7, 0.5, 0.1);
+const vec3 ThinCrust = vec3(0.15, 0.045, 0.02);
+const float CrustTranslucency = 0.75;
 
 void main()
 {
@@ -38,7 +40,8 @@ void main()
 	float river = 0.26 + 0.36 * (1.0 - smoothstep(0.04, 0.2, flow)) + 0.05 * sin(time * 0.9 + flow * 23.0);
 	float coverage = (1.0 - open) * (1.0 - crack) * (0.8 + 0.2 * cells.y);
 	float fade = DepthFade(pc.Params.x, inWorld.y);
-	outAlbedo = vec4(CrustColor * coverage, GroundOcclusion(0.0));
+	float thin = near * near * (1.0 - crack) * (1.0 - open);
+	outAlbedo = vec4(mix(CrustColor, ThinCrust, thin) * coverage, GroundOcclusion(0.0));
 	outSurface = PackSurface(vec3(0.0, 1.0, 0.0), 0.85, 0.0);
-	outEmission = vec4(Glow * (mix(crust, river, open) * (1.0 - fade)), 0.0);
+	outEmission = vec4(Glow * (mix(crust, river, open) * (1.0 - fade)), PackEmissionTag(false, CrustTranslucency * thin));
 }

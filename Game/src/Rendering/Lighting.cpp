@@ -118,14 +118,14 @@ namespace Game
 	}
 
 	void DeferredLighting::Render(Rdn::RenderGraph& graph, const GBuffer& gbuffer, Rdn::RGImage scene, Rdn::RGImage shadowMap, Rdn::RGImage giSource, Rdn::RGImage emitters, Rdn::Extent2D extent, uint32_t frameIndex,
-		const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, const ShadowView& shadow, ShadowQuality quality, float fadeHeight, float edgeBand, const glm::vec3& background, DebugView view)
+		const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, const ShadowView& shadow, ShadowQuality quality, float fadeHeight, float edgeBand, const glm::vec3& background, DebugView view, std::span<const SpellLight> lights, bool translucency)
 	{
 		if (!m_Pipeline)
 			return;
 		const bool gi = giSource && m_GiPipeline;
 		const Rdn::ComputePipeline* pipeline = gi ? m_GiPipeline.get() : m_Pipeline.get();
 		const glm::mat4 toTexture = glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.5f, 0.0f)) * glm::scale(glm::mat4(1.0f), glm::vec3(0.5f, 0.5f, 1.0f));
-		const FrameGpu frame{
+		FrameGpu frame{
 			.InverseViewProjection = glm::inverse(camera.ViewProjection),
 			.CameraPosition = glm::vec4(camera.Eye, fadeHeight),
 			.SunDirection = glm::vec4(-glm::normalize(lighting.SunDirection), 0.0f),
@@ -135,7 +135,7 @@ namespace Game
 			.Background = glm::vec4(background, 1.0f),
 			.Options = glm::uvec4(uint32_t(view), extent.Width, extent.Height, uint32_t(quality)),
 			.ShadowMatrix = toTexture * shadow.ViewProjection,
-			.ShadowParams = glm::vec4(shadow.TexelSize * NormalOffsetTexels, shadow.TexelSize * DepthBiasTexels / shadow.DepthRange, 0.0f, 0.0f),
+			.ShadowParams = glm::vec4(shadow.TexelSize * NormalOffsetTexels, shadow.TexelSize * DepthBiasTexels / shadow.DepthRange, shadow.DepthRange, 0.0f),
 			.GiParams = glm::vec4(lighting.EmissionGi, lighting.ParticleGi, std::max(edgeBand, 1.0f), 0.0f),
 			.EnvironmentSh = environment.Irradiance,
 			.EnvironmentParams = environment.Params,
@@ -143,7 +143,13 @@ namespace Game
 			.Backdrop = glm::vec4(lighting.Floating ? (lighting.Storm ? 3.0f : lighting.Daylight ? 2.0f : 1.0f) : 0.0f, lighting.FocusHeight, lighting.Time, lighting.Leviathan),
 			.Haze = glm::vec4(lighting.Haze, lighting.StormBuild),
 			.Eye = lighting.Eye,
+			.Translucent = glm::vec4(translucency ? 1.0f : 0.0f, float(translucency ? std::min<size_t>(lights.size(), MaxSpellLights) : 0), 0.0f, 0.0f),
 		};
+		for (size_t i = 0; i < lights.size() && i < MaxSpellLights; i++)
+		{
+			frame.Lights[i * 2] = glm::vec4(lights[i].Position, lights[i].Radius);
+			frame.Lights[i * 2 + 1] = glm::vec4(lights[i].Color, 0.0f);
+		}
 		const Rdn::ImageWrite environmentWrite(11, Rdn::DescriptorType::CombinedImageSampler, environment.Image->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, environment.Sampler->GetHandle());
 		const Rdn::ImageWrite skyMaskWrite(12, Rdn::DescriptorType::CombinedImageSampler, environment.SkyMask->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_LinearSampler->GetHandle());
 		m_Frame->Write(frameIndex, frame);

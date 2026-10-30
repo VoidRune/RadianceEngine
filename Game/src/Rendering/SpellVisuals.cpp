@@ -11,6 +11,9 @@ namespace Game
 	namespace
 	{
 		constexpr glm::vec3 Up{ 0.0f, 1.0f, 0.0f };
+		constexpr glm::vec3 SpikeEmber{ 0.9f, 0.26f, 0.06f };
+		constexpr glm::vec3 MeltEdge{ 0.9f, 2.4f, 4.2f };
+		constexpr glm::vec3 WardBurn{ 2.6f, 2.2f, 1.4f };
 
 		ParticleSprite Sprite(ParticleShape shape, const glm::vec3& position, float size, const glm::vec3& color)
 		{
@@ -435,7 +438,7 @@ namespace Game
 			{ 0.4f, 0.048f, 0.68f },
 			{ 0.6f, 0.0f, 0.7f },
 		};
-		const EffectMaterial ice{ .Color = { 0.86f, 0.95f, 1.0f }, .Roughness = 0.07f, .Metallic = 0.0f };
+		const EffectMaterial ice{ .Color = { 0.86f, 0.95f, 1.0f }, .Roughness = 0.07f, .Metallic = 0.0f, .Translucency = 0.7f };
 		SpellMeshes meshes;
 		std::vector<ModelVertex> vertices;
 		std::vector<uint32_t> indices;
@@ -455,7 +458,7 @@ namespace Game
 		indices.clear();
 		BuildSpikeCollar(vertices, indices, 41u);
 		meshes.SpikeCollar = cliff ? renderer.AddEffectMesh("EarthSpikeCollar", vertices, indices, *cliff, MeshVertexTint) : renderer.AddEffectMesh("EarthSpikeCollar", vertices, indices, granite, MeshVertexTint);
-		const EffectMaterial clear{ .Color = { 0.9f, 0.96f, 1.0f }, .Roughness = 0.1f, .Metallic = 0.0f };
+		const EffectMaterial clear{ .Color = { 0.9f, 0.96f, 1.0f }, .Roughness = 0.1f, .Metallic = 0.0f, .Translucency = 0.8f };
 		for (uint32_t variant = 0; variant < meshes.Ice.size(); variant++)
 		{
 			vertices.clear();
@@ -520,15 +523,16 @@ namespace Game
 		const glm::vec4 tint(1.55f, 1.45f, 1.35f, 0.0f);
 		const glm::vec4 rim(0.3f, 0.2f, 0.11f, 0.35f);
 		const uint32_t spike = meshes.Spike[look.Seed % meshes.Spike.size()];
+		const ModelDissolve crumble{ .Amount = look.Dissolve, .Edge = SpikeEmber, .Width = 0.04f, .Scale = 3.2f, .Sweep = -SpikeLength, .Seed = float(look.Seed % 211u) };
 		if (spike != UINT32_MAX && look.Extend > 0.01f)
 		{
 			const glm::vec3 axis = glm::normalize(Up * std::cos(look.Tilt) + heading * std::sin(look.Tilt) + side * std::sin(look.Sway));
 			const glm::vec3 forward = glm::normalize(heading - axis * glm::dot(heading, axis));
 			const glm::vec3 origin = look.Base + axis * ((look.Extend - 1.0f) * (SpikeLength + 0.2f) * look.Scale);
-			renderer.DrawModel(spike, Frame(origin, forward, axis, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim);
+			renderer.DrawModel(spike, Frame(origin, forward, axis, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim, 0u, glm::vec4(0.0f), crumble);
 		}
 		if (meshes.SpikeCollar != UINT32_MAX && look.Collar > 0.01f)
-			renderer.DrawModel(meshes.SpikeCollar, Frame(look.Base + Up * ((look.Collar - 1.0f) * SpikeCollarDepth * look.Scale), heading, Up, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim);
+			renderer.DrawModel(meshes.SpikeCollar, Frame(look.Base + Up * ((look.Collar - 1.0f) * SpikeCollarDepth * look.Scale), heading, Up, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim, 0u, glm::vec4(0.0f), crumble);
 	}
 
 	void DrawIceCluster(WorldRenderer& renderer, const SpellMeshes& meshes, const IceClusterLook& look)
@@ -540,7 +544,8 @@ namespace Game
 		const glm::vec3 axis = Up * std::cos(look.Lean) + heading * std::sin(look.Lean);
 		const glm::vec3 forward = glm::normalize(heading - axis * glm::dot(heading, axis));
 		const glm::vec4 rim(glm::vec3(0.08f, 0.3f, 0.7f) * (0.5f + look.Glow), 1.0f);
-		renderer.DrawModel(mesh, Frame(look.Base - Up * look.Sink, forward, axis, look.Scale), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, look.Frost), 0.04f + 0.14f * look.Glow, look.Base.y, rim);
+		const ModelDissolve melt{ .Amount = look.Melt, .Edge = MeltEdge, .Width = 0.09f, .Scale = 5.0f, .Sweep = -1.2f, .Seed = float(look.Variant * 37u % 199u) };
+		renderer.DrawModel(mesh, Frame(look.Base - Up * look.Sink, forward, axis, look.Scale), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, look.Frost), 0.04f + 0.14f * look.Glow, look.Base.y, rim, 0u, glm::vec4(0.0f), melt);
 	}
 
 	void DrawIceSpear(WorldRenderer& renderer, const SpellMeshes& meshes, const IceSpearLook& look, float time, uint32_t seed)
@@ -1230,18 +1235,20 @@ namespace Game
 			glass.CrackOrigin = FacetPlane(facet, origin);
 			glass.Flash = std::min(flash, 1.5f);
 			glass.Fade = look.Fade * std::min(t * 3.0f, 1.0f) * (faint ? 0.55f + 0.45f * flicker : 1.0f);
+			glass.Dissolve = look.Dissolve;
+			glass.Burn = WardBurn;
 			glass.Seed = facet.Seed ^ look.Seed;
 			renderer.DrawFacet(glass);
 		}
 		const float formed = std::clamp((look.Age - DiamondFormSeconds * 0.6f) / (DiamondFormSeconds * 0.4f), 0.0f, 1.0f);
 		if (formed <= 0.0f)
 			return;
-		DrawStar(renderer, look.Base + Up * DiamondApex, (0.14f + 0.05f * std::sin(time * 5.3f)) * (1.0f + 0.6f * look.Flash), edge * (0.2f * look.Fade * formed), time * 0.6f);
+		DrawStar(renderer, look.Base + Up * DiamondApex, (0.14f + 0.05f * std::sin(time * 5.3f)) * (1.0f + 0.6f * look.Flash), edge * (0.2f * look.Fade * formed * (1.0f - look.Dissolve)), time * 0.6f);
 	}
 
 	void DrawDiamondCaustics(WorldRenderer& renderer, const DiamondWardLook& look, const glm::vec3& sunDirection)
 	{
-		const float strength = look.Fade * std::clamp(look.Age / DiamondFormSeconds, 0.0f, 1.0f);
+		const float strength = look.Fade * std::clamp(look.Age / DiamondFormSeconds, 0.0f, 1.0f) * (1.0f - look.Dissolve);
 		if (strength <= 0.01f)
 			return;
 		const float damage = 1.0f - std::clamp(look.Ward, 0.0f, 1.0f);

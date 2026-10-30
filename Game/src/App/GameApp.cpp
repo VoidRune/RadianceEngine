@@ -338,6 +338,7 @@ namespace Game
 		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
 		m_WorldRenderer->GetDistortion().Enabled = m_Settings.Distortion;
 		m_WorldRenderer->GetTrails().Enabled = m_Settings.Trails;
+		m_WorldRenderer->SetTranslucency(options.Translucency);
 		if (options.Shadows)
 			m_Settings.Shadows = ShadowQuality(*options.Shadows);
 		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);

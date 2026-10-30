@@ -76,7 +76,15 @@ namespace Game
 		constexpr float SpearLaneSeconds = 2.8f;
 		constexpr float SpearLaneStep = 0.55f;
 		constexpr float SpikeRiftSeconds = 3.5f;
-		constexpr float SpikeRuinSeconds = 0.42f;
+		constexpr float SpikeRuinSeconds = 0.7f;
+		constexpr float DeathDissolveDelay = 0.9f;
+		constexpr float DeathDissolveSeconds = 1.4f;
+		constexpr float SpawnDissolveSeconds = 0.75f;
+		constexpr float DissolveGlow = 7.0f;
+		constexpr float BodyHeight = 1.9f;
+		constexpr glm::vec3 ArcaneDeath{ 0.74f, 0.3f, 1.0f };
+		constexpr glm::vec3 StormDeath{ 0.55f, 0.6f, 1.0f };
+		constexpr float SpellLightGain = 14.0f;
 		constexpr float BodyGravity = 26.0f;
 		constexpr float BodyClimb = 16.0f;
 		constexpr float BodySnap = 2.5f;
@@ -1104,6 +1112,20 @@ namespace Game
 			{
 				ShieldMoments(entity, dt);
 				WardMoments(entity, dt);
+				if (!entity.Has(EntityFlags::Dead))
+				{
+					if (fx.DeathAge >= 0.0f)
+						fx.SpawnAge = 0.0f;
+					fx.DeathAge = -1.0f;
+					fx.SpawnAge += dt;
+				}
+				else if (fx.DeathAge < 0.0f)
+				{
+					fx.DeathAge = inserted ? DeathDissolveDelay + DeathDissolveSeconds : 0.0f;
+					fx.DeathColor = DeathColorOf(entity, fx);
+				}
+				else
+					fx.DeathAge += fx.Stop > 0.0f ? 0.0f : dt;
 			}
 			if (!inserted && entity.Kind == EntityKind::Player && !entity.Has(EntityFlags::Dead))
 			{
@@ -1159,7 +1181,12 @@ namespace Game
 			FeelHit(hit);
 			const auto it = m_Fx.find(hit.Target);
 			if (it != m_Fx.end())
+			{
 				it->second.SinceHit = 0.0f;
+				it->second.HitElement = hit.Damages;
+				if (it->second.DeathAge >= 0.0f && it->second.DeathAge < DeathDissolveDelay)
+					it->second.DeathColor = DeathColorOf(it->second.Last, it->second);
+			}
 			const glm::vec3 point = Ground(hit.Position, it != m_Fx.end() ? BarHeight(it->second.Last) * 0.5f : 0.8f);
 			m_Effects->Burst(HitFor(hit.Damages), point, glm::vec3(0.0f, 1.0f, 0.0f), hit.Critical ? 1.4f : 1.0f);
 			if (hit.Critical)
@@ -1918,6 +1945,40 @@ namespace Game
 			m_Corpses.erase(m_Corpses.begin(), m_Corpses.end() - MaxCorpses);
 	}
 
+	glm::vec3 SessionState::DeathColorOf(const EntityState& entity, const EntityFx& fx) const
+	{
+		if (entity.Has(EntityFlags::Burning))
+		{
+			const MapKind map = m_Client.GetSession().Map;
+			return map == MapKind::FrozenLake ? ElementColor(Element::Cold) : map == MapKind::StormPeak ? StormDeath : ElementColor(Element::Fire);
+		}
+		if (fx.SinceHit < KillWindow && fx.HitElement != Element::Physical)
+			return ElementColor(fx.HitElement);
+		return ArcaneDeath;
+	}
+
+	ModelDissolve SessionState::BodyDissolve(const EntityState& entity) const
+	{
+		const auto it = m_Fx.find(entity.NetId);
+		if (it == m_Fx.end())
+			return {};
+		const EntityFx& fx = it->second;
+		ModelDissolve dissolve{ .Scale = 4.0f, .Sweep = -BodyHeight, .Seed = float(entity.NetId % 251u) };
+		if (entity.Has(EntityFlags::Dead) && fx.DeathAge >= 0.0f)
+		{
+			const float t = std::clamp((fx.DeathAge - DeathDissolveDelay) / DeathDissolveSeconds, 0.0f, 1.0f);
+			dissolve.Amount = t * (2.0f - t);
+			dissolve.Edge = fx.DeathColor * DissolveGlow;
+		}
+		else if (fx.SpawnAge < SpawnDissolveSeconds)
+		{
+			const float t = fx.SpawnAge / SpawnDissolveSeconds;
+			dissolve.Amount = 1.0f - t * (2.0f - t);
+			dissolve.Edge = glm::pow(ColorOf(entity.Owner), glm::vec3(2.2f)) * DissolveGlow;
+		}
+		return dissolve;
+	}
+
 	glm::vec4 SessionState::CharacterTint(const EntityState& entity) const
 	{
 		glm::vec3 color(1.0f);
@@ -2127,7 +2188,7 @@ namespace Game
 		const bool dead = entity.Has(EntityFlags::Dead);
 		const glm::vec3 color = ColorOf(entity.Owner);
 		const glm::vec4 accent(glm::pow(color, glm::vec3(2.2f)), PlayerRim);
-		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, look, *animator, base, entity.Facing, look.Scale, CharacterTint(entity), 0.0f, accent, HitLight(entity));
+		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, look, *animator, base, entity.Facing, look.Scale, CharacterTint(entity), 0.0f, accent, HitLight(entity), BodyDissolve(entity));
 		if (dead)
 			return;
 		if (entity.Has(EntityFlags::Dashing))
@@ -2627,12 +2688,13 @@ namespace Game
 		for (const SpikeRuin& ruin : m_SpikeRuins)
 		{
 			const float t = std::clamp(ruin.Age / SpikeRuinSeconds, 0.0f, 1.0f);
-			const float sink = std::clamp((t - 0.15f) / 0.85f, 0.0f, 1.0f);
+			const float sink = std::clamp((t - 0.3f) / 0.7f, 0.0f, 1.0f);
 			const float phase = float(ruin.Seed % 97u);
 			EarthSpikeLook look;
 			look.Base = Ground(ruin.Position);
 			look.Facing = ruin.Facing;
-			look.Extend = ruin.Extend * (1.0f - sink * sink);
+			look.Extend = ruin.Extend * (1.0f - 0.4f * sink * sink);
+			look.Dissolve = std::pow(t, 1.3f);
 			look.Collar = 1.0f - sink;
 			look.Tilt = SpikeTilt + 0.12f * sink;
 			look.Sway = 0.06f * (1.0f - t) * std::sin(m_Time * 53.0f + phase);
@@ -2775,7 +2837,10 @@ namespace Game
 				m_Effects->Burst(Fx::WardShatter, look.Base + chest, up, 1.0f);
 				look.Fade = 0.0f;
 			}
-			look.Fade = std::max(look.Fade - dt / DiamondFadeSeconds, 0.0f);
+			if (look.Fade > 0.0f)
+				look.Dissolve = std::min(look.Dissolve + dt / DiamondDissolveSeconds, 1.0f);
+			if (look.Dissolve >= 1.0f)
+				look.Fade = 0.0f;
 		}
 		look.Base = base;
 		look.Spin += dt * (0.45f + 6.0f * std::pow(1.0f - std::clamp(look.Age / DiamondFormSeconds, 0.0f, 1.0f), 2.0f));
@@ -3084,6 +3149,7 @@ namespace Game
 				renderer.DrawDecal(FrostLane(live));
 			}
 			DrawGroundGlow(renderer, base, 0.6f + 0.5f * power, SpearIce * (0.22f + 0.25f * power), 1.0f);
+			renderer.DrawLight({ .Position = center, .Radius = 3.0f + power, .Color = SpearIce * (SpellLightGain * (0.6f + 0.6f * power)) });
 			return;
 		}
 		if (ability == AbilityId::PurpleFireball)
@@ -3098,6 +3164,7 @@ namespace Game
 			DrawPurpleFireball(renderer, look, m_Time, entity.NetId);
 			renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability, power, look.Size));
 			DrawGroundGlow(renderer, base, 0.7f + 0.8f * power, FireballColor(power) * (0.25f + 0.25f * power), 1.0f);
+			renderer.DrawLight({ .Position = center, .Radius = 3.5f + 1.5f * power, .Color = FireballColor(power) * (SpellLightGain * (1.0f + power)) });
 			return;
 		}
 		if (ability == AbilityId::ObsidianShards)
@@ -3129,6 +3196,8 @@ namespace Game
 		const glm::vec3 color = entity.Owner == NoPlayer ? SkillColor(ability) : glm::mix(ColorOf(entity.Owner), SkillColor(ability), 0.6f);
 		const glm::vec3 owner = entity.Owner == NoPlayer ? glm::vec3(0.0f) : glm::pow(ColorOf(entity.Owner), glm::vec3(2.2f));
 		DrawProjectileVisual(renderer, ability, center, entity.Facing, color, m_Time, entity.NetId, owner);
+		if (GetAbility(ability).Damages != Element::Physical)
+			renderer.DrawLight({ .Position = center, .Radius = 2.8f, .Color = glm::pow(color, glm::vec3(2.2f)) * (SpellLightGain * 0.7f) });
 		renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability));
 		if (ability == AbilityId::ChainHook)
 			if (const EntityState* body = FindBody(entity.Owner))

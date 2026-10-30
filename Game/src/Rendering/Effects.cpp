@@ -14,7 +14,7 @@ namespace Game
 	namespace
 	{
 		constexpr float FullSphere = 3.14159265f;
-		constexpr float IceCrumbleSeconds = 0.3f;
+		constexpr float IceCrumbleSeconds = 0.55f;
 		constexpr glm::vec3 Up{ 0.0f, 1.0f, 0.0f };
 
 		struct FxLayer
@@ -973,8 +973,9 @@ namespace Game
 			look.Base = spike.Base;
 			look.Yaw = spike.Yaw;
 			look.Lean = spike.Lean;
-			look.Scale = spike.Height * rise * (1.0f - 0.5f * melt);
-			look.Sink = spike.Height * (0.35f * (1.0f - std::min(rise, 1.0f)) + 0.7f * melt);
+			look.Scale = spike.Height * rise * (1.0f - 0.15f * melt);
+			look.Sink = spike.Height * (0.35f * (1.0f - std::min(rise, 1.0f)) + 0.2f * melt);
+			look.Melt = melt;
 			look.Frost = 0.3f * smooth(0.3f, spike.Life, spike.Age) + 0.3f * melt;
 			look.Glow = std::exp(-spike.Age * 4.0f);
 			look.Variant = spike.Variant;

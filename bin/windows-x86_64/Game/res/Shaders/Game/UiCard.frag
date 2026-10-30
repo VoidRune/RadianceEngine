@@ -5,6 +5,7 @@ const uint RarityRare = 1u;
 const uint RarityLegendary = 2u;
 const uint RarityApex = 3u;
 const float Unbounded = 4096.0;
+const float BurnWidth = 0.07;
 
 float Lattice(vec2 cell)
 {
@@ -364,6 +365,21 @@ void main()
 		float stroke = Coverage(abs(r - radius) - (rarity >= RarityLegendary ? 1.3 : 0.75), pixel) * show;
 		result = vec4(ring * arcs, 1.0) * stroke + result * (1.0 - stroke);
 		result.rgb += ring * exp(-max(r - radius, 0.0) / 9.0) * (1.0 - disc) * 0.22 * energy * show;
+	}
+	float burnAway = uintBitsToFloat(primitive.Colors.y);
+	if (burnAway > 0.0)
+	{
+		float field = mix(Fbm(p * 0.02 + seed * 37.0, Unbounded), clamp(0.5 + p.y / (extent.y * 2.4), 0.0, 1.0), 0.4);
+		float threshold = mix(-BurnWidth, 1.0, burnAway);
+		float soft = max(fwidth(field), 1e-4);
+		float keep = smoothstep(threshold - soft, threshold + soft, field);
+		float edge = 1.0 - smoothstep(threshold, threshold + BurnWidth, field);
+		float charred = 1.0 - smoothstep(threshold, threshold + BurnWidth * 3.0, field);
+		float body = clamp(result.a, 0.0, 1.0);
+		result.rgb *= 1.0 - 0.75 * charred;
+		result *= keep;
+		result.rgb += mix(vec3(1.0, 0.52, 0.14), color, 0.4) * (edge * edge * keep * body * 1.8);
+		result.a = max(result.a, edge * keep * body);
 	}
 
 	outColor = Finish(primitive, result);

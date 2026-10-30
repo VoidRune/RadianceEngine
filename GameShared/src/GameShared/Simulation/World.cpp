@@ -124,8 +124,8 @@ namespace Game
 			m_Match.Update(*this, dt);
 		else if (IsHub())
 			UpdateHub(dt);
-		if (const ArenaState arena = GetArena(); arena.Plan)
-			SinkFallenProps(m_Level, *arena.Plan, arena.Clock);
+		if (const ArenaState arena = GetArena(); arena.Field)
+			SinkFallenProps(m_Level, *arena.Field, arena.Clock);
 		FlushDestroyed();
 		m_Tick++;
 		RecordHistory();

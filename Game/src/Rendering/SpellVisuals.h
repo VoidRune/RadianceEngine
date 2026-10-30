@@ -60,7 +60,7 @@ namespace Game
 	inline constexpr float DiamondApex = 2.75f;
 	inline constexpr float DiamondImpactHeight = 1.15f;
 	inline constexpr float DiamondFormSeconds = 0.28f;
-	inline constexpr float DiamondFadeSeconds = 0.24f;
+	inline constexpr float DiamondDissolveSeconds = 0.55f;
 	inline constexpr float DiamondCracks[] = { 0.66f, 0.33f };
 	inline constexpr glm::vec3 DiamondGold{ 1.0f, 0.85f, 0.55f };
 	inline constexpr glm::vec3 DiamondViolet{ 0.78f, 0.62f, 1.0f };
@@ -85,6 +85,7 @@ namespace Game
 		float Tilt = SpikeTilt;
 		float Sway = 0.0f;
 		float Scale = 1.0f;
+		float Dissolve = 0.0f;
 		uint32_t Seed = 0;
 	};
 
@@ -97,6 +98,7 @@ namespace Game
 		float Sink = 0.0f;
 		float Frost = 0.0f;
 		float Glow = 0.0f;
+		float Melt = 0.0f;
 		uint32_t Variant = 0;
 	};
 
@@ -210,6 +212,7 @@ namespace Game
 		glm::vec3 Base{ 0.0f };
 		float Age = 0.0f;
 		float Fade = 1.0f;
+		float Dissolve = 0.0f;
 		float Ward = 1.0f;
 		float Flash = 0.0f;
 		float Spin = 0.0f;

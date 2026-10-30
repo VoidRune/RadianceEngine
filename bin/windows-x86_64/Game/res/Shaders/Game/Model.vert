@@ -10,6 +10,8 @@ struct ModelInstance
 	uvec4 Info;
 	vec4 Accent;
 	vec4 Flash;
+	vec4 Dissolve;
+	vec4 Burn;
 };
 
 struct ModelVertex
@@ -41,6 +43,11 @@ layout(location = 8) out vec4 outColor;
 layout(location = 9) out vec3 outWorld;
 layout(location = 10) flat out vec4 outAccent;
 layout(location = 11) flat out uint outFlash;
+#ifdef DISSOLVE
+layout(location = 12) out vec3 outLocal;
+layout(location = 13) flat out vec4 outDissolve;
+layout(location = 14) flat out vec4 outBurn;
+#endif
 
 const uint NoPalette = 0xFFFFFFFFu;
 
@@ -92,5 +99,10 @@ void main()
 	outWorld = world;
 	outAccent = instance.Accent;
 	outFlash = instance.Flash.a > 0.0 ? packUnorm4x8(instance.Flash) : 0u;
+#ifdef DISSOLVE
+	outLocal = vertex.PositionU.xyz * length(vec3(instance.Row0.y, instance.Row1.y, instance.Row2.y));
+	outDissolve = instance.Dissolve;
+	outBurn = instance.Burn;
+#endif
 	gl_Position = pc.ViewProjection * vec4(world, 1.0);
 }

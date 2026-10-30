@@ -1054,7 +1054,7 @@ namespace Game
 		return transform;
 	}
 
-	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent, const glm::vec4& flash)
+	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent, const glm::vec4& flash, const ModelDissolve& dissolve)
 	{
 		CharacterPose pose;
 		pose.Model = ModelTransform(base, facing, scale);
@@ -1065,9 +1065,9 @@ namespace Game
 		const uint32_t palette = renderer.AddPalette(skin, skeleton.JointCount());
 		const bool accented = glm::vec3(accent) != glm::vec3(0.0f);
 		for (const CharacterPart& part : look.Parts)
-			renderer.DrawModel(part.Mesh, pose.Model, palette, glm::vec4(glm::vec3(tint) * part.Shade, tint.a), emission, base.y, accent, accented ? part.Accent : 0u, flash);
+			renderer.DrawModel(part.Mesh, pose.Model, palette, glm::vec4(glm::vec3(tint) * part.Shade, tint.a), emission, base.y, accent, accented ? part.Accent : 0u, flash, dissolve);
 		for (const PropAttachment& prop : look.Props)
-			renderer.DrawModel(prop.Mesh, pose.Model * pose.Globals[prop.Joint] * prop.Offset, NoPalette, tint, emission, base.y, accent, 0u, flash);
+			renderer.DrawModel(prop.Mesh, pose.Model * pose.Globals[prop.Joint] * prop.Offset, NoPalette, tint, emission, base.y, accent, 0u, flash, dissolve);
 		return pose;
 	}
 }

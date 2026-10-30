@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <span>
 
 namespace Game
 {
@@ -26,10 +27,11 @@ namespace Game
 		Shadow,
 		Irradiance,
 		GiSource,
+		Translucency,
 		Count,
 	};
 
-	inline constexpr const char* DebugViewNames[] = { "lit", "albedo", "normal", "roughness", "metallic", "occlusion", "emission", "sun", "ambient", "shadow", "irradiance", "gisource" };
+	inline constexpr const char* DebugViewNames[] = { "lit", "albedo", "normal", "roughness", "metallic", "occlusion", "emission", "sun", "ambient", "shadow", "irradiance", "gisource", "translucency" };
 	static_assert(std::size(DebugViewNames) == size_t(DebugView::Count));
 
 	enum class GiQuality : uint8_t
@@ -92,6 +94,15 @@ namespace Game
 		return (view >= DebugView::Albedo && view <= DebugView::Occlusion) || view == DebugView::Shadow;
 	}
 
+	inline constexpr uint32_t MaxSpellLights = 16;
+
+	struct SpellLight
+	{
+		glm::vec3 Position{ 0.0f };
+		float Radius = 3.0f;
+		glm::vec3 Color{ 0.0f };
+	};
+
 	struct SceneLighting
 	{
 		glm::vec3 SunDirection{ 0.45f, -1.0f, 0.3f };
@@ -136,7 +147,7 @@ namespace Game
 		DeferredLighting& operator=(const DeferredLighting&) = delete;
 
 		void Render(Rdn::RenderGraph& graph, const GBuffer& gbuffer, Rdn::RGImage scene, Rdn::RGImage shadowMap, Rdn::RGImage giSource, Rdn::RGImage emitters, Rdn::Extent2D extent, uint32_t frameIndex,
-			const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, const ShadowView& shadow, ShadowQuality quality, float fadeHeight, float edgeBand, const glm::vec3& background, DebugView view);
+			const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, const ShadowView& shadow, ShadowQuality quality, float fadeHeight, float edgeBand, const glm::vec3& background, DebugView view, std::span<const SpellLight> lights, bool translucency);
 		bool IsReady() const { return m_Pipeline != nullptr; }
 		bool HasGi() const { return m_GiPipeline != nullptr; }
 
@@ -160,6 +171,8 @@ namespace Game
 			glm::vec4 Backdrop;
 			glm::vec4 Haze;
 			glm::vec4 Eye;
+			glm::vec4 Translucent;
+			std::array<glm::vec4, MaxSpellLights * 2> Lights;
 		};
 
 		Rdn::Device& m_Device;

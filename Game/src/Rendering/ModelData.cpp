@@ -10,7 +10,7 @@ namespace Game
 	namespace
 	{
 		constexpr uint32_t FileMagic = 0x4C444F4D;
-		constexpr uint32_t FileVersion = 5;
+		constexpr uint32_t FileVersion = 6;
 		constexpr uint64_t MaxElements = 1ull << 28;
 		constexpr uint32_t MaxTextures = 4096;
 		constexpr uint32_t MaxTextureSize = 8192;
@@ -195,6 +195,7 @@ namespace Game
 				out.Value(mesh.Roughness);
 				out.Value(mesh.Metallic);
 				out.Value(mesh.AlphaCutoff);
+				out.Value(mesh.Translucency);
 				out.Value(mesh.Min);
 				out.Value(mesh.Max);
 				out.Value(uint8_t((mesh.Skinned ? 1 : 0) | (mesh.DoubleSided ? 0 : 2) | (mesh.Water ? 4 : 0)));
@@ -296,7 +297,7 @@ namespace Game
 		{
 			uint8_t flags = 0;
 			if (!in.String(mesh.Name) || !in.Value(mesh.FirstIndex) || !in.Value(mesh.IndexCount) || !in.Value(mesh.Texture) || !in.Value(mesh.Surface) || !in.Value(mesh.Normal) || !in.Value(mesh.Color) || !in.Value(mesh.Emissive)
-				|| !in.Value(mesh.Emission) || !in.Value(mesh.Roughness) || !in.Value(mesh.Metallic) || !in.Value(mesh.AlphaCutoff) || !in.Value(mesh.Min) || !in.Value(mesh.Max) || !in.Value(flags) || !in.Value(mesh.Skeleton))
+				|| !in.Value(mesh.Emission) || !in.Value(mesh.Roughness) || !in.Value(mesh.Metallic) || !in.Value(mesh.AlphaCutoff) || !in.Value(mesh.Translucency) || !in.Value(mesh.Min) || !in.Value(mesh.Max) || !in.Value(flags) || !in.Value(mesh.Skeleton))
 				return false;
 			mesh.Skinned = (flags & 1) != 0;
 			mesh.DoubleSided = (flags & 2) == 0;

@@ -95,6 +95,7 @@ namespace Game
 		float Fade = 1.0f;
 		float Taken = 0.0f;
 		float Reveal = 1.0f;
+		float Dissolve = 0.0f;
 		glm::vec2 Mouse{ -1e4f };
 		float MedallionY = 0.0f;
 		float MedallionRadius = 0.0f;

@@ -303,10 +303,10 @@ namespace Game
 		for (Rdn::Sampler* sampler : { m_ModelSampler.get(), m_NearestSampler.get(), m_RepeatSampler.get(), m_EnvironmentSampler.get() })
 			if (sampler)
 				m_Allocator.ReleaseResource(sampler);
-		for (Rdn::Pipeline* pipeline : { m_ShadowPipeline.get(), m_ModelShadowPipeline.get(), m_ModelAlphaShadowPipeline.get(), m_BackPipeline.get(), m_ModelBackPipeline.get(), m_CrystalPipeline.get(), m_IcewaterPipeline.get() })
+		for (Rdn::Pipeline* pipeline : { m_ShadowPipeline.get(), m_ModelShadowPipeline.get(), m_ModelAlphaShadowPipeline.get(), m_BackPipeline.get(), m_ModelBackPipeline.get(), m_CrystalPipeline.get(), m_IcewaterPipeline.get(), m_DissolvePipeline.get(), m_DissolveShadowPipeline.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
-		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get(), m_CrystalFragmentShader.get(), m_IcewaterFragmentShader.get() })
+		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get(), m_CrystalFragmentShader.get(), m_IcewaterFragmentShader.get(), m_DissolveVertexShader.get(), m_DissolveFragmentShader.get(), m_DissolveShadowShader.get() })
 			if (shader)
 				m_Allocator.ReleaseResource(shader);
 		for (const auto& [pipeline, vertex, fragment] : { std::tuple(m_Pipeline.get(), m_VertexShader.get(), m_FragmentShader.get()), std::tuple(m_ModelPipeline.get(), m_ModelVertexShader.get(), m_ModelFragmentShader.get()), std::tuple(m_LavaPipeline.get(), m_LavaVertexShader.get(), m_LavaFragmentShader.get()) })
@@ -418,9 +418,9 @@ namespace Game
 			material.Albedo = glows ? 0 : slot(mesh.Texture);
 			material.Surface = glows ? 0 : slot(mesh.Surface);
 			material.Normal = glows ? 0 : slot(mesh.Normal);
-			material.Flags = (alphaTested ? 1u : 0u) | (pbr ? 2u : 0u) | (mesh.DoubleSided ? 0u : 64u);
+			material.Flags = (alphaTested ? 1u : 0u) | (pbr ? 2u : 0u) | (mesh.DoubleSided ? 0u : 64u) | (mesh.Translucency > 0.0f ? MaterialTranslucent : 0u);
 			material.Color = glm::vec4(glows ? mesh.Emissive : glm::vec3(mesh.Color), alphaTested ? mesh.AlphaCutoff : 0.0f);
-			material.Params = glm::vec4(mesh.Roughness, mesh.Metallic, 1.0f, 0.0f);
+			material.Params = glm::vec4(mesh.Roughness, mesh.Translucency > 0.0f ? 1.0f : mesh.Metallic, 1.0f, mesh.Translucency);
 			material.Extra = glm::vec4(glows ? glm::vec3(0.0f) : mesh.Emission, 0.0f);
 			m_DrawMeshes.push_back({ .FirstIndex = mesh.FirstIndex, .IndexCount = mesh.IndexCount, .Material = uint32_t(m_Materials.size()), .Flags = mesh.Water ? MeshWater : 0u, .Skinned = mesh.Skinned, .Glows = glows, .AlphaTested = alphaTested });
 			m_Materials.push_back(material);
@@ -457,6 +457,7 @@ namespace Game
 		BindTextures();
 		m_ModelDraws.assign(m_DrawMeshes.size(), {});
 		m_ModelShadowDraws.assign(m_DrawMeshes.size(), {});
+		m_ModelDissolveDraws.assign(m_DrawMeshes.size(), {});
 		return true;
 	}
 
@@ -528,7 +529,7 @@ namespace Game
 		if (const std::optional<uint32_t> existing = FindEffectMesh(name))
 			return *existing;
 		m_Device.WaitIdle();
-		m_Materials.push_back({ .Flags = 2u | 64u, .Color = glm::vec4(material.Color, 0.0f), .Params = glm::vec4(material.Roughness, material.Metallic, 1.0f, 0.0f), .Extra = glm::vec4(material.Emission, 0.0f) });
+		m_Materials.push_back({ .Flags = 2u | 64u | (material.Translucency > 0.0f ? MaterialTranslucent : 0u), .Color = glm::vec4(material.Color, 0.0f), .Params = glm::vec4(material.Roughness, material.Translucency > 0.0f ? 1.0f : material.Metallic, 1.0f, material.Translucency), .Extra = glm::vec4(material.Emission, 0.0f) });
 		UploadMaterials();
 		return AddEffectMesh(name, vertices, indices, uint32_t(m_Materials.size() - 1), flags);
 	}
@@ -555,6 +556,7 @@ namespace Game
 		UploadGeometry({}, {});
 		m_ModelDraws.resize(m_DrawMeshes.size());
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
+		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
 		return mesh;
 	}
 
@@ -591,6 +593,7 @@ namespace Game
 		UploadGeometry(m_LevelVertices, m_LevelIndices);
 		m_ModelDraws.resize(m_DrawMeshes.size());
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
+		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
 		return first;
 	}
 
@@ -605,6 +608,7 @@ namespace Game
 		UploadGeometry({}, {});
 		m_ModelDraws.resize(m_DrawMeshes.size());
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
+		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
 	}
 
 	void WorldRenderer::SetSkyMask(uint32_t width, uint32_t height, const std::vector<uint8_t>& openness, glm::vec2 origin, glm::vec2 size)
@@ -751,6 +755,30 @@ namespace Game
 		}
 		else
 			RDN_LOG_ERROR("The crystal variant of the model shader failed to compile, the Caldera loses its crystal veins");
+		Rdn::ShaderDesc dissolveVertexDesc;
+		Rdn::ShaderDesc dissolveFragmentDesc;
+		if (CompileVariant("res/Shaders/Game/Model.vert", "DISSOLVE", dissolveVertexDesc, Rdn::ShaderStage::Vertex) && CompileVariant("res/Shaders/Game/Model.frag", "DISSOLVE", dissolveFragmentDesc, Rdn::ShaderStage::Fragment))
+		{
+			m_DissolveVertexShader = std::make_unique<Rdn::Shader>();
+			m_DissolveFragmentShader = std::make_unique<Rdn::Shader>();
+			m_Allocator.CreateShader(m_DissolveVertexShader.get(), dissolveVertexDesc);
+			m_Allocator.CreateShader(m_DissolveFragmentShader.get(), dissolveFragmentDesc);
+			m_DissolvePipeline = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_DissolvePipeline.get(), Rdn::PipelineDesc{
+				.ShaderStages = { m_DissolveVertexShader.get(), m_DissolveFragmentShader.get() },
+				.CullMode = Rdn::CullMode::None,
+				.ColorAttachmentFormats = { AlbedoFormat, SurfaceFormat, EmissionFormat },
+				.DepthAttachmentFormat = DepthFormat,
+				.PushDescriptorSets = { 0 },
+			});
+			if (Rdn::ShaderDesc dissolveShadowDesc; CompileVariant("res/Shaders/Game/ModelShadow.frag", "DISSOLVE", dissolveShadowDesc, Rdn::ShaderStage::Fragment))
+			{
+				m_DissolveShadowShader = std::make_unique<Rdn::Shader>();
+				m_Allocator.CreateShader(m_DissolveShadowShader.get(), dissolveShadowDesc);
+			}
+		}
+		else
+			RDN_LOG_ERROR("The dissolve variant of the model shader failed to compile, dissolving models pop instead");
 		if (Rdn::ShaderDesc shadowDesc; Rdn::ShaderCompiler::Compile("res/Shaders/Game/ModelShadow.frag", shadowDesc))
 		{
 			m_ModelShadowShader = std::make_unique<Rdn::Shader>();
@@ -787,6 +815,8 @@ namespace Game
 			m_ModelShadowPipeline = create({ m_ModelVertexShader.get() });
 		if (m_ModelPipeline && m_ModelShadowShader)
 			m_ModelAlphaShadowPipeline = create({ m_ModelVertexShader.get(), m_ModelShadowShader.get() });
+		if (m_DissolveVertexShader && m_DissolveShadowShader)
+			m_DissolveShadowPipeline = create({ m_DissolveVertexShader.get(), m_DissolveShadowShader.get() });
 		const auto createBack = [&](std::initializer_list<Rdn::Shader*> stages, Rdn::CullMode cull)
 		{
 			auto pipeline = std::make_unique<Rdn::Pipeline>();
@@ -888,6 +918,9 @@ namespace Game
 			draws.clear();
 		for (std::vector<ModelInstance>& draws : m_ModelShadowDraws)
 			draws.clear();
+		for (std::vector<ModelInstance>& draws : m_ModelDissolveDraws)
+			draws.clear();
+		m_Lights.clear();
 		m_LavaQuads.clear();
 		m_Palettes.clear();
 		m_Particles->BeginFrame();
@@ -930,17 +963,17 @@ namespace Game
 		return offset;
 	}
 
-	void WorldRenderer::DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags, const glm::vec4& flash)
+	void WorldRenderer::DrawModel(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags, const glm::vec4& flash, const ModelDissolve& dissolve)
 	{
 		if (mesh < m_ModelDraws.size())
-			m_ModelDraws[mesh].push_back(MakeModelInstance(mesh, transform, palette, tint, emission, ground, accent, accentFlags, flash));
+			SubmitModel(mesh, MakeModelInstance(mesh, transform, palette, tint, emission, ground, accent, accentFlags, flash, dissolve));
 	}
 
-	ModelInstance WorldRenderer::MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags, const glm::vec4& flash) const
+	ModelInstance WorldRenderer::MakeModelInstance(uint32_t mesh, const glm::mat4& transform, uint32_t palette, const glm::vec4& tint, float emission, float ground, const glm::vec4& accent, uint32_t accentFlags, const glm::vec4& flash, const ModelDissolve& dissolve) const
 	{
 		const DrawMesh& source = m_DrawMeshes[mesh < m_DrawMeshes.size() ? mesh : 0];
 		const glm::mat4 rows = glm::transpose(transform);
-		return {
+		ModelInstance instance{
 			.Rows = { rows[0], rows[1], rows[2] },
 			.Tint = tint,
 			.Shading = glm::vec4(source.Glows ? 1.0f : emission, ground, 0.0f, 0.0f),
@@ -948,12 +981,30 @@ namespace Game
 			.Accent = accent,
 			.Flash = flash,
 		};
+		SetDissolve(instance, dissolve);
+		return instance;
+	}
+
+	void WorldRenderer::SetDissolve(ModelInstance& instance, const ModelDissolve& dissolve)
+	{
+		instance.Dissolve = glm::vec4(dissolve.Amount, std::max(dissolve.Width, 1e-3f), dissolve.Scale, dissolve.Sweep);
+		instance.Burn = glm::vec4(dissolve.Edge, dissolve.Seed);
 	}
 
 	void WorldRenderer::SubmitModel(uint32_t mesh, const ModelInstance& instance, bool shadowOnly)
 	{
-		if (mesh < m_ModelDraws.size())
-			(shadowOnly ? m_ModelShadowDraws : m_ModelDraws)[mesh].push_back(instance);
+		if (mesh >= m_ModelDraws.size() || instance.Dissolve.x >= 1.0f)
+			return;
+		if (shadowOnly)
+			m_ModelShadowDraws[mesh].push_back(instance);
+		else
+			(instance.Dissolve.x > 0.0f && m_DissolvePipeline ? m_ModelDissolveDraws : m_ModelDraws)[mesh].push_back(instance);
+	}
+
+	void WorldRenderer::DrawLight(const SpellLight& light)
+	{
+		if (m_Lights.size() < MaxSpellLights && glm::dot(light.Color, glm::vec3(1.0f)) > 0.0f && light.Radius > 0.0f)
+			m_Lights.push_back(light);
 	}
 
 	void WorldRenderer::Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D output, uint32_t frameIndex, const std::array<float, 4>& clearColor)
@@ -993,6 +1044,7 @@ namespace Game
 
 		m_ModelRanges.resize(m_ModelDraws.size());
 		m_ModelShadowRanges.resize(m_ModelDraws.size());
+		m_ModelDissolveRanges.resize(m_ModelDraws.size());
 		m_PackedModels.clear();
 		for (size_t mesh = 0; mesh < m_ModelDraws.size(); mesh++)
 		{
@@ -1003,6 +1055,11 @@ namespace Game
 		{
 			m_ModelShadowRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(m_ModelShadowDraws[mesh].size()) };
 			m_PackedModels.insert(m_PackedModels.end(), m_ModelShadowDraws[mesh].begin(), m_ModelShadowDraws[mesh].end());
+		}
+		for (size_t mesh = 0; mesh < m_ModelDissolveDraws.size(); mesh++)
+		{
+			m_ModelDissolveRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(m_ModelDissolveDraws[mesh].size()) };
+			m_PackedModels.insert(m_PackedModels.end(), m_ModelDissolveDraws[mesh].begin(), m_ModelDissolveDraws[mesh].end());
 		}
 		const uint32_t modelCount = m_ModelPipeline && m_ModelIndices ? uint32_t(m_PackedModels.size()) : 0;
 		if (m_Palettes.empty())
@@ -1069,6 +1126,16 @@ namespace Game
 								cmd.DrawIndexed(source.IndexCount, m_ModelRanges[mesh].second, source.FirstIndex, 0, m_ModelRanges[mesh].first);
 						}
 					}
+					if (m_DissolvePipeline && std::any_of(m_ModelDissolveRanges.begin(), m_ModelDissolveRanges.end(), [](const auto& range) { return range.second > 0; }))
+					{
+						cmd.BindPipeline(m_DissolvePipeline->GetHandle());
+						cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_DissolvePipeline->GetLayout(), 0, write);
+						cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_DissolvePipeline->GetLayout(), 1, { m_TextureSet->GetHandle() });
+						cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_DissolvePipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
+						for (size_t mesh = 0; mesh < m_ModelDissolveRanges.size(); mesh++)
+							if (const auto [first, instances] = m_ModelDissolveRanges[mesh]; instances > 0)
+								cmd.DrawIndexed(m_DrawMeshes[mesh].IndexCount, instances, m_DrawMeshes[mesh].FirstIndex, 0, first);
+					}
 				}
 				if (count > 0 && lava.second > 0 && m_LavaTexture)
 				{
@@ -1106,7 +1173,7 @@ namespace Game
 		}
 		const float edgeBand = guard.x > 0 ? 0.5f * float(std::min(guard.x, guard.y)) : 0.04f * float(std::min(half.Width, half.Height));
 		const EnvironmentView environment = GetEnvironmentView();
-		m_Deferred->Render(graph, gbuffer, scene, shadowMap, giSource, emitters, extent, frameIndex, camera, m_Lighting, environment, shadow, m_ShadowQuality, m_Constants.Focus.x, edgeBand, background, m_View);
+		m_Deferred->Render(graph, gbuffer, scene, shadowMap, giSource, emitters, extent, frameIndex, camera, m_Lighting, environment, shadow, m_ShadowQuality, m_Constants.Focus.x, edgeBand, background, m_View, m_Lights, m_Translucency);
 		if (gi)
 			m_Gi->Render(graph, gbuffer, giSource, emitters, backDepth, scene, extent, frameIndex, camera, m_Lighting, environment, m_GiQuality, m_Constants.Focus.x, edgeBand, m_View);
 		if (m_View != DebugView::Irradiance && m_View != DebugView::GiSource)
@@ -1209,14 +1276,28 @@ namespace Game
 						}
 				};
 				draw(false);
-				if (!alphaTested || !m_ModelAlphaShadowPipeline || !m_ShadowTextureSet)
+				const bool dissolving = m_DissolveShadowPipeline && std::any_of(m_ModelDissolveRanges.begin(), m_ModelDissolveRanges.end(), [](const auto& range) { return range.second > 0; });
+				if ((!alphaTested && !dissolving) || !m_ShadowTextureSet)
 					return;
 				write.AddWrite(Rdn::BufferWrite(3, Rdn::DescriptorType::StorageBuffer, m_MaterialBuffer->GetHandle(), 0, m_MaterialBuffer->GetSize()));
-				cmd.BindPipeline(m_ModelAlphaShadowPipeline->GetHandle());
-				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelAlphaShadowPipeline->GetLayout(), 0, write);
-				cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelAlphaShadowPipeline->GetLayout(), 1, { m_ShadowTextureSet->GetHandle() });
-				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_ModelAlphaShadowPipeline->GetLayout(), &constants, BaseConstantsSize);
-				draw(true);
+				const auto bind = [&](const Rdn::Pipeline& pipeline)
+				{
+					cmd.BindPipeline(pipeline.GetHandle());
+					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline.GetLayout(), 0, write);
+					cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline.GetLayout(), 1, { m_ShadowTextureSet->GetHandle() });
+					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, pipeline.GetLayout(), &constants, BaseConstantsSize);
+				};
+				if (alphaTested && m_ModelAlphaShadowPipeline)
+				{
+					bind(*m_ModelAlphaShadowPipeline);
+					draw(true);
+				}
+				if (!dissolving)
+					return;
+				bind(*m_DissolveShadowPipeline);
+				for (size_t mesh = 0; mesh < m_ModelDissolveRanges.size(); mesh++)
+					if (const auto [first, instances] = m_ModelDissolveRanges[mesh]; instances > 0 && (m_DrawMeshes[mesh].Flags & MeshGround) == 0)
+						cmd.DrawIndexed(m_DrawMeshes[mesh].IndexCount, instances, m_DrawMeshes[mesh].FirstIndex, 0, first);
 			});
 	}
 }
