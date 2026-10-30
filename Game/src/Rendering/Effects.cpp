@@ -272,8 +272,8 @@ namespace Game
 				});
 				set(Fx::ShieldShatter, {
 					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.12f, 0.12f }, .Size = { 0.55f, 0.55f }, .Tint = aetherFlash },
-					{ .Kind = K::HexShard, .Count = 30.0f, .Aimed = true, .Radius = 0.55f, .Cone = 1.1f, .Speed = { 2.5f, 6.5f }, .Life = { 0.6f, 1.2f }, .Size = { 0.035f, 0.075f } },
-					{ .Kind = K::HexShard, .Count = 12.0f, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.0f, .Speed = { 1.5f, 4.0f }, .Life = { 0.7f, 1.3f }, .Size = { 0.03f, 0.06f } },
+					{ .Kind = K::HexShard, .Count = 12.0f, .Aimed = true, .Radius = 0.55f, .Cone = 1.1f, .Speed = { 2.5f, 6.5f }, .Life = { 0.6f, 1.2f }, .Size = { 0.035f, 0.075f } },
+					{ .Kind = K::HexShard, .Count = 6.0f, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.0f, .Speed = { 1.5f, 4.0f }, .Life = { 0.7f, 1.3f }, .Size = { 0.03f, 0.06f } },
 					{ .Kind = K::Mote, .Count = 24.0f, .Outward = true, .Radius = 0.5f, .Cone = FullSphere, .Speed = { 1.0f, 3.5f }, .Life = { 0.35f, 0.8f }, .Size = { 0.025f, 0.045f } },
 					{ .Kind = K::Streak, .Count = 16.0f, .Aimed = true, .Radius = 0.35f, .Cone = 1.3f, .Speed = { 6.0f, 11.0f }, .Life = { 0.2f, 0.4f }, .Size = { 0.025f, 0.04f }, .Tint = aether * 0.45f },
 					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.35f, 0.35f }, .Size = { 1.6f, 1.6f }, .Tint = { 0.12f, 0.3f, 0.55f }, .Lift = -0.9f },
@@ -922,6 +922,12 @@ namespace Game
 			m_Waves.push_back({ .Ground = ground, .Radius = radius, .Life = life, .Strength = strength, .Width = width, .Facing = facing, .HalfArc = halfArc });
 	}
 
+	void EffectSystem::AirShockwave(const glm::vec3& center, float radius, float life, float strength, float width)
+	{
+		if (m_Waves.size() < 64)
+			m_Waves.push_back({ .Ground = center, .Radius = radius, .Life = life, .Strength = strength, .Width = width, .Air = true });
+	}
+
 	void EffectSystem::Update(float dt)
 	{
 		for (DecalMark& mark : m_Marks)
@@ -979,7 +985,10 @@ namespace Game
 			const float t = std::clamp(wave.Age / std::max(wave.Life, 1e-3f), 0.0f, 1.0f);
 			const float grow = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
 			const float fade = (1.0f - t) * (1.0f - t) * smooth(0.0f, 0.05f, wave.Age);
-			DrawShockwave(renderer, wave.Ground, wave.Radius * (0.08f + 0.92f * grow), wave.Width * (0.6f + 0.8f * t), wave.Strength * fade, wave.Facing, wave.HalfArc);
+			if (wave.Air)
+				DrawAirShockwave(renderer, wave.Ground, wave.Radius * (0.08f + 0.92f * grow), wave.Width * (0.6f + 0.8f * t), wave.Strength * fade);
+			else
+				DrawShockwave(renderer, wave.Ground, wave.Radius * (0.08f + 0.92f * grow), wave.Width * (0.6f + 0.8f * t), wave.Strength * fade, wave.Facing, wave.HalfArc);
 		}
 	}
 

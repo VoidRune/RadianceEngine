@@ -1,8 +1,10 @@
 #pragma once
 #include "Rendering/Particles.h"
+#include "Rendering/Trails.h"
 #include <GameShared/Content/Definitions.h>
 #include <glm/glm.hpp>
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -32,19 +34,22 @@ namespace Game
 	inline constexpr float ObsidianPullReach = 0.75f;
 	inline constexpr float ObsidianRecoilSeconds = 0.14f;
 	inline constexpr glm::vec3 ObsidianSheen{ 0.42f, 0.16f, 0.85f };
-	inline constexpr float HexShieldCellSize = 0.16f;
+	inline constexpr float HexShieldCellSize = 0.15f;
 	inline constexpr float HexShieldSphere = 1.25f;
 	inline constexpr float HexShieldBack = 0.25f;
 	inline constexpr float HexShieldLift = 1.0f;
 	inline constexpr float HexShieldTilt = 0.15f;
 	inline constexpr float HexShieldHalfWidth = 1.1f;
-	inline constexpr float HexShieldHalfHeight = 0.8f;
-	inline constexpr float HexShieldRaiseSeconds = 0.12f;
-	inline constexpr float HexShieldLowerSeconds = 0.16f;
+	inline constexpr float HexShieldHalfTop = 0.85f;
+	inline constexpr float HexShieldHalfBottom = 1.42f;
+	inline constexpr float HexShieldRaiseSeconds = 0.2f;
+	inline constexpr float HexShieldLowerSeconds = 0.2f;
+	inline constexpr float HexShieldShatterSeconds = 0.25f;
 	inline constexpr float HexShieldCracks[] = { 0.66f, 0.33f };
-	inline constexpr glm::vec3 HexShieldColor{ 0.3f, 0.72f, 1.0f };
+	inline constexpr glm::vec3 HexShieldColor{ 0.16f, 0.82f, 1.0f };
 	inline constexpr size_t HexShieldImpactSlots = 8;
 	inline constexpr size_t HexShieldScarSlots = 6;
+	inline constexpr size_t HexShieldMaxCells = 192;
 	inline constexpr float DiamondFoot = 0.03f;
 	inline constexpr float DiamondPavilion = 0.42f;
 	inline constexpr float DiamondPavilionRadius = 0.5f;
@@ -161,9 +166,12 @@ namespace Game
 		float Raise = 0.0f;
 		float Guard = 1.0f;
 		float Flash = 0.0f;
+		float Shatter = 0.0f;
 		std::array<HexShieldImpact, HexShieldImpactSlots> Impacts{};
+		uint32_t ImpactHead = 0;
 		std::array<glm::vec2, HexShieldScarSlots> Scars{};
 		uint32_t ScarCount = 0;
+		std::bitset<HexShieldMaxCells> Popped;
 		uint32_t Seed = 0;
 	};
 
@@ -178,8 +186,10 @@ namespace Game
 	{
 		glm::vec3 Position{ 0.0f };
 		glm::vec3 Velocity{ 0.0f };
-		glm::vec3 Normal{ 0.0f, 0.0f, 1.0f };
+		glm::vec3 Right{ 1.0f, 0.0f, 0.0f };
+		glm::vec3 Up{ 0.0f, 1.0f, 0.0f };
 		glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+		glm::vec2 Plane{ 0.0f };
 		float Spin = 0.0f;
 		float Size = 0.1f;
 		float Floor = 0.0f;
@@ -252,12 +262,14 @@ namespace Game
 	glm::vec3 HexShieldPoint(const glm::vec3& base, float facing, const glm::vec2& point, glm::vec3* normal = nullptr);
 	glm::vec2 HexShieldLocal(const glm::vec3& base, float facing, const glm::vec3& world);
 	void DrawHexShield(WorldRenderer& renderer, const HexShieldLook& look, float time);
-	void ShatterHexShield(const HexShieldLook& look, std::vector<HexShieldShard>& shards);
+	float HexShieldRim(const glm::vec2& point);
+	void ShatterHexShield(HexShieldLook& look, std::vector<HexShieldShard>& shards);
 	void UpdateHexShards(std::vector<HexShieldShard>& shards, float dt);
 	void DrawHexShards(WorldRenderer& renderer, std::span<const HexShieldShard> shards);
 	glm::vec3 DiamondPoint(const glm::vec3& base, const glm::vec3& toward, float height, glm::vec3* normal = nullptr);
 	glm::vec3 DiamondLocal(const DiamondWardLook& look, const glm::vec3& world);
 	void DrawDiamondWard(WorldRenderer& renderer, const DiamondWardLook& look, float time);
+	void DrawDiamondCaustics(WorldRenderer& renderer, const DiamondWardLook& look, const glm::vec3& sunDirection);
 	void ShatterDiamondWard(const DiamondWardLook& look, std::vector<DiamondShard>& shards);
 	void UpdateDiamondShards(std::vector<DiamondShard>& shards, float dt);
 	void DrawDiamondShards(WorldRenderer& renderer, std::span<const DiamondShard> shards);
@@ -276,10 +288,15 @@ namespace Game
 	void DrawStreak(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float width, const glm::vec3& color);
 	void DrawSlash(WorldRenderer& renderer, const glm::vec3& center, float facing, float reach, float halfArc, float sweep, const glm::vec3& color, bool mirrored, float inner = 0.45f);
 	void DrawProjectileVisual(WorldRenderer& renderer, AbilityId ability, const glm::vec3& center, float facing, const glm::vec3& color, float time, uint32_t seed, const glm::vec3& owner = glm::vec3(0.0f));
+	TrailStyle ProjectileTrail(AbilityId ability, float power = 0.0f, float size = 1.0f);
+	TrailStyle LobTrail();
+	TrailStyle DashTrail(const glm::vec3& color);
+	TrailStyle WandTrail(const glm::vec3& color);
 	void DrawChain(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float sag, float glow);
 	void DrawBolt(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float jitter, float width, const glm::vec3& color, float emission = 0.25f);
 
 	void DrawShockwave(WorldRenderer& renderer, const glm::vec3& ground, float radius, float width, float strength, float facing = 0.0f, float halfArc = 3.1416f);
+	void DrawAirShockwave(WorldRenderer& renderer, const glm::vec3& center, float radius, float width, float strength);
 	void DrawHeatHaze(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength, float frequency, float rise, uint32_t seed);
 	void DrawImplosion(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength, float phase, uint32_t pulses = 3);
 	void DrawGravityLens(WorldRenderer& renderer, const glm::vec3& center, float horizon, float einstein, const glm::vec3& ring, float strength = 1.0f);

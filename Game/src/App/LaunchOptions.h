@@ -56,6 +56,7 @@ namespace Game
 		bool ProfileGpu = false;
 		bool Leviathan = false;
 		bool Distortion = true;
+		bool Trails = true;
 		uint8_t DistortionStage = 0;
 		bool Steam = true;
 		std::optional<uint64_t> ConnectLobby;

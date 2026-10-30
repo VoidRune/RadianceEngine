@@ -103,6 +103,7 @@ namespace Game
 			float SpikeAge = -1.0f;
 			float FireballAge = -1.0f;
 			float ObsidianAge = -1.0f;
+			AbilityId Cast = AbilityId::Count;
 			EntityState Last;
 			CharacterAnimator Animator;
 		};

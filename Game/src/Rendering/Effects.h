@@ -154,6 +154,7 @@ namespace Game
 		void Mark(const GroundDecal& decal, float life, float fadeIn = 0.05f, float startScale = 1.0f, float endScale = 1.0f, float growTime = 0.25f, float cooling = 0.0f);
 		void Spike(const glm::vec3& base, float height, float yaw, float lean, uint32_t variant, float life);
 		void Shockwave(const glm::vec3& ground, float radius, float life, float strength, float width = 0.25f, float facing = 0.0f, float halfArc = 3.1416f);
+		void AirShockwave(const glm::vec3& center, float radius, float life, float strength, float width = 0.2f);
 		void Impact(AbilityId ability, const glm::vec3& ground, float facing, float scale, const glm::vec3& color, uint32_t seed, const HeightAt& heightAt);
 		void Update(float dt);
 		void Draw(WorldRenderer& renderer, const SpellMeshes& meshes) const;
@@ -201,6 +202,7 @@ namespace Game
 			float Facing = 0.0f;
 			float HalfArc = 3.1416f;
 			float Age = 0.0f;
+			bool Air = false;
 		};
 
 		struct ConvergeState

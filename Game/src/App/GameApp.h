@@ -62,6 +62,7 @@ namespace Game
 		bool Peaceful = false;
 		bool Leviathan = false;
 		bool Distortion = true;
+		bool Trails = true;
 		uint8_t DistortionStage = 0;
 		uint32_t FirstWave = 1;
 		float LootRate = 1.0f;

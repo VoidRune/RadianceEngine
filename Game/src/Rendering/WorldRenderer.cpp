@@ -255,6 +255,8 @@ namespace Game
 		m_Gi = std::make_unique<RadianceCascades>(device, allocator);
 		m_Post = std::make_unique<PostProcess>(device, allocator, colorFormat);
 		m_Distortion = std::make_unique<ScreenDistortion>(device, allocator);
+		m_Glass = std::make_unique<GlassRenderer>(device, allocator);
+		m_Trails = std::make_unique<TrailRenderer>(device, allocator);
 		CreateMeshes();
 		EnsureCapacity(16384);
 		EnsureModelCapacity(1024, 4096);
@@ -287,6 +289,8 @@ namespace Game
 		m_Gi.reset();
 		m_Post.reset();
 		m_Distortion.reset();
+		m_Glass.reset();
+		m_Trails.reset();
 		ReleaseModelData();
 		for (Rdn::GpuRingBuffer* buffer : { m_InstanceBuffer.get(), m_ModelInstanceBuffer.get(), m_PaletteBuffer.get() })
 			if (buffer)
@@ -888,6 +892,8 @@ namespace Game
 		m_Palettes.clear();
 		m_Particles->BeginFrame();
 		m_Distortion->BeginFrame();
+		m_Glass->BeginFrame();
+		m_Trails->BeginFrame(m_Particles->GetTime());
 		if (lighting.Grade != m_Post->GetGrade() && !m_Post->HasCustomLut())
 			m_Post->SetGrade(lighting.Grade);
 		m_Camera = camera;
@@ -1104,7 +1110,11 @@ namespace Game
 		if (gi)
 			m_Gi->Render(graph, gbuffer, giSource, emitters, backDepth, scene, extent, frameIndex, camera, m_Lighting, environment, m_GiQuality, m_Constants.Focus.x, edgeBand, m_View);
 		if (m_View != DebugView::Irradiance && m_View != DebugView::GiSource)
+		{
+			m_Glass->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera, m_Lighting, environment, m_Particles->GetTime());
+			m_Trails->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
 			m_Particles->Draw(graph, scene, gbuffer.Emission, gbuffer.Depth, frameIndex);
+		}
 		m_Post->Raw = IsRawView(m_View);
 		m_Post->SceneExposure = m_Lighting.Exposure;
 		const DistortionView distortion = IsRawView(m_View) ? DistortionView{} : m_Distortion->Render(graph, gbuffer.Depth, extent, frameIndex, camera, m_Particles->GetTime());

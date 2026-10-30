@@ -1,11 +1,13 @@
 #pragma once
 #include "Rendering/Animation.h"
 #include "Rendering/Distortion.h"
+#include "Rendering/Glass.h"
 #include "Rendering/Lighting.h"
 #include "Rendering/ModelLibrary.h"
 #include "Rendering/Particles.h"
 #include "Rendering/PostProcess.h"
 #include "Rendering/RadianceCascades.h"
+#include "Rendering/Trails.h"
 #include <GameShared/Content/Props.h>
 #include <RadianceEngine/Graphics/RenderGraph.h>
 #include <RadianceEngine/Graphics/ResourceAllocator.h>
@@ -118,8 +120,12 @@ namespace Game
 		void SubmitModel(uint32_t mesh, const ModelInstance& instance, bool shadowOnly = false);
 		void DrawSprite(const ParticleSprite& sprite) { m_Particles->DrawSprite(sprite); }
 		void DrawDecal(const GroundDecal& decal) { m_Particles->DrawDecal(decal); }
-		void DrawFacet(const GlassFacet& facet) { m_Particles->DrawFacet(facet); }
+		void DrawFacet(const GlassFacet& facet) { m_Glass->Draw(facet); }
+		uint32_t AddShield(const EnergyShield& shield) { return m_Glass->AddShield(shield); }
+		void DrawCell(const EnergyCell& cell) { m_Glass->DrawCell(cell); }
 		void DrawDistortion(const Distorter& distorter) { m_Distortion->Draw(distorter); }
+		void DrawTrail(uint64_t key, const glm::vec3& position, const TrailStyle& style, float strength = 1.0f) { m_Trails->Emit(key, position, style, strength); }
+		TrailRenderer& GetTrails() { return *m_Trails; }
 		ScreenDistortion& GetDistortion() { return *m_Distortion; }
 		void Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex, const std::array<float, 4>& clearColor);
 
@@ -281,5 +287,7 @@ namespace Game
 		std::unique_ptr<RadianceCascades> m_Gi;
 		std::unique_ptr<PostProcess> m_Post;
 		std::unique_ptr<ScreenDistortion> m_Distortion;
+		std::unique_ptr<GlassRenderer> m_Glass;
+		std::unique_ptr<TrailRenderer> m_Trails;
 	};
 }

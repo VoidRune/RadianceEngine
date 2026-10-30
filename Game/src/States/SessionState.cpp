@@ -394,6 +394,7 @@ namespace Game
 		m_Corpses.clear();
 		m_Effects->Clear();
 		m_App.GetWorldRenderer().GetParticles().Clear();
+		m_App.GetWorldRenderer().GetTrails().Clear();
 		m_DamageNumbers.clear();
 		m_ProjectileHeights.clear();
 		m_BodyHeights.clear();
@@ -1398,6 +1399,7 @@ namespace Game
 			return;
 		const glm::vec3 ground = Ground(entity.Position);
 		renderer.Draw(MeshKind::Sphere, *position, glm::vec3(0.2f), { 0.11f, 0.085f, 0.075f }, m_Time * 7.0f, 0.15f, ground.y);
+		renderer.DrawTrail(uint64_t(entity.NetId) | (23ull << 40), *position, LobTrail());
 		const glm::vec3 fuse = *position + glm::vec3(0.0f, 0.23f, 0.0f);
 		DrawGlow(renderer, *position, 0.62f, { 0.55f, 0.17f, 0.04f });
 		DrawGlow(renderer, fuse, 0.42f, { 1.7f, 0.65f, 0.16f });
@@ -1462,6 +1464,7 @@ namespace Game
 			const glm::vec3 end = glm::mix(point, hand, t * t);
 			DrawChain(renderer, hand, end, 0.05f, 0.5f * (1.0f - t));
 			DrawProjectileVisual(renderer, AbilityId::ChainHook, end, entity.Facing, SkillColor(AbilityId::ChainHook), m_Time, entity.NetId);
+			renderer.DrawTrail(uint64_t(entity.NetId) | (24ull << 40), end, ProjectileTrail(AbilityId::ChainHook));
 			return;
 		}
 		DrawChain(renderer, hand, point, 0.0f, 0.7f * (1.0f - t));
@@ -1901,6 +1904,8 @@ namespace Game
 				continue;
 			CharacterAnimator::Input input = AnimationInput(fx.Last);
 			input.Hurt = fx.Hurt;
+			if (fx.Last.Kind == EntityKind::Player && fx.Last.Has(EntityFlags::Attacking) && fx.Last.Variant < uint8_t(AbilityId::Count))
+				fx.Cast = AbilityId(fx.Last.Variant);
 			fx.Animator.Update(*m_Characters, input, fx.Stop > 0.0f ? 0.0f : dt);
 		}
 		for (Corpse& corpse : m_Corpses)
@@ -2125,6 +2130,16 @@ namespace Game
 		const CharacterPose pose = DrawCharacterModel(renderer, *m_Characters, look, *animator, base, entity.Facing, look.Scale, CharacterTint(entity), 0.0f, accent, HitLight(entity));
 		if (dead)
 			return;
+		if (entity.Has(EntityFlags::Dashing))
+			renderer.DrawTrail(uint64_t(entity.NetId) | (22ull << 40), base + glm::vec3(0.0f, 0.95f * look.Scale, 0.0f), DashTrail(color));
+		if (look.Tip)
+			if (const float strike = animator->StrikeWeight(*m_Characters); strike > 0.02f)
+			{
+				const auto fx = m_Fx.find(entity.NetId);
+				const AbilityId cast = fx != m_Fx.end() ? fx->second.Cast : AbilityId::Count;
+				const glm::vec3 tint = cast == AbilityId::PurpleFireball ? FireballColor(1.0f) : cast != AbilityId::Count ? SkillColor(cast) : color;
+				renderer.DrawTrail(uint64_t(entity.NetId) | (21ull << 40), pose.JointPoint(look.TipJoint, *look.Tip), WandTrail(tint), strike);
+			}
 		const bool brawl = m_Client.GetSession().Mode == GameMode::Brawl;
 		if (brawl)
 			DrawBrawlPlayer(renderer, entity, base);
@@ -2652,6 +2667,8 @@ namespace Game
 			{
 				look.Seed = entity.NetId * 2654435761u;
 				look.Flash = std::max(look.Flash, 0.7f);
+				look.Shatter = 0.0f;
+				look.Popped.reset();
 				if (guard >= 0.98f)
 					look.ScarCount = 0;
 				m_Effects->Burst(Fx::ShieldRaise, HexShieldPoint(look.Base, look.Facing, glm::vec2(0.0f)), Heading(look.Facing), 1.0f);
@@ -2662,14 +2679,15 @@ namespace Game
 		{
 			ShatterHexShield(look, m_ShieldShards);
 			glm::vec3 normal;
-			const glm::vec3 middle = HexShieldPoint(look.Base, look.Facing, glm::vec2(0.0f), &normal);
+			const glm::vec3 middle = HexShieldPoint(look.Base, look.Facing, glm::vec2(0.0f, -0.2f), &normal);
 			m_Effects->Burst(Fx::ShieldShatter, middle, normal, 1.0f);
-			look.Raise = 0.0f;
-			look.ScarCount = 0;
-			look.Guard = 1.0f;
+			m_Effects->AirShockwave(middle, 1.7f, 0.38f, 0.09f, 0.22f);
+			look.Shatter = 1.0f;
+			look.Raise = std::min(look.Raise, 0.8f);
 		}
-		look.Raise = raised ? std::min(look.Raise + dt / HexShieldRaiseSeconds, 1.0f) : std::max(look.Raise - dt / HexShieldLowerSeconds, 0.0f);
+		look.Raise = raised ? std::min(look.Raise + dt / HexShieldRaiseSeconds, 1.0f) : std::max(look.Raise - dt / (look.Shatter > 0.0f ? HexShieldShatterSeconds : HexShieldLowerSeconds), 0.0f);
 		look.Flash = std::max(look.Flash - dt * 4.0f, 0.0f);
+		look.Shatter = std::max(look.Shatter - dt / HexShieldShatterSeconds, 0.0f);
 		for (HexShieldImpact& impact : look.Impacts)
 			impact.Age += dt;
 		view.Up = raised;
@@ -2690,10 +2708,10 @@ namespace Game
 		const uint32_t key = uint32_t(QuantizePosition(hit.Position.x)) * 73856093u ^ uint32_t(QuantizePosition(hit.Position.y)) * 19349663u;
 		const float height = HexShieldLift + 0.1f + 0.5f * (float(key % 1024u) / 1023.0f - 0.5f);
 		glm::vec2 point = HexShieldLocal(look.Base, look.Facing, glm::vec3(hit.Position.x, look.Base.y + height, hit.Position.y));
-		const float rim = glm::length(point / glm::vec2(HexShieldHalfWidth, HexShieldHalfHeight));
+		const float rim = HexShieldRim(point);
 		if (rim > 0.9f)
 			point *= 0.9f / rim;
-		*std::max_element(look.Impacts.begin(), look.Impacts.end(), [](const HexShieldImpact& a, const HexShieldImpact& b) { return a.Age < b.Age; }) = { point, 0.0f, strength };
+		look.Impacts[look.ImpactHead++ % HexShieldImpactSlots] = { point, 0.0f, strength };
 		if (look.ScarCount < HexShieldScarSlots)
 			look.Scars[look.ScarCount++] = point;
 		glm::vec3 normal;
@@ -2795,7 +2813,7 @@ namespace Game
 			if (view.Look.Fade <= 0.01f)
 				continue;
 			DrawDiamondWard(renderer, view.Look, m_Time);
-			DrawGroundGlow(renderer, view.Look.Base, 1.15f, DiamondGold * (0.1f * view.Look.Fade + 0.1f * view.Look.Flash), 1.0f);
+			DrawDiamondCaustics(renderer, view.Look, m_Lighting.SunDirection);
 		}
 		DrawDiamondShards(renderer, m_WardShards);
 	}
@@ -3058,6 +3076,7 @@ namespace Game
 			look.Ground = base.y;
 			look.Flying = true;
 			DrawIceSpear(renderer, m_SpellMeshes, look, m_Time, entity.NetId);
+			renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability, power, size));
 			if (const auto path = m_SpearPaths.find(entity.NetId); path != m_SpearPaths.end())
 			{
 				SpearPath live = path->second;
@@ -3077,6 +3096,7 @@ namespace Game
 			look.Power = power;
 			look.Flying = true;
 			DrawPurpleFireball(renderer, look, m_Time, entity.NetId);
+			renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability, power, look.Size));
 			DrawGroundGlow(renderer, base, 0.7f + 0.8f * power, FireballColor(power) * (0.25f + 0.25f * power), 1.0f);
 			return;
 		}
@@ -3091,6 +3111,7 @@ namespace Game
 			look.Variant = entity.NetId;
 			look.Flying = true;
 			DrawObsidianShard(renderer, m_SpellMeshes, look, m_Time, entity.NetId);
+			renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability));
 			return;
 		}
 		switch (ability)
@@ -3108,6 +3129,7 @@ namespace Game
 		const glm::vec3 color = entity.Owner == NoPlayer ? SkillColor(ability) : glm::mix(ColorOf(entity.Owner), SkillColor(ability), 0.6f);
 		const glm::vec3 owner = entity.Owner == NoPlayer ? glm::vec3(0.0f) : glm::pow(ColorOf(entity.Owner), glm::vec3(2.2f));
 		DrawProjectileVisual(renderer, ability, center, entity.Facing, color, m_Time, entity.NetId, owner);
+		renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability));
 		if (ability == AbilityId::ChainHook)
 			if (const EntityState* body = FindBody(entity.Owner))
 				DrawChain(renderer, HandOf(*body), center - Heading(entity.Facing) * 0.12f, 0.12f, 0.0f);

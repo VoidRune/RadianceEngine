@@ -85,7 +85,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan] [--no-distortion] [--distortion-stage all|shockwaves] [--no-steam]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan] [--no-distortion] [--no-trails] [--distortion-stage all|shockwaves] [--no-steam]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -438,6 +438,8 @@ namespace Game
 			}
 			else if (argument == "--no-distortion")
 				options.Distortion = false;
+			else if (argument == "--no-trails")
+				options.Trails = false;
 			else if (argument == "--distortion-stage" && hasValue)
 			{
 				valid = SameText("all", value) || SameText("shockwaves", value);

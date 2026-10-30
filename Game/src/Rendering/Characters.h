@@ -124,6 +124,8 @@ namespace Game
 		float Scale = 1.0f;
 		float Height = 2.0f;
 		Stance Pose = Stance::Light;
+		std::optional<glm::vec3> Tip;
+		uint32_t TipJoint = 0;
 		bool Undead = false;
 	};
 
@@ -155,6 +157,7 @@ namespace Game
 		JointMatrices Globals;
 
 		glm::vec3 JointPosition(uint32_t joint) const { return glm::vec3(Model * Globals[joint][3]); }
+		glm::vec3 JointPoint(uint32_t joint, const glm::vec3& local) const { return glm::vec3(Model * Globals[joint] * glm::vec4(local, 1.0f)); }
 	};
 
 	class CharacterLibrary
@@ -218,6 +221,7 @@ namespace Game
 
 		void Update(const CharacterLibrary& library, const Input& input, float dt);
 		void Evaluate(const CharacterLibrary& library, uint32_t skeleton, JointMatrices& globals) const;
+		float StrikeWeight(const CharacterLibrary& library) const;
 
 	private:
 		struct Layer

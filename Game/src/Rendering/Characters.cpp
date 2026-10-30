@@ -88,6 +88,8 @@ namespace Game
 		constexpr float FidgetDelaySpread = 5.0f;
 		constexpr float StrikeSettle = 18.0f;
 		constexpr float HoldRelease = 1.7f;
+		constexpr float StrikeLead = 0.12f;
+		constexpr float StrikeTail = 0.16f;
 
 		uint64_t LookKey(const PlayerLook& look)
 		{
@@ -280,8 +282,30 @@ namespace Game
 		else
 			DressKayKit(result, look);
 		const CharacterRig& rig = m_Rigs[result.Skeleton];
-		for (const uint32_t weapon : WeaponMeshes(look.Weapon))
-			result.Props.push_back({ weapon, look.Weapon == ItemBase::Bow ? rig.LeftHand : rig.RightHand, GripOf(look.Weapon) });
+		const std::vector<uint32_t> weapons = WeaponMeshes(look.Weapon);
+		const glm::mat4 grip = GripOf(look.Weapon);
+		for (const uint32_t weapon : weapons)
+			result.Props.push_back({ weapon, look.Weapon == ItemBase::Bow ? rig.LeftHand : rig.RightHand, grip });
+		if ((look.Weapon == ItemBase::Wand || look.Weapon == ItemBase::Staff) && !weapons.empty())
+		{
+			glm::vec3 low(1e9f);
+			glm::vec3 high(-1e9f);
+			for (const uint32_t weapon : weapons)
+			{
+				low = glm::min(low, m_Models.GetMesh(weapon).Min);
+				high = glm::max(high, m_Models.GetMesh(weapon).Max);
+			}
+			const glm::vec3 span = high - low;
+			const int axis = span.x >= span.y && span.x >= span.z ? 0 : span.y >= span.z ? 1 : 2;
+			glm::vec3 a = (low + high) * 0.5f;
+			glm::vec3 b = a;
+			a[axis] = low[axis];
+			b[axis] = high[axis];
+			const glm::vec3 first = glm::vec3(grip * glm::vec4(a, 1.0f));
+			const glm::vec3 second = glm::vec3(grip * glm::vec4(b, 1.0f));
+			result.Tip = glm::length(first) > glm::length(second) ? first : second;
+			result.TipJoint = rig.RightHand;
+		}
 		result.Height = TopOf(result) * result.Scale;
 		return m_Players.emplace(key, std::move(result)).first->second;
 	}
@@ -954,6 +978,17 @@ namespace Game
 			return;
 		}
 		SampleClip(models.GetClip(uint32_t(layers.Current.Clip)), joints, layers.Current.Time, layers.Current.Loop, pose);
+	}
+
+	float CharacterAnimator::StrikeWeight(const CharacterLibrary& library) const
+	{
+		if (m_Phase == Phase::None || m_Action.Current.Clip < 0 || m_Action.Weight <= 0.0f)
+			return 0.0f;
+		const float strike = library.GetModels().GetStrikeTime(uint32_t(m_Action.Current.Clip));
+		if (strike < 0.05f)
+			return 0.0f;
+		const float t = m_Action.Current.Time - strike;
+		return m_Action.Weight * glm::smoothstep(-StrikeLead, -0.4f * StrikeLead, t) * (1.0f - glm::smoothstep(0.3f * StrikeTail, StrikeTail, t));
 	}
 
 	void CharacterAnimator::Evaluate(const CharacterLibrary& library, uint32_t skeletonIndex, JointMatrices& globals) const
