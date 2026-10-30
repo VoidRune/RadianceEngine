@@ -1,11 +1,18 @@
 # Folders
-bin/
 build/
-bin/windows-x86_64/RadianceEngine/
-bin/windows-x86_64/Timbre/
-bin/windows-x86_64/TimbreAudio/
-bin/windows-x86_64/GameShared/
-bin/windows-x86_64/UiAtlas/
+
+# Build output is ignored, runtime data in res/ is tracked except the baked model packs
+bin/*
+!bin/windows-x86_64/
+bin/windows-x86_64/*
+!bin/windows-x86_64/Game/
+!bin/windows-x86_64/Application/
+bin/windows-x86_64/Game/*
+bin/windows-x86_64/Application/*
+!bin/windows-x86_64/Game/res/
+!bin/windows-x86_64/Application/res/
+bin/windows-x86_64/Game/res/Models/
+bin/windows-x86_64/Application/res/3DModels/
 
 # Extensions
 **.raw

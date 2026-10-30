@@ -1,0 +1,40 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#ifdef FIRST_LEVEL
+layout(set = 0, binding = 0) uniform sampler2D Scene;
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D Atlas;
+#else
+layout(set = 0, binding = 1, rgba16f) uniform image2D Atlas;
+#endif
+
+layout(push_constant) uniform PushConstants
+{
+	ivec4 Target;
+	ivec4 Count;
+	ivec4 Source;
+	ivec4 Bounds;
+	vec4 Scale;
+} pc;
+
+void main()
+{
+	ivec2 thread = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(thread, pc.Count.xy)))
+		return;
+	ivec2 texel = pc.Target.zw + thread;
+#ifdef FIRST_LEVEL
+	vec3 color = textureLod(Scene, (vec2(texel) + 0.5) * pc.Scale.xy, 0.0).rgb;
+#else
+	const float weights[4] = float[](0.125, 0.375, 0.375, 0.125);
+	vec3 color = vec3(0.0);
+	for (int j = 0; j < 4; j++)
+		for (int i = 0; i < 4; i++)
+		{
+			ivec2 source = clamp(texel * 2 + ivec2(i - 1, j - 1), pc.Bounds.xy, pc.Bounds.zw);
+			color += imageLoad(Atlas, pc.Source.xy + source).rgb * (weights[i] * weights[j]);
+		}
+#endif
+	imageStore(Atlas, pc.Target.xy + texel, vec4(min(color, vec3(64.0)), 1.0));
+}
