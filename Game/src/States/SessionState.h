@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -172,6 +173,23 @@ namespace Game
 			float Grown = 0.0f;
 		};
 
+		struct ArcChannel
+		{
+			uint32_t Owner = 0;
+			uint32_t Anchor = 0;
+			glm::vec3 Origin{ 0.0f };
+			bool Wand = false;
+		};
+
+		struct ArcFade
+		{
+			ArcChannel Start;
+			uint32_t Target = 0;
+			glm::vec3 End{ 0.0f };
+			uint32_t Seed = 0;
+			float Age = 0.0f;
+		};
+
 		struct SpikeRuin
 		{
 			Vec2 Position;
@@ -179,6 +197,54 @@ namespace Game
 			float Age = 0.0f;
 			uint32_t Seed = 0;
 			float Extend = 1.0f;
+		};
+
+		struct NovaField
+		{
+			Vec2 Position;
+			uint32_t Owner = NoPlayer;
+			uint16_t Tag = 0;
+			uint32_t Seed = 0;
+			float Scale = 1.0f;
+			float Age = 0.0f;
+			float Erupt = -1.0f;
+			float Mist = 0.0f;
+			uint64_t Popped = 0;
+			uint64_t Shattered = 0;
+			bool Thawed = false;
+		};
+
+		struct VoidWell
+		{
+			Vec2 Position;
+			uint32_t Owner = NoPlayer;
+			uint16_t Tag = 0;
+			uint32_t Seed = 0;
+			float Scale = 1.0f;
+			float Age = 0.0f;
+			float PullAge = -1.0f;
+			float Pull = -1.0f;
+			float Tempo = 1.0f;
+			float Orphan = 0.0f;
+			bool Seen = false;
+			bool Detonated = false;
+			std::vector<uint32_t> Bodies;
+		};
+
+		struct NovaSpike
+		{
+			Vec2 Point;
+			float Angle = 0.0f;
+			float Small = 0.4f;
+			float Big = 1.5f;
+			float Lean = 0.9f;
+			float Stand = 0.7f;
+			float Appear = 0.0f;
+			float Burst = 0.0f;
+			float Break = 0.5f;
+			uint32_t Variant = 0;
+			bool Fang = true;
+			bool Main = false;
 		};
 
 		struct Notice
@@ -236,6 +302,12 @@ namespace Game
 		std::optional<glm::vec3> LobPoint(const EntityState& entity, float age) const;
 		void DrawLob(WorldRenderer& renderer, const EntityState& entity, float age) const;
 		void DrawThunder(WorldRenderer& renderer, const EntityState& entity, float age, bool pending) const;
+		ArcChannel ArcStart(const EntityState& projectile) const;
+		glm::vec3 ArcOrigin(const ArcChannel& channel) const;
+		glm::vec3 ArcEnd(uint32_t target, const glm::vec3& fallback) const;
+		ArcFade EndArc(uint32_t netId, const EntityState& last) const;
+		void DrawArc(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& head) const;
+		void DrawArcFades(WorldRenderer& renderer) const;
 		void DrawHook(WorldRenderer& renderer, const EntityState& entity, float age) const;
 		CharacterAnimator::Input AnimationInput(const EntityState& entity) const;
 		void DrawCorpses(WorldRenderer& renderer) const;
@@ -268,6 +340,13 @@ namespace Game
 		GroundDecal SpikeRift(const EntityState& spike, float glow) const;
 		void DrawSpikeAim(WorldRenderer& renderer, const EntityState& caster) const;
 		void DrawSpikeRuins(WorldRenderer& renderer) const;
+		void NovaAppeared(const EntityState& entity);
+		uint32_t NovaSpikes(const NovaField& field, std::span<NovaSpike> spikes) const;
+		void UpdateNovaFields(float dt);
+		void DrawNovaFields(WorldRenderer& renderer) const;
+		VoidWell* FindVoidWell(uint32_t owner, uint16_t tag);
+		void UpdateVoidWells(float dt);
+		void DrawVoidWells(WorldRenderer& renderer) const;
 		void ShieldMoments(const EntityState& entity, float dt);
 		void ShieldStruck(const HitEvent& hit);
 		void DrawShields(WorldRenderer& renderer) const;
@@ -421,6 +500,8 @@ namespace Game
 		SpellMeshes m_SpellMeshes;
 		std::unordered_map<uint32_t, SpearPath> m_SpearPaths;
 		std::vector<SpikeRuin> m_SpikeRuins;
+		std::vector<NovaField> m_NovaFields;
+		std::vector<VoidWell> m_VoidWells;
 		std::unordered_map<uint32_t, ShieldView> m_Shields;
 		std::vector<HexShieldShard> m_ShieldShards;
 		std::unordered_map<uint32_t, WardView> m_Wards;
@@ -463,6 +544,9 @@ namespace Game
 		std::unordered_map<uint32_t, Flight> m_ProjectileHeights;
 		std::unordered_map<uint32_t, Body> m_BodyHeights;
 		std::unordered_map<uint32_t, glm::vec3> m_Lobs;
+		std::unordered_map<uint32_t, ArcChannel> m_Arcs;
+		std::vector<ArcFade> m_ArcFades;
+		mutable std::unordered_map<uint32_t, std::pair<glm::vec3, float>> m_WandTips;
 		struct Flame
 		{
 			glm::vec3 Position{ 0.0f };

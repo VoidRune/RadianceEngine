@@ -193,7 +193,7 @@ namespace Game
 		case AbilityId::Gust: return UiIcon::Whirlwind;
 		case AbilityId::Comet: return UiIcon::MeteorImpact;
 		case AbilityId::Warp: return UiIcon::Teleport;
-		case AbilityId::Shockwave: return UiIcon::Aura;
+		case AbilityId::GlacialNova: return UiIcon::Snowflake;
 		case AbilityId::GravityWell: return UiIcon::MagicSwirl;
 		case AbilityId::ArcLightning: return UiIcon::LightningArc;
 		case AbilityId::Swap: return UiIcon::MagicPortal;
@@ -222,7 +222,7 @@ namespace Game
 		case CardId::ShatteringImpact: return UiIcon::EarthCrack;
 		case CardId::TwinComets: return UiIcon::MeteorImpact;
 		case CardId::Afterimage: return UiIcon::Teleport;
-		case CardId::Aftershock: return UiIcon::Aura;
+		case CardId::IceShrapnel: return UiIcon::Shard;
 		case CardId::Implosion: return UiIcon::MagicSwirl;
 		case CardId::Pinball: return UiIcon::ArcingBolt;
 		case CardId::Overcharge: return UiIcon::LightningArc;

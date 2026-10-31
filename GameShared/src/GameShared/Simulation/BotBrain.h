@@ -55,7 +55,6 @@ namespace Game
 		bool IsReady() const { return !m_Collapse.empty(); }
 		float Clearance(Vec2 position) const;
 		float CollapseIn(Vec2 position) const;
-		std::optional<Vec2> Route(Vec2 from, Vec2 to) const;
 		float Slide(Vec2 position) const;
 		float GetClock() const { return m_Clock; }
 
@@ -68,7 +67,6 @@ namespace Game
 		int32_t m_Width = 0;
 		int32_t m_Height = 0;
 		std::vector<int32_t> m_SampleCell;
-		std::vector<float> m_Floor;
 		std::vector<uint8_t> m_Storm;
 		std::vector<float> m_Strike;
 		std::vector<float> m_CellTime;
@@ -165,10 +163,12 @@ namespace Game
 		bool RaiseWard(PlayerInput& input, Vec2 threat);
 		bool FollowUp(const BotArena& arena, PlayerInput& input, BotTally& tally);
 		bool Yank(PlayerInput& input);
+		bool Erupt(const BotArena& arena, PlayerInput& input);
 		void Think(const World& world, const BotArena& arena);
 		void ChooseTarget(const BotArena& arena);
 		void ChooseGoal(const World& world, const BotArena& arena);
 		Option PlanCast(const World& world, const BotArena& arena, uint32_t slot) const;
+		float NovaValue(const BotArena& arena, Vec2 center, AbilityId spell, float lead) const;
 		float LandingValue(const BotArena& arena, Vec2 position, Vec2 impulse) const;
 		float Harm(float damage, const Rival& rival, AbilityId spell = AbilityId::Count) const;
 		float HitChance(float travel, float distance, const Rival& rival) const;
@@ -178,7 +178,6 @@ namespace Game
 		int32_t ComboSlot(uint32_t slot, float castTime) const;
 		bool Planted(const BotArena& arena) const;
 		void Steer(PlayerInput& input) const;
-		void RouteGoal(const World& world, const BotArena& arena);
 		void PressDodge(const BotArena& arena, PlayerInput& input, Vec2 direction, bool path = true);
 		void Cast(PlayerInput& input, uint32_t slot, float aim, float distance, float charge = 0.0f);
 		bool Ready(uint32_t slot) const;
@@ -214,12 +213,6 @@ namespace Game
 
 		Vec2 m_Goal;
 		bool m_HasGoal = false;
-		const Level* m_Terrain = nullptr;
-		Vec2 m_Route;
-		Vec2 m_RouteGoal;
-		float m_RouteTime = 0.0f;
-		bool m_RouteValid = false;
-		bool m_Routed = false;
 		Vec2 m_Sidestep;
 		float m_SidestepTime = 0.0f;
 		uint32_t m_Target = NoPlayer;

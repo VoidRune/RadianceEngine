@@ -4,6 +4,7 @@
 #include "Rendering/MenuBackdrop.h"
 #include "Rendering/Models.h"
 #include "Rendering/SpellVisuals.h"
+#include "Rendering/VoidGaze.h"
 #include "Rendering/WorldRenderer.h"
 #include "States/MainMenuState.h"
 #include "UI/ItemUi.h"
@@ -77,6 +78,16 @@ namespace Game
 		constexpr float SpearLaneStep = 0.55f;
 		constexpr float SpikeRiftSeconds = 3.5f;
 		constexpr float SpikeRuinSeconds = 0.7f;
+		constexpr glm::vec3 NovaIce{ 0.28f, 0.55f, 1.0f };
+		constexpr float NovaSpreadSeconds = 0.3f;
+		constexpr float NovaThawSeconds = 0.45f;
+		constexpr float NovaFadeSeconds = 0.6f;
+		constexpr float NovaShatterSeconds = 0.14f;
+		constexpr float NovaEruptLife = 1.7f;
+		constexpr float NovaFrostFade = 0.8f;
+		constexpr float NovaMistInterval = 0.12f;
+		constexpr float NovaStompSeconds = 0.14f;
+		constexpr size_t MaxNovaSpikes = 48;
 		constexpr float DeathDissolveDelay = 0.9f;
 		constexpr float DeathDissolveSeconds = 1.4f;
 		constexpr float SpawnDissolveSeconds = 0.75f;
@@ -85,6 +96,14 @@ namespace Game
 		constexpr glm::vec3 ArcaneDeath{ 0.74f, 0.3f, 1.0f };
 		constexpr glm::vec3 StormDeath{ 0.55f, 0.6f, 1.0f };
 		constexpr float SpellLightGain = 14.0f;
+		constexpr float ArcChest = 0.9f;
+		constexpr float ArcCasterReach = 1.5f;
+		constexpr float ArcAnchorReach = 1.3f;
+		constexpr float WandTipFresh = 0.15f;
+		constexpr glm::vec3 ArcLight{ 0.26f, 0.45f, 1.0f };
+		constexpr glm::vec3 StormLight{ 0.42f, 0.3f, 1.0f };
+		constexpr glm::vec3 StormTelegraph{ 0.62f, 0.5f, 1.0f };
+		constexpr glm::vec3 ArcTint{ 0.5f, 0.66f, 1.0f };
 		constexpr float BodyGravity = 26.0f;
 		constexpr float BodyClimb = 16.0f;
 		constexpr float BodySnap = 2.5f;
@@ -138,8 +157,28 @@ namespace Game
 				return 0.2f + 0.4f * blast;
 			case AbilityId::EarthSpike:
 				return 0.35f;
+			case AbilityId::StormStrike:
+				return 0.3f;
 			default:
 				return 0.0f;
+			}
+		}
+
+		uint32_t StormSeed(Vec2 position)
+		{
+			return uint32_t(int32_t(std::lround(position.x * 16.0f))) * 73856093u ^ uint32_t(int32_t(std::lround(position.y * 16.0f))) * 19349663u;
+		}
+
+		glm::vec3 SpellTint(AbilityId ability)
+		{
+			switch (CreditOf(ability))
+			{
+			case AbilityId::StormStrike:
+				return StormTelegraph;
+			case AbilityId::ArcLightning:
+				return ArcTint;
+			default:
+				return SkillColor(ability);
 			}
 		}
 
@@ -407,6 +446,10 @@ namespace Game
 		m_ProjectileHeights.clear();
 		m_BodyHeights.clear();
 		m_SpikeRuins.clear();
+		m_NovaFields.clear();
+		m_VoidWells.clear();
+		m_Arcs.clear();
+		m_ArcFades.clear();
 		m_Shields.clear();
 		m_ShieldShards.clear();
 		m_Wards.clear();
@@ -1083,6 +1126,8 @@ namespace Game
 		for (SpikeRuin& ruin : m_SpikeRuins)
 			ruin.Age += dt;
 		std::erase_if(m_SpikeRuins, [](const SpikeRuin& ruin) { return ruin.Age >= SpikeRuinSeconds; });
+		UpdateNovaFields(dt);
+		UpdateVoidWells(dt);
 		for (auto& [netId, fx] : m_Fx)
 		{
 			fx.Seen = false;
@@ -1210,8 +1255,15 @@ namespace Game
 			{
 				const AbilityId ability = AbilityOf(fx.Last);
 				const bool spear = ability == AbilityId::FrostSpear;
+				glm::vec3 point = ProjectilePoint(fx.Last);
+				if (ability == AbilityId::ArcLightning)
+				{
+					m_ArcFades.push_back(EndArc(it->first, fx.Last));
+					m_Arcs.erase(it->first);
+					point = m_ArcFades.back().End;
+				}
 				if (const std::optional<Fx> impact = ProjectileImpactFor(ability))
-					m_Effects->Burst(*impact, ProjectilePoint(fx.Last), ability == AbilityId::ObsidianShards ? Heading(fx.Last.Facing) : glm::vec3(0.0f, 1.0f, 0.0f), spear ? 0.6f + 0.4f * fx.Last.GetScale() : 1.0f);
+					m_Effects->Burst(*impact, point, ability == AbilityId::ObsidianShards ? Heading(fx.Last.Facing) : glm::vec3(0.0f, 1.0f, 0.0f), spear ? 0.6f + 0.4f * fx.Last.GetScale() : 1.0f);
 				if (spear)
 					m_Effects->Impact(ability, Ground(fx.Last.Position), fx.Last.Facing, fx.Last.GetScale(), SpearIce, fx.Last.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
 				if (const auto path = m_SpearPaths.find(it->first); path != m_SpearPaths.end())
@@ -1245,6 +1297,7 @@ namespace Game
 		UpdateDiamondShards(m_WardShards, dt);
 		UpdateAnimators(dt);
 
+		const bool exact = m_LevelRenderer.GetRelief() != nullptr;
 		for (auto& [netId, flight] : m_ProjectileHeights)
 			flight.Seen = false;
 		for (const EntityState& entity : m_Client.GetEntities())
@@ -1257,10 +1310,17 @@ namespace Game
 			if (inserted || IsOpenAir(entity.Position))
 				continue;
 			const float target = GroundHeight(entity.Position) + FlightLift(AbilityOf(entity));
-			flight.Height = target >= flight.Height ? std::min(target, flight.Height + ProjectileClimb * dt) : std::max(target, flight.Height - ProjectileSink * dt);
+			if (exact)
+				flight.Height = target;
+			else
+				flight.Height = target >= flight.Height ? std::min(target, flight.Height + ProjectileClimb * dt) : std::max(target, flight.Height - ProjectileSink * dt);
 		}
 		std::erase_if(m_ProjectileHeights, [](const auto& item) { return !item.second.Seen; });
 		std::erase_if(m_SpearPaths, [this](const auto& item) { return !m_Fx.contains(item.first); });
+		std::erase_if(m_Arcs, [this](const auto& item) { return !m_Fx.contains(item.first); });
+		for (ArcFade& fade : m_ArcFades)
+			fade.Age += dt;
+		std::erase_if(m_ArcFades, [](const ArcFade& fade) { return fade.Age >= std::max(ArcFadeSeconds, ArcSparkSeconds); });
 		for (auto& [netId, body] : m_BodyHeights)
 			body.Seen = false;
 		for (const EntityState& entity : m_Client.GetEntities())
@@ -1292,6 +1352,8 @@ namespace Game
 				if (!body.Aloft)
 					body.Speed = 0.0f;
 			}
+			else if (exact)
+				body.Height = target;
 			else if (std::abs(body.Height - target) > BodySnap)
 				body = { target, 0.0f, true };
 			else if (target >= body.Height)
@@ -1436,35 +1498,139 @@ namespace Game
 	void SessionState::DrawThunder(WorldRenderer& renderer, const EntityState& entity, float age, bool pending) const
 	{
 		const glm::vec3 base = Ground(entity.Position);
-		const glm::vec3 color = SkillColor(AbilityId::StormStrike);
-		const glm::vec3 bright = glm::mix(color, glm::vec3(1.0f), 0.55f) * 2.6f;
-		const uint32_t frame = uint32_t(m_Time * 24.0f);
-		const uint32_t seed = entity.NetId * 2654435761u + frame * 40503u;
+		const uint32_t seed = StormSeed(entity.Position);
+		const AbilityDef& strike = GetAbility(AbilityId::StormStrike);
+		const float radius = strike.ImpactRadius * entity.GetScale();
 		if (pending)
 		{
-			const float progress = std::clamp(age / GetAbility(AbilityId::StormStrike).ImpactDelay, 0.0f, 1.0f);
-			DrawBeam(renderer, base, 6.0f, 0.05f + 0.06f * progress, color * (0.25f + 0.45f * progress), 0.2f);
-			if (frame % 2 == 0)
-			{
-				const glm::vec3 top = base + glm::vec3(0.0f, 2.2f + 2.5f * (1.0f - progress), 0.0f);
-				DrawBolt(renderer, top, top + glm::vec3(0.0f, -0.9f, 0.0f) + Heading(float(seed % 628u) * 0.01f) * 0.5f, seed, 0.25f, 0.025f, bright * 0.35f);
-			}
+			const float progress = std::clamp(age / strike.ImpactDelay, 0.0f, 1.0f);
+			DrawStormLeader(renderer, base, radius, seed, progress, m_Time);
 			return;
 		}
-		const AbilityDef& def = GetAbility(AbilityOf(entity));
-		const float t = std::clamp(age / std::max(def.EffectDuration, 0.05f), 0.0f, 1.0f);
-		const float fade = (1.0f - t) * (1.0f - t);
 		if (AbilityOf(entity) == AbilityId::StormJump)
 		{
-			const glm::vec3 to = Ground(entity.Position, 0.9f);
-			const glm::vec3 from = Ground(entity.Position - FromAngle(entity.Facing) * entity.GetScale(), 0.9f);
-			DrawBolt(renderer, from, to, seed, 0.35f, 0.045f, bright * (0.12f + 0.4f * fade));
-			DrawGlow(renderer, to, 0.55f * fade + 0.12f, color * 0.8f);
+			const glm::vec3 to = Ground(entity.Position, ArcChest);
+			const glm::vec3 from = Ground(entity.Position - FromAngle(entity.Facing) * entity.GetScale(), 0.5f);
+			DrawStormJump(renderer, from, to, seed ^ entity.NetId, age, m_Time);
+			const float light = std::exp(-age / 0.08f);
+			if (light > 0.02f)
+				renderer.DrawLight({ .Position = to, .Radius = 3.5f, .Color = StormLight * (SpellLightGain * 1.2f * light) });
 			return;
 		}
-		DrawBolt(renderer, base + glm::vec3(0.35f, 9.0f, -0.25f), base + glm::vec3(0.0f, 0.1f, 0.0f), seed, 0.75f, 0.06f, bright * (0.1f + 0.35f * fade));
-		DrawGlow(renderer, base + glm::vec3(0.0f, 0.35f, 0.0f), 0.8f * fade + 0.1f, color * (0.45f * fade));
-		DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.15f, 0.0f), def.ImpactRadius * entity.GetScale() * (0.5f + 0.7f * t), color * (0.7f * fade), 0.045f);
+		StormStrikeLook look;
+		look.Ground = base;
+		look.Radius = radius;
+		look.Seed = seed;
+		for (uint32_t i = 0; i < StormGroundArcs; i++)
+		{
+			const glm::vec2 offset = StormArcOffset(seed, i, radius);
+			look.Ends[i] = Ground(entity.Position + Vec2(offset.x, offset.y));
+		}
+		DrawStormStrike(renderer, look, m_Time);
+		const float light = 1.3f * std::exp(-age / 0.06f) + 0.9f * StormStroke(age);
+		if (light > 0.02f)
+			renderer.DrawLight({ .Position = base + glm::vec3(0.0f, 1.4f, 0.0f), .Radius = 7.0f, .Color = StormLight * (SpellLightGain * light) });
+	}
+
+	SessionState::ArcChannel SessionState::ArcStart(const EntityState& projectile) const
+	{
+		ArcChannel channel;
+		channel.Owner = projectile.Owner;
+		channel.Origin = glm::vec3(projectile.Position.x, LaunchHeight(projectile), projectile.Position.y) - Heading(projectile.Facing) * 0.3f;
+		if (const EntityState* body = FindBody(projectile.Owner); body && LengthSquared(body->Position - projectile.Position) < ArcCasterReach * ArcCasterReach)
+		{
+			channel.Wand = true;
+			channel.Origin = HandOf(*body);
+			return channel;
+		}
+		const Vec2 contact = projectile.Position - FromAngle(projectile.Facing) * 0.3f;
+		float best = ArcAnchorReach * ArcAnchorReach;
+		for (const EntityState& other : m_Client.GetEntities())
+		{
+			if ((other.Kind != EntityKind::Player && other.Kind != EntityKind::Dummy) || (other.Kind == EntityKind::Player && other.Owner == projectile.Owner))
+				continue;
+			if (const float distance = LengthSquared(other.Position - contact); distance < best)
+			{
+				best = distance;
+				channel.Anchor = other.NetId;
+			}
+		}
+		return channel;
+	}
+
+	glm::vec3 SessionState::ArcOrigin(const ArcChannel& channel) const
+	{
+		if (channel.Wand)
+		{
+			if (const auto tip = m_WandTips.find(channel.Owner); tip != m_WandTips.end() && m_Time - tip->second.second < WandTipFresh)
+				return tip->second.first;
+			if (const EntityState* body = FindBody(channel.Owner))
+				return HandOf(*body);
+		}
+		else if (channel.Anchor != 0)
+			if (const EntityState* anchor = m_Client.FindEntity(channel.Anchor))
+				return BodyBase(*anchor, ArcChest);
+		return channel.Origin;
+	}
+
+	glm::vec3 SessionState::ArcEnd(uint32_t target, const glm::vec3& fallback) const
+	{
+		if (target != 0)
+			if (const EntityState* body = m_Client.FindEntity(target))
+				return BodyBase(*body, ArcChest);
+		return fallback;
+	}
+
+	SessionState::ArcFade SessionState::EndArc(uint32_t netId, const EntityState& last) const
+	{
+		ArcFade fade;
+		const auto channel = m_Arcs.find(netId);
+		fade.Start = channel != m_Arcs.end() ? channel->second : ArcStart(last);
+		fade.Seed = netId * 2654435761u;
+		const Vec2 ahead = last.Position + FromAngle(last.Facing) * 0.5f;
+		float best = ArcAnchorReach * ArcAnchorReach;
+		for (const EntityState& other : m_Client.GetEntities())
+		{
+			if ((other.Kind != EntityKind::Player && other.Kind != EntityKind::Dummy) || (other.Kind == EntityKind::Player && other.Owner == last.Owner) || other.NetId == fade.Start.Anchor)
+				continue;
+			if (const float distance = LengthSquared(other.Position - ahead); distance < best)
+			{
+				best = distance;
+				fade.Target = other.NetId;
+			}
+		}
+		fade.End = ArcEnd(fade.Target, ProjectilePoint(last) + Heading(last.Facing) * 0.3f);
+		return fade;
+	}
+
+	void SessionState::DrawArc(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& head) const
+	{
+		const auto channel = m_Arcs.find(entity.NetId);
+		const glm::vec3 from = channel != m_Arcs.end() ? ArcOrigin(channel->second) : head - Heading(entity.Facing) * 0.6f;
+		const uint32_t seed = entity.NetId * 2654435761u;
+		const uint32_t frame = uint32_t(m_Time * 40.0f);
+		DrawArcChannel(renderer, from, head, seed, m_Time, 1.0f);
+		DrawArcSparks(renderer, head, seed + frame * 40503u, 0.3f, 0.8f, 3);
+		DrawGlow(renderer, head, 0.34f, ArcGlow * 1.1f);
+		DrawGlow(renderer, from, 0.24f, ArcGlow * 0.9f);
+		if (entity.Owner != NoPlayer)
+			DrawGlow(renderer, head, 0.12f, glm::mix(glm::pow(ColorOf(entity.Owner), glm::vec3(2.2f)), glm::vec3(1.0f), 0.3f) * 1.7f);
+		renderer.DrawLight({ .Position = head, .Radius = 2.8f, .Color = ArcLight * (SpellLightGain * 0.7f) });
+	}
+
+	void SessionState::DrawArcFades(WorldRenderer& renderer) const
+	{
+		for (const ArcFade& fade : m_ArcFades)
+		{
+			const glm::vec3 end = ArcEnd(fade.Target, fade.End);
+			DrawArcChannel(renderer, ArcOrigin(fade.Start), end, fade.Seed, m_Time, ArcFadeIntensity(fade.Age, fade.Seed, m_Time));
+			if (fade.Target == 0 || fade.Age >= ArcSparkSeconds)
+				continue;
+			const float t = fade.Age / ArcSparkSeconds;
+			DrawArcSparks(renderer, end, fade.Seed + uint32_t(m_Time * 30.0f) * 40503u, 0.55f, 1.2f * (1.0f - t), 5);
+			DrawGlow(renderer, end, 0.4f * (1.0f - t) + 0.1f, ArcGlow * (0.8f * (1.0f - t)));
+			renderer.DrawLight({ .Position = end, .Radius = 3.5f, .Color = ArcLight * (SpellLightGain * 0.6f * (1.0f - t)) });
+		}
 	}
 
 	void SessionState::DrawHook(WorldRenderer& renderer, const EntityState& entity, float age) const
@@ -1500,6 +1666,13 @@ namespace Game
 
 	void SessionState::OnEntityAppeared(const EntityState& entity)
 	{
+		if (entity.Kind == EntityKind::Projectile && AbilityOf(entity) == AbilityId::ArcLightning)
+			m_Arcs[entity.NetId] = ArcStart(entity);
+		if (entity.Kind == EntityKind::Effect && CreditOf(AbilityOf(entity)) == AbilityId::GlacialNova)
+		{
+			NovaAppeared(entity);
+			return;
+		}
 		if (entity.Kind == EntityKind::Effect && !entity.Has(EntityFlags::Pending) && AbilityOf(entity) == AbilityId::EarthSpike)
 			EruptSpike(entity);
 		if (entity.Kind == EntityKind::Effect && entity.Has(EntityFlags::Pending) && AbilityOf(entity) == AbilityId::Firebomb)
@@ -1515,7 +1688,8 @@ namespace Game
 		const float scale = ability == AbilityId::StormJump ? 0.7f : entity.GetScale();
 		const bool fireball = ability == AbilityId::PurpleFireball;
 		const float blast = fireball ? std::clamp((def.ImpactRadius * scale - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f) : 0.0f;
-		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, fireball ? FireballColor(blast) : EffectColor(entity), entity.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+		const glm::vec3 tint = fireball ? FireballColor(blast) : CreditOf(ability) == AbilityId::StormStrike ? StormTelegraph : EffectColor(entity);
+		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, tint, entity.NetId,[this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
 		Rumble(Ground(entity.Position), ImpactRumble(ability, blast), entity.Owner);
 		const std::optional<Fx> fx = EffectBurstFor(ability);
 		if (!fx)
@@ -1903,6 +2077,13 @@ namespace Game
 				if (entity.NetId == m_Client.GetPlayerNetId() && slot >= 0)
 					input.Windup = m_Client.GetTraits().Skills[size_t(slot)].CastTime;
 			}
+			const bool stomping = std::any_of(m_NovaFields.begin(), m_NovaFields.end(), [&](const NovaField& field) { return field.Owner == entity.Owner && field.Erupt >= 0.0f && field.Erupt < NovaStompSeconds; });
+			if (!input.Attacking && !input.Dead && stomping)
+			{
+				input.Attacking = true;
+				input.Attack = { .Windup = Anim::CastSmite };
+				input.Windup = NovaStompSeconds;
+			}
 			const GameStatus& status = m_Client.GetStatus();
 			if (!input.Attacking && !input.Dead && status.Mode == GameMode::Brawl && status.Brawl.Phase == BrawlPhase::Over && WonBrawlRound(entity.Owner) && status.Brawl.Timer > BrawlOverSeconds - VictoryPoseSeconds)
 			{
@@ -2062,6 +2243,7 @@ namespace Game
 		post.Vignette = m_Danger * DangerVignette * (0.5f + 0.5f * m_DangerLevel) * (0.6f + 0.4f * beat);
 		post.Desaturation = m_Danger * DangerDesaturation * (0.4f + 0.6f * m_DangerLevel);
 		renderer.Begin(m_Camera, m_Lighting, m_Overview ? 0.0f : m_CameraTarget.y, !m_Overview && !m_Lighting.Floating);
+		renderer.SetGroundRelief(m_LevelRenderer.GetRelief());
 		m_LevelRenderer.Draw(renderer, *level, ComputeView());
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
 		for (size_t i = 0; i < fires.size(); i++)
@@ -2075,7 +2257,10 @@ namespace Game
 			renderer.DrawSprite({ .Position = fire.Position + glm::vec3(0.0f, fire.Kind == FireKind::Campfire ? 0.25f : 0.02f, 0.0f), .Size = size * fire.Scale, .Color = glm::vec4(glm::vec3(1.0f, 0.55f, 0.22f) * flicker, 0.35f), .Shape = ParticleShape::Glow, .Softness = 1.0f });
 		}
 		m_Effects->Draw(renderer, m_SpellMeshes);
+		DrawArcFades(renderer);
 		DrawSpikeRuins(renderer);
+		DrawNovaFields(renderer);
+		DrawVoidWells(renderer);
 		DrawShields(renderer);
 		DrawWards(renderer);
 		for (const EntityState& entity : m_Client.GetEntities())
@@ -2098,7 +2283,7 @@ namespace Game
 				if (ability.Kind == AbilityKind::Ground && !AimsFromPoint(ability.Id))
 				{
 					const Vec2 point = GetGroundTarget(*level, self->Position, FromAngle(m_Aim), m_AimDistance, ability.Range);
-					DrawRuneCircle(renderer, { .Center = Ground(point), .Radius = ability.ImpactRadius * m_Client.GetTraits().AreaScale, .Color = SkillColor(ability.Id), .Intensity = 0.6f, .Spin = 0.6f, .Seed = 7u });
+					DrawRuneCircle(renderer, { .Center = Ground(point), .Radius = ability.ImpactRadius * m_Client.GetTraits().AreaScale, .Color = SpellTint(ability.Id), .Intensity = 0.6f, .Spin = 0.6f, .Seed = 7u });
 				}
 			}
 		}
@@ -2194,13 +2379,17 @@ namespace Game
 		if (entity.Has(EntityFlags::Dashing))
 			renderer.DrawTrail(uint64_t(entity.NetId) | (22ull << 40), base + glm::vec3(0.0f, 0.95f * look.Scale, 0.0f), DashTrail(color));
 		if (look.Tip)
+		{
+			const glm::vec3 tip = pose.JointPoint(look.TipJoint, *look.Tip);
+			m_WandTips[entity.Owner] = { tip, m_Time };
 			if (const float strike = animator->StrikeWeight(*m_Characters); strike > 0.02f)
 			{
 				const auto fx = m_Fx.find(entity.NetId);
 				const AbilityId cast = fx != m_Fx.end() ? fx->second.Cast : AbilityId::Count;
-				const glm::vec3 tint = cast == AbilityId::PurpleFireball ? FireballColor(1.0f) : cast != AbilityId::Count ? SkillColor(cast) : color;
-				renderer.DrawTrail(uint64_t(entity.NetId) | (21ull << 40), pose.JointPoint(look.TipJoint, *look.Tip), WandTrail(tint), strike);
+				const glm::vec3 tint = cast == AbilityId::PurpleFireball ? FireballColor(1.0f) : cast != AbilityId::Count ? SpellTint(cast) : color;
+				renderer.DrawTrail(uint64_t(entity.NetId) | (21ull << 40), tip, WandTrail(tint), strike);
 			}
+		}
 		const bool brawl = m_Client.GetSession().Mode == GameMode::Brawl;
 		if (brawl)
 			DrawBrawlPlayer(renderer, entity, base);
@@ -2235,7 +2424,7 @@ namespace Game
 			DrawObsidianCharge(renderer, entity, base);
 			return;
 		}
-		const glm::vec3 glow = SkillColor(casting);
+		const glm::vec3 glow = SpellTint(casting);
 		const float pulse = 0.6f + 0.4f * std::sin(m_Time * 14.0f);
 		if (GetAbility(casting).Gem)
 		{
@@ -2704,6 +2893,350 @@ namespace Game
 		}
 	}
 
+	void SessionState::NovaAppeared(const EntityState& entity)
+	{
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		if (AbilityOf(entity) == AbilityId::GlacialNova)
+		{
+			m_NovaFields.push_back({ .Position = entity.Position, .Owner = entity.Owner, .Tag = entity.Tag, .Seed = StormSeed(entity.Position) ^ (entity.Owner * 0x9E3779B1u), .Scale = entity.GetScale() });
+			m_Effects->Burst(Fx::NovaSpread, Ground(entity.Position, 0.05f), up, entity.GetScale());
+			Rumble(Ground(entity.Position), 0.12f, entity.Owner);
+			return;
+		}
+		NovaField* field = nullptr;
+		float nearest = 1.0f;
+		for (NovaField& candidate : m_NovaFields)
+		{
+			if (candidate.Owner != entity.Owner || candidate.Erupt >= 0.0f)
+				continue;
+			const float distance = candidate.Tag == entity.Tag ? -1.0f : Length(candidate.Position - entity.Position);
+			if (distance < nearest)
+			{
+				nearest = distance;
+				field = &candidate;
+			}
+		}
+		if (!field)
+		{
+			m_NovaFields.push_back({ .Position = entity.Position, .Owner = entity.Owner, .Tag = entity.Tag, .Seed = StormSeed(entity.Position) ^ (entity.Owner * 0x9E3779B1u), .Scale = entity.GetScale(), .Age = NovaSpreadSeconds + 0.5f });
+			field = &m_NovaFields.back();
+		}
+		field->Erupt = 0.0f;
+		field->Shattered = 0;
+		const glm::vec3 ground = Ground(field->Position);
+		const float reach = GetAbility(AbilityId::GlacialNova).Reach * field->Scale;
+		m_Effects->Burst(Fx::NovaBurst, ground + up * 0.1f, up, field->Scale);
+		m_Effects->Shockwave(ground, reach * 1.25f, 0.4f, 0.13f, 0.3f);
+		std::array<NovaSpike, MaxNovaSpikes> spikes;
+		const uint32_t count = NovaSpikes(*field, spikes);
+		for (uint32_t i = 0; i < count; i++)
+			if (spikes[i].Main)
+				m_Effects->Burst(Fx::NovaErupt, Ground(spikes[i].Point, 0.1f), glm::normalize(Heading(spikes[i].Angle) * 0.8f + up * 0.7f));
+		Rumble(ground, 0.35f, entity.Owner);
+	}
+
+	uint32_t SessionState::NovaSpikes(const NovaField& field, std::span<NovaSpike> spikes) const
+	{
+		constexpr uint32_t Clusters[] = { 0u, 1u, 4u };
+		const float reach = GetAbility(AbilityId::GlacialNova).Reach * field.Scale;
+		const auto unit = [&](uint32_t index)
+		{
+			uint32_t x = field.Seed * 0x9E3779B1u + index * 0x85EBCA77u + 0x165667B1u;
+			x ^= x >> 15;
+			x *= 0x2C1B3C6Du;
+			x ^= x >> 12;
+			x *= 0x297A2D39u;
+			x ^= x >> 15;
+			return float(x & 0xFFFFu) / 65535.0f;
+		};
+		uint32_t count = 0;
+		const auto add = [&](uint32_t key, float angle, float radius, float small, float big, float lean, float stand, uint32_t variant, bool fang, bool main)
+		{
+			if (count >= spikes.size())
+				return;
+			NovaSpike& spike = spikes[count++];
+			spike.Angle = angle;
+			spike.Point = field.Position + FromAngle(angle) * radius;
+			spike.Small = small * field.Scale;
+			spike.Big = big * field.Scale;
+			spike.Lean = lean;
+			spike.Stand = stand;
+			spike.Appear = NovaSpreadSeconds * (1.0f - std::pow(std::max(1.0f - radius / reach, 0.0f), 1.0f / 2.2f)) + 0.02f * unit(key + 1u);
+			spike.Burst = 0.01f + 0.05f * radius / reach + 0.02f * unit(key + 2u);
+			spike.Break = 0.46f + 0.1f * radius / reach + 0.08f * unit(key + 3u);
+			spike.Variant = variant;
+			spike.Fang = fang;
+			spike.Main = main;
+		};
+		const uint32_t arms = NovaArmCount(field.Seed);
+		for (uint32_t arm = 0; arm < arms; arm++)
+		{
+			const uint32_t key = arm * 32u;
+			const float angle = NovaArmAngle(field.Seed, arm);
+			const float between = angle + Pi / float(arms);
+			add(key, angle + 0.06f * (unit(key) - 0.5f), reach * (0.47f + 0.15f * unit(key + 4u)), 0.7f + 0.2f * unit(key + 5u), 1.5f + 0.45f * unit(key + 6u), 0.88f + 0.14f * unit(key + 7u), 0.6f + 0.16f * unit(key + 8u), uint32_t(unit(key + 9u) * 2.99f), true, true);
+			add(key + 10u, between + 0.15f * (unit(key + 10u) - 0.5f), reach * (0.3f + 0.08f * unit(key + 11u)), 0.3f + 0.08f * unit(key + 12u), 0.95f + 0.3f * unit(key + 13u), 0.75f, 0.5f + 0.15f * unit(key + 14u), Clusters[uint32_t(unit(key + 15u) * 2.99f)], false, false);
+			if (arm % 2 == 0)
+				add(key + 20u, between + 0.2f * (unit(key + 20u) - 0.5f), reach * (0.72f + 0.08f * unit(key + 21u)), 0.26f + 0.08f * unit(key + 22u), 0.8f + 0.25f * unit(key + 23u), 1.0f, 0.8f + 0.1f * unit(key + 24u), uint32_t(unit(key + 25u) * 2.99f), true, false);
+		}
+		return count;
+	}
+
+	void SessionState::UpdateNovaFields(float dt)
+	{
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		std::array<NovaSpike, MaxNovaSpikes> spikes;
+		for (NovaField& field : m_NovaFields)
+		{
+			field.Age += dt;
+			if (field.Erupt >= 0.0f)
+				field.Erupt += dt;
+			const uint32_t count = NovaSpikes(field, spikes);
+			for (uint32_t i = 0; i < count; i++)
+			{
+				const NovaSpike& spike = spikes[i];
+				const uint64_t bit = 1ull << i;
+				if (field.Erupt < 0.0f && spike.Main && (field.Popped & bit) == 0 && field.Age >= spike.Appear)
+				{
+					field.Popped |= bit;
+					m_Effects->Burst(Fx::IceCrumble, Ground(spike.Point, 0.1f), up, 0.7f);
+				}
+				if (field.Erupt >= spike.Break && (field.Shattered & bit) == 0)
+				{
+					field.Shattered |= bit;
+					const glm::vec3 out = Heading(spike.Angle);
+					const glm::vec3 axis = glm::normalize(up * std::cos(spike.Stand) + out * std::sin(spike.Stand));
+					const glm::vec3 middle = Ground(spike.Point + FromAngle(spike.Angle) * (0.12f * spike.Big)) + axis * (0.45f * spike.Big);
+					if (spike.Fang)
+						m_Effects->Burst(Fx::NovaShatter, middle, glm::normalize(out * 0.6f + up * 0.8f), std::max(spike.Big / 1.6f, 0.5f));
+					else
+						m_Effects->Burst(Fx::IceCrumble, middle, up, spike.Big);
+				}
+			}
+			if (field.Erupt < 0.0f && !field.Thawed && field.Age >= FrostNovaWindow)
+			{
+				field.Thawed = true;
+				for (uint32_t i = 0; i < count; i++)
+					if (spikes[i].Main)
+						m_Effects->Burst(Fx::IceCrumble, Ground(spikes[i].Point, 0.15f), up, 0.9f);
+			}
+			if (field.Erupt < 0.0f && field.Age < FrostNovaWindow)
+			{
+				field.Mist -= dt;
+				if (field.Mist <= 0.0f)
+				{
+					field.Mist += NovaMistInterval;
+					const uint32_t draw = StormSeed(Vec2(field.Age * 37.0f, float(field.Seed & 1023u)));
+					const float angle = float(draw & 0xFFFFu) / 65535.0f * 2.0f * Pi;
+					const float radius = GetAbility(AbilityId::GlacialNova).Reach * field.Scale * (0.3f + 0.6f * float((draw >> 16) & 0xFFFFu) / 65535.0f);
+					m_Effects->Burst(Fx::NovaMist, Ground(field.Position + FromAngle(angle) * radius, 0.05f), up);
+				}
+			}
+		}
+		std::erase_if(m_NovaFields, [](const NovaField& field) { return field.Erupt >= 0.0f ? field.Erupt >= NovaEruptLife : field.Age >= FrostNovaWindow + NovaFadeSeconds + 0.1f; });
+	}
+
+	void SessionState::DrawNovaFields(WorldRenderer& renderer) const
+	{
+		const auto smooth = [](float edge0, float edge1, float x)
+		{
+			const float t = std::clamp((x - edge0) / std::max(edge1 - edge0, 1e-4f), 0.0f, 1.0f);
+			return t * t * (3.0f - 2.0f * t);
+		};
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		std::array<NovaSpike, MaxNovaSpikes> spikes;
+		for (const NovaField& field : m_NovaFields)
+		{
+			const float t = field.Age;
+			const float e = field.Erupt;
+			const bool erupted = e >= 0.0f;
+			const float reach = GetAbility(AbilityId::GlacialNova).Reach * field.Scale;
+			const glm::vec3 ground = Ground(field.Position);
+			const float front = 1.0f - std::pow(1.0f - std::clamp(t / NovaSpreadSeconds, 0.0f, 1.0f), 2.2f);
+			const float ready = erupted ? 0.0f : 1.0f - smooth(FrostNovaWindow - 0.3f, FrostNovaWindow, t);
+			const float pulse = 0.5f + 0.5f * std::sin(m_Time * 5.0f + float(field.Seed % 61u));
+			const float fade = erupted ? 1.0f - smooth(NovaEruptLife - NovaFrostFade, NovaEruptLife, e) : 1.0f - smooth(FrostNovaWindow, FrostNovaWindow + NovaFadeSeconds, t);
+			const float flare = erupted ? std::exp(-e * 4.0f) : std::exp(-t * 3.5f);
+			GroundDecal frost;
+			frost.Center = ground;
+			frost.Extent = glm::vec2(reach * NovaDecalBox);
+			frost.Depth = 0.9f;
+			frost.Shape = DecalShape::Nova;
+			frost.Seed = field.Seed;
+			frost.Color = glm::vec4(NovaIce, fade);
+			frost.Tint = glm::vec4(0.6f, 0.76f, 1.0f, 0.85f * fade);
+			frost.Roughness = 0.3f;
+			frost.Params = glm::vec4(0.22f + 0.55f * flare + 0.1f * ready * pulse, front, erupted ? smooth(0.0f, 0.12f, e) : 0.0f, reach);
+			renderer.DrawDecal(frost);
+			GroundDecal light;
+			light.Center = ground;
+			light.Extent = glm::vec2(reach * 0.9f);
+			light.Shape = DecalShape::Glow;
+			light.Color = glm::vec4(NovaIce * ((0.06f + 0.04f * ready * pulse) * fade + (erupted ? 0.25f : 0.15f) * flare), 1.0f);
+			renderer.DrawDecal(light);
+			renderer.DrawLight({ .Position = ground + up * 0.7f, .Radius = reach * 1.4f, .Color = NovaIce * (SpellLightGain * ((0.04f + 0.02f * ready * pulse) * fade + (erupted ? 0.3f : 0.15f) * flare)) });
+
+			const uint32_t count = NovaSpikes(field, spikes);
+			for (uint32_t i = 0; i < count; i++)
+			{
+				const NovaSpike& spike = spikes[i];
+				const float since = std::max(t - spike.Appear, 0.0f);
+				const float rise = t >= spike.Appear ? std::max(SpikeThrust(since), 0.0f) : 0.0f;
+				IceClusterLook look;
+				look.Yaw = spike.Angle;
+				look.Variant = spike.Variant;
+				look.Fang = spike.Fang;
+				look.Lean = spike.Lean;
+				look.Scale = spike.Small * rise;
+				look.Sink = spike.Small * 0.35f * (1.0f - std::min(rise, 1.0f));
+				look.Frost = 0.35f;
+				look.Glow = 0.9f * std::exp(-since * 6.0f);
+				Vec2 point = spike.Point;
+				if (!erupted)
+				{
+					const float thaw = smooth(FrostNovaWindow, FrostNovaWindow + NovaThawSeconds, t);
+					look.Glow += (0.55f + 0.2f * std::sin(m_Time * 5.0f + spike.Angle * 3.0f)) * ready * (spike.Main ? 1.0f : 0.6f);
+					look.Melt = thaw;
+					look.Sink += spike.Small * 0.3f * thaw;
+					look.Frost += 0.3f * thaw;
+				}
+				else
+				{
+					const float lift = std::max(SpikeThrust(std::max(e - spike.Burst, 0.0f) * 0.9f), 0.0f);
+					const float stood = std::min(lift, 1.0f);
+					const float shatter = smooth(spike.Break, spike.Break + NovaShatterSeconds, e);
+					look.Scale = (look.Scale + (spike.Big - look.Scale) * lift) * (1.0f - 0.1f * shatter);
+					look.Lean = spike.Lean + (spike.Stand - spike.Lean) * stood;
+					look.Sink *= 1.0f - stood;
+					look.Glow = 0.25f + 0.6f * std::exp(-std::max(e - spike.Burst, 0.0f) * 5.0f) + 0.8f * smooth(spike.Break - 0.1f, spike.Break, e);
+					look.Frost = 0.15f + 0.35f * smooth(spike.Break - 0.15f, spike.Break, e);
+					look.Melt = shatter;
+					point += FromAngle(spike.Angle) * (0.12f * spike.Big * stood);
+				}
+				if (look.Melt >= 1.0f)
+					continue;
+				look.Base = Ground(point);
+				DrawIceCluster(renderer, m_SpellMeshes, look);
+			}
+		}
+	}
+
+	SessionState::VoidWell* SessionState::FindVoidWell(uint32_t owner, uint16_t tag)
+	{
+		const auto it = std::find_if(m_VoidWells.begin(), m_VoidWells.end(), [&](const VoidWell& well) { return well.Owner == owner && well.Tag == tag; });
+		return it != m_VoidWells.end() ? &*it : nullptr;
+	}
+
+	void SessionState::UpdateVoidWells(float dt)
+	{
+		const AbilityDef& def = GetAbility(AbilityId::GravityWell);
+		for (VoidWell& well : m_VoidWells)
+		{
+			well.Seen = false;
+			well.Age += dt;
+			if (well.Pull >= 0.0f)
+				well.Pull += dt;
+		}
+		for (const EntityState& entity : m_Client.GetEntities())
+		{
+			if (entity.Kind != EntityKind::Effect || AbilityOf(entity) != AbilityId::GravityWell)
+				continue;
+			const bool pending = entity.Has(EntityFlags::Pending);
+			VoidWell* well = FindVoidWell(entity.Owner, entity.Tag);
+			if (!well)
+			{
+				if (!pending && AgeOf(entity.NetId) > 0.3f)
+					continue;
+				m_VoidWells.push_back({ .Position = entity.Position, .Owner = entity.Owner, .Tag = entity.Tag, .Seed = StormSeed(entity.Position) ^ (entity.Owner * 0x9E3779B1u) ^ (uint32_t(entity.Tag) * 0x85EBCA77u), .Scale = entity.GetScale(), .Age = pending ? AgeOf(entity.NetId) : def.ImpactDelay });
+				well = &m_VoidWells.back();
+			}
+			well->Seen = true;
+			well->Orphan = 0.0f;
+			if (pending)
+			{
+				well->Position = entity.Position;
+				well->Scale = entity.GetScale();
+				continue;
+			}
+			if (well->Pull >= 0.0f)
+				continue;
+			well->Pull = 0.0f;
+			well->PullAge = well->Age;
+			well->Position = entity.Position;
+			const PlayerInfo* info = m_Client.FindPlayer(entity.Owner);
+			well->Tempo = info && HasCard(info->Cards, CardId::Implosion) ? ImplosionDelay / VoidDetonate : 1.0f;
+			const float reach = def.ImpactRadius * well->Scale + 0.4f;
+			for (const EntityState& body : m_Client.GetEntities())
+				if ((body.Kind == EntityKind::Player || body.Kind == EntityKind::Dummy) && body.Owner != entity.Owner && !body.Has(EntityFlags::Dead) && !body.Warded() && LengthSquared(body.Position - entity.Position) <= reach * reach)
+					well->Bodies.push_back(body.NetId);
+			Rumble(Ground(entity.Position), 0.22f, entity.Owner);
+		}
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		for (VoidWell& well : m_VoidWells)
+		{
+			if (!well.Seen && well.Pull < 0.0f)
+				well.Orphan += dt;
+			if (well.Detonated || well.Pull < VoidDetonate * well.Tempo)
+				continue;
+			well.Detonated = true;
+			const glm::vec3 ground = Ground(well.Position);
+			const float radius = def.ImpactRadius * well.Scale;
+			m_Effects->Burst(Fx::VoidBurst, ground + up * (VoidCoreHeight * std::sqrt(well.Scale)), up, std::sqrt(well.Scale));
+			GroundDecal scar;
+			scar.Center = ground;
+			scar.Extent = glm::vec2(radius * VoidFieldBox * 0.85f);
+			scar.Depth = 1.0f;
+			scar.Shape = DecalShape::Void;
+			scar.Color = glm::vec4(VoidViolet, 0.4f);
+			scar.Tint = glm::vec4(0.025f, 0.008f, 0.05f, 0.7f);
+			scar.Params = glm::vec4(1.0f, 1.0f, 0.0f, 1.0f);
+			scar.Seed = well.Seed;
+			m_Effects->Mark(scar, 1.2f, 0.05f, 0.7f, 1.0f, 0.3f, 0.0f);
+			Rumble(ground, 0.32f, well.Owner);
+		}
+		std::erase_if(m_VoidWells, [](const VoidWell& well) { return well.Pull >= VoidLifetime(well.Tempo) || well.Orphan > 0.4f; });
+	}
+
+	void SessionState::DrawVoidWells(WorldRenderer& renderer) const
+	{
+		const AbilityDef& def = GetAbility(AbilityId::GravityWell);
+		for (const VoidWell& well : m_VoidWells)
+		{
+			VoidGazeLook look;
+			look.Ground = Ground(well.Position);
+			look.Eye = m_Camera.Eye;
+			look.Radius = def.ImpactRadius * well.Scale;
+			look.Scale = well.Scale;
+			look.Age = well.Age;
+			look.PullAge = well.PullAge;
+			look.Pull = well.Pull;
+			look.Tempo = well.Tempo;
+			look.Fade = 1.0f - std::clamp((well.Orphan - 0.15f) / 0.25f, 0.0f, 1.0f);
+			look.Seed = well.Seed;
+			look.Time = m_Time;
+			float nearest = look.Radius * 1.4f;
+			for (const EntityState& entity : m_Client.GetEntities())
+			{
+				if (entity.Kind != EntityKind::Player || entity.Owner == well.Owner || entity.Has(EntityFlags::Dead))
+					continue;
+				const float distance = Length(entity.Position - well.Position);
+				if (distance < nearest)
+				{
+					nearest = distance;
+					look.Gaze = Ground(entity.Position, 1.1f);
+					look.Gazing = 1.0f;
+				}
+			}
+			DrawVoidGaze(renderer, look, SpellLightGain);
+			if (well.Pull < 0.0f || well.Pull > 0.55f)
+				continue;
+			const float strength = 1.0f - well.Pull / 0.55f;
+			for (const uint32_t netId : well.Bodies)
+				if (const EntityState* body = m_Client.FindEntity(netId))
+					renderer.DrawTrail(uint64_t(netId) | (uint64_t(well.Tag) << 32) | (31ull << 48), Ground(body->Position, 0.9f), VoidWispTrail(), strength);
+		}
+	}
+
 	void SessionState::ShieldMoments(const EntityState& entity, float dt)
 	{
 		const bool raised = entity.Guarding();
@@ -2947,12 +3480,14 @@ namespace Game
 	{
 		const glm::vec3 base = Ground(entity.Position);
 		const AbilityDef& def = GetAbility(AbilityOf(entity));
-		const glm::vec3 color = EffectColor(entity);
+		const AbilityId ability = AbilityOf(entity);
+		const bool storm = ability == AbilityId::StormStrike;
+		const glm::vec3 color = storm ? StormTelegraph : EffectColor(entity);
 		const float scale = entity.GetScale();
 		const float appear = std::clamp(AgeOf(entity.NetId) / 0.3f, 0.0f, 1.0f);
-		const AbilityId ability = AbilityOf(entity);
-		const float dim = ability == AbilityId::Firebomb || ability == AbilityId::StormStrike ? 0.7f : ability == AbilityId::FirebombSkip || ability == AbilityId::FirebombSkip2 ? 0.5f : 1.0f;
-		const float intensity = (0.75f + 0.35f * progress) * dim;
+		const float dim = ability == AbilityId::Firebomb || storm ? 0.7f : ability == AbilityId::FirebombSkip || ability == AbilityId::FirebombSkip2 ? 0.5f : 1.0f;
+		const float surge = storm ? 1.0f + 0.5f * glm::smoothstep(0.7f, 1.0f, progress) : 1.0f;
+		const float intensity = (0.75f + 0.35f * progress) * dim * surge;
 		switch (def.Shape)
 		{
 		case StrikeShape::Line:
@@ -3167,6 +3702,11 @@ namespace Game
 			renderer.DrawLight({ .Position = center, .Radius = 3.5f + 1.5f * power, .Color = FireballColor(power) * (SpellLightGain * (1.0f + power)) });
 			return;
 		}
+		if (ability == AbilityId::ArcLightning)
+		{
+			DrawArc(renderer, entity, center);
+			return;
+		}
 		if (ability == AbilityId::ObsidianShards)
 		{
 			ObsidianLook look;
@@ -3214,6 +3754,8 @@ namespace Game
 		const glm::vec3 bright = glm::mix(owner, glm::vec3(1.0f), 0.6f);
 		const float age = AgeOf(entity.NetId);
 		const float scale = entity.GetScale();
+		if (ability == AbilityId::GravityWell)
+			return;
 		if (entity.Has(EntityFlags::Pending))
 		{
 			const float progress = def.ImpactDelay > 0.0f ? std::clamp(age / def.ImpactDelay, 0.0f, 1.0f) : 1.0f;
@@ -3224,16 +3766,6 @@ namespace Game
 				DrawLob(renderer, entity, age);
 			if (ability == AbilityId::StormStrike)
 				DrawThunder(renderer, entity, age, true);
-			if (ability == AbilityId::GravityWell)
-			{
-				const float radius = def.ImpactRadius * scale;
-				for (uint32_t i = 0; i < 3; i++)
-				{
-					const float phase = std::fmod(m_Time * 1.4f + float(i) / 3.0f, 1.0f);
-					DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.12f + 0.25f * phase, 0.0f), radius * (1.0f - phase) + 0.15f, color * (1.6f * phase), 0.03f);
-				}
-				DrawGlow(renderer, base + glm::vec3(0.0f, 0.4f, 0.0f), 0.5f + 0.4f * progress, color * (0.8f + progress));
-			}
 			return;
 		}
 
@@ -3247,6 +3779,8 @@ namespace Game
 			DrawEarthSpike(renderer, m_SpellMeshes, SpikeLook(entity));
 			return;
 		}
+		if (CreditOf(ability) == AbilityId::GlacialNova)
+			return;
 		if (ability == AbilityId::PurpleFireball)
 		{
 			const float radius = def.ImpactRadius * scale;
@@ -3269,7 +3803,7 @@ namespace Game
 			if (ability == AbilityId::Cyclone)
 				for (uint32_t i = 0; i < 3; i++)
 					DrawSlash(renderer, base + glm::vec3(0.0f, 0.35f + 0.15f * float(i), 0.0f), m_Time * 17.0f + float(i) * 2.094f, def.Reach * scale * (0.7f + 0.12f * float(i)), 1.3f, 1.0f, glm::mix(bright, color, 0.4f) * 0.7f, false, 0.55f);
-			else if (ability == AbilityId::Shockwave || ability == AbilityId::ShatterBurst)
+			else if (ability == AbilityId::ShatterBurst)
 			{
 				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.35f, 0.0f), def.Reach * scale * swing, color * (2.6f * (1.0f - t)), 0.07f);
 				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.2f, 0.0f), def.Reach * scale * swing * 0.7f, glm::mix(color, glm::vec3(1.0f), 0.5f) * (1.8f * (1.0f - t)), 0.04f);
@@ -4372,7 +4906,8 @@ namespace Game
 			const bool guard = !dodge && IsGuard(skill);
 			const bool shattered = guard && IsGuardBroken(state, traits);
 			const float span = shattered ? GuardBreakCooldown(skill) : skill.Cooldown;
-			const float ready = span > 0.0f ? 1.0f - std::clamp(cooldown / span, 0.0f, 1.0f) : 1.0f;
+			const bool recasting = !dodge && HoldsCooldown(state, slot);
+			const float ready = span > 0.0f && !recasting ? 1.0f - std::clamp(cooldown / span, 0.0f, 1.0f) : 1.0f;
 			const bool covered = state.Mana + 1e-3f >= skill.ManaCost;
 			const bool overloaded = !dodge && IsOverloaded(state, traits, slot);
 			const bool affordable = covered || overloaded || traits.BloodRate > 0.0f;
@@ -4404,6 +4939,15 @@ namespace Game
 					std::snprintf(text, sizeof(text), cooldown < 3.0f ? "%.1f" : "%.0f", double(cooldown));
 					draw.TextAligned(rect, text, Theme::Floating(19.0f, Hex(0xF4F0FF)), { 0.5f, 0.5f });
 				}
+			}
+			if (recasting)
+			{
+				const float left = std::clamp(state.RecastTimer / FrostNovaWindow, 0.0f, 1.0f);
+				const float glint = 0.6f + 0.4f * std::sin(m_Time * 9.0f);
+				const UiRect bar{ rect.X + 7.0f, rect.Y + 5.0f, rect.W - 14.0f, 4.0f };
+				draw.Rect(rect.Expand(2.5f), { .Border = WithAlpha(Lighten(color, 0.5f), 0.9f * glint), .BorderWidth = 1.8f, .Glow = WithAlpha(color, 0.35f * glint), .GlowSize = 10.0f, .Chamfer = 11.0f });
+				draw.Rect(bar, { .Fill = Rgba(0.02f, 0.02f, 0.05f, 0.85f), .Chamfer = 1.5f });
+				draw.Rect({ bar.X, bar.Y, bar.W * left, bar.H }, { .Fill = Lighten(color, 0.4f), .Glow = WithAlpha(color, 0.35f), .GlowSize = 5.0f, .Chamfer = 1.5f });
 			}
 			if (guard && !shattered)
 			{

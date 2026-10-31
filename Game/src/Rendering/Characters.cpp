@@ -540,7 +540,7 @@ namespace Game
 		case AbilityId::Meteor:
 		case AbilityId::Comet:
 			return { Anim::CastSummon };
-		case AbilityId::Shockwave:
+		case AbilityId::GlacialNova:
 		case AbilityId::FrostNova:
 			return { Anim::CastNova };
 		case AbilityId::DiamondWard:

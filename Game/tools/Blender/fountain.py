@@ -72,7 +72,7 @@ def water_material():
     warped = s.offset(p, s.mul(s.noise_color(p, 2.0, detail=2.0), 0.3))
     caustic = s.sub(1.0, s.smooth(0.0, 0.05, s.voronoi(warped, 7.0, 'DISTANCE_TO_EDGE', 1.0, 'Distance')))
     base = s.mix(s.mul(caustic, 0.35), base, (0.09, 0.17, 0.15))
-    return s.finish(base, 0.035, height=height, bump=0.22, bump_distance=0.01, bake_size=512)
+    return s.finish(base, 0.035, height=height, bump=0.22, bump_distance=0.01, bake_size=512, transmission=1.0, ior=1.33, attenuation=((0.22, 0.5, 0.56), 0.5))
 
 
 def ember_material():

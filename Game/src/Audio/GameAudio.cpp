@@ -287,6 +287,7 @@ namespace Game
 
 	void GameAudio::Observe(const GameClient& client, float dt, const glm::vec3& focus, const glm::vec3& eye)
 	{
+		m_Client = &client;
 		m_Level = client.GetLevel();
 		m_Self = client.GetPlayerNetId();
 		UpdateListener(focus, eye);
@@ -744,6 +745,17 @@ namespace Game
 			if (const EntityState* self = client.FindEntity(m_Self); self && LengthSquared(self->Position - last.Position) < 2.6f)
 				PlayLootTaken(last);
 			break;
+		case EntityKind::Effect:
+		{
+			const auto erupted = [&](const EntityState& entity) { return entity.Kind == EntityKind::Effect && AbilityOf(entity) == AbilityId::GlacialEruption && entity.Owner == last.Owner; };
+			if (AbilityOf(last) == AbilityId::GlacialNova && std::none_of(client.GetEntities().begin(), client.GetEntities().end(), erupted))
+			{
+				PlayAt(Cue::GlassLight, last.Position, 0.3f, 0.75f);
+				PlayAt(Cue::GlassLight, last.Position, 0.2f, 0.95f, 0.07f);
+				PlayAt(Cue::IceImpact, last.Position, 0.18f, 1.6f, 0.04f);
+			}
+			break;
+		}
 		default:
 			break;
 		}
@@ -1003,8 +1015,9 @@ namespace Game
 			PlayAt(Cue::FireImpact, at, 0.3f, 1.35f);
 			break;
 		case AbilityId::StormStrike:
-			PlayAt(Cue::Thunder, at, 0.9f, 1.15f);
-			PlayAt(Cue::ShockHit, at, 0.8f, 0.9f);
+			PlayAt(Cue::ShockHit, at, 0.85f, 0.75f);
+			PlayAt(Cue::Thunder, at, 1.0f, 1.05f);
+			PlayAt(Cue::Rumble, at, 0.4f, 1.2f, 0.05f);
 			break;
 		case AbilityId::StormJump:
 			PlayAt(Cue::ShockHit, at, 0.65f, 1.3f);
@@ -1106,14 +1119,44 @@ namespace Game
 			PlayAt(Cue::WhooshHeavy, at, 0.95f, 1.05f);
 			PlayAt(Cue::WhooshLight, at, 0.6f, 0.8f, 0.05f);
 			break;
-		case AbilityId::Shockwave:
-			PlayAt(Cue::ShockHit, at, 0.9f, 0.75f);
-			PlayAt(Cue::Explosion, at, 0.45f, 1.4f);
+		case AbilityId::GlacialNova:
+			PlayAt(Cue::IceImpact, at, 0.75f, 0.7f);
+			PlayAt(Cue::WhooshLight, at, 0.5f, 0.65f);
+			for (int i = 0; i < 4; i++)
+				PlayAt(Cue::GlassLight, at, 0.28f - 0.04f * float(i), 1.25f + 0.12f * float(i), 0.05f + 0.06f * float(i));
+			break;
+		case AbilityId::GlacialEruption:
+			PlayAt(Cue::IceImpact, at, 1.0f, 0.55f);
+			PlayAt(Cue::Rock, at, 0.7f, 1.15f);
+			PlayAt(Cue::Glass, at, 0.75f, 0.8f, 0.02f);
+			PlayAt(Cue::HeavyHit, at, 0.5f, 0.7f);
+			PlayAt(Cue::WhooshHeavy, at, 0.6f, 0.85f);
+			PlayAt(Cue::Glass, at, 0.85f, 1.05f, 0.5f);
+			PlayAt(Cue::Glass, at, 0.55f, 1.4f, 0.56f);
+			PlayAt(Cue::IceImpact, at, 0.4f, 1.4f, 0.52f);
+			for (int i = 0; i < 4; i++)
+				PlayAt(Cue::GlassLight, at, 0.3f - 0.05f * float(i), 1.5f + 0.15f * float(i), 0.65f + 0.08f * float(i));
 			break;
 		case AbilityId::GravityWell:
-			PlayAt(Cue::Rumble, at, 0.8f, 1.2f);
-			PlayAt(Cue::ManaEnd, at, 0.7f, 0.6f);
+		{
+			const PlayerInfo* owner = m_Client ? m_Client->FindPlayer(entity.Owner) : nullptr;
+			const float tempo = owner && HasCard(owner->Cards, CardId::Implosion) ? ImplosionDelay / 0.68f : 1.0f;
+			const float collapse = 0.4f * tempo;
+			const float blast = 0.68f * tempo;
+			PlayAt(Cue::WhooshHeavy, at, 0.85f, 0.5f);
+			PlayAt(Cue::ShockLaunch, at, 0.55f, 0.72f);
+			PlayAt(Cue::HeavyHit, at, 0.42f, 1.4f);
+			PlayAt(Cue::ManaEnd, at, 0.5f, 0.45f, 0.05f);
+			PlayAt(Cue::Rumble, at, 0.6f, 0.75f, collapse);
+			PlayAt(Cue::WhooshLight, at, 0.35f, 0.42f, collapse + 0.03f);
+			PlayAt(Cue::Explosion, at, 0.85f, 0.6f, blast);
+			PlayAt(Cue::HeavyHit, at, 0.55f, 0.55f, blast);
+			PlayAt(Cue::ShockHit, at, 0.4f, 1.15f, blast + 0.01f);
+			PlayAt(Cue::Glass, at, 0.42f, 1.25f, blast + 0.02f);
+			for (int i = 0; i < 3; i++)
+				PlayAt(Cue::GlassLight, at, 0.22f - 0.05f * float(i), 1.6f + 0.2f * float(i), blast + 0.06f + 0.07f * float(i));
 			break;
+		}
 		case AbilityId::Swap:
 			PlayAt(Cue::TeleportIn, at, 0.65f, 1.15f);
 			break;
@@ -1132,7 +1175,12 @@ namespace Game
 			PlayAt(Cue::FireLaunch, at, 1.0f, 0.6f);
 			break;
 		case AbilityId::GravityWell:
-			tracked.Loop = PlayAt(Cue::ShockLoop, at, 0.5f, 0.55f);
+			PlayAt(Cue::Rumble, at, 0.75f, 0.55f);
+			PlayAt(Cue::ManaStart, at, 0.45f, 0.5f);
+			tracked.Loop = PlayAt(Cue::ShockLoop, at, 0.32f, 0.42f);
+			PlayAt(Cue::Wraith, at, 0.16f, 1.35f, 0.15f);
+			PlayAt(Cue::Bell, at, 0.32f, 0.47f, 0.16f);
+			PlayAt(Cue::GlassLight, at, 0.22f, 1.9f, 0.19f);
 			break;
 		case AbilityId::Firebomb:
 			PlayAt(Cue::FireLaunch, at, 0.7f, 0.75f);
@@ -1250,9 +1298,11 @@ namespace Game
 		case AbilityId::Comet:
 			tracked.Loop = PlayAt(Cue::FireBuildup, at, loud, 0.85f);
 			break;
-		case AbilityId::Shockwave:
+		case AbilityId::GlacialNova:
+			tracked.Loop = PlayAt(Cue::IceBuildup, at, 0.8f * loud, 1.2f);
+			break;
 		case AbilityId::ArcLightning:
-			tracked.Loop = PlayAt(Cue::ShockBuildup, at, 0.8f * loud, ability == AbilityId::Shockwave ? 0.85f : 1.1f);
+			tracked.Loop = PlayAt(Cue::ShockBuildup, at, 0.8f * loud, 1.1f);
 			break;
 		case AbilityId::FrostSpear:
 			PlayAt(Cue::IceBuildup, at, 0.55f * loud, 1.15f);

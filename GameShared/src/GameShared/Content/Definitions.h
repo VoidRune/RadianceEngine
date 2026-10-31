@@ -77,7 +77,7 @@ namespace Game
 		Gust,
 		Comet,
 		Warp,
-		Shockwave,
+		GlacialNova,
 		GravityWell,
 		ArcLightning,
 		Swap,
@@ -99,6 +99,9 @@ namespace Game
 		EarthSpike,
 		PurpleFireball,
 		HexShield,
+		GlacialEruption,
+		WellBurst,
+		WarpWake,
 		Count,
 	};
 
@@ -193,9 +196,9 @@ namespace Game
 		{ .Id = AbilityId::Gust, .Name = "Gust", .Description = "A blast of wind in front of you that hurls rivals away.", .Kind = AbilityKind::Melee, .Spell = true, .CastTime = 0.18f, .CastMove = 0.55f, .Cooldown = 7.5f, .Reach = 3.3f, .HalfArc = 0.7f, .EffectDuration = 0.3f, .Push = 13.0f, .BrawlDamage = 10, .BrawlMana = 25.0f },
 		{ .Id = AbilityId::Comet, .Name = "Comet", .Description = "Calls a comet down on the target area. The impact flings everyone near it.", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Spell = true, .CastTime = 0.35f, .CastMove = 0.35f, .Cooldown = 5.0f, .EffectDuration = 0.4f, .ImpactRadius = 2.8f, .ImpactDelay = 0.7f, .Range = 6.5f, .Push = 22.0f, .BrawlDamage = 20, .BrawlMana = 30.0f },
 		{ .Id = AbilityId::Warp, .Name = "Warp", .Description = "Teleports you up to 5 units toward the cursor. Your way back out of the lava.", .Kind = AbilityKind::Dash, .Spell = true, .CastTime = 0.08f, .CastMove = 0.0f, .Cooldown = 15.0f, .DashDistance = 5.0f, .Invulnerability = 0.15f, .Range = 5.0f, .BrawlDamage = 0, .BrawlMana = 20.0f },
-		{ .Id = AbilityId::Shockwave, .Name = "Shockwave", .Description = "Blasts everyone around you away.", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Spell = true, .CastTime = 0.2f, .CastMove = 0.35f, .Cooldown = 8.0f, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 13.5f, .BrawlDamage = 11, .BrawlMana = 30.0f },
-		{ .Id = AbilityId::GravityWell, .Name = "Gravity Well", .Description = "Opens a well at the target that slings everyone inside through its center.", .Kind = AbilityKind::Ground, .Spell = true, .CastTime = 0.3f, .CastMove = 0.35f, .Cooldown = 4.5f, .EffectDuration = 0.45f, .ImpactRadius = 4.0f, .ImpactDelay = 0.5f, .Range = 6.5f, .Push = -1.7f, .BrawlDamage = 8, .BrawlMana = 30.0f },
-		{ .Id = AbilityId::ArcLightning, .Name = "Arc Lightning", .Description = "A bolt that jumps between up to three rivals and jolts each of them.", .Damages = Element::Lightning, .Spell = true, .CastTime = 0.25f, .CastMove = 0.65f, .Cooldown = 4.5f, .ProjectileSpeed = 19.0f, .ProjectileRadius = 0.16f, .ProjectileRange = 6.5f, .Chain = 2, .Push = 9.0f, .BrawlDamage = 8, .BrawlMana = 25.0f },
+		{ .Id = AbilityId::GlacialNova, .Name = "Frost Nova", .Description = "Frost races across the ground around you and a ring of small ice spikes breaks through it, nicking and slowing every rival it reaches. Press again before the ice thaws and the spikes erupt into jagged blades of ice that hit far harder and hurl rivals away. The cooldown starts once the spikes erupt or thaw.", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Spell = true, .CastTime = 0.2f, .CastMove = 0.35f, .Cooldown = 8.0f, .Reach = 3.0f, .EffectDuration = 1.35f, .Chill = 2.6f, .BrawlDamage = 4, .BrawlMana = 30.0f },
+		{ .Id = AbilityId::GravityWell, .Name = "Void Gaze", .Description = "Tears open a cursed eye at the target that drags everyone inside through its center.", .Kind = AbilityKind::Ground, .Spell = true, .CastTime = 0.3f, .CastMove = 0.35f, .Cooldown = 4.5f, .EffectDuration = 0.45f, .ImpactRadius = 4.0f, .ImpactDelay = 0.5f, .Range = 6.5f, .Push = -1.7f, .BrawlDamage = 9, .BrawlMana = 30.0f },
+		{ .Id = AbilityId::ArcLightning, .Name = "Arc Lightning", .Description = "A bolt that jumps between up to three rivals and jolts each of them.", .Damages = Element::Lightning, .Spell = true, .CastTime = 0.25f, .CastMove = 0.65f, .Cooldown = 4.5f, .ProjectileSpeed = 26.0f, .ProjectileRadius = 0.16f, .ProjectileRange = 6.5f, .Chain = 2, .Push = 9.0f, .BrawlDamage = 8, .BrawlMana = 25.0f },
 		{ .Id = AbilityId::Swap, .Name = "Swap", .Description = "A bolt that trades places with the first rival it touches.", .Spell = true, .CastTime = 0.18f, .CastMove = 0.55f, .Cooldown = 4.0f, .ProjectileSpeed = 18.0f, .ProjectileRadius = 0.22f, .ProjectileRange = 6.5f, .EffectDuration = 0.4f, .Swap = true, .BrawlDamage = 14, .BrawlMana = 15.0f },
 		{ .Id = AbilityId::DiamondWard, .Name = "Diamond Ward", .Description = "Instantly encase yourself in a crystal diamond. While it stands nothing harms or shoves you, and spells that strike it fly back at whoever cast them. Every blow it takes wears it down, cracking the facets; a blow it can't hold shatters it, the rest gets through, and a shattered ward takes longer to recast.", .Kind = AbilityKind::Ward, .Spell = true, .CastTime = 0.0f, .CastMove = 1.0f, .Cooldown = 18.0f, .EffectDuration = 0.3f, .Ward = 1.25f, .BrawlDamage = 0, .BrawlMana = 45.0f, .BrawlCooldown = 22.0f },
 		{ .Id = AbilityId::FrostSpear, .Name = "Ice Spear", .Description = "Hold to conjure a spear of ice above you and release to hurl it. A tap flicks a quick shard; the longer you charge, the bigger, faster and farther the spear flies. A full charge pierces and bursts where it stops. Hold too long and it cracks.", .Damages = Element::Cold, .Spell = true, .CastTime = 0.15f, .CastMove = 0.5f, .Cooldown = 4.0f, .ProjectileSpeed = 15.0f, .ProjectileRadius = 0.18f, .ProjectileRange = 4.5f, .Chill = 1.0f, .Push = 6.0f, .BrawlDamage = 6, .BrawlMana = 18.0f, .ChargeTime = 1.2f },
@@ -215,6 +218,9 @@ namespace Game
 		{ .Id = AbilityId::EarthSpike, .Name = "Earth Spike", .Description = "Pick a spot and the ground there splits open. Steer the crack with your cursor for a moment, then a massive spike of rock bursts out of it in that direction and skewers every rival in its way.", .Kind = AbilityKind::Ground, .Spell = true, .CastTime = 0.3f, .CastMove = 0.55f, .Cooldown = 5.5f, .Reach = 2.5f, .EffectDuration = 0.7f, .Range = 6.0f, .Shape = StrikeShape::Line, .Width = 1.1f, .Push = 13.0f, .BrawlDamage = 8, .BrawlMana = 30.0f },
 		{ .Id = AbilityId::PurpleFireball, .Name = "Purple Fireball", .Description = "Hold to pour your power into a fireball at your hand and release to hurl it. A tap flings a small ember; the longer you charge, the bigger it swells and the deeper its flames burn, from orange to violet. It explodes on the first rival it touches, on a wall or at the end of its flight, and a full charge blasts a huge area. Hold too long and it tears loose early.", .Damages = Element::Fire, .Spell = true, .CastTime = 0.15f, .CastMove = 0.6f, .Cooldown = 5.0f, .ProjectileSpeed = 12.5f, .ProjectileRadius = 0.2f, .ProjectileRange = 5.0f, .SpawnOffset = 0.6f, .EffectDuration = 0.6f, .ImpactRadius = 1.1f, .Push = 11.0f, .BrawlDamage = 6, .BrawlMana = 25.0f, .ChargeTime = 1.4f },
 		{ .Id = AbilityId::HexShield, .Name = "Hex Shield", .Description = "Hold to raise a curved wall of glowing hexagons in front of you, turned toward your cursor. It soaks up the spells that strike it from the front, cracking as it weakens; a hit it can't hold shatters it, and the rest gets through. Let go to cast or run again. It mends while lowered, but once shattered it takes a long while to reform.", .Kind = AbilityKind::Shield, .Spell = true, .CastTime = 0.0f, .CastMove = 0.55f, .Cooldown = 0.6f, .Reach = 1.0f, .HalfArc = 1.0f, .EffectDuration = 0.3f, .BrawlDamage = 0, .BrawlMana = 10.0f },
+		{ .Id = AbilityId::GlacialEruption, .Name = "Frost Nova", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Reach = 3.4f, .EffectDuration = 0.9f, .Push = 14.0f, .Parent = AbilityId::GlacialNova, .BrawlDamage = 12 },
+		{ .Id = AbilityId::WellBurst, .Name = "Void Gaze", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 13.5f, .Parent = AbilityId::GravityWell, .BrawlDamage = 11 },
+		{ .Id = AbilityId::WarpWake, .Name = "Warp", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 13.5f, .Parent = AbilityId::Warp, .BrawlDamage = 11 },
 	};
 
 	constexpr bool AbilitiesMatchIds()

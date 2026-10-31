@@ -39,6 +39,10 @@ namespace Game
 		constexpr float SpireSlot = 1.0f;
 		constexpr float RingLead = 1.5f;
 		constexpr float BoltFlash = 0.4f;
+		constexpr float LeaderSeconds = 0.35f;
+		constexpr float PeakBoltScale = 1.3f;
+		constexpr float SpireBoltScale = 1.5f;
+		constexpr glm::vec3 PeakLight{ 5.9f, 4.2f, 14.0f };
 		constexpr float ScorchSeconds = 3.0f;
 		constexpr float RingSegment = 0.9f;
 		constexpr glm::vec3 BoltBlue{ 0.55f, 0.78f, 1.0f };
@@ -88,7 +92,7 @@ namespace Game
 			{ AbilityId::Gust, 7, { { 0.0f, 0.0f }, { 0.3f, 0.2f }, { 0.25f, 0.6f }, { -0.2f, 0.75f }, { -0.65f, 0.35f }, { -0.6f, -0.35f }, { 0.1f, -0.75f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 } } },
 			{ AbilityId::Comet, 6, { { 0.6f, 0.6f }, { 0.15f, 0.2f }, { -0.35f, -0.25f }, { -0.85f, -0.7f }, { 0.3f, 0.7f }, { 0.7f, 0.3f } }, 5, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 4, 1 }, { 5, 1 } } },
 			{ AbilityId::Warp, 6, { { -0.85f, -0.55f }, { -0.25f, 0.3f }, { 0.1f, -0.3f }, { 0.8f, 0.55f }, { 0.4f, 0.62f }, { 0.75f, 0.15f } }, 5, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 3, 5 } } },
-			{ AbilityId::Shockwave, 7, { { 0.0f, 0.0f }, { 0.8f, 0.0f }, { 0.4f, 0.69f }, { -0.4f, 0.69f }, { -0.8f, 0.0f }, { -0.4f, -0.69f }, { 0.4f, -0.69f } }, 6, { { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 }, { 6, 1 } } },
+			{ AbilityId::GlacialNova, 7, { { 0.0f, 0.0f }, { 0.8f, 0.0f }, { 0.4f, 0.69f }, { -0.4f, 0.69f }, { -0.8f, 0.0f }, { -0.4f, -0.69f }, { 0.4f, -0.69f } }, 6, { { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 }, { 6, 1 } } },
 			{ AbilityId::GravityWell, 7, { { 0.85f, 0.05f }, { 0.4f, 0.65f }, { -0.35f, 0.55f }, { -0.55f, -0.1f }, { -0.1f, -0.45f }, { 0.25f, -0.1f }, { 0.0f, 0.1f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 } } },
 			{ AbilityId::ArcLightning, 6, { { -0.15f, 0.9f }, { 0.3f, 0.25f }, { -0.2f, 0.05f }, { 0.25f, -0.5f }, { -0.1f, -0.9f }, { 0.65f, 0.55f } }, 5, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 1, 5 } } },
 			{ AbilityId::Swap, 6, { { -0.8f, 0.3f }, { 0.8f, 0.3f }, { 0.5f, 0.6f }, { 0.8f, -0.3f }, { -0.8f, -0.3f }, { -0.5f, -0.6f } }, 4, { { 0, 1 }, { 1, 2 }, { 3, 4 }, { 4, 5 } } },
@@ -362,7 +366,7 @@ namespace Game
 				return "Zone";
 			case AbilityId::Warp:
 				return "Blink";
-			case AbilityId::Shockwave:
+			case AbilityId::GlacialNova:
 				return "Burst";
 			case AbilityId::GravityWell:
 				return "Pull";
@@ -496,6 +500,15 @@ namespace Game
 				tooltip.Pair("Full charge", Format("%.1f s, pierces %u rivals", double(def.ChargeTime), unsigned(SpearFullPierce)));
 				tooltip.Pair("Burst", Format(damage ? "%.1f around where it stops, shove %.1f" : "%.1f around where it stops, shove %.0f", double(SpearBurstRadius), double(SpearBurstPush * shove)));
 				tooltip.Pair("Hold longer", Format("it cracks loose after %.0f s", double(ChargeCrackSeconds)));
+			}
+			else if (id == AbilityId::GlacialNova)
+			{
+				const AbilityDef& eruption = GetAbility(AbilityId::GlacialEruption);
+				tooltip.Pair("Slows", Format("rivals in the frost for %.1f s", double(PvpChillDuration(def.Chill))));
+				if (damage)
+					tooltip.Pair("Press again", Format("within %.1f s: the spikes erupt for %d, shove %.1f", double(FrostNovaWindow), eruption.BrawlDamage, double(eruption.Push * shove)));
+				else
+					tooltip.Pair("Press again", Format("within %.1f s: the spikes erupt, shove %.0f", double(FrostNovaWindow), double(eruption.Push * shove)));
 			}
 			else if (def.Push > 0.0f)
 				tooltip.Pair("Shove", Format(damage ? "%.1f" : "%.0f", double(def.Push * shove)));
@@ -634,7 +647,7 @@ namespace Game
 					thunder(Ground(bolt.Center), 1.0f);
 			for (const float strike : SpireStrikes(brawl.Plan, m_StormClock, clock))
 			{
-				thunder(Ground(level->Relief.Summit, SpireTop), 0.8f);
+				thunder(Ground(level->Peak.Center, SpireTop), 0.8f);
 				m_RitualPulse = 1.0f;
 				m_LastSpireStrike = strike;
 			}
@@ -645,20 +658,30 @@ namespace Game
 	void SessionState::DrawPeak(WorldRenderer& renderer) const
 	{
 		const Level* level = m_Client.GetLevel();
-		if (!level || level->Relief.IsEmpty() || m_Client.GetSession().Mode != GameMode::Brawl)
+		if (!level || level->Peak.IsEmpty() || m_Client.GetSession().Mode != GameMode::Brawl)
 			return;
 		const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
-		const Elevation& relief = level->Relief;
+		const Plateau& peak = level->Peak;
 		const bool live = brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over;
 		const float clock = live ? m_Client.GetArenaClock(m_Client.GetPresentTick()) : 0.0f;
 		const float build = live ? StormBuild(brawl.Plan, clock) : 0.2f;
 		const float awake = live ? std::clamp((clock - RingStart + RingWarning) / (RingSettle - RingStart + RingWarning), 0.0f, 1.0f) : 0.0f;
-		const glm::vec3 summit = Ground(relief.Summit);
+		const glm::vec3 summit = Ground(peak.Center);
 		const float glow = 0.16f + 0.25f * build + 0.9f * awake + 1.2f * m_RitualPulse;
-		DrawRuneCircle(renderer, { .Center = summit, .Radius = relief.Ritual - 0.1f, .Color = RitualBlue, .Intensity = glow, .Spin = 0.0f, .Seed = level->Seed % 7u + 3u });
-		DrawRuneCircle(renderer, { .Center = summit, .Radius = relief.Ritual + 1.65f, .Color = RitualBlue * 0.85f, .Intensity = 0.7f * glow, .Spin = 0.0f, .Inner = (relief.Ritual + 0.95f) / (relief.Ritual + 1.65f), .Seed = level->Seed % 5u + 11u });
+		DrawRuneCircle(renderer, { .Center = summit, .Radius = peak.Ritual - 0.1f, .Color = RitualBlue, .Intensity = glow, .Spin = 0.0f, .Seed = level->Seed % 7u + 3u });
+		DrawRuneCircle(renderer, { .Center = summit, .Radius = peak.Ritual + 1.65f, .Color = RitualBlue * 0.85f, .Intensity = 0.7f * glow, .Spin = 0.0f, .Inner = (peak.Ritual + 0.95f) / (peak.Ritual + 1.65f), .Seed = level->Seed % 5u + 11u });
 		if (m_RitualPulse > 0.0f)
-			DrawBolt(renderer, summit + glm::vec3(1.2f, 26.0f, -0.8f), summit + glm::vec3(0.0f, SpireTop, 0.0f), uint32_t(m_LastSpireStrike * 977.0f) + uint32_t(m_Time * 24.0f) * 40503u, 1.8f, 0.16f, glm::vec3(1.6f, 1.9f, 2.4f) * (0.5f + 1.5f * m_RitualPulse));
+		{
+			const glm::vec3 spire = summit + glm::vec3(0.0f, SpireTop, 0.0f);
+			const float age = clock - m_LastSpireStrike;
+			const float stroke = StormStroke(age);
+			DrawStormBolt(renderer, spire, uint32_t(m_LastSpireStrike * 977.0f), age, SpireBoltScale);
+			if (stroke > 0.01f)
+			{
+				DrawGlow(renderer, spire, 0.4f + 0.9f * stroke, StormGlow * (0.6f * stroke));
+				renderer.DrawLight({ .Position = spire, .Radius = 8.0f, .Color = PeakLight * stroke });
+			}
+		}
 		if (!live)
 			return;
 		for (const LightningBolt& bolt : BoltsOf(brawl.Plan))
@@ -680,15 +703,26 @@ namespace Game
 				charge.Params = glm::vec4(progress, 0.0f, 0.0f, 0.0f);
 				charge.Seed = seed;
 				renderer.DrawDecal(charge);
-				if (until < 0.35f)
-					DrawBeam(renderer, point, 16.0f, 0.03f + 0.07f * (1.0f - until / 0.35f), BoltBlue * 0.9f, 0.35f);
+				if (until < LeaderSeconds)
+					DrawStormLeader(renderer, point, BoltRadius, seed, 1.0f - until / LeaderSeconds, m_Time);
 			}
 			else if (until <= 0.0f && until > -BoltFlash)
 			{
-				const float fade = 1.0f + until / BoltFlash;
-				DrawBolt(renderer, point + glm::vec3(0.9f, 24.0f, -0.7f), point + glm::vec3(0.0f, 0.05f, 0.0f), seed + uint32_t(m_Time * 30.0f) * 40503u, 1.7f, 0.15f, glm::vec3(1.6f, 1.9f, 2.4f) * (0.6f + 1.4f * fade));
-				DrawGlow(renderer, point + glm::vec3(0.0f, 0.6f, 0.0f), 2.8f * fade + 0.4f, BoltBlue * (2.2f * fade));
-				DrawGroundRing(renderer, point, BoltRadius * (0.5f + 1.3f * (1.0f - fade)), BoltBlue, 1.6f * fade, 0.09f);
+				StormStrikeLook look;
+				look.Ground = point;
+				look.Radius = BoltRadius;
+				look.Age = -until;
+				look.Seed = seed;
+				look.Scale = PeakBoltScale;
+				for (uint32_t i = 0; i < StormGroundArcs; i++)
+				{
+					const glm::vec2 offset = StormArcOffset(seed, i, BoltRadius);
+					look.Ends[i] = Ground(bolt.Center + Vec2(offset.x, offset.y));
+				}
+				DrawStormStrike(renderer, look, m_Time);
+				const float light = 1.3f * std::exp(-look.Age / 0.06f) + 0.9f * StormStroke(look.Age);
+				if (light > 0.02f)
+					renderer.DrawLight({ .Position = point + glm::vec3(0.0f, 1.4f, 0.0f), .Radius = 7.0f, .Color = PeakLight * light });
 			}
 			if (until <= 0.0f && until > -ScorchSeconds)
 			{
@@ -731,9 +765,7 @@ namespace Game
 			const Vec2 b = ring.Center + FromAngle(angle + RingSegment * 2.5f / ring.Radius) * ring.Radius;
 			if (LengthSquared(a - focus) > 22.0f * 22.0f)
 				continue;
-			const float flicker = std::fmod(m_Time * 3.0f, 1.0f) < 0.25f ? 1.0f : 0.0f;
-			if (flicker > 0.0f)
-				DrawBolt(renderer, Ground(a, 2.4f), Ground(b, 0.3f), beat * 7919u + k, 0.6f, 0.06f, StormViolet * 1.6f, 0.3f);
+			DrawStormJump(renderer, Ground(a, 2.4f), Ground(b, 0.3f), beat * 7919u + k, std::fmod(m_Time * 3.0f, 1.0f) / 3.0f, m_Time);
 		}
 	}
 
@@ -1036,7 +1068,7 @@ namespace Game
 			const bool peak = brawl.Plan.Shape == BrawlShape::Peak;
 			const float grace = peak ? RingStart : CollapseGrace;
 			if (peak && brawl.Clock < RingStart - RingWarning)
-				line = "Lightning hunts anyone who stands still";
+				line = "Lightning strikes where the ground crackles";
 			else if (brawl.Clock < grace)
 			{
 				const std::string left = Seconds(grace - brawl.Clock);
@@ -1806,7 +1838,7 @@ namespace Game
 		draw.TextAligned(row.CutLeft(170.0f), "Arena", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
 		ui.Choice(Ui::MakeId("brawlarena"), row.CutLeft(std::min(300.0f, row.W)), m_BrawlArena, ArenaNames);
 		const MapKind arena = ChosenArena();
-		const char* blurb = arena == MapKind::Caldera ? "A crumbling island of basalt on a lake of lava." : arena == MapKind::FrozenLake ? "Slippery ice, bouncing pillars and growing air holes." : arena == MapKind::SkyRuins ? "Ruins over open sky: drifting islands, gusts, and a long way down." : arena == MapKind::StormPeak ? "A terraced mountain in a lightning storm. Follow the eye, mind the ledges." : "A different arena every match.";
+		const char* blurb = arena == MapKind::Caldera ? "A crumbling island of basalt on a lake of lava." : arena == MapKind::FrozenLake ? "Slippery ice, bouncing pillars and growing air holes." : arena == MapKind::SkyRuins ? "Ruins over open sky: drifting islands, gusts, and a long way down." : arena == MapKind::StormPeak ? "A summit plateau in a lightning storm, ringed by a long fall." : "A different arena every match.";
 		draw.TextFit(area.CutTop(22.0f), blurb, Theme::Body(13.5f, Theme::Muted));
 		area.CutTop(6.0f);
 	}

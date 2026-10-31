@@ -292,7 +292,7 @@ class Shader:
         self.feed(node.inputs['Distance'], distance)
         return node.outputs['AO']
 
-    def finish(self, base, roughness, height=0.0, bump=0.0, bump_distance=0.01, metallic=0.0, emission=None, emission_color=(1.0, 0.4, 0.1), emission_strength=1.0, bake_size=1024, specular=0.5, alpha=None, cutoff=0.5, translucency=0.0, thickness=0.0, thin=None):
+    def finish(self, base, roughness, height=0.0, bump=0.0, bump_distance=0.01, metallic=0.0, emission=None, emission_color=(1.0, 0.4, 0.1), emission_strength=1.0, bake_size=1024, specular=0.5, alpha=None, cutoff=0.5, translucency=0.0, thickness=0.0, thin=None, transmission=0.0, ior=1.5, attenuation=None):
         outputs = {}
         channels = [('base', base), ('rough', roughness), ('metal', metallic), ('height', height), ('emit', emission if emission is not None else 0.0)]
         if alpha is not None:
@@ -335,6 +335,10 @@ class Shader:
         if translucency > 0.0:
             self.material['translucency'] = translucency
             self.material['thickness'] = thickness
+        if transmission > 0.0:
+            self.material['transmission'] = transmission
+            self.material['ior'] = ior
+            self.material['attenuation'] = list(attenuation[0]) + [attenuation[1]] if attenuation else [1.0, 1.0, 1.0, 1.0]
         self.material['emit_color'] = list(emission_color)
         self.material['emit_strength'] = emission_strength if emission is not None else 0.0
         return self.material
@@ -546,7 +550,7 @@ def baked_material(material, files):
     return result
 
 
-def export_gltf(objects, path, emissive, masked=None, armature=None, animations=False, translucent=None):
+def export_gltf(objects, path, emissive, masked=None, armature=None, animations=False, translucent=None, clear=None):
     select_only(objects + ([armature] if armature else []))
     bpy.ops.export_scene.gltf(
         filepath=path,
@@ -607,6 +611,12 @@ def export_gltf(objects, path, emissive, masked=None, armature=None, animations=
             document.setdefault('textures', []).append(texture)
             extensions['KHR_materials_diffuse_transmission'] = {'diffuseTransmissionFactor': through[0], 'diffuseTransmissionTexture': {'index': len(document['textures']) - 1}}
             used.add('KHR_materials_diffuse_transmission')
+        volume = (clear or {}).get(source)
+        if volume:
+            extensions['KHR_materials_transmission'] = {'transmissionFactor': volume[0]}
+            extensions['KHR_materials_ior'] = {'ior': volume[1]}
+            extensions['KHR_materials_volume'] = {'thicknessFactor': 0.1, 'attenuationColor': [round(c, 5) for c in volume[2][:3]], 'attenuationDistance': volume[2][3]}
+            used.update(('KHR_materials_transmission', 'KHR_materials_ior', 'KHR_materials_volume'))
         if not extensions:
             material.pop('extensions', None)
     if used:
@@ -626,6 +636,7 @@ def bake_and_export(objects, folder, name, ao_distance=0.5, armature=None, anima
     emissive = {}
     masked = {}
     translucent = {}
+    clear = {}
     placed = spread_apart(objects, 2.0 * ao_distance + 0.5)
     for material in materials:
         if material.get('alpha_cutoff'):
@@ -637,6 +648,8 @@ def bake_and_export(objects, folder, name, ao_distance=0.5, armature=None, anima
             emissive[material.name] = (tuple(material['emit_color']), float(material['emit_strength']))
         if 'thin' in files:
             translucent[material.name] = (float(material['translucency']), files['thin'])
+        if material.get('transmission', 0.0) > 0.0:
+            clear[material.name] = (float(material['transmission']), float(material['ior']), [float(v) for v in material['attenuation']])
     for root, matrix in placed:
         root.matrix_world = matrix
     bpy.context.view_layer.update()
@@ -644,7 +657,7 @@ def bake_and_export(objects, folder, name, ao_distance=0.5, armature=None, anima
     for obj in objects:
         for slot in obj.material_slots:
             slot.material = baked[slot.material.name]
-    export_gltf(objects, os.path.join(folder, name + '.gltf'), emissive, masked, armature, animations, translucent)
+    export_gltf(objects, os.path.join(folder, name + '.gltf'), emissive, masked, armature, animations, translucent, clear)
     return originals, baked
 
 

@@ -12,6 +12,8 @@ struct GlassFrame
 	vec4 SkyRadiance;
 	vec4 GroundRadiance;
 	vec4 Environment;
+	vec4 Translucent;
+	vec4 Lights[32];
 };
 
 struct GlassInstance

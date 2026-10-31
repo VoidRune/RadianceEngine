@@ -2,9 +2,12 @@
 #include "Rendering/Animation.h"
 #include "Rendering/Distortion.h"
 #include "Rendering/Glass.h"
+#include "Rendering/Lightning.h"
+#include "Rendering/Void.h"
 #include "Rendering/Lighting.h"
 #include "Rendering/ModelLibrary.h"
 #include "Rendering/Particles.h"
+#include "Rendering/PeakRelief.h"
 #include "Rendering/PostProcess.h"
 #include "Rendering/RadianceCascades.h"
 #include "Rendering/Trails.h"
@@ -91,6 +94,9 @@ namespace Game
 		float Metallic = 0.0f;
 		glm::vec3 Emission{ 0.0f };
 		float Translucency = 0.0f;
+		float Transmission = 0.0f;
+		float Ior = 1.5f;
+		glm::vec3 Absorption{ 0.0f };
 	};
 
 	class WorldRenderer
@@ -112,6 +118,7 @@ namespace Game
 		std::optional<uint32_t> FindMaterialSlot(std::string_view name) const;
 		uint32_t GetPlainMaterial() const { return m_PlainMaterial; }
 		void SetFrozenLiquid(bool frozen) { m_FrozenLiquid = frozen; }
+		void SetGroundRelief(const PeakRelief* relief) { m_Relief = relief; }
 		std::optional<int32_t> FindEnvironment(std::string_view name) const;
 		ParticleSystem& GetParticles() { return *m_Particles; }
 		PostProcess& GetPost() { return *m_Post; }
@@ -134,16 +141,19 @@ namespace Game
 		static void SetDissolve(ModelInstance& instance, const ModelDissolve& dissolve);
 		void SubmitModel(uint32_t mesh, const ModelInstance& instance, bool shadowOnly = false);
 		void DrawSprite(const ParticleSprite& sprite) { m_Particles->DrawSprite(sprite); }
-		void DrawDecal(const GroundDecal& decal) { m_Particles->DrawDecal(decal); }
+		void DrawDecal(const GroundDecal& decal);
 		void DrawLight(const SpellLight& light);
 		bool GetTranslucency() const { return m_Translucency; }
 		void SetTranslucency(bool enabled) { m_Translucency = enabled; }
+		void SetGlassModels(bool enabled) { m_GlassModels = enabled; }
 		void DrawFacet(const GlassFacet& facet) { m_Glass->Draw(facet); }
 		uint32_t AddShield(const EnergyShield& shield) { return m_Glass->AddShield(shield); }
 		void DrawCell(const EnergyCell& cell) { m_Glass->DrawCell(cell); }
 		void DrawDistortion(const Distorter& distorter) { m_Distortion->Draw(distorter); }
 		void DrawTrail(uint64_t key, const glm::vec3& position, const TrailStyle& style, float strength = 1.0f) { m_Trails->Emit(key, position, style, strength); }
 		TrailRenderer& GetTrails() { return *m_Trails; }
+		void DrawLightning(const LightningShape& bolt) { m_Lightning->Draw(bolt); }
+		VoidRenderer& GetVoid() { return *m_Void; }
 		ScreenDistortion& GetDistortion() { return *m_Distortion; }
 		void Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex, const std::array<float, 4>& clearColor);
 
@@ -167,6 +177,16 @@ namespace Game
 			bool Skinned = false;
 			bool Glows = false;
 			bool AlphaTested = false;
+			uint32_t Glass = UINT32_MAX;
+		};
+
+		struct GlassSurface
+		{
+			glm::vec4 Absorb{ 0.0f };
+			glm::vec4 Look{ 0.0f };
+			glm::vec3 Min{ 0.0f };
+			glm::vec3 Max{ 0.0f };
+			bool Water = false;
 		};
 
 		struct MaterialGpu
@@ -295,11 +315,14 @@ namespace Game
 		std::vector<std::vector<ModelInstance>> m_ModelDraws;
 		std::vector<std::vector<ModelInstance>> m_ModelShadowDraws;
 		std::vector<std::vector<ModelInstance>> m_ModelDissolveDraws;
+		std::vector<std::vector<ModelInstance>> m_ModelGlassDraws;
+		std::vector<GlassSurface> m_GlassSurfaces;
 		std::vector<ModelInstance> m_PackedModels;
 		std::vector<glm::mat4> m_Palettes;
 		WorldCamera m_Camera;
 		SceneLighting m_Lighting;
 		float m_FocusHeight = 0.0f;
+		const PeakRelief* m_Relief = nullptr;
 		DebugView m_View = DebugView::Lit;
 		ShadowQuality m_ShadowQuality = ShadowQuality::High;
 		GiQuality m_GiQuality = GiQuality::Medium;
@@ -307,6 +330,8 @@ namespace Game
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelShadowRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelDissolveRanges;
+		std::vector<std::pair<uint32_t, uint32_t>> m_ModelGlassRanges;
+		bool m_GlassModels = true;
 		std::vector<SpellLight> m_Lights;
 		bool m_Translucency = true;
 		std::unique_ptr<ParticleSystem> m_Particles;
@@ -316,5 +341,7 @@ namespace Game
 		std::unique_ptr<ScreenDistortion> m_Distortion;
 		std::unique_ptr<GlassRenderer> m_Glass;
 		std::unique_ptr<TrailRenderer> m_Trails;
+		std::unique_ptr<LightningRenderer> m_Lightning;
+		std::unique_ptr<VoidRenderer> m_Void;
 	};
 }

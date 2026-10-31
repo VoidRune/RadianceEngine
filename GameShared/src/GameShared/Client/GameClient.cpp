@@ -709,7 +709,7 @@ namespace Game
 			const uint16_t tag = uint16_t(input.Sequence);
 			for (uint32_t slot = 0; slot < AbilitySlots; slot++)
 				if (actions.HasRecast(slot))
-					PredictRecast(actions.RecastAbility, actions);
+					PredictRecast(actions.RecastAbility, actions, tag, slot);
 			for (uint32_t slot = 0; slot < AbilitySlots; slot++)
 				if (actions.HasReleased(slot))
 					PredictAbility(traits.Skills[slot], tag, actions, traits);
@@ -717,8 +717,25 @@ namespace Game
 		StepPredictedEffects(dt);
 	}
 
-	void GameClient::PredictRecast(AbilityId ability, const PlayerActions& actions)
+	void GameClient::PredictRecast(AbilityId ability, const PlayerActions& actions, uint16_t recastTag, uint32_t slot)
 	{
+		if (ability == AbilityId::GlacialNova)
+		{
+			const float life = GetAbility(AbilityId::GlacialEruption).EffectDuration;
+			std::vector<PredictedEffect> eruptions;
+			for (const PredictedEffect& field : m_PredictedEffects)
+				if (field.Ability == AbilityId::GlacialNova)
+					eruptions.push_back({ .Tag = field.Tag, .Index = 1, .Ability = AbilityId::GlacialEruption, .Position = field.Position, .Facing = field.Facing, .Remaining = life, .Scale = field.Scale });
+			std::erase_if(m_PredictedEffects, [](const PredictedEffect& effect) { return effect.Ability == AbilityId::GlacialNova; });
+			if (eruptions.empty())
+			{
+				const uint8_t scale = uint8_t(std::clamp(std::lround(GetTraits().AreaScale * GetTraits().Skills[slot].AreaScale * 16.0f), 1l, 255l));
+				eruptions.push_back({ .Tag = recastTag, .Index = 1, .Ability = AbilityId::GlacialEruption, .Position = actions.RecastPoint, .Facing = AngleOf(actions.Direction), .Remaining = life, .Scale = scale });
+				RememberTag(recastTag);
+			}
+			m_PredictedEffects.insert(m_PredictedEffects.end(), eruptions.begin(), eruptions.end());
+			return;
+		}
 		if (ability != AbilityId::ChainHook)
 			return;
 		uint16_t tag = 0;

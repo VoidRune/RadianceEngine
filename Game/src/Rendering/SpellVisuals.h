@@ -20,6 +20,7 @@ namespace Game
 	inline constexpr float SpikeLength = 3.5f;
 	inline constexpr float SpikeTilt = 0.75f;
 	inline constexpr float SpikeCollarDepth = 1.0f;
+	inline constexpr float NovaDecalBox = 1.35f;
 	inline constexpr float FireballHoldHeight = 1.2f;
 	inline constexpr float FireballHoldReach = 0.45f;
 	inline constexpr float FireballBallRadius = 0.2f;
@@ -74,6 +75,7 @@ namespace Game
 		uint32_t SpikeCollar = UINT32_MAX;
 		std::array<uint32_t, 6> Ice{ UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
 		std::array<uint32_t, 3> Obsidian{ UINT32_MAX, UINT32_MAX, UINT32_MAX };
+		std::array<uint32_t, 3> Fang{ UINT32_MAX, UINT32_MAX, UINT32_MAX };
 	};
 
 	struct EarthSpikeLook
@@ -100,6 +102,7 @@ namespace Game
 		float Glow = 0.0f;
 		float Melt = 0.0f;
 		uint32_t Variant = 0;
+		bool Fang = false;
 	};
 
 	struct IceSpearLook
@@ -236,6 +239,25 @@ namespace Game
 		uint32_t Seed = 0;
 	};
 
+	inline constexpr glm::vec3 ArcCore{ 1.5f, 1.75f, 2.2f };
+	inline constexpr glm::vec3 ArcGlow{ 0.24f, 0.36f, 1.0f };
+	inline constexpr glm::vec3 StormCore{ 1.85f, 1.75f, 2.3f };
+	inline constexpr glm::vec3 StormGlow{ 0.46f, 0.28f, 1.0f };
+	inline constexpr float ArcFadeSeconds = 0.16f;
+	inline constexpr float ArcSparkSeconds = 0.14f;
+	inline constexpr float StormBoltSeconds = 0.26f;
+	inline constexpr uint32_t StormGroundArcs = 7;
+
+	struct StormStrikeLook
+	{
+		glm::vec3 Ground{ 0.0f };
+		float Radius = 1.3f;
+		float Age = 0.0f;
+		uint32_t Seed = 0;
+		float Scale = 1.0f;
+		std::array<glm::vec3, StormGroundArcs> Ends{};
+	};
+
 	struct RuneCircle
 	{
 		glm::vec3 Center{ 0.0f };
@@ -256,10 +278,21 @@ namespace Game
 	float SpikeThrust(float age);
 	void DrawEarthSpike(WorldRenderer& renderer, const SpellMeshes& meshes, const EarthSpikeLook& look);
 	void DrawIceCluster(WorldRenderer& renderer, const SpellMeshes& meshes, const IceClusterLook& look);
+	uint32_t NovaArmCount(uint32_t seed);
+	float NovaArmAngle(uint32_t seed, uint32_t arm);
 	void DrawObsidianShard(WorldRenderer& renderer, const SpellMeshes& meshes, const ObsidianLook& look, float time, uint32_t seed);
 	float FireballViolet(float power);
 	glm::vec3 FireballColor(float power);
 	void DrawPurpleFireball(WorldRenderer& renderer, const FireballLook& look, float time, uint32_t seed);
+	void DrawArcChannel(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float time, float intensity);
+	void DrawArcSparks(WorldRenderer& renderer, const glm::vec3& center, uint32_t seed, float reach, float intensity, uint32_t count);
+	float ArcFadeIntensity(float age, uint32_t seed, float time);
+	float StormStroke(float age);
+	glm::vec2 StormArcOffset(uint32_t seed, uint32_t index, float radius);
+	void DrawStormLeader(WorldRenderer& renderer, const glm::vec3& ground, float radius, uint32_t seed, float progress, float time);
+	void DrawStormBolt(WorldRenderer& renderer, const glm::vec3& ground, uint32_t seed, float age, float scale = 1.0f);
+	void DrawStormStrike(WorldRenderer& renderer, const StormStrikeLook& look, float time);
+	void DrawStormJump(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float age, float time);
 	void DrawFireballBlast(WorldRenderer& renderer, const FireballBlastLook& look, uint32_t seed);
 	std::span<const HexShieldCell> HexShieldCells();
 	glm::vec3 HexShieldPoint(const glm::vec3& base, float facing, const glm::vec2& point, glm::vec3* normal = nullptr);
@@ -296,7 +329,6 @@ namespace Game
 	TrailStyle DashTrail(const glm::vec3& color);
 	TrailStyle WandTrail(const glm::vec3& color);
 	void DrawChain(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float sag, float glow);
-	void DrawBolt(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float jitter, float width, const glm::vec3& color, float emission = 0.25f);
 
 	void DrawShockwave(WorldRenderer& renderer, const glm::vec3& ground, float radius, float width, float strength, float facing = 0.0f, float halfArc = 3.1416f);
 	void DrawAirShockwave(WorldRenderer& renderer, const glm::vec3& center, float radius, float width, float strength);

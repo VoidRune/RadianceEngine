@@ -21,7 +21,6 @@ namespace Game
 		constexpr float LandingGrace = 0.4f;
 
 		constexpr uint32_t FullSupport = 9;
-		constexpr float LeadReach = 0.32f;
 
 		void Cool(float& timer, float dt)
 		{
@@ -109,48 +108,9 @@ namespace Game
 			return moved;
 		}
 
-		std::optional<Vec2> TooHigh(const Level& level, float floor, Vec2 from, Vec2 point, float limit)
-		{
-			const Vec2 travel = point - from;
-			const float length = Length(travel);
-			const Vec2 lead = length > 1e-5f ? point + travel * (LeadReach / length) : point;
-			for (const Vec2 sample : { point, lead })
-				if (FloorHeight(level, sample) - floor > limit)
-					return sample;
-			return std::nullopt;
-		}
-
-		Vec2 Uphill(const Elevation& relief, Vec2 from, Vec2 wall)
-		{
-			for (int32_t cliff = 0; cliff < ElevationCliffs; cliff++)
-				if (relief.EdgeDistance(cliff, from) < 0.0f && relief.EdgeDistance(cliff, wall) >= 0.0f)
-					if (const Vec2 rise = relief.Gradient(relief.Edges[size_t(cliff)], wall); LengthSquared(rise) > 1e-8f)
-						return Normalize(rise);
-			const float h = relief.Spacing;
-			const Vec2 rise(relief.Height(wall + Vec2(h, 0.0f)) - relief.Height(wall - Vec2(h, 0.0f)), relief.Height(wall + Vec2(0.0f, h)) - relief.Height(wall - Vec2(0.0f, h)));
-			return LengthSquared(rise) > 1e-10f ? Normalize(rise) : Normalize(wall - from);
-		}
-
-		Vec2 Climb(const Level& level, Vec2 from, Vec2 to, std::span<const BodyCircle> bodies, float limit)
-		{
-			const float floor = FloorHeight(level, from);
-			const std::optional<Vec2> wall = TooHigh(level, floor, from, to, limit);
-			if (!wall)
-				return to;
-			const Vec2 normal = Uphill(level.Relief, from, *wall);
-			Vec2 slide = to - from;
-			slide -= normal * std::max(Dot(slide, normal), 0.0f);
-			if (LengthSquared(slide) < 1e-10f)
-				return from;
-			const Vec2 slid = MoveCircle(level, from, PlayerRadius, slide, bodies, true);
-			return TooHigh(level, floor, from, slid, limit) ? from : slid;
-		}
-
 		Vec2 MoveOnSky(const Level& level, const ArenaState& next, PlayerState& state, Vec2 position, Vec2 delta, std::span<const BodyCircle> bodies)
 		{
 			Vec2 moved = MoveCircle(level, position, PlayerRadius, delta, bodies, true);
-			if (!level.Relief.IsEmpty())
-				moved = Climb(level, position, moved, bodies, ClimbHeight);
 			if (LengthSquared(state.Push) <= ShoveOverVoid * ShoveOverVoid)
 			{
 				const uint32_t before = SupportDepth(level, next, position, VoidLedge);
@@ -188,12 +148,6 @@ namespace Game
 		{
 			const Vec2 from = transform.Position;
 			transform.Position = MoveCircle(level, from, PlayerRadius, delta, {}, level.Floating);
-			if (!level.Relief.IsEmpty())
-				if (const Vec2 climbed = Climb(level, from, transform.Position, {}, DashClimb); climbed != transform.Position)
-				{
-					transform.Position = climbed;
-					state.DashDistance = 0.0f;
-				}
 			if (CrossesVoid(level, from, transform.Position))
 				state.Airborne = true;
 		}
@@ -335,6 +289,16 @@ namespace Game
 				state.RecastReach = range * std::clamp(CastSegment(level, state.RecastOrigin, state.RecastOrigin + aim * range, Block::Projectiles), 0.0f, 1.0f);
 				state.RecastTimer = range / ability.ProjectileSpeed + (skill.Ability == AbilityId::ChainHook ? HookAnchorSeconds : 0.0f);
 			}
+			else if (skill.Ability == AbilityId::GlacialNova)
+			{
+				state.RecastSlot = int8_t(slot);
+				state.RecastAbility = uint8_t(skill.Ability);
+				state.RecastAge = 0.0f;
+				state.RecastOrigin = origin;
+				state.RecastAim = aim;
+				state.RecastReach = GetAbility(AbilityId::GlacialEruption).Reach * traits.AreaScale * skill.AreaScale;
+				state.RecastTimer = FrostNovaWindow;
+			}
 			if (ability.Kind == AbilityKind::Dash)
 			{
 				if (!CaughtByStars(level, origin, skill.Ability, aim, aimDistance))
@@ -442,7 +406,12 @@ namespace Game
 
 	bool IsRecastable(AbilityId ability)
 	{
-		return ability == AbilityId::ChainHook;
+		return ability == AbilityId::ChainHook || ability == AbilityId::GlacialNova;
+	}
+
+	bool HoldsCooldown(const PlayerState& state, uint32_t slot)
+	{
+		return state.RecastSlot == int8_t(slot) && state.RecastTimer > 0.0f && AbilityId(state.RecastAbility) == AbilityId::GlacialNova;
 	}
 
 	bool IsCharged(const SkillTraits& skill)
@@ -614,8 +583,9 @@ namespace Game
 		PlayerActions actions;
 		const uint8_t pressed = input.Buttons & ~state.HeldButtons;
 		state.HeldButtons = input.Buttons;
-		for (float& cooldown : state.Cooldowns)
-			Cool(cooldown, dt);
+		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
+			if (!HoldsCooldown(state, slot))
+				Cool(state.Cooldowns[slot], dt);
 		Cool(state.DodgeCooldown, dt);
 		Cool(state.Invulnerable, dt);
 		Cool(state.PortalCooldown, dt);
@@ -719,8 +689,8 @@ namespace Game
 		{
 			const uint32_t slot = uint32_t(state.RecastSlot);
 			actions.Recast |= uint8_t(1u << slot);
-			actions.RecastPoint = GetHookPoint(state);
 			actions.RecastAbility = AbilityId(state.RecastAbility);
+			actions.RecastPoint = actions.RecastAbility == AbilityId::ChainHook ? GetHookPoint(state) : state.RecastOrigin;
 			if (actions.RecastAbility == AbilityId::ChainHook)
 			{
 				const Vec2 offset = actions.RecastPoint - transform.Position;

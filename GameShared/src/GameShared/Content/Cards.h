@@ -16,7 +16,7 @@ namespace Game
 		ShatteringImpact,
 		TwinComets,
 		Afterimage,
-		Aftershock,
+		IceShrapnel,
 		Implosion,
 		Pinball,
 		Overcharge,
@@ -133,8 +133,8 @@ namespace Game
 		{ CardId::ShatteringImpact, CardKind::Upgrade, CardRarity::Rare, AbilityId::Comet, "Shattering Impact", "The crater cracks and sinks into the lava 1.5 s after the comet lands.", "A smaller crater cracks and sinks into the lava 3 s after the comet lands.", TagFire },
 		{ CardId::TwinComets, CardKind::Upgrade, CardRarity::Common, AbilityId::Comet, "Twin Comets", "A smaller second comet lands on the same spot half a second later.", "A second comet lands on the same spot half a second later.", TagFire },
 		{ CardId::Afterimage, CardKind::Upgrade, CardRarity::Rare, AbilityId::Warp, "Afterimage", "Warp leaves a shockwave where you left.", "Warp leaves a shockwave where you left that hits for 16.", TagMana },
-		{ CardId::Aftershock, CardKind::Upgrade, CardRarity::Common, AbilityId::Shockwave, "Aftershock", "A second, weaker pulse follows 0.6 s later.", "A second pulse follows 0.6 s later for 60% damage.", TagStorm },
-		{ CardId::Implosion, CardKind::Upgrade, CardRarity::Rare, AbilityId::GravityWell, "Implosion", "When the well closes it bursts, flinging everyone outward.", "When the well closes it bursts, hitting everyone inside for 5.", TagMana },
+		{ CardId::IceShrapnel, CardKind::Upgrade, CardRarity::Common, AbilityId::GlacialNova, "Ice Shrapnel", "When the erupted spikes shatter, their shards burst outward and shove rivals again.", "When the erupted spikes shatter, their shards burst outward for 50% damage.", TagFrost },
+		{ CardId::Implosion, CardKind::Upgrade, CardRarity::Rare, AbilityId::GravityWell, "Implosion", "When the eye closes the void bursts, flinging everyone outward.", "When the eye closes the void bursts, hitting everyone inside for 5.", TagMana },
 		{ CardId::Pinball, CardKind::Upgrade, CardRarity::Rare, AbilityId::ArcLightning, "Pinball", "Every jump shoves half again as hard as the one before.", "Every jump hits half again as hard as the one before.", TagStorm },
 		{ CardId::Overcharge, CardKind::Upgrade, CardRarity::Common, AbilityId::ArcLightning, "Overcharge", "Arc Lightning jumps to one more rival.", nullptr, TagStorm },
 		{ CardId::HeartSwap, CardKind::Upgrade, CardRarity::Rare, AbilityId::Swap, "Heart Swap", "Swap also trades health, and with it how far each of you flies.", "If the rival Swap hits has more health than you, you steal up to 15 of it.", TagBlood },
@@ -263,8 +263,9 @@ namespace Game
 	inline constexpr float AfterimageDelay = 0.05f;
 	inline constexpr float AfterimageRadius = 2.4f;
 	inline constexpr float AfterimagePush = 14.0f;
-	inline constexpr float AftershockDelay = 0.6f;
-	inline constexpr float AftershockScale = 0.6f;
+	inline constexpr float ShrapnelDelay = 0.55f;
+	inline constexpr float ShrapnelScale = 0.5f;
+	inline constexpr float ShrapnelReach = 1.2f;
 	inline constexpr float ImplosionDelay = 0.35f;
 	inline constexpr float ImplosionPush = 18.0f;
 	inline constexpr float PinballGrowth = 1.5f;

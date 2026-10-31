@@ -3,6 +3,7 @@
 #include "GameShared/Simulation/World.h"
 #include "GameShared/World/Collision.h"
 #include <algorithm>
+#include <vector>
 
 namespace Game
 {
@@ -41,8 +42,8 @@ namespace Game
 			}
 			if (id == AbilityId::Gust && HasCard(context.Cards, CardId::DeflectingGale))
 				DeflectProjectiles(world, context, ability.Reach * context.AreaScale, ability.HalfArc);
-			if (id == AbilityId::Shockwave && HasCard(context.Cards, CardId::Aftershock))
-				world.SpawnCardStrike(AbilityId::Shockwave, context.Origin, AngleOf(axis), AftershockDelay, ability.Reach * context.AreaScale, ability.Push * AftershockScale * context.PushScale, 0, false, context);
+			if (id == AbilityId::GlacialEruption && HasCard(context.Cards, CardId::IceShrapnel))
+				world.SpawnCardStrike(AbilityId::GlacialEruption, context.Origin, AngleOf(axis), ShrapnelDelay, ability.Reach * ShrapnelReach * context.AreaScale, ability.Push * ShrapnelScale * context.PushScale, 0, false, context);
 			break;
 		}
 		case AbilityKind::Ground:
@@ -84,7 +85,7 @@ namespace Game
 			{
 				AbilityContext burst = context;
 				burst.DamageScale *= brawlDamage ? ImplosionDamage : 1.0f;
-				world.SpawnCardStrike(AbilityId::Shockwave, context.Target, AngleOf(context.Direction), ability.ImpactDelay + ImplosionDelay, ability.ImpactRadius * context.AreaScale, ImplosionPush * context.PushScale, 0, false, burst);
+				world.SpawnCardStrike(AbilityId::WellBurst, context.Target, AngleOf(context.Direction), ability.ImpactDelay + ImplosionDelay, ability.ImpactRadius * context.AreaScale, ImplosionPush * context.PushScale, 0, false, burst);
 			}
 			break;
 		case AbilityKind::Heal:
@@ -99,11 +100,37 @@ namespace Game
 			{
 				AbilityContext wake = context;
 				wake.DamageScale *= brawlDamage ? AfterimageDamage : 1.0f;
-				world.SpawnCardStrike(AbilityId::Shockwave, context.Departure, AngleOf(context.Direction), AfterimageDelay, AfterimageRadius, AfterimagePush * context.PushScale, 0, false, wake);
+				world.SpawnCardStrike(AbilityId::WarpWake, context.Departure, AngleOf(context.Direction), AfterimageDelay, AfterimageRadius, AfterimagePush * context.PushScale, 0, false, wake);
 			}
 			break;
 		case AbilityKind::Shield:
 			break;
+		}
+	}
+
+	void EruptFrostNova(World& world, Vec2 fallback, const AbilityContext& context)
+	{
+		EntityRegistry& entities = world.GetEntities();
+		std::vector<Entity> fields;
+		entities.Each<Replicated>([&](Entity entity, Replicated& replicated)
+		{
+			if (replicated.Kind == EntityKind::Effect && replicated.Variant == uint8_t(AbilityId::GlacialNova) && replicated.Owner == context.Owner && entities.Has<Transform>(entity))
+				fields.push_back(entity);
+		});
+		if (fields.empty())
+		{
+			AbilityContext eruption = context;
+			eruption.Origin = fallback;
+			ExecuteAbility(world, AbilityId::GlacialEruption, eruption);
+			return;
+		}
+		for (const Entity field : fields)
+		{
+			AbilityContext eruption = context;
+			eruption.Origin = entities.TryGet<Transform>(field)->Position;
+			eruption.Tag = entities.TryGet<Replicated>(field)->Tag;
+			world.DestroyEntity(field);
+			ExecuteAbility(world, AbilityId::GlacialEruption, eruption);
 		}
 	}
 }

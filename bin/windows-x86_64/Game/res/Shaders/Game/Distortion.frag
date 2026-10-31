@@ -108,6 +108,26 @@ void main()
 			shift = dir * (strength * (1.0 - smoothstep(0.85, 1.0, u)) * (0.6 * pinch + 0.5 * ripples));
 		}
 	}
+	else if (shape == DistortVortex)
+	{
+		float horizon = max(p.x, 1e-3);
+		float reach = distorter.Extent.x;
+		float inner = smoothstep(0.92 * horizon, 1.2 * horizon, r);
+		float outer = 1.0 - smoothstep(0.45 * reach, reach, r);
+		vec2 tangent = vec2(-dir.y, dir.x);
+		float lens = p.y * p.y / max(r, 1e-3);
+		float angle = p.z * pow(horizon / max(r, horizon), 1.3);
+		float ca = cos(angle);
+		float sa = sin(angle);
+		vec2 swirl = vec2(ca * q.x - sa * q.y, sa * q.x + ca * q.y) - q;
+		float logr = log(max(r, 1e-3) / horizon);
+		float spiral = atan(q.y, q.x) + 2.4 * logr - distorter.CenterYaw.w;
+		vec2 around = vec2(cos(spiral), sin(spiral)) * 1.6 + vec2(logr * 2.5, 0.0);
+		uint seed = distorter.Info.z;
+		vec2 turbulence = dir * Noise(around, seed) + tangent * Noise(around + vec2(7.1, 3.3), seed + 13u);
+		float band = exp(-pow((r - 2.0 * horizon) / (1.2 * horizon), 2.0));
+		shift = (-dir * lens + swirl + turbulence * (p.w * horizon * band)) * (strength * inner * outer);
+	}
 	else
 	{
 		float einstein = p.y;

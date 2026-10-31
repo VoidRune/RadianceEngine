@@ -4,6 +4,7 @@ import os
 import random
 import sys
 from mathutils import Matrix, Vector, noise
+from mathutils.bvhtree import BVHTree
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import assetkit as kit
@@ -97,14 +98,14 @@ def weathered(co, rng_offset, amount, scale=2.2):
     return amount * (noise.noise(shifted) + 0.35 * noise.noise(shifted * 2.7))
 
 
-def monolith(width, depth, height, rng, taper=0.8, lean=0.05, slant=0.12, cuts=10, rough=0.035, panel=True, chips=4):
+def monolith(width, depth, height, rng, taper=0.8, lean=0.05, slant=0.12, cuts=10, rough=0.035, panel=True, chips=4, flush=False):
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=1.0)
     bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=cuts, use_grid_fill=True)
     offset = Vector((rng.uniform(-50.0, 50.0), rng.uniform(-50.0, 50.0), rng.uniform(-50.0, 50.0)))
     tilt = rng.uniform(-1.0, 1.0)
     bend = (rng.uniform(-1.0, 1.0) * 0.05 * width, rng.uniform(-1.0, 1.0) * 0.04 * depth, rng.uniform(0.0, 6.28))
-    front = rng.uniform(0.85, 1.0)
+    front = 1.0 if flush else rng.uniform(0.85, 1.0)
     for vertex in bm.verts:
         u, v, w = vertex.co.x, vertex.co.y, vertex.co.z + 0.5
         shrink = 1.0 + (taper - 1.0) * w
@@ -161,6 +162,38 @@ def standing_stone(key, size, m, target, rng):
         y = face_y(depth, taper, height, z) - 0.006
         parts += rune_strokes(glyph, (0.0, y, z), 0.24, target, m['rune'], f'StandingStone{key}_{row}', rng, lean=lean)
     return kit.join(parts, f'StandingStone_{key}')
+
+
+def surface_y(tree, x, z, side):
+    location = tree.ray_cast(Vector((x, side * 5.0, z)), Vector((0.0, -side, 0.0)))[0]
+    return location.y if location is not None else side * 0.4
+
+
+def carved_runes(glyph, z, size, side, tree, target, material, name, rng, lean=0.0):
+    parts = []
+    for index, stroke in enumerate(RUNES[glyph % len(RUNES)]):
+        ends = []
+        for px, pz in stroke:
+            height = z + pz * size
+            x = -side * px * size + lean * height
+            ends.append(Vector((x, surface_y(tree, x, height, side) + side * 0.006, height)))
+        parts.append(pk.part(f'{name}_Rune{index}', pk.rod(ends[0], ends[1], size * 0.07, steps=4), target, material, rng=rng))
+    return parts
+
+
+def ritual_monolith(key, size, m, target, rng):
+    width, depth, height = size
+    taper, lean = 0.8, rng.uniform(-0.02, 0.02)
+    lift = 0.12
+    plinth = pk.part(f'Monolith{key}_Plinth', pk.chipped((width + 0.1, depth + 0.1, 0.16), rng, chips=5, depth=0.05, center=(0.0, 0.0, 0.08)), target, m['granite'], rng=rng, bevel=(0.03, 2, 30.0))
+    body = monolith(width, depth, height, rng, taper=taper, lean=lean, slant=0.16, cuts=12, rough=0.03, chips=6, flush=True)
+    bmesh.ops.translate(body, verts=body.verts, vec=(0.0, 0.0, lift))
+    tree = BVHTree.FromBMesh(body)
+    parts = [plinth, pk.part(f'Monolith{key}_Body', body, target, m['granite'], rng=rng, smooth=35.0)]
+    for side, rows in ((-1.0, 4), (1.0, 3)):
+        for row, glyph in enumerate(rng.sample(range(len(RUNES)), rows)):
+            parts += carved_runes(glyph, lift + height * (0.24 + 0.15 * row), 0.3, side, tree, target, m['rune'], f'Monolith{key}_{int(side > 0)}{row}', rng, lean=lean)
+    return kit.join(parts, f'Monolith_{key}')
 
 
 def glyph_stone(key, size, m, target, rng):
@@ -350,6 +383,9 @@ def build(target):
         boulder('Slab_B', (0.5, 0.4, 0.14), m, target, rng, facets=6, sink=0.45),
         boulder('Boulder_A', (0.85, 0.7, 0.62), m, target, rng, facets=12, detail=3),
         boulder('Boulder_B', (0.75, 0.66, 0.72), m, target, rng, facets=12, detail=3),
+        ritual_monolith('A', (1.4, 0.8, 3.2), m, target, rng),
+        ritual_monolith('B', (1.32, 0.76, 2.95), m, target, rng),
+        ritual_monolith('C', (1.44, 0.82, 3.45), m, target, rng),
     ]
     return objects
 

@@ -48,7 +48,7 @@ namespace Game
 		{ MapKind::Caldera, "The Caldera", "A disc of basalt floating on a lake of lava inside a volcano. It crumbles from the edge inward every round." },
 		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes." },
 		{ MapKind::SkyRuins, "Sky Ruins", "A temple broken into islands high above the clouds. There is no lava, only a long fall: drifting islands carry you out and back, wind gusts push everyone one way, and the ruins crumble into the sky." },
-		{ MapKind::StormPeak, "Storm Peak", "A mountain summit high above the clouds, crowned by the old Stormcallers' ritual circle. Lightning hunts anyone who stands still, the storm closes in on the circle, and a shove knocks you down a ledge or off the mountain." },
+		{ MapKind::StormPeak, "Storm Peak", "A wide summit plateau high above the clouds, crowned by the old Stormcallers' ritual circle and its monoliths. Lightning falls at random, the storm closes in on the circle, and a shove off the edge is a long way down." },
 	};
 	static_assert(std::size(Maps) == size_t(MapKind::Count));
 
@@ -252,18 +252,7 @@ namespace Game
 		float Phase = 0.0f;
 	};
 
-	inline constexpr int32_t ElevationCliffs = 3;
-
-	struct ElevationRamp
-	{
-		Vec2 Foot;
-		Vec2 Uphill;
-		float Width = 0.0f;
-		uint8_t Cliff = 0;
-		bool Stair = false;
-	};
-
-	struct Elevation
+	struct Plateau
 	{
 		struct Spot
 		{
@@ -276,15 +265,11 @@ namespace Game
 		float Spacing = 0.25f;
 		int32_t Columns = 0;
 		int32_t Rows = 0;
-		std::vector<float> Floor;
 		std::vector<float> Rim;
-		std::array<std::vector<float>, ElevationCliffs> Edges;
-		std::array<std::vector<float>, ElevationCliffs> Drops;
-		std::vector<ElevationRamp> Ramps;
-		Vec2 Summit;
+		Vec2 Center;
 		float Ritual = 0.0f;
 
-		bool IsEmpty() const { return Floor.empty(); }
+		bool IsEmpty() const { return Rim.empty(); }
 
 		Spot Locate(Vec2 position) const
 		{
@@ -302,19 +287,7 @@ namespace Game
 			return std::lerp(std::lerp(row[0], row[1], spot.U), std::lerp(next[0], next[1], spot.U), spot.V);
 		}
 
-		float Height(Vec2 position) const
-		{
-			const Spot spot = Locate(position);
-			float height = Read(Floor, spot);
-			for (int32_t cliff = 0; cliff < ElevationCliffs; cliff++)
-				if (Read(Edges[size_t(cliff)], spot) >= 0.0f)
-					height += Read(Drops[size_t(cliff)], spot);
-			return height;
-		}
-
 		float RimDistance(Vec2 position) const { return Read(Rim, Locate(position)); }
-
-		float EdgeDistance(int32_t cliff, Vec2 position) const { return Read(Edges[size_t(cliff)], Locate(position)); }
 
 		Vec2 Gradient(const std::vector<float>& grid, Vec2 position) const
 		{
@@ -383,7 +356,7 @@ namespace Game
 		std::optional<ChessSpot> ChessTable;
 		std::vector<Boundary> Boundaries;
 		std::vector<DriftIsland> Islands;
-		Elevation Relief;
+		Plateau Peak;
 		bool Rounded = false;
 		bool Floating = false;
 		bool Bouncy = false;

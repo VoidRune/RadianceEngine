@@ -122,6 +122,7 @@ namespace Game
 		float GroundHeight(const Level& level, const BrawlStatus* brawl, Vec2 position, float clock) const;
 		bool IsOverSky(const BrawlStatus* brawl, Vec2 position, float clock) const;
 		const std::vector<LevelFire>& GetFires() const { return m_Scene.Fires; }
+		const PeakRelief* GetRelief() const { return m_Scene.Relief.IsEmpty() ? nullptr : &m_Scene.Relief; }
 
 	private:
 		struct SceneKey
@@ -147,7 +148,6 @@ namespace Game
 		SceneKey m_Key;
 		LevelScene m_Scene;
 		IslandArt m_Island;
-		const Elevation* m_Mountain = nullptr;
 		std::vector<float> m_PropReach;
 		std::vector<float> m_PropTop;
 		std::vector<glm::vec4> m_LavaRuns;

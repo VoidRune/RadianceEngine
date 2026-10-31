@@ -204,6 +204,32 @@ namespace Game
 					{ .Kind = K::Dust, .Count = 12.0f, .Shape = SpawnShape::Disc, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 0.6f, 0.0f }, .Cone = 0.6f, .Speed = { 1.0f, 2.6f }, .Life = { 0.5f, 0.9f }, .Size = { 0.24f, 0.42f }, .Tint = { 0.92f, 0.85f, 0.77f } },
 					{ .Kind = K::Bone, .Count = 22.0f, .Outward = true, .Radius = 0.45f, .Direction = { 0.0f, 1.2f, 0.0f }, .Cone = 0.8f, .Speed = { 2.5f, 6.0f }, .Life = { 0.7f, 1.3f }, .Size = { 0.045f, 0.1f }, .Tint = { 0.24f, 0.22f, 0.19f } },
 				});
+				const glm::vec3 coldMist{ 3.2f, 3.7f, 4.4f };
+				set(Fx::NovaSpread, {
+					{ .Kind = K::Smoke, .Count = 12.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 0.08f, 0.0f }, .Cone = 0.2f, .Speed = { 3.0f, 5.5f }, .Life = { 0.7f, 1.2f }, .Size = { 0.4f, 0.7f }, .Tint = coldMist },
+					{ .Kind = K::Frost, .Count = 34.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 0.45f, .Direction = { 0.0f, 0.1f, 0.0f }, .Cone = 0.2f, .Speed = { 5.0f, 8.5f }, .Life = { 0.3f, 0.55f }, .Size = { 0.25f, 0.42f }, .Tint = { 0.4f, 0.4f, 0.4f } },
+					{ .Kind = K::Mote, .Count = 26.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 0.25f, 0.0f }, .Cone = 0.35f, .Speed = { 3.5f, 7.5f }, .Life = { 0.3f, 0.65f }, .Size = { 0.025f, 0.045f }, .Tint = { 0.75f, 0.75f, 0.75f } },
+					{ .Kind = K::Snow, .Count = 30.0f, .Shape = SpawnShape::Disc, .Radius = 1.6f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.7f, .Speed = { 0.4f, 1.4f }, .Life = { 0.8f, 1.4f }, .Size = { 0.025f, 0.05f } },
+				});
+				set(Fx::NovaMist, {
+					{ .Kind = K::Smoke, .Count = 2.0f, .Shape = SpawnShape::Disc, .Radius = 0.35f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.9f, .Speed = { 0.05f, 0.25f }, .Life = { 1.0f, 1.6f }, .Size = { 0.5f, 0.85f }, .Tint = coldMist },
+					{ .Kind = K::Mote, .Count = 2.0f, .Shape = SpawnShape::Disc, .Radius = 0.4f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.1f, 0.4f }, .Life = { 0.4f, 0.8f }, .Size = { 0.02f, 0.035f }, .Tint = { 0.6f, 0.6f, 0.6f } },
+				});
+				set(Fx::NovaBurst, {
+					{ .Kind = K::Smoke, .Count = 12.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 1.2f, .Direction = { 0.0f, 0.15f, 0.0f }, .Cone = 0.3f, .Speed = { 3.5f, 6.5f }, .Life = { 0.6f, 1.1f }, .Size = { 0.5f, 0.85f }, .Tint = coldMist },
+					{ .Kind = K::Snow, .Count = 40.0f, .Shape = SpawnShape::Ring, .Outward = true, .Radius = 1.5f, .Direction = { 0.0f, 0.9f, 0.0f }, .Cone = 0.5f, .Speed = { 2.0f, 5.0f }, .Life = { 0.7f, 1.3f }, .Size = { 0.03f, 0.06f } },
+				});
+				set(Fx::NovaErupt, {
+					{ .Kind = K::IceShard, .Count = 6.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.55f, .Speed = { 3.5f, 7.5f }, .Life = { 0.5f, 0.9f }, .Size = { 0.04f, 0.08f }, .Tint = { 0.7f, 0.7f, 0.7f } },
+					{ .Kind = K::Snow, .Count = 6.0f, .Aimed = true, .Radius = 0.2f, .Cone = 0.8f, .Speed = { 1.0f, 3.0f }, .Life = { 0.6f, 1.0f }, .Size = { 0.05f, 0.09f } },
+					{ .Kind = K::Smoke, .Count = 1.0f, .Radius = 0.2f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.3f, 0.9f }, .Life = { 0.6f, 1.0f }, .Size = { 0.3f, 0.5f }, .Tint = coldMist },
+				});
+				set(Fx::NovaShatter, {
+					{ .Kind = K::IceShard, .Count = 12.0f, .Aimed = true, .Radius = 0.3f, .Cone = 1.1f, .Speed = { 2.0f, 6.0f }, .Life = { 0.5f, 1.0f }, .Size = { 0.04f, 0.09f }, .Tint = { 0.65f, 0.65f, 0.65f } },
+					{ .Kind = K::Mote, .Count = 7.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 1.0f, 3.0f }, .Life = { 0.25f, 0.5f }, .Size = { 0.025f, 0.045f }, .Tint = { 0.7f, 0.7f, 0.7f } },
+					{ .Kind = K::Snow, .Count = 8.0f, .Aimed = true, .Radius = 0.3f, .Cone = 1.2f, .Speed = { 1.0f, 3.0f }, .Life = { 0.6f, 1.1f }, .Size = { 0.04f, 0.08f } },
+					{ .Kind = K::Frost, .Count = 2.0f, .Radius = 0.25f, .Cone = FullSphere, .Speed = { 0.3f, 0.9f }, .Life = { 0.35f, 0.6f }, .Size = { 0.25f, 0.4f }, .Tint = { 0.3f, 0.3f, 0.3f } },
+				});
 				set(Fx::IceCrumble, {
 					{ .Kind = K::IceShard, .Count = 7.0f, .Outward = true, .Radius = 0.25f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 1.1f, .Speed = { 0.8f, 2.4f }, .Life = { 0.35f, 0.65f }, .Size = { 0.03f, 0.055f } },
 					{ .Kind = K::Frost, .Count = 2.0f, .Radius = 0.2f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.2f, 0.6f }, .Life = { 0.4f, 0.7f }, .Size = { 0.16f, 0.28f }, .Tint = { 0.3f, 0.3f, 0.3f } },
@@ -334,6 +360,12 @@ namespace Game
 				set(Fx::ObsidianCrumble, {
 					{ .Kind = K::Obsidian, .Count = 14.0f, .Outward = true, .Radius = 0.25f, .Cone = FullSphere, .Speed = { 0.5f, 2.0f }, .Life = { 0.45f, 0.8f }, .Size = { 0.018f, 0.035f } },
 					{ .Kind = K::Smoke, .Count = 3.0f, .Radius = 0.2f, .Speed = { 0.2f, 0.6f }, .Life = { 0.4f, 0.7f }, .Size = { 0.15f, 0.25f }, .Tint = soot },
+				});
+				set(Fx::VoidBurst, {
+					{ .Kind = K::Obsidian, .Count = 26.0f, .Outward = true, .Radius = 0.15f, .Cone = FullSphere, .Speed = { 3.0f, 8.0f }, .Life = { 0.5f, 0.9f }, .Size = { 0.025f, 0.055f } },
+					{ .Kind = K::VioletEmber, .Count = 40.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 4.0f, 10.0f }, .Life = { 0.3f, 0.7f }, .Size = { 0.022f, 0.04f } },
+					{ .Kind = K::Streak, .Count = 18.0f, .Outward = true, .Radius = 0.2f, .Direction = { 0.0f, 0.2f, 0.0f }, .Cone = 1.3f, .Speed = { 9.0f, 15.0f }, .Life = { 0.12f, 0.26f }, .Size = { 0.02f, 0.032f }, .Tint = glassSpark * 0.55f },
+					{ .Kind = K::Smoke, .Count = 8.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.3f, 0.0f }, .Cone = 1.2f, .Speed = { 0.8f, 2.2f }, .Life = { 0.5f, 0.9f }, .Size = { 0.3f, 0.5f }, .Tint = soot * 0.6f },
 				});
 				set(Fx::FireBurst, {
 					{ .Kind = K::Fire, .Count = 22.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 0.5f, .Speed = { 1.0f, 3.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.2f, 0.35f } },
@@ -638,7 +670,6 @@ namespace Game
 			return Fx::FrostTrail;
 		case AbilityId::Bolt:
 		case AbilityId::ChainLightning:
-		case AbilityId::ArcLightning:
 			return Fx::BoltTrail;
 		case AbilityId::IceSpear:
 			return Fx::IceTrail;
@@ -721,13 +752,11 @@ namespace Game
 			return Fx::FrostNova;
 		case AbilityId::Gust:
 			return Fx::Cyclone;
-		case AbilityId::StormStrike:
 		case AbilityId::StormJump:
 			return Fx::HitLightning;
-		case AbilityId::Shockwave:
+		case AbilityId::StormStrike:
 			return Fx::LightningBurst;
 		case AbilityId::GravityWell:
-			return Fx::ArcaneBurst;
 		case AbilityId::DiamondWard:
 			return std::nullopt;
 		case AbilityId::Warp:
@@ -1130,10 +1159,23 @@ namespace Game
 			scorch(ground, radius * 0.5f, 2.5f, 1.0f);
 			break;
 		case AbilityId::StormStrike:
-			scorch(ground, radius * 0.55f, 4.0f, 0.8f);
-			cracks(ground, radius * 0.95f, 3.0f, 0.4f);
-			shock(radius * 1.15f, 0.3f, 0.6f);
+		{
+			GroundDecal burn = decal(DecalShape::Scorch, ground, glm::vec2(radius * 0.6f));
+			burn.Color = glm::vec4(0.7f, 0.5f, 1.6f, 1.0f);
+			burn.Tint = glm::vec4(0.02f, 0.02f, 0.03f, 0.8f);
+			burn.Roughness = 0.95f;
+			burn.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+			Mark(burn, 4.0f, 0.02f, 0.85f, 1.0f, 0.12f, 3.0f);
+			GroundDecal split = decal(DecalShape::Cracks, ground, glm::vec2(radius * 0.95f));
+			split.Color = glm::vec4(0.75f, 0.55f, 1.8f, 1.0f);
+			split.Tint = glm::vec4(0.03f, 0.03f, 0.035f, 0.85f);
+			split.Roughness = 0.9f;
+			split.Params = glm::vec4(0.6f, 0.0f, 0.0f, 0.0f);
+			Mark(split, 3.0f, 0.02f, 0.6f, 1.0f, 0.1f, 2.5f);
+			shock(radius * 1.15f, 0.3f, 0.3f);
+			Shockwave(ground, radius * 1.7f, 0.32f, 0.1f, 0.3f);
 			break;
+		}
 		case AbilityId::HookAnchor:
 			cracks(ground, 0.5f, 1.4f, 0.0f);
 			break;
@@ -1145,14 +1187,7 @@ namespace Game
 			runes(ground, radius, 0.7f, 0.0f, 1.0f, 1.15f);
 			Shockwave(ground, radius * 1.8f, 0.6f, 0.26f, 0.45f);
 			break;
-		case AbilityId::Shockwave:
-			shock(reach, 0.4f);
-			shock(reach * 0.6f, 0.3f);
-			runes(ground, reach, 0.6f, 0.55f, 0.5f, 1.05f);
-			break;
 		case AbilityId::GravityWell:
-			runes(ground, radius, 0.9f, 0.3f, 1.15f, 0.25f);
-			shock(radius * 0.5f, 0.35f);
 			break;
 		case AbilityId::Gust:
 			flash(DecalShape::Sector, ground, glm::vec2(reach), facing, def.HalfArc, 0.4f);

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -68,6 +69,40 @@ namespace Game
 			.ColorAttachmentFormats = { SceneColorFormat, EmissionFormat },
 			.PushDescriptorSets = { 0 },
 		});
+		Rdn::Shader* modelVertex = Compile("res/Shaders/Game/GlassModel.vert", nullptr, Rdn::ShaderStage::Vertex);
+		Rdn::Shader* modelBack = Compile("res/Shaders/Game/GlassModelBack.frag", nullptr, Rdn::ShaderStage::Fragment);
+		Rdn::Shader* modelFront = Compile("res/Shaders/Game/GlassModel.frag", nullptr, Rdn::ShaderStage::Fragment);
+		Rdn::Shader* modelWater = Compile("res/Shaders/Game/GlassModel.frag", "WATER", Rdn::ShaderStage::Fragment);
+		if (modelVertex && modelBack && modelFront && modelWater)
+		{
+			m_ModelBack = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_ModelBack.get(), Rdn::PipelineDesc{
+				.ShaderStages = { modelVertex, modelBack },
+				.CullMode = Rdn::CullMode::Front,
+				.ColorAttachmentFormats = { GlassBackFormat },
+				.DepthAttachmentFormat = DepthFormat,
+				.PushDescriptorSets = { 0 },
+			});
+			for (auto [pipeline, fragment] : { std::pair{ &m_ModelFront, modelFront }, std::pair{ &m_ModelWater, modelWater } })
+			{
+				*pipeline = std::make_unique<Rdn::Pipeline>();
+				m_Allocator.CreatePipeline(pipeline->get(), Rdn::PipelineDesc{
+					.ShaderStages = { modelVertex, fragment },
+					.Blend = Rdn::BlendMode::Premultiplied,
+					.ColorAttachmentFormats = { SceneColorFormat, EmissionFormat },
+					.DepthAttachmentFormat = DepthFormat,
+					.PushDescriptorSets = { 0 },
+				});
+			}
+			m_ModelDepth = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_ModelDepth.get(), Rdn::PipelineDesc{
+				.ShaderStages = { modelVertex },
+				.DepthAttachmentFormat = DepthFormat,
+				.PushDescriptorSets = { 0 },
+			});
+		}
+		else
+			RDN_LOG_ERROR("The glass model shaders failed to compile, water and clear ice are drawn opaque");
 		const auto ring = [&](uint32_t size)
 		{
 			auto buffer = std::make_unique<Rdn::GpuRingBuffer>();
@@ -96,7 +131,7 @@ namespace Game
 		for (Rdn::ComputePipeline* pipeline : { m_FirstLevel.get(), m_NextLevel.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
-		for (Rdn::Pipeline* pipeline : { m_Back.get(), m_Front.get(), m_CrackedFront.get(), m_Lattice.get() })
+		for (Rdn::Pipeline* pipeline : { m_Back.get(), m_Front.get(), m_CrackedFront.get(), m_Lattice.get(), m_ModelBack.get(), m_ModelFront.get(), m_ModelWater.get(), m_ModelDepth.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
 		for (Rdn::GpuRingBuffer* buffer : { m_Frame.get(), m_Buffer.get(), m_ShieldBuffer.get(), m_CellBuffer.get() })
@@ -122,6 +157,9 @@ namespace Game
 	void GlassRenderer::BeginFrame()
 	{
 		m_Facets.clear();
+		m_Models.Draws.clear();
+		m_Models.Min = glm::vec3(1e9f);
+		m_Models.Max = glm::vec3(-1e9f);
 		m_Shields.clear();
 		m_Cells.clear();
 	}
@@ -173,9 +211,10 @@ namespace Game
 	}
 
 	void GlassRenderer::Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage depth, Rdn::Extent2D extent, uint32_t frameIndex,
-		const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, float time)
+		const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, float time, std::span<const SpellLight> lights)
 	{
-		if ((m_Facets.empty() && m_Cells.empty()) || !m_Front)
+		const bool models = !m_Models.Draws.empty() && m_ModelFront && m_Models.Instances && m_Models.Textures;
+		if ((m_Facets.empty() && m_Cells.empty() && !models) || !m_Front)
 			return;
 		glm::vec2 low(1.0f);
 		glm::vec2 high(0.0f);
@@ -202,6 +241,9 @@ namespace Game
 			for (const glm::vec2 corner : { glm::vec2(-1.0f, -1.0f), glm::vec2(1.0f, -1.0f), glm::vec2(-1.0f, 1.0f), glm::vec2(1.0f, 1.0f) })
 				include(center + (glm::vec3(cell.Right) * corner.x + glm::vec3(cell.Up) * corner.y) * reach);
 		}
+		if (models)
+			for (uint32_t corner = 0; corner < 8; corner++)
+				include({ corner & 1u ? m_Models.Max.x : m_Models.Min.x, corner & 2u ? m_Models.Max.y : m_Models.Min.y, corner & 4u ? m_Models.Max.z : m_Models.Min.z });
 		if (clipped)
 		{
 			low = glm::vec2(0.0f);
@@ -245,7 +287,13 @@ namespace Game
 			.SkyRadiance = glm::vec4(lighting.SkyColor, 0.0f),
 			.GroundRadiance = glm::vec4(lighting.GroundColor, 0.0f),
 			.Environment = environment.Params,
+			.Translucent = glm::vec4(0.0f, float(std::min<size_t>(lights.size(), MaxSpellLights)), 0.0f, 0.0f),
 		};
+		for (size_t i = 0; i < lights.size() && i < MaxSpellLights; i++)
+		{
+			frame.Lights[i * 2] = glm::vec4(lights[i].Position, lights[i].Radius);
+			frame.Lights[i * 2 + 1] = glm::vec4(lights[i].Color, 0.0f);
+		}
 		for (uint32_t level = 0; level < GlassPyramidLevels; level++)
 			frame.Levels[level] = glm::vec4(glm::vec2(origins[level]) / glm::vec2(atlas), glm::vec2(float(sizes[level].Width), float(sizes[level].Height)) / glm::vec2(atlas));
 		std::memcpy(static_cast<uint8_t*>(m_Frame->GetMappedPtr()) + m_Frame->GetOffset(frameIndex), &frame, sizeof(frame));
@@ -294,7 +342,27 @@ namespace Game
 
 		const auto frameWrite = [this, frameIndex]() { return Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_Frame->GetHandle(), m_Frame->GetOffset(frameIndex), sizeof(FrameGpu)); };
 		const auto facetWrite = [this, frameIndex, count]() { return Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_Buffer->GetHandle(), m_Buffer->GetOffset(frameIndex), uint64_t(count) * sizeof(FacetGpu)); };
-		if (count > 0)
+		const auto modelWrites = [this, frameIndex, frameWrite](Rdn::DescriptorWrite& write)
+		{
+			write.AddWrite(frameWrite())
+				.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_Models.Instances->GetHandle(), m_Models.Instances->GetOffset(frameIndex), m_Models.InstanceBytes))
+				.AddWrite(Rdn::BufferWrite(6, Rdn::DescriptorType::StorageBuffer, m_Models.Vertices->GetHandle(), 0, m_Models.Vertices->GetSize()));
+		};
+		const auto drawModels = [this](Rdn::CommandBuffer& cmd, const Rdn::Pipeline& pipeline, std::optional<bool> water)
+		{
+			for (const GlassModelDraw& draw : m_Models.Draws)
+			{
+				if (water && draw.Water != *water)
+					continue;
+				if (water)
+				{
+					const std::array<glm::vec4, 2> constants{ draw.Absorb, draw.Look };
+					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, pipeline.GetLayout(), constants.data(), sizeof(constants));
+				}
+				cmd.DrawIndexed(draw.IndexCount, draw.InstanceCount, draw.FirstIndex, 0, draw.FirstInstance);
+			}
+		};
+		if (count > 0 || models)
 		{
 			const Rdn::RGImage back = graph.CreateImage("Glass back faces", Rdn::RGImageDesc{ .Size = Rdn::Extent3D(extent), .Format = GlassBackFormat });
 			const Rdn::RGImage glassDepth = graph.CreateImage("Glass depth", Rdn::RGImageDesc{ .Size = Rdn::Extent3D(extent), .Format = DepthFormat });
@@ -306,11 +374,22 @@ namespace Game
 				},
 				[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext&)
 				{
-					const uint32_t pass = 0;
-					cmd.BindPipeline(m_Back->GetHandle());
-					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_Back->GetLayout(), 0, Rdn::DescriptorWrite().AddWrite(frameWrite()).AddWrite(facetWrite()));
-					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Back->GetLayout(), &pass, sizeof(pass));
-					cmd.Draw(3, count, 0, 0);
+					if (count > 0)
+					{
+						const uint32_t pass = 0;
+						cmd.BindPipeline(m_Back->GetHandle());
+						cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_Back->GetLayout(), 0, Rdn::DescriptorWrite().AddWrite(frameWrite()).AddWrite(facetWrite()));
+						cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Back->GetLayout(), &pass, sizeof(pass));
+						cmd.Draw(3, count, 0, 0);
+					}
+					if (!models)
+						return;
+					Rdn::DescriptorWrite write;
+					modelWrites(write);
+					cmd.BindPipeline(m_ModelBack->GetHandle());
+					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelBack->GetLayout(), 0, write);
+					cmd.BindIndexBuffer(m_Models.Indices->GetHandle(), Rdn::IndexType::Uint32);
+					drawModels(cmd, *m_ModelBack, std::nullopt);
 				});
 			const Rdn::ImageWrite environmentWrite(5, Rdn::DescriptorType::CombinedImageSampler, environment.Image->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, environment.Sampler->GetHandle());
 			graph.AddPass("Glass", Rdn::PassType::Graphics,
@@ -325,13 +404,34 @@ namespace Game
 				},
 				[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
 				{
+					const auto shared = [&](Rdn::DescriptorWrite& write)
+					{
+						write.AddWrite(Rdn::ImageWrite(2, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(pyramid), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_LinearSampler->GetHandle()))
+							.AddWrite(Rdn::ImageWrite(3, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(back), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_PointSampler->GetHandle()))
+							.AddWrite(Rdn::ImageWrite(4, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(depth), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_PointSampler->GetHandle()))
+							.AddWrite(environmentWrite);
+					};
+					if (models)
+					{
+						Rdn::DescriptorWrite write;
+						modelWrites(write);
+						shared(write);
+						write.AddWrite(Rdn::BufferWrite(7, Rdn::DescriptorType::StorageBuffer, m_Models.Materials->GetHandle(), 0, m_Models.Materials->GetSize()));
+						cmd.BindIndexBuffer(m_Models.Indices->GetHandle(), Rdn::IndexType::Uint32);
+						for (const auto& [pipeline, water] : { std::pair(m_ModelFront.get(), false), std::pair(m_ModelWater.get(), true) })
+						{
+							cmd.BindPipeline(pipeline->GetHandle());
+							cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline->GetLayout(), 0, write);
+							cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline->GetLayout(), 1, { m_Models.Textures->GetHandle() });
+							drawModels(cmd, *pipeline, water);
+						}
+					}
+					if (count == 0)
+						return;
 					const uint32_t pass = 1;
-					const Rdn::DescriptorWrite write = Rdn::DescriptorWrite()
-						.AddWrite(frameWrite()).AddWrite(facetWrite())
-						.AddWrite(Rdn::ImageWrite(2, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(pyramid), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_LinearSampler->GetHandle()))
-						.AddWrite(Rdn::ImageWrite(3, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(back), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_PointSampler->GetHandle()))
-						.AddWrite(Rdn::ImageWrite(4, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(depth), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_PointSampler->GetHandle()))
-						.AddWrite(environmentWrite);
+					Rdn::DescriptorWrite write;
+					write.AddWrite(frameWrite()).AddWrite(facetWrite());
+					shared(write);
 					for (const auto& [pipeline, first, instances] : { std::tuple(m_Front.get(), 0u, intact), std::tuple(m_CrackedFront.get(), intact, count - intact) })
 					{
 						if (instances == 0)
@@ -343,6 +443,18 @@ namespace Game
 					}
 				});
 		}
+		if (models)
+			graph.AddPass("Glass model depth", Rdn::PassType::Graphics,
+				[&](Rdn::PassBuilder& builder) { builder.SetDepthAttachment(depth, Rdn::AttachmentLoadOp::Load, Rdn::AttachmentStoreOp::Store); },
+				[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext&)
+				{
+					Rdn::DescriptorWrite write;
+					modelWrites(write);
+					cmd.BindPipeline(m_ModelDepth->GetHandle());
+					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelDepth->GetLayout(), 0, write);
+					cmd.BindIndexBuffer(m_Models.Indices->GetHandle(), Rdn::IndexType::Uint32);
+					drawModels(cmd, *m_ModelDepth, std::nullopt);
+				});
 		if (cells == 0)
 			return;
 		graph.AddPass("Hex shields", Rdn::PassType::Graphics,

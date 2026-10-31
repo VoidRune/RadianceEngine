@@ -52,6 +52,7 @@ namespace Game
 	bool CanCast(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
 	bool IsOverloaded(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
 	bool IsRecastable(AbilityId ability);
+	bool HoldsCooldown(const PlayerState& state, uint32_t slot);
 	bool IsCharged(const SkillTraits& skill);
 	float ChargePower(const PlayerState& state, const SkillTraits& skill);
 	float ChargeOver(const PlayerState& state, const SkillTraits& skill);

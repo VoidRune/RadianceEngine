@@ -60,24 +60,10 @@ namespace Game
 		constexpr float StrikeMargin = 0.45f;
 		constexpr float RingLook = 2.0f;
 		constexpr float RingMargin = 1.2f;
-		constexpr float RouteSeconds = 0.4f;
-		constexpr float RouteStep = 0.4f;
-
-		bool Climbable(const Level& level, Vec2 from, Vec2 to)
-		{
-			if (level.Relief.IsEmpty())
-				return true;
-			float floor = FloorHeight(level, from);
-			const int32_t steps = std::max(1, int32_t(std::ceil(Length(to - from) / RouteStep)));
-			for (int32_t i = 1; i <= steps; i++)
-			{
-				const float height = FloorHeight(level, Lerp(from, to, float(i) / float(steps)));
-				if (height - floor > ClimbHeight)
-					return false;
-				floor = height;
-			}
-			return true;
-		}
+		constexpr float NovaFollow = 0.8f;
+		constexpr float NovaEruptLook = 0.1f;
+		constexpr float NovaEruptLead = 0.35f;
+		constexpr float NovaLastCall = 0.25f;
 
 		struct SkillParams
 		{
@@ -108,7 +94,7 @@ namespace Game
 			{ AbilityId::Gust, AbilityId::Warp, AbilityId::Comet },
 			{ AbilityId::FrostSpear, AbilityId::Gust, AbilityId::Warp },
 			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::DiamondWard },
-			{ AbilityId::Shockwave, AbilityId::Swap, AbilityId::Warp },
+			{ AbilityId::GlacialNova, AbilityId::Swap, AbilityId::Warp },
 			{ AbilityId::Firebomb, AbilityId::StormStrike, AbilityId::Warp },
 			{ AbilityId::ObsidianShards, AbilityId::Gust, AbilityId::DiamondWard },
 			{ AbilityId::EarthSpike, AbilityId::Comet, AbilityId::Warp },
@@ -116,15 +102,15 @@ namespace Game
 			{ AbilityId::HexShield, AbilityId::FrostSpear, AbilityId::Warp },
 		};
 		constexpr BrawlSpells BruiserSets[] = {
-			{ AbilityId::Gust, AbilityId::Shockwave, AbilityId::Warp },
-			{ AbilityId::Gust, AbilityId::Shockwave, AbilityId::DiamondWard },
+			{ AbilityId::Gust, AbilityId::GlacialNova, AbilityId::Warp },
+			{ AbilityId::Gust, AbilityId::GlacialNova, AbilityId::DiamondWard },
 			{ AbilityId::Gust, AbilityId::Swap, AbilityId::Warp },
-			{ AbilityId::ChainHook, AbilityId::Gust, AbilityId::Shockwave },
+			{ AbilityId::ChainHook, AbilityId::Gust, AbilityId::GlacialNova },
 			{ AbilityId::ChainHook, AbilityId::Firebomb, AbilityId::Warp },
-			{ AbilityId::EarthSpike, AbilityId::Shockwave, AbilityId::Warp },
-			{ AbilityId::PurpleFireball, AbilityId::ChainHook, AbilityId::Shockwave },
-			{ AbilityId::HexShield, AbilityId::Gust, AbilityId::Shockwave },
-			{ AbilityId::ObsidianShards, AbilityId::Shockwave, AbilityId::Warp },
+			{ AbilityId::EarthSpike, AbilityId::GlacialNova, AbilityId::Warp },
+			{ AbilityId::PurpleFireball, AbilityId::ChainHook, AbilityId::GlacialNova },
+			{ AbilityId::HexShield, AbilityId::Gust, AbilityId::GlacialNova },
+			{ AbilityId::ObsidianShards, AbilityId::GlacialNova, AbilityId::Warp },
 		};
 		constexpr BrawlSpells SniperSets[] = {
 			{ AbilityId::FrostSpear, AbilityId::Comet, AbilityId::Warp },
@@ -159,7 +145,7 @@ namespace Game
 			case AbilityId::ArcLightning:
 				return 0.1f;
 			case AbilityId::Gust:
-			case AbilityId::Shockwave:
+			case AbilityId::GlacialNova:
 				return 0.16f;
 			case AbilityId::Comet:
 				return 0.13f;
@@ -188,7 +174,7 @@ namespace Game
 			switch (style)
 			{
 			case BotStyle::Bruiser:
-				return spell == AbilityId::Gust || spell == AbilityId::Shockwave || spell == AbilityId::ChainHook || spell == AbilityId::ObsidianShards ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
+				return spell == AbilityId::Gust || spell == AbilityId::GlacialNova || spell == AbilityId::ChainHook || spell == AbilityId::ObsidianShards ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
 			case BotStyle::Sniper:
 				return spell == AbilityId::FrostSpear || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : spell == AbilityId::Gust ? 0.85f : 1.0f;
 			case BotStyle::Trickster:
@@ -391,9 +377,8 @@ namespace Game
 	void BotArena::BuildCells(const World& world)
 	{
 		const TileMap& map = world.GetMap();
-		const Elevation& relief = world.GetLevel().Relief;
+		const Plateau& peak = world.GetLevel().Peak;
 		m_SampleCell.assign(size_t(m_Width) * size_t(m_Height), SolidSample);
-		m_Floor.assign(relief.IsEmpty() ? size_t(0) : m_SampleCell.size(), 0.0f);
 		m_Slide.assign(m_SampleCell.size(), 1.0f);
 		for (int32_t y = 0; y < m_Height; y++)
 			for (int32_t x = 0; x < m_Width; x++)
@@ -402,12 +387,11 @@ namespace Game
 				const CellCoord cell = CellAt(sample);
 				int32_t& code = m_SampleCell[size_t(Index(x, y))];
 				const TerrainId terrain = map.GetTerrain(cell.X, cell.Y);
-				if (!relief.IsEmpty())
+				if (!peak.IsEmpty())
 				{
 					const int32_t tileX = std::clamp(int32_t(sample.x), 0, map.GetWidth() - 1);
 					const int32_t tileY = std::clamp(int32_t(sample.y), 0, map.GetHeight() - 1);
-					code = relief.RimDistance(sample) < 0.0f ? LavaSample : !map.IsWalkable(tileX, tileY) ? SolidSample : tileY * map.GetWidth() + tileX;
-					m_Floor[size_t(Index(x, y))] = relief.Height(sample);
+					code = peak.RimDistance(sample) < 0.0f ? LavaSample : !map.IsWalkable(tileX, tileY) ? SolidSample : tileY * map.GetWidth() + tileX;
 				}
 				else if (IsBrawlHazard(terrain))
 					code = LavaSample;
@@ -516,53 +500,6 @@ namespace Game
 		return m_Slide[size_t(Index(x, y))];
 	}
 
-	std::optional<Vec2> BotArena::Route(Vec2 from, Vec2 to) const
-	{
-		if (m_Floor.empty())
-			return std::nullopt;
-		const auto node = [&](Vec2 point) { return point.x >= 0.0f && point.y >= 0.0f && point.x < float(m_Width) * GridStep && point.y < float(m_Height) * GridStep ? Index(int32_t(point.x / GridStep), int32_t(point.y / GridStep)) : -1; };
-		const int32_t start = node(from);
-		const int32_t goal = node(to);
-		if (start < 0 || goal < 0 || m_SampleCell[size_t(goal)] < 0)
-			return std::nullopt;
-		std::vector<int32_t> parent(m_SampleCell.size(), -1);
-		std::vector<int32_t> queue;
-		queue.reserve(2048);
-		parent[size_t(start)] = start;
-		queue.push_back(start);
-		for (size_t head = 0; head < queue.size() && parent[size_t(goal)] < 0; head++)
-		{
-			const int32_t current = queue[head];
-			const int32_t cx = current % m_Width;
-			const int32_t cy = current / m_Width;
-			const float floor = m_Floor[size_t(current)];
-			for (int32_t dy = -1; dy <= 1; dy++)
-				for (int32_t dx = -1; dx <= 1; dx++)
-				{
-					const int32_t nx = cx + dx;
-					const int32_t ny = cy + dy;
-					if ((dx == 0 && dy == 0) || nx < 0 || ny < 0 || nx >= m_Width || ny >= m_Height)
-						continue;
-					const int32_t next = Index(nx, ny);
-					if (parent[size_t(next)] >= 0 || m_SampleCell[size_t(next)] < 0 || m_Floor[size_t(next)] - floor > ClimbHeight)
-						continue;
-					if (dx != 0 && dy != 0 && (m_SampleCell[size_t(Index(cx, ny))] < 0 || m_SampleCell[size_t(Index(nx, cy))] < 0))
-						continue;
-					parent[size_t(next)] = current;
-					queue.push_back(next);
-				}
-		}
-		if (parent[size_t(goal)] < 0)
-			return std::nullopt;
-		std::vector<int32_t> path;
-		for (int32_t at = goal; at != start; at = parent[size_t(at)])
-			path.push_back(at);
-		if (path.empty())
-			return to;
-		const int32_t step = path[path.size() - std::min<size_t>(path.size(), 3)];
-		return Vec2((float(step % m_Width) + 0.5f) * GridStep, (float(step / m_Width) + 0.5f) * GridStep);
-	}
-
 	float BotArena::CollapseIn(Vec2 position) const
 	{
 		const int32_t x = int32_t(std::floor(position.x / GridStep));
@@ -613,7 +550,6 @@ namespace Game
 		if (!m_Alive)
 			return;
 		const MatchDirector& match = world.GetMatch();
-		m_Terrain = &world.GetLevel();
 		m_Position = transform->Position;
 		m_Push = controller->State.Push;
 		m_Wind = world.GetLevel().Skyborne ? GustAt(match.GetBrawl().Plan, match.GetBrawl().Clock).Velocity : Vec2();
@@ -755,8 +691,6 @@ namespace Game
 			for (uint32_t step = 0; step < 16; step++)
 			{
 				const Vec2 point = m_Position + FromAngle(2.0f * Pi * float(step) / 16.0f) * radius;
-				if (m_Terrain && !Climbable(*m_Terrain, m_Position, point))
-					continue;
 				const float clearance = std::min(arena.Clearance(point), arena.Clearance(point + drift));
 				const float score = std::min(clearance, 3.5f) - 0.12f * radius + (clearance >= minimum ? 2.0f : 0.0f);
 				if (score > bestScore)
@@ -1125,6 +1059,37 @@ namespace Game
 		return true;
 	}
 
+	bool BotBrain::Erupt(const BotArena& arena, PlayerInput& input)
+	{
+		const int32_t slot = m_State->RecastSlot;
+		if (slot < 0 || AbilityId(m_State->RecastAbility) != AbilityId::GlacialNova || m_State->RecastAge < ParamsOf(m_Profile.Skill).Reaction)
+			return false;
+		const float now = NovaValue(arena, m_State->RecastOrigin, AbilityId::GlacialEruption, NovaEruptLook);
+		if (now <= 0.0f)
+			return false;
+		if (m_State->RecastTimer > NovaLastCall && NovaValue(arena, m_State->RecastOrigin, AbilityId::GlacialEruption, NovaEruptLead) > now)
+			return false;
+		input.Buttons |= uint8_t(SlotButton(uint32_t(slot)));
+		return true;
+	}
+
+	float BotBrain::NovaValue(const BotArena& arena, Vec2 center, AbilityId spell, float lead) const
+	{
+		const AbilityDef& def = GetAbility(spell);
+		float value = 0.0f;
+		for (const Rival& rival : m_Rivals)
+		{
+			const Vec2 position = rival.Position + rival.Velocity * lead;
+			const Vec2 reach = position - center;
+			const float range = Length(reach);
+			if (rival.Warded || rival.Shielded || range > def.Reach || range < 1e-3f)
+				continue;
+			const Vec2 push = reach / range * (def.Push * (1.0f - 0.4f * range / def.Reach) * rival.Fling);
+			value += (range < def.Reach - 0.4f ? 0.85f : 0.55f) * (LandingValue(arena, position, push) + Harm(float(def.BrawlDamage), rival));
+		}
+		return value;
+	}
+
 	float BotBrain::LandingValue(const BotArena& arena, Vec2 position, Vec2 impulse) const
 	{
 		const float magnitude = Length(impulse);
@@ -1341,17 +1306,13 @@ namespace Game
 			break;
 		case AbilityKind::Nova:
 		{
-			float value = 0.0f;
-			for (const Rival& rival : m_Rivals)
-			{
-				const Vec2 position = rival.Position + rival.Velocity * skill.CastTime;
-				const Vec2 reach = position - m_Position;
-				const float range = Length(reach);
-				if (rival.Warded || rival.Shielded || range > def.Reach || range < 1e-3f)
-					continue;
-				const Vec2 push = reach / range * (def.Push * (1.0f - 0.4f * range / def.Reach) * rival.Fling);
-				value += (range < def.Reach - 0.4f ? 0.85f : 0.55f) * (LandingValue(arena, position, push) + Harm(damage, rival));
-			}
+			float value = NovaValue(arena, m_Position, spell, skill.CastTime);
+			if (spell == AbilityId::GlacialNova)
+				value += NovaFollow * NovaValue(arena, m_Position, AbilityId::GlacialEruption, skill.CastTime + NovaEruptLead);
+			if (def.Chill > 0.0f)
+				for (const Rival& rival : m_Rivals)
+					if (!rival.Warded && !rival.Shielded && Length(rival.Position + rival.Velocity * skill.CastTime - m_Position) < def.Reach)
+						value += 0.08f + (setupReady() ? 0.12f : 0.0f);
 			consider(value * weight - threshold, m_Aim, 0.0f, NoPlayer, m_Position);
 			break;
 		}
@@ -1533,7 +1494,7 @@ namespace Game
 		const Rival* target = FindRival(m_Target);
 		bool closeIn = false;
 		for (uint32_t slot = 1; slot < AbilitySlots; slot++)
-			if ((SpellIn(slot) == AbilityId::Gust || SpellIn(slot) == AbilityId::Shockwave) && m_State->Cooldowns[slot] < 0.6f)
+			if ((SpellIn(slot) == AbilityId::Gust || SpellIn(slot) == AbilityId::GlacialNova) && m_State->Cooldowns[slot] < 0.6f)
 				closeIn = true;
 		const float caution = ParamsOf(m_Profile.Skill).Caution;
 		const bool wary = m_DamageMode && m_Health < WaryHealth;
@@ -1541,7 +1502,7 @@ namespace Game
 		const float radius = std::max(brawl.Plan.StartRadius, 1.0f);
 		const auto score = [&](Vec2 point)
 		{
-			if (!map.IsWalkableAt(point) || !Climbable(world.GetLevel(), m_Position, point))
+			if (!map.IsWalkableAt(point))
 				return -1e9f;
 			if (ring.Active && Length(point - ring.Center) > safe)
 				return -5.0f - Length(point - ring.Center);
@@ -1647,7 +1608,7 @@ namespace Game
 			input.Move = m_Sidestep;
 			return;
 		}
-		const Vec2 offset = (m_Routed ? m_Route : m_Goal) - m_Position;
+		const Vec2 offset = m_Goal - m_Position;
 		const float distance = Length(offset);
 		Vec2 move = distance > 0.2f ? offset / std::max(distance, 0.6f) : Vec2();
 		if (const Rival* target = FindRival(m_Target); target && LengthSquared(target->Position - m_Position) < 81.0f)
@@ -1656,23 +1617,6 @@ namespace Game
 			move += Vec2(-toward.y, toward.x) * (0.45f * m_Strafe);
 		}
 		input.Move = ClampLength(move, 1.0f);
-	}
-
-	void BotBrain::RouteGoal(const World& world, const BotArena& arena)
-	{
-		m_Routed = false;
-		const Level& level = world.GetLevel();
-		if (level.Relief.IsEmpty() || !m_HasGoal || Climbable(level, m_Position, m_Goal))
-			return;
-		if (m_Time >= m_RouteTime || LengthSquared(m_RouteGoal - m_Goal) > 0.25f)
-		{
-			const std::optional<Vec2> step = arena.Route(m_Position, m_Goal);
-			m_RouteTime = m_Time + RouteSeconds;
-			m_RouteGoal = m_Goal;
-			m_RouteValid = step.has_value();
-			m_Route = step.value_or(m_Goal);
-		}
-		m_Routed = m_RouteValid;
 	}
 
 	void BotBrain::Update(World& world, const BotArena& arena, BotTally& tally)
@@ -1720,6 +1664,7 @@ namespace Game
 			if (m_State->CastSlot < 0 && m_Casting >= 0 && m_PhaseTime > 0.0f)
 				m_Casting = -1;
 			Yank(input);
+			Erupt(arena, input);
 			const bool urgent = Escape(world, arena, input) || Recover(arena, input) || Evade(world, arena, input);
 			const bool holding = !urgent && FollowUp(arena, input, tally);
 			m_Planting = !urgent && m_SidestepTime <= 0.0f && Planted(arena);
@@ -1757,7 +1702,7 @@ namespace Game
 			}
 			if (!urgent && !m_Planting)
 			{
-				RouteGoal(world, arena);
+
 				Steer(input);
 			}
 			const bool echoing = m_State->CastSlot < 0 && m_Time < m_EchoUntil;

@@ -121,6 +121,7 @@ namespace Game
 		std::set<std::pair<uint32_t, uint32_t>> m_FrameVolleys;
 		std::vector<HitEvent> m_Hits;
 		std::vector<HitEvent> m_PreviousHits;
+		const GameClient* m_Client = nullptr;
 		const Level* m_Level = nullptr;
 		const Level* m_SceneLevel = nullptr;
 		GameStatus m_Status;

@@ -20,6 +20,8 @@ const uint DecalCharge = 9u;
 const uint DecalFrostLane = 10u;
 const uint DecalFissure = 11u;
 const uint DecalCaustic = 12u;
+const uint DecalNova = 13u;
+const uint DecalVoid = 14u;
 
 const float Tau = 6.28318531;
 
@@ -397,6 +399,146 @@ vec2 CracksShape(vec2 uv, float pixel, float radius, float heat, uint seed)
 	float branch = Line(abs(local - branchPath) / count * Tau * r, width * 0.7, pixel) * step(fork, r) * (1.0 - smoothstep(branchEnd - 0.06, branchEnd, r));
 	float lines = max(crack, branch);
 	return vec2(max(lines, (1.0 - smoothstep(0.0, 0.3, r)) * 0.55), lines * heat * 0.7);
+}
+
+float NovaArm(vec2 p, float angle, float reach, float pixel, uint key)
+{
+	vec2 d = vec2(cos(angle), sin(angle));
+	float x = dot(p, d);
+	if (x < 0.0 || x > reach + 0.25)
+		return 0.0;
+	float y = dot(p, vec2(-d.y, d.x)) - CrackPath(x * 0.35, key, 0.2);
+	if (abs(y) > 0.4)
+		return 0.0;
+	float width = mix(0.034, 0.011, clamp(x / max(reach, 1e-3), 0.0, 1.0));
+	float vein = Line(abs(y), max(width, pixel * 0.5), pixel) * smoothstep(0.12, 0.4, x) * (1.0 - smoothstep(reach * 0.88, reach, x));
+	vec2 q = vec2(x, abs(y));
+	uint side = y > 0.0 ? 1u : 0u;
+	float spacing = 0.26;
+	float cell = floor(q.x / spacing);
+	for (int i = 0; i < 2; i++)
+	{
+		float k = cell - float(i);
+		if (k < 1.0)
+			break;
+		uint h = Hash(key * 131u + uint(k) * 7u + side);
+		float start = (k + 0.35 * float(h & 255u) / 255.0) * spacing;
+		float run = (0.12 + 0.22 * float((h >> 8) & 255u) / 255.0) * (1.0 - 0.6 * clamp(start / max(reach, 1e-3), 0.0, 1.0));
+		float tilt = 0.85 + 0.25 * float((h >> 16) & 255u) / 255.0;
+		vec2 tip = vec2(start, 0.0) + vec2(cos(tilt), sin(tilt)) * run;
+		float twig = Line(SegmentDistance(q, vec2(start, 0.0), tip), max(width * 0.6, pixel * 0.45), pixel);
+		vein = max(vein, twig * step(float(h >> 24) / 255.0, 0.82) * step(start, reach * 0.92));
+	}
+	return vein;
+}
+
+Rime NovaRime(vec2 p, float inside, float fringe, float pixel, float glow, uint seed, float time)
+{
+	Rime rime = Rime(0.0, 0.0, 1.0, 0.7);
+	if (inside < -fringe)
+		return rime;
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.613;
+	float e = inside / fringe;
+	float n = ValueNoise(p * 1.9 + offset);
+	float powder = ValueNoise(p * 7.5 + offset * 1.7) * 0.65 + ValueNoise(p * 16.3 - offset) * 0.35;
+	float level = clamp(0.62 - 0.55 * e + (n - 0.5) * 0.5, 0.0, 1.2);
+	float soft = max(fwidth(powder), 0.015);
+	float dust = smoothstep(level - soft, level + soft, powder);
+	if (dust <= 0.0)
+		return rime;
+	float pool = ValueNoise(p * 4.3 + offset + 5.7);
+	float glaze = smoothstep(0.72, 0.8, pool) * smoothstep(0.35, 0.8, e);
+	float rim = (1.0 - smoothstep(0.0, 0.04, abs(pool - 0.72))) * smoothstep(0.35, 0.8, e);
+	vec2 cell = floor(p * 13.0 + 300.0);
+	uint key = Hash(uint(cell.x) * 7919u + uint(cell.y) * 104729u + seed);
+	vec2 spot = (cell + 0.2 + 0.6 * vec2(float((key >> 8) & 255u), float((key >> 16) & 255u)) / 255.0 - 300.0) / 13.0;
+	float glintSize = max(0.01, pixel * 0.8);
+	float glint = step(0.85, float(key & 255u) / 255.0) * exp(-dot(p - spot, p - spot) / (glintSize * glintSize)) * pow(0.5 + 0.5 * sin(time * 3.0 + float(key >> 24) * 0.16), 6.0) * dust * (1.0 - glaze);
+	float thick = clamp(0.35 + 0.65 * e, 0.0, 1.0) * (0.75 + 0.5 * (n - 0.5));
+	rime.Coverage = mix(dust * mix(0.5, 0.96, thick), 0.72, glaze);
+	rime.Shade = mix(0.86 + 0.2 * thick + 0.1 * rim, 0.8, glaze);
+	rime.Roughness = mix(0.75 - 0.2 * thick, 0.05, glaze);
+	rime.Glow = glow * (0.05 * dust + 0.1 * rim) + glint * (0.5 + 0.6 * glow);
+	return rime;
+}
+
+Rime NovaShape(vec2 uv, float extent, float pixel, float glow, float front, float crack, float frost, uint seed, float time)
+{
+	vec2 p = uv * extent;
+	float radius = frost / 0.62;
+	float edge = 1.2 * (1.0 - front);
+	float r = length(p);
+	if (r > radius * (0.71 * front + 0.17))
+		return Rime(0.0, 0.0, 1.0, 0.7);
+	vec2 offset = vec2(float((seed >> 4) & 255u), float((seed >> 12) & 255u)) * 0.37;
+	vec2 heading = p / max(r, 1e-4);
+	float reach = radius * 0.62 * front * (0.86 + 0.28 * (ValueNoise(heading * 1.8 + offset) * 0.65 + ValueNoise(heading * 3.7 + offset + 17.1) * 0.35));
+	Rime rime = NovaRime(p, reach - r, radius * 0.16, pixel, glow * 0.5, seed, time);
+	float count = 12.0 + float(seed % 4u);
+	float spin = float((seed >> 8) & 255u) / 255.0 * Tau / count;
+	float turn = (atan(p.y, p.x) - spin) / Tau * count;
+	float nearest = floor(turn);
+	float veins = 0.0;
+	for (int i = 0; i < 2; i++)
+	{
+		float k = i == 0 ? nearest : nearest + (fract(turn) < 0.5 ? -1.0 : 1.0);
+		uint key = uint(mod(k, count)) + seed * 31u;
+		veins = max(veins, NovaArm(p, (k + 0.5) / count * Tau + spin, reach * 0.97, pixel, key));
+	}
+	veins *= 1.0 - smoothstep(reach - radius * 0.04, reach + radius * 0.02, r);
+	float band = exp(-pow((r - reach) / (radius * 0.05), 2.0)) * edge * step(0.02, front);
+	float split = 0.0;
+	if (crack > 0.0)
+		split = CracksShape(p / max(reach * 1.05, 1e-3), pixel / max(reach, 1e-3), reach, 1.0, seed * 7u + 3u).y / 0.7 * crack;
+	rime.Coverage = max(max(rime.Coverage, veins * 0.95 * step(0.0, reach - r + radius * 0.02)), split * 0.9);
+	rime.Shade = mix(rime.Shade, 1.12, veins * 0.6) * (1.0 - 0.45 * split);
+	rime.Glow += glow * veins * 0.7 + band * (0.6 + 0.4 * ValueNoise(p * 6.0 + offset)) + glow * split * 0.5;
+	return rime;
+}
+
+float VoidSpiral(vec2 p, float r, float angle, float count, float twist, float spin, float jitter, float width, float pixel, vec2 offset, float time, bool varied, out float flow)
+{
+	float logr = log(max(r, 0.04));
+	float turn = (angle + spin - twist * logr + jitter) / Tau * count;
+	float arm = floor(turn + 0.5);
+	float distance = abs(turn - arm) / count * Tau * r / sqrt(1.0 + twist * twist);
+	float broken = smoothstep(0.32, 0.5, ValueNoise(vec2(logr * 3.2 + offset.x, mod(arm, count) * 7.3 + offset.y)));
+	float taper = varied ? mix(1.6, 0.6, ValueNoise(vec2(logr * 5.0 - offset.y, mod(arm, count) * 3.1))) : 1.0;
+	flow = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(logr * 9.0 + time * 7.0 + mod(arm, count) * 2.3), 3.0);
+	return Line(distance, max(width * taper, pixel * 0.6), pixel) * broken;
+}
+
+vec2 VoidFieldShape(vec2 uv, float extent, float pixel, float front, float glow, float spin, float scar, uint seed, float time)
+{
+	vec2 p = uv * extent;
+	float radius = extent / 1.04;
+	float r = length(p);
+	float n = r / radius;
+	if (n > 1.02 || front <= 0.0)
+		return vec2(0.0);
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.37;
+	float angle = atan(p.y, p.x);
+	vec2 heading = p / max(r, 1e-4);
+	float reach = front * (0.93 + 0.12 * (ValueNoise(heading * 2.6 + offset) - 0.5));
+	float inside = 1.0 - smoothstep(reach - 0.14, reach, n);
+	float mottled = ValueNoise(p * 1.25 + offset);
+	float dark = inside * (0.3 + 0.62 * pow(max(1.0 - n / max(reach, 1e-3), 0.0), 1.3)) * (0.75 + 0.5 * mottled);
+	if (scar > 0.0)
+	{
+		vec2 cracks = CracksShape(p / (radius * 0.9), pixel / (radius * 0.9), radius * 0.9, 1.0, seed * 5u + 1u);
+		return vec2(max(dark * 0.7, cracks.x * 0.8 * inside), cracks.y * 0.9 * glow * inside);
+	}
+	float jitter = 0.45 * (ValueNoise(p * 2.8 + offset) - 0.5);
+	float flowA;
+	float flowB;
+	float major = VoidSpiral(p, r, angle, 5.0, 1.35, spin, jitter, 0.04, pixel, offset, time, true, flowA);
+	float minor = VoidSpiral(p, r, angle, 9.0, 2.6, spin * 1.35 + 1.7, jitter * 1.4, 0.018, pixel, offset + 9.1, time * 1.3, false, flowB);
+	float depth = smoothstep(0.04, 0.2, n) * inside;
+	float fissures = (major * flowA + minor * flowB * 0.55) * depth;
+	float rim = Line(abs(n - reach) * radius, 0.035 + 0.02 * ValueNoise(heading * 9.0 + offset), pixel) * step(0.05, front);
+	float wisps = pow(ValueNoise(vec2((angle + spin * 0.6) / Tau * 40.0, n * 6.0 + time * 1.5) + offset), 6.0) * (1.0 - smoothstep(0.0, 0.18, reach - n)) * inside;
+	float coverage = clamp(dark + (major + minor * 0.5) * depth * 0.5, 0.0, 0.94);
+	return vec2(coverage, glow * (fissures * 1.1 + rim * 0.22 + wisps * 0.6));
 }
 
 vec2 FissureShape(vec2 uv, vec2 extent, float pixel, float glow, float reach, float torn, uint seed, float time)

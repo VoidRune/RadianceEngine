@@ -181,7 +181,7 @@ namespace Game
 		void CollectBodies(uint32_t ticksAhead, std::vector<BodyCircle>& bodies) const;
 		ArenaState ArenaFor(uint32_t ticksAhead) const;
 		void PredictAbility(const SkillTraits& skill, uint16_t tag, const PlayerActions& actions, const PlayerTraits& traits);
-		void PredictRecast(AbilityId ability, const PlayerActions& actions);
+		void PredictRecast(AbilityId ability, const PlayerActions& actions, uint16_t recastTag, uint32_t slot);
 		void ReleaseHits();
 		void SendAction(ActionType action, uint32_t value, uint32_t target = 0, uint32_t extra = 0);
 		void StepPredictedEffects(float dt);

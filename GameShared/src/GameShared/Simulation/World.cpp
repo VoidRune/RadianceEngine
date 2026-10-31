@@ -207,10 +207,12 @@ namespace Game
 		}
 		if (actions.Raised)
 			m_Match.NoteCast(controller->PlayerId);
-		if (actions.Released == 0)
+		const bool erupts = actions.Recast != 0 && actions.RecastAbility == AbilityId::GlacialNova;
+		if (actions.Released == 0 && !erupts)
 			return actions;
-		m_Match.NoteCast(controller->PlayerId);
-		if (IsHub())
+		if (actions.Released != 0)
+			m_Match.NoteCast(controller->PlayerId);
+		if (IsHub() && actions.Released != 0)
 			StargazeAt(*controller, origin, actions);
 		const float healthFraction = life ? float(std::max(life->Current, 0)) / float(std::max(life->Max, 1)) : 1.0f;
 
@@ -232,6 +234,17 @@ namespace Game
 		context.Departure = origin;
 		if (m_Settings.LagCompensation)
 			context.Rewind = float(std::clamp(double(m_Tick) - input.GetViewTime(), 0.0, double(MaxRewindTicks)));
+		for (uint32_t slot = 0; slot < AbilitySlots && erupts; slot++)
+		{
+			if (!actions.HasRecast(slot))
+				continue;
+			const SkillTraits& skill = traits.Skills[slot];
+			AbilityContext eruption = context;
+			eruption.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, controller->State.Still);
+			eruption.AreaScale = traits.AreaScale * skill.AreaScale;
+			eruption.PvpScale = skill.PvpScale;
+			EruptFrostNova(*this, actions.RecastPoint, eruption);
+		}
 		const bool chamber = HasCard(context.Cards, CardId::EchoChamber) && IsDamageBrawl();
 		uint8_t rolled = 0;
 		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
@@ -1014,7 +1027,7 @@ namespace Game
 		m_Entities.Add<Transform>(entity, position, AngleOf(projectile.Velocity));
 		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = owner, .Tag = tag, .Variant = projectile.Ability, .Scale = ScaleByte(scale) });
 		Projectile copy = projectile;
-		copy.Floor = m_Level.Relief.IsEmpty() ? FloorAt(m_Level.Map, position, projectile.Floor) : projectile.Floor;
+		copy.Floor = FloorAt(m_Level.Map, position, projectile.Floor);
 		m_Entities.Add<Projectile>(entity, copy);
 		return entity;
 	}

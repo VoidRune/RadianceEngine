@@ -1023,6 +1023,20 @@ namespace Game
 			for (size_t i = 0; i < size_t(surface->Width) * surface->Height; i++)
 				surface->Pixels[i * 4 + 2] = matches ? thin->Pixels[i * 4 + 3] : uint8_t(255);
 		}
+		const auto number = [&](const char* extension, const char* key, float fallback)
+		{
+			const auto found = material.extensions.find(extension);
+			return found != material.extensions.end() && found->second.Has(key) ? float(found->second.Get(key).GetNumberAsDouble()) : fallback;
+		};
+		result.Transmission = number("KHR_materials_transmission", "transmissionFactor", 0.0f);
+		result.Ior = number("KHR_materials_ior", "ior", 1.5f);
+		if (const auto volume = material.extensions.find("KHR_materials_volume"); volume != material.extensions.end() && volume->second.Has("attenuationColor"))
+		{
+			const tinygltf::Value& color = volume->second.Get("attenuationColor");
+			const float distance = std::max(number("KHR_materials_volume", "attenuationDistance", 1.0f), 1e-3f);
+			for (int c = 0; c < 3 && c < int(color.ArrayLen()); c++)
+				result.Absorption[c] = -std::log(std::clamp(float(color.Get(c).GetNumberAsDouble()), 1e-4f, 1.0f)) / distance;
+		}
 		std::optional<RgbaImage> alpha;
 		if (result.AlphaCutoff > 0.0f)
 		{
@@ -1173,6 +1187,9 @@ namespace Game
 				mesh.Metallic = scan.Metallic;
 				mesh.AlphaCutoff = scan.AlphaCutoff;
 				mesh.Translucency = scan.Translucency;
+				mesh.Transmission = scan.Transmission;
+				mesh.Ior = scan.Ior;
+				mesh.Absorption = scan.Absorption;
 				mesh.DoubleSided = scan.DoubleSided;
 				mesh.Water = scan.Water;
 				mesh.Skinned = group.Skeleton != NoSkeleton;

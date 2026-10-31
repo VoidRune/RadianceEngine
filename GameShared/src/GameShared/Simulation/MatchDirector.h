@@ -141,8 +141,6 @@ namespace Game
 			uint8_t RoundWins = 0;
 			float Afterburn = 0.0f;
 			float LavaBank = 0.0f;
-			Vec2 Anchor;
-			float Still = 0.0f;
 			bool Burning = false;
 			float FeatherGrace = 0.0f;
 			bool FeatherUsed = false;

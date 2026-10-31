@@ -33,7 +33,7 @@ namespace Game
 		AbilityId::Gust,
 		AbilityId::Comet,
 		AbilityId::Warp,
-		AbilityId::Shockwave,
+		AbilityId::GlacialNova,
 		AbilityId::GravityWell,
 		AbilityId::ArcLightning,
 		AbilityId::Swap,
@@ -154,6 +154,8 @@ namespace Game
 	inline constexpr float HookAnchorSeconds = 1.0f;
 	inline constexpr float HookYankSpeed = 20.0f;
 	inline constexpr float HookYankStop = 0.6f;
+	inline constexpr float FrostNovaWindow = 1.2f;
+	static_assert(FrostNovaWindow < Abilities[size_t(AbilityId::GlacialNova)].EffectDuration);
 	inline constexpr float ChargeCrackSeconds = 1.0f;
 	inline constexpr float ChargeCrackPower = 0.55f;
 	inline constexpr float SpearFullSpeed = 23.0f;
@@ -246,17 +248,12 @@ namespace Game
 	inline constexpr float PeakScale = 2.0f;
 	inline constexpr float PeakStartRadius = 8.2f;
 	inline constexpr float PeakSpawnRank = 4.3f;
-	inline constexpr float TierHeight = 1.0f;
-	inline constexpr float ClimbHeight = 0.55f;
-	inline constexpr float DashClimb = 1.45f;
-	inline constexpr float SpellClimb = 1.45f;
 	inline constexpr float BoltFirst = 7.0f;
 	inline constexpr float BoltWarning = 1.6f;
 	inline constexpr float BoltLinger = 1.0f;
 	inline constexpr float BoltRadius = 1.35f;
 	inline constexpr float BoltIntervalEarly = 3.2f;
 	inline constexpr float BoltIntervalLate = 1.3f;
-	inline constexpr float BoltRampEnd = 70.0f;
 	inline constexpr float BoltPush = 7.0f;
 	inline constexpr float BoltStun = 0.35f;
 	inline constexpr int32_t BoltDamage = 14;
@@ -317,8 +314,8 @@ namespace Game
 			"Spells hurt and cost mana, and on the ice even a nudge slides far. Snow drifts grip, ice pillars bounce you back, and the ice breaks up from the shore and around the air holes." };
 		static constexpr BrawlTerms Ruins{ "abyss", "stone", "The ruins are crumbling", "Sudden death, the last stones are falling", "Lost to the Sky", "fell from the ruins", "The ground is giving way! Move", "ruins", "the Sky Ruins", "Spells don't hurt, they shove, and there is no lava: whoever falls off is out. Drifting islands carry you out and back, gusts push everyone one way, and the ruins crumble from the edge inward.",
 			"Spells hurt and cost mana, and they still nudge. Whoever falls off is out. Drifting islands carry you out and back, gusts push everyone one way, and the ruins crumble from the edge inward." };
-		static constexpr BrawlTerms Peak{ "abyss", "rock", "The storm is closing in", "Sudden death, the storm has closed over the circle", "Lost to the Storm", "fell from the peak", "The storm is tearing at you! Get inside the circle", "peak", "the Storm Peak", "Spells don't hurt, they shove, and off the mountain you're out. Lightning falls where the ground crackles and hunts anyone who stands still. Later the storm closes in on the old ritual circle at the summit, and outside it the storm tears at you.",
-			"Spells hurt and cost mana, and they still nudge. Off the mountain you're out. Lightning falls where the ground crackles and hunts anyone who stands still, and later the storm closes in on the ritual circle at the summit." };
+		static constexpr BrawlTerms Peak{ "abyss", "rock", "The storm is closing in", "Sudden death, the storm has closed over the circle", "Lost to the Storm", "fell from the peak", "The storm is tearing at you! Get inside the circle", "peak", "the Storm Peak", "Spells don't hurt, they shove, and off the edge you're out. Lightning falls at random where the ground crackles. Later the storm closes in on the old ritual circle at the summit, and outside it the storm tears at you.",
+			"Spells hurt and cost mana, and they still nudge. Off the edge you're out. Lightning falls at random where the ground crackles, and later the storm closes in on the ritual circle at the summit." };
 		switch (map)
 		{
 		case MapKind::FrozenLake:
@@ -409,11 +406,6 @@ namespace Game
 	inline CellCoord CellAt(Vec2 position)
 	{
 		return NearestSeed(position, position, CellSeed);
-	}
-
-	inline float FloorHeight(const Level& level, Vec2 position)
-	{
-		return level.Relief.IsEmpty() ? 0.0f : level.Relief.Height(position);
 	}
 
 	inline CellCoord ChunkOf(CellCoord cell)
@@ -535,8 +527,8 @@ namespace Game
 
 	inline bool IsBrawlLava(const Level& level, const CollapsePlan& plan, float clock, Vec2 position)
 	{
-		if (!level.Relief.IsEmpty())
-			return level.Relief.RimDistance(position) < 0.0f;
+		if (!level.Peak.IsEmpty())
+			return level.Peak.RimDistance(position) < 0.0f;
 		if (!level.Islands.empty() && IslandAt(level, plan, clock, position) >= 0)
 			return false;
 		const CellCoord cell = CellAt(position);
@@ -555,8 +547,8 @@ namespace Game
 
 	inline float GroundLeft(const Level& level, const CollapsePlan& plan, float clock, Vec2 position)
 	{
-		if (!level.Relief.IsEmpty())
-			return level.Relief.RimDistance(position) < 0.0f ? 0.0f : 1e6f;
+		if (!level.Peak.IsEmpty())
+			return level.Peak.RimDistance(position) < 0.0f ? 0.0f : 1e6f;
 		if (const int32_t island = IslandAt(level, plan, clock, position); island >= 0)
 			return IslandCollapseTime(plan, level.Islands[size_t(island)]) - clock;
 		const CellCoord cell = CellAt(position);
@@ -656,9 +648,15 @@ namespace Game
 		return plan.Shape == BrawlShape::Peak ? std::clamp(0.25f + 0.75f * clock / RingSettle, 0.25f, 1.0f) : 0.0f;
 	}
 
-	inline float BoltInterval(float clock)
+	inline float BoltReach(const CollapsePlan& plan, float clock)
 	{
-		return BoltIntervalEarly + (BoltIntervalLate - BoltIntervalEarly) * std::clamp((clock - BoltFirst) / (BoltRampEnd - BoltFirst), 0.0f, 1.0f);
+		const StormRing ring = RingAt(plan, clock);
+		return ring.Active ? std::min(ring.Radius, RingOuter) : RingOuter;
+	}
+
+	inline float BoltInterval(float reach)
+	{
+		return BoltIntervalEarly + (BoltIntervalLate - BoltIntervalEarly) * std::clamp((RingOuter - reach) / (RingOuter - RingInner), 0.0f, 1.0f);
 	}
 
 	inline std::span<const LightningBolt> BoltsOf(const CollapsePlan& plan)

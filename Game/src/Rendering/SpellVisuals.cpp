@@ -14,6 +14,7 @@ namespace Game
 		constexpr glm::vec3 SpikeEmber{ 0.9f, 0.26f, 0.06f };
 		constexpr glm::vec3 MeltEdge{ 0.9f, 2.4f, 4.2f };
 		constexpr glm::vec3 WardBurn{ 2.6f, 2.2f, 1.4f };
+		constexpr glm::vec3 SpellIceAbsorption{ 1.4f, 0.5f, 0.16f };
 
 		ParticleSprite Sprite(ParticleShape shape, const glm::vec3& position, float size, const glm::vec3& color)
 		{
@@ -413,6 +414,29 @@ namespace Game
 			AppendIceMound(vertices, indices, mound, mound * 0.32f, variant * 131u + 3u);
 		}
 
+		void BuildIceFang(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, uint32_t variant)
+		{
+			std::vector<IceShoot> shoots;
+			float mound = 0.16f;
+			switch (variant)
+			{
+			case 0:
+				shoots = { { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.085f, 0.7f, 0.5f, 5 }, { 0.05f, 0.02f, 2.5f, 0.65f, 0.38f, 0.05f, 0.85f, 0.5f, 5 }, { -0.04f, -0.03f, -2.3f, 0.8f, 0.22f, 0.035f, 1.0f, 0.5f, 4 } };
+				break;
+			case 1:
+				shoots = { { 0.0f, 0.0f, 0.4f, 0.04f, 1.0f, 0.1f, 0.42f, 0.55f, 4 }, { -0.05f, 0.03f, 2.9f, 0.55f, 0.45f, 0.06f, 0.6f, 0.5f, 5 } };
+				mound = 0.15f;
+				break;
+			default:
+				shoots = { { 0.0f, 0.0f, 0.0f, 0.05f, 0.95f, 0.08f, 0.8f, 0.45f, 6 }, { 0.04f, -0.03f, 1.9f, 0.32f, 0.7f, 0.065f, 0.75f, 0.5f, 5 }, { -0.05f, 0.04f, -2.2f, 0.7f, 0.3f, 0.04f, 1.0f, 0.5f, 4 } };
+				mound = 0.17f;
+				break;
+			}
+			for (size_t i = 0; i < shoots.size(); i++)
+				AppendIceShoot(vertices, indices, shoots[i], variant * 6151u + uint32_t(i) * 1031u + 19u);
+			AppendIceMound(vertices, indices, mound, mound * 0.25f, variant * 173u + 11u);
+		}
+
 		glm::mat4 Frame(const glm::vec3& origin, const glm::vec3& forward, const glm::vec3& up, float scale)
 		{
 			const glm::vec3 side = glm::normalize(glm::cross(forward, up));
@@ -438,7 +462,7 @@ namespace Game
 			{ 0.4f, 0.048f, 0.68f },
 			{ 0.6f, 0.0f, 0.7f },
 		};
-		const EffectMaterial ice{ .Color = { 0.86f, 0.95f, 1.0f }, .Roughness = 0.07f, .Metallic = 0.0f, .Translucency = 0.7f };
+		const EffectMaterial ice{ .Color = { 0.86f, 0.95f, 1.0f }, .Roughness = 0.07f, .Metallic = 0.0f, .Translucency = 0.7f, .Transmission = 1.0f, .Ior = 1.31f, .Absorption = SpellIceAbsorption };
 		SpellMeshes meshes;
 		std::vector<ModelVertex> vertices;
 		std::vector<uint32_t> indices;
@@ -458,13 +482,20 @@ namespace Game
 		indices.clear();
 		BuildSpikeCollar(vertices, indices, 41u);
 		meshes.SpikeCollar = cliff ? renderer.AddEffectMesh("EarthSpikeCollar", vertices, indices, *cliff, MeshVertexTint) : renderer.AddEffectMesh("EarthSpikeCollar", vertices, indices, granite, MeshVertexTint);
-		const EffectMaterial clear{ .Color = { 0.9f, 0.96f, 1.0f }, .Roughness = 0.1f, .Metallic = 0.0f, .Translucency = 0.8f };
+		const EffectMaterial clear{ .Color = { 0.9f, 0.96f, 1.0f }, .Roughness = 0.1f, .Metallic = 0.0f, .Translucency = 0.8f, .Transmission = 1.0f, .Ior = 1.31f, .Absorption = SpellIceAbsorption };
 		for (uint32_t variant = 0; variant < meshes.Ice.size(); variant++)
 		{
 			vertices.clear();
 			indices.clear();
 			BuildIceCluster(vertices, indices, variant);
 			meshes.Ice[variant] = renderer.AddEffectMesh("IceCluster" + std::to_string(variant), vertices, indices, clear, MeshVertexTint);
+		}
+		for (uint32_t variant = 0; variant < meshes.Fang.size(); variant++)
+		{
+			vertices.clear();
+			indices.clear();
+			BuildIceFang(vertices, indices, variant);
+			meshes.Fang[variant] = renderer.AddEffectMesh("IceFang" + std::to_string(variant), vertices, indices, clear, MeshVertexTint);
 		}
 		constexpr CrystalRing Blade[] = {
 			{ -0.4f, 0.0f, 0.0f },
@@ -537,7 +568,7 @@ namespace Game
 
 	void DrawIceCluster(WorldRenderer& renderer, const SpellMeshes& meshes, const IceClusterLook& look)
 	{
-		const uint32_t mesh = meshes.Ice[look.Variant % meshes.Ice.size()];
+		const uint32_t mesh = look.Fang ? meshes.Fang[look.Variant % meshes.Fang.size()] : meshes.Ice[look.Variant % meshes.Ice.size()];
 		if (mesh == UINT32_MAX || look.Scale < 0.01f)
 			return;
 		const glm::vec3 heading = Heading(look.Yaw);
@@ -546,6 +577,17 @@ namespace Game
 		const glm::vec4 rim(glm::vec3(0.08f, 0.3f, 0.7f) * (0.5f + look.Glow), 1.0f);
 		const ModelDissolve melt{ .Amount = look.Melt, .Edge = MeltEdge, .Width = 0.09f, .Scale = 5.0f, .Sweep = -1.2f, .Seed = float(look.Variant * 37u % 199u) };
 		renderer.DrawModel(mesh, Frame(look.Base - Up * look.Sink, forward, axis, look.Scale), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, look.Frost), 0.04f + 0.14f * look.Glow, look.Base.y, rim, 0u, glm::vec4(0.0f), melt);
+	}
+
+	uint32_t NovaArmCount(uint32_t seed)
+	{
+		return 12u + seed % 4u;
+	}
+
+	float NovaArmAngle(uint32_t seed, uint32_t arm)
+	{
+		const float count = float(NovaArmCount(seed));
+		return (float(arm) + 0.5f) / count * 6.2831853f + float((seed >> 8) & 255u) / 255.0f * 6.2831853f / count;
 	}
 
 	void DrawIceSpear(WorldRenderer& renderer, const SpellMeshes& meshes, const IceSpearLook& look, float time, uint32_t seed)
@@ -1800,37 +1842,247 @@ namespace Game
 		}
 	}
 
-	void DrawBolt(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float jitter, float width, const glm::vec3& color, float emission)
+	namespace
 	{
-		const auto beam = [&](const glm::vec3& a, const glm::vec3& b, float size, const glm::vec3& tint)
+		constexpr float StormSky = 13.0f;
+		constexpr float StormStep = 0.1f;
+		constexpr float StormJag = 0.2f;
+		constexpr uint32_t StormCoarse = 4;
+		constexpr float StormStrokes[][2] = { { 0.0f, 1.0f }, { 0.075f, 0.7f }, { 0.16f, 0.45f } };
+
+		LightningShape StormChannel(const glm::vec3& ground, uint32_t seed)
 		{
-			ParticleSprite sprite = Stretched(ParticleShape::Beam, a, b, size, tint);
-			sprite.Emission = emission;
-			renderer.DrawSprite(sprite);
-		};
-		const glm::vec3 span = to - from;
-		const float length = glm::length(span);
-		if (length < 1e-3f)
-			return;
-		const glm::vec3 axis = span / length;
-		const glm::vec3 side = glm::normalize(std::abs(axis.y) > 0.9f ? glm::cross(axis, glm::vec3(1.0f, 0.0f, 0.0f)) : glm::cross(axis, Up));
-		const glm::vec3 lift = glm::cross(side, axis);
-		const uint32_t segments = std::clamp(uint32_t(length / 0.6f), 3u, 14u);
-		glm::vec3 previous = from;
-		for (uint32_t i = 1; i <= segments; i++)
-		{
-			const float t = float(i) / float(segments);
-			const float swing = i == segments ? 0.0f : jitter * std::sin(t * 3.1416f);
-			const glm::vec3 point = from + span * t + side * ((Unit(Mix(seed, i * 2u)) - 0.5f) * 2.0f * swing) + lift * ((Unit(Mix(seed, i * 2u + 1u)) - 0.5f) * swing);
-			beam(previous, point, width * 2.2f, color * 0.2f);
-			beam(previous, point, width, color);
-			if (i % 3 == 1)
-			{
-				const glm::vec3 fork = point + side * ((Unit(Mix(seed, i * 7u)) - 0.5f) * jitter * 2.0f) - axis * (0.15f * length / float(segments));
-				beam(point, fork, width * 0.6f, color * 0.7f);
-			}
-			previous = point;
+			const float angle = Unit(Mix(seed, 911u)) * 6.2832f;
+			const float lean = 0.8f + 1.2f * Unit(Mix(seed, 912u));
+			LightningShape bolt;
+			bolt.From = ground + glm::vec3(std::cos(angle) * lean, StormSky, std::sin(angle) * lean);
+			bolt.To = ground + Up * 0.02f;
+			bolt.Seed = seed;
+			bolt.CoarseLevels = StormCoarse;
+			bolt.Step = StormStep;
+			bolt.Jag = StormJag;
+			bolt.CoreColor = StormCore;
+			bolt.GlowColor = StormGlow;
+			return bolt;
 		}
+	}
+
+	void DrawArcChannel(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float time, float intensity)
+	{
+		if (intensity <= 0.0f)
+			return;
+		const uint32_t route = uint32_t(time * 14.0f);
+		const uint32_t frame = uint32_t(time * 40.0f);
+		LightningShape bolt;
+		bolt.From = from;
+		bolt.To = to;
+		bolt.Seed = Mix(seed, route);
+		bolt.Detail = frame;
+		bolt.CoarseLevels = 2;
+		bolt.Core = 0.032f;
+		bolt.Glow = 0.34f;
+		bolt.Jag = 0.12f;
+		bolt.Step = 0.06f;
+		bolt.Branches = 1.5f;
+		bolt.BranchLength = std::min(0.22f, 0.75f / std::max(glm::length(to - from), 0.1f));
+		bolt.BranchSpread = 0.75f;
+		bolt.Depth = 2;
+		bolt.Intensity = intensity;
+		bolt.CoreColor = ArcCore;
+		bolt.GlowColor = ArcGlow;
+		renderer.DrawLightning(bolt);
+		LightningShape strand = bolt;
+		strand.CoarseLevels = 1;
+		strand.Detail = frame + 101u;
+		strand.Core = 0.014f;
+		strand.Glow = 0.14f;
+		strand.Jag = 0.16f;
+		strand.Branches = 0.6f;
+		strand.Depth = 1;
+		strand.Intensity = intensity * 0.6f;
+		renderer.DrawLightning(strand);
+	}
+
+	void DrawArcSparks(WorldRenderer& renderer, const glm::vec3& center, uint32_t seed, float reach, float intensity, uint32_t count)
+	{
+		for (uint32_t i = 0; i < count; i++)
+		{
+			const float angle = (float(i) + Unit(Mix(seed, i * 3u))) / float(count) * 6.2832f;
+			const float rise = Unit(Mix(seed, i * 3u + 1u)) * 1.2f - 0.4f;
+			LightningShape spark;
+			spark.From = center;
+			spark.To = center + glm::normalize(glm::vec3(std::cos(angle), rise, std::sin(angle))) * (reach * (0.5f + 0.5f * Unit(Mix(seed, i * 3u + 2u))));
+			spark.Seed = Mix(seed, i + 17u);
+			spark.CoarseLevels = 1;
+			spark.Core = 0.016f;
+			spark.Glow = 0.13f;
+			spark.Jag = 0.25f;
+			spark.Step = 0.04f;
+			spark.Branches = 3.0f;
+			spark.BranchLength = 0.4f;
+			spark.BranchSpread = 1.0f;
+			spark.Depth = 1;
+			spark.Taper = 0.7f;
+			spark.Intensity = intensity;
+			spark.CoreColor = ArcCore;
+			spark.GlowColor = ArcGlow;
+			renderer.DrawLightning(spark);
+		}
+	}
+
+	float ArcFadeIntensity(float age, uint32_t seed, float time)
+	{
+		const float t = age / ArcFadeSeconds;
+		if (t < 0.0f || t >= 1.0f)
+			return 0.0f;
+		if (t < 0.2f)
+			return 1.4f;
+		const float flicker = Unit(Mix(seed, uint32_t(time * 45.0f))) > 0.3f ? 1.0f : 0.25f;
+		return 1.1f * (1.0f - t) * (1.0f - t) * flicker;
+	}
+
+	float StormStroke(float age)
+	{
+		if (age < 0.0f || age >= StormBoltSeconds)
+			return 0.0f;
+		float light = 0.22f * (1.0f - age / StormBoltSeconds);
+		for (const auto& stroke : StormStrokes)
+			if (age >= stroke[0])
+				light = std::max(light, stroke[1] * std::exp(-(age - stroke[0]) / 0.028f));
+		return light;
+	}
+
+	glm::vec2 StormArcOffset(uint32_t seed, uint32_t index, float radius)
+	{
+		const float angle = (float(index) + 0.7f * Unit(Mix(seed, index * 5u + 300u))) / float(StormGroundArcs) * 6.2832f;
+		const float reach = radius * (0.8f + 0.65f * Unit(Mix(seed, index * 5u + 301u)));
+		return glm::vec2(std::cos(angle), std::sin(angle)) * reach;
+	}
+
+	void DrawStormLeader(WorldRenderer& renderer, const glm::vec3& ground, float radius, uint32_t seed, float progress, float time)
+	{
+		const uint32_t frame = uint32_t(time * 30.0f);
+		LightningShape leader = StormChannel(ground, seed);
+		leader.Detail = frame;
+		leader.Core = 0.016f;
+		leader.Glow = 0.22f;
+		leader.Branches = 0.6f;
+		leader.BranchLength = 0.12f;
+		leader.BranchSpread = 0.8f;
+		leader.Depth = 1;
+		leader.Reach = 0.12f + 0.8f * progress * progress;
+		leader.Intensity = 0.2f + 0.3f * progress;
+		renderer.DrawLightning(leader);
+		if (progress < 0.6f)
+			return;
+		const float rise = (progress - 0.6f) / 0.4f;
+		for (uint32_t i = 0; i < 3; i++)
+		{
+			const glm::vec2 offset = StormArcOffset(seed + 77u, i * 2u, radius * 0.45f);
+			const glm::vec3 base = ground + glm::vec3(offset.x, 0.02f, offset.y);
+			LightningShape streamer;
+			streamer.From = base;
+			streamer.To = base + glm::vec3(-offset.x * 0.2f, 0.25f + 0.45f * rise, -offset.y * 0.2f);
+			streamer.Seed = Mix(seed, i + 500u);
+			streamer.Detail = frame + i;
+			streamer.CoarseLevels = 1;
+			streamer.Core = 0.012f;
+			streamer.Glow = 0.1f;
+			streamer.Jag = 0.25f;
+			streamer.Step = 0.04f;
+			streamer.Branches = 0.0f;
+			streamer.Taper = 0.6f;
+			streamer.Intensity = 0.5f * rise;
+			streamer.CoreColor = StormCore;
+			streamer.GlowColor = StormGlow;
+			renderer.DrawLightning(streamer);
+		}
+	}
+
+	void DrawStormBolt(WorldRenderer& renderer, const glm::vec3& ground, uint32_t seed, float age, float scale)
+	{
+		const float stroke = StormStroke(age);
+		if (stroke <= 0.01f)
+			return;
+		LightningShape bolt = StormChannel(ground, seed);
+		bolt.Detail = 1u + uint32_t(std::count_if(std::begin(StormStrokes) + 1, std::end(StormStrokes), [age](const auto& s) { return age >= s[0]; }));
+		bolt.Core = 0.075f * scale;
+		bolt.Glow = 0.85f * scale;
+		bolt.Branches = 0.55f;
+		bolt.BranchLength = 0.3f;
+		bolt.BranchSpread = 0.75f;
+		bolt.Depth = 2;
+		bolt.Intensity = stroke;
+		renderer.DrawLightning(bolt);
+	}
+
+	void DrawStormStrike(WorldRenderer& renderer, const StormStrikeLook& look, float time)
+	{
+		const float age = look.Age;
+		const float stroke = StormStroke(age);
+		DrawStormBolt(renderer, look.Ground, look.Seed, age, look.Scale);
+		const float flash = std::exp(-age / 0.06f);
+		DrawGlow(renderer, look.Ground + Up * 0.35f, look.Radius * (0.6f + 0.3f * flash), StormGlow * (0.4f * flash + 0.15f * stroke), 0.3f);
+		DrawGlow(renderer, look.Ground + Up * 0.2f, 0.4f + 0.35f * stroke, StormCore * (0.3f * stroke));
+		DrawGroundGlow(renderer, look.Ground, look.Radius * 1.7f, StormGlow, 0.55f * flash + 0.2f * stroke);
+		const uint32_t frame = uint32_t(time * 24.0f);
+		for (uint32_t i = 0; i < StormGroundArcs; i++)
+		{
+			const float start = 0.06f * Unit(Mix(look.Seed, i * 3u + 200u));
+			const float life = 0.14f + 0.12f * Unit(Mix(look.Seed, i * 3u + 201u));
+			const float t = (age - start) / life;
+			if (t < 0.0f || t >= 1.0f)
+				continue;
+			const glm::vec3 out = look.Ends[i] - look.Ground;
+			const glm::vec3 flat = glm::normalize(glm::vec3(out.x, 0.0f, out.z) + glm::vec3(1e-5f, 0.0f, 0.0f));
+			LightningShape arc;
+			arc.From = look.Ground + flat * 0.1f + Up * 0.08f;
+			arc.To = look.Ends[i] + Up * 0.05f;
+			arc.Seed = Mix(look.Seed, i + 40u);
+			arc.Detail = frame;
+			arc.CoarseLevels = 2;
+			arc.Core = 0.028f;
+			arc.Glow = 0.28f;
+			arc.Jag = 0.2f;
+			arc.Step = 0.06f;
+			arc.Branches = 1.8f;
+			arc.BranchLength = 0.3f;
+			arc.BranchSpread = 1.0f;
+			arc.Depth = 1;
+			arc.Flatten = 0.85f;
+			arc.Taper = 0.6f;
+			arc.Reach = std::min(1.0f, 0.35f + t * 5.0f);
+			arc.Intensity = std::pow(1.0f - t, 1.5f) * (0.55f + 0.45f * Unit(Mix(look.Seed + i, frame)));
+			arc.CoreColor = StormCore;
+			arc.GlowColor = StormGlow;
+			renderer.DrawLightning(arc);
+		}
+	}
+
+	void DrawStormJump(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float age, float time)
+	{
+		const float light = std::max(std::exp(-age / 0.05f), age >= 0.09f ? 0.65f * std::exp(-(age - 0.09f) / 0.035f) : 0.0f);
+		if (light < 0.02f)
+			return;
+		LightningShape bolt;
+		bolt.From = from;
+		bolt.To = to;
+		bolt.Seed = seed;
+		bolt.Detail = age < 0.09f ? 0u : 1u + uint32_t(time * 30.0f) % 2u;
+		bolt.CoarseLevels = 3;
+		bolt.Core = 0.05f;
+		bolt.Glow = 0.55f;
+		bolt.Jag = 0.18f;
+		bolt.Step = 0.07f;
+		bolt.Branches = 1.0f;
+		bolt.BranchLength = 0.25f;
+		bolt.BranchSpread = 0.8f;
+		bolt.Depth = 2;
+		bolt.Intensity = light;
+		bolt.CoreColor = StormCore;
+		bolt.GlowColor = StormGlow;
+		renderer.DrawLightning(bolt);
+		DrawGlow(renderer, to, 0.55f * light + 0.1f, StormGlow * (0.9f * light));
 	}
 
 	void DrawShockwave(WorldRenderer& renderer, const glm::vec3& ground, float radius, float width, float strength, float facing, float halfArc)

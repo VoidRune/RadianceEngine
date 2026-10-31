@@ -41,6 +41,9 @@ namespace Game
 			float Metallic = 0.0f;
 			float AlphaCutoff = 0.0f;
 			float Translucency = 0.0f;
+			float Transmission = 0.0f;
+			float Ior = 1.5f;
+			glm::vec3 Absorption{ 0.0f };
 			bool DoubleSided = true;
 			bool Water = false;
 			bool Skip = false;

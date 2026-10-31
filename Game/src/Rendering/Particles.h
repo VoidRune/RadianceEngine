@@ -57,6 +57,8 @@ namespace Game
 		FrostLane,
 		Fissure,
 		Caustic,
+		Nova,
+		Void,
 	};
 
 	enum class ParticleAlign : uint8_t

@@ -21,13 +21,7 @@ namespace Game
 		constexpr float SkySpawnMargin = 1.2f;
 		constexpr float SkyCatchSearch = 6.0f;
 		constexpr float SkyCatchGrace = 0.6f;
-		constexpr float BoltHunt = 0.55f;
-		constexpr float BoltScatter = 0.5f;
 		constexpr float BoltSpacing = 2.6f;
-		constexpr float StillReach = 1.0f;
-		constexpr float StillSeconds = 2.0f;
-		constexpr float StillHunt = 6.0f;
-		constexpr float HeightHunt = 0.25f;
 
 		bool SafeOnSky(const Level& level, const CollapsePlan& plan, float clock, Vec2 point, float margin)
 		{
@@ -458,14 +452,6 @@ namespace Game
 			const Transform* transform = entities.TryGet<Transform>(entity);
 			if (controller.PlayerId >= MaxPlayers || !controller.State.Alive || controller.State.IsFalling() || !transform)
 				return;
-			Brawler& brawler = m_Brawlers[controller.PlayerId];
-			if (LengthSquared(transform->Position - brawler.Anchor) > StillReach * StillReach)
-			{
-				brawler.Anchor = transform->Position;
-				brawler.Still = 0.0f;
-			}
-			else
-				brawler.Still += dt;
 			if (controller.State.Invulnerable <= 0.0f && BoltStriking(plan, transform->Position, clock - dt, clock))
 				struck.push_back(entity);
 		});
@@ -479,7 +465,7 @@ namespace Game
 		if (clock < m_NextBolt || plan.BoltCount >= MaxBolts)
 			return;
 		Random& random = world.GetRandom();
-		m_NextBolt = clock + BoltInterval(clock) * (0.75f + 0.5f * random.Float());
+		m_NextBolt = clock + BoltInterval(BoltReach(plan, clock)) * (0.75f + 0.5f * random.Float());
 		if (const std::optional<Vec2> spot = AimBolt(world))
 			plan.Bolts[plan.BoltCount++] = { *spot, clock + BoltWarning + 0.5f * dt };
 	}
@@ -491,50 +477,18 @@ namespace Game
 		const CollapsePlan& plan = m_Brawl.Plan;
 		const auto open = [&](Vec2 spot)
 		{
-			if (level.Relief.RimDistance(spot) < 0.3f)
+			if (level.Peak.RimDistance(spot) < 0.3f || GetClearance(level, spot, 0.6f) < 0.6f)
 				return false;
 			for (const LightningBolt& bolt : BoltsOf(plan))
 				if (bolt.Time > m_Brawl.Clock - 0.2f && LengthSquared(bolt.Center - spot) < BoltSpacing * BoltSpacing)
 					return false;
 			return true;
 		};
-		if (random.Float() < BoltHunt)
-		{
-			struct Mark
-			{
-				Vec2 Position;
-				float Weight = 0.0f;
-			};
-			std::vector<Mark> marks;
-			float total = 0.0f;
-			world.GetEntities().Each<PlayerController>([&](Entity entity, PlayerController& controller)
-			{
-				const Transform* transform = world.GetEntities().TryGet<Transform>(entity);
-				if (controller.PlayerId >= MaxPlayers || !controller.State.Alive || controller.State.IsFalling() || !transform)
-					return;
-				const float weight = 1.0f + StillHunt * std::min(m_Brawlers[controller.PlayerId].Still / StillSeconds, 1.0f) + HeightHunt * FloorHeight(level, transform->Position);
-				marks.push_back({ transform->Position, weight });
-				total += weight;
-			});
-			float pick = random.Float() * total;
-			for (const Mark& mark : marks)
-			{
-				pick -= mark.Weight;
-				if (pick > 0.0f)
-					continue;
-				const Vec2 spot = mark.Position + FromAngle(random.Float() * 2.0f * Pi) * (BoltScatter * random.Float());
-				if (open(spot))
-				{
-					return spot;
-				}
-				break;
-			}
-		}
-		const float reach = RingOuter;
+		const float reach = BoltReach(plan, m_Brawl.Clock);
 		for (uint32_t attempt = 0; attempt < 32; attempt++)
 		{
 			const Vec2 spot = plan.Center + FromAngle(random.Float() * 2.0f * Pi) * (reach * std::sqrt(random.Float()));
-			if (open(spot) && random.Float() < 0.3f + 0.7f * std::clamp(FloorHeight(level, spot) / (3.0f * TierHeight), 0.0f, 1.0f))
+			if (open(spot))
 				return spot;
 		}
 		return std::nullopt;

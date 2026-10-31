@@ -624,7 +624,7 @@ namespace
 			md << "| " << GetAbility(BrawlBasic).Name << " (everyone) | 100% | n/a | n/a | n/a | " << (damage ? "n/a | " : "") << Fixed(perMinute, 2) << " | " << Percent(share) << " | " << Fixed(casts, 1) << " | " << Fixed(hits, 2) << " | " << (damage ? Fixed(dealt, 0) + " | " : "") << "shared |\n";
 		}
 		md << "\n## Spell pairs\n\n";
-		md << "Each pair of spells sits in about one seat in twelve. Synergy is the pair's ratio minus what its two spells would give if their effects simply added up (the two ratios minus 1). A positive number means the spells help each other, as Gravity Well can set up Comet.\n\n";
+		md << "Each pair of spells sits in about one seat in twelve. Synergy is the pair's ratio minus what its two spells would give if their effects simply added up (the two ratios minus 1). A positive number means the spells help each other, as Void Gaze can set up Comet.\n\n";
 		md << "| Pair | Seat-rounds | Round win ratio | 95% range | Synergy | Verdict |\n";
 		md << "|---|---|---|---|---|---|\n";
 		std::ofstream pairCsv(options.Out + "-pairs.csv");
@@ -753,7 +753,7 @@ namespace
 			{
 				const Share& both = totals.Pairs[std::min(well, comet) * PoolSize + std::max(well, comet)];
 				const double chains = double(std::max<uint64_t>(totals.Combos, 1));
-				md << "- Bots holding both Gravity Well and Comet chained the comet onto their own well " << Fixed(both.Seats > 0 ? double(totals.Combos) / double(both.Seats) : 0.0, 2) << " times per round. " << Percent(double(totals.ComboHits) / chains) << " of chains landed the comet on a rival and " << Percent(double(totals.ComboRingOuts) / chains) << (damage ? " killed someone.\n" : " rang someone out.\n");
+				md << "- Bots holding both Void Gaze and Comet chained the comet onto their own void " << Fixed(both.Seats > 0 ? double(totals.Combos) / double(both.Seats) : 0.0, 2) << " times per round. " << Percent(double(totals.ComboHits) / chains) << " of chains landed the comet on a rival and " << Percent(double(totals.ComboRingOuts) / chains) << (damage ? " killed someone.\n" : " rang someone out.\n");
 			}
 		}
 		md << "\nRun with: Balance --mode " << BrawlModeNames[size_t(options.Mode)] << " --matches " << (options.Matches == UINT32_MAX ? totals.Matches : options.Matches) << " --players " << options.Players << " --rounds " << unsigned(options.Rounds) << " --skill " << skill << " --map " << (options.Map == MapKind::Caldera ? "caldera" : options.Map == MapKind::FrozenLake ? "lake" : options.Map == MapKind::SkyRuins ? "ruins" : options.Map == MapKind::StormPeak ? "peak" : "all") << " --seed " << options.Seed << "\n";

@@ -105,14 +105,16 @@ void main()
 	}
 	else if (shape == DecalScorch)
 		result = ScorchShape(uv, params.x, seed);
-	else if (shape == DecalFrost || shape == DecalFrostLane)
+	else if (shape == DecalFrost || shape == DecalFrostLane || shape == DecalNova)
 	{
-		Rime rime = shape == DecalFrost ? FrostShape(uv, extent.x, pixelWorld, params.x, seed, time) : FrostLaneShape(uv, extent.xy, pixelWorld, params.x, seed, time);
+		Rime rime = shape == DecalNova ? NovaShape(uv, extent.x, pixelWorld, params.x, params.y, params.z, params.w, seed, time) : shape == DecalFrost ? FrostShape(uv, extent.x, pixelWorld, params.x, seed, time) : FrostLaneShape(uv, extent.xy, pixelWorld, params.x, seed, time);
 		result = vec2(rime.Coverage, rime.Glow);
 		albedo *= rime.Shade;
 		if (roughness >= 0.0)
 			roughness = rime.Roughness;
 	}
+	else if (shape == DecalVoid)
+		result = VoidFieldShape(uv, extent.x, pixelWorld, params.x, params.y, params.z, params.w, seed, time);
 	else if (shape == DecalCracks)
 		result = CracksShape(uv, pixel, extent.x, params.x, seed);
 	else if (shape == DecalCharge)

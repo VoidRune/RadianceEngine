@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace Game
@@ -37,6 +38,30 @@ namespace Game
 		float Dissolve = 0.0f;
 		glm::vec3 Burn{ 0.0f };
 		uint32_t Seed = 0;
+	};
+
+	struct GlassModelDraw
+	{
+		uint32_t FirstIndex = 0;
+		uint32_t IndexCount = 0;
+		uint32_t FirstInstance = 0;
+		uint32_t InstanceCount = 0;
+		glm::vec4 Absorb{ 0.0f, 0.0f, 0.0f, 1.5f };
+		glm::vec4 Look{ 1.0f, 0.0f, 0.0f, 0.0f };
+		bool Water = false;
+	};
+
+	struct GlassModelBatch
+	{
+		const Rdn::GpuRingBuffer* Instances = nullptr;
+		uint64_t InstanceBytes = 0;
+		const Rdn::GpuBuffer* Vertices = nullptr;
+		const Rdn::GpuBuffer* Indices = nullptr;
+		const Rdn::GpuBuffer* Materials = nullptr;
+		const Rdn::DescriptorSet* Textures = nullptr;
+		std::vector<GlassModelDraw> Draws;
+		glm::vec3 Min{ 1e9f };
+		glm::vec3 Max{ -1e9f };
 	};
 
 	inline constexpr size_t EnergyShieldImpacts = 8;
@@ -92,7 +117,9 @@ namespace Game
 		uint32_t AddShield(const EnergyShield& shield);
 		void DrawCell(const EnergyCell& cell);
 		void Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage depth, Rdn::Extent2D extent, uint32_t frameIndex,
-			const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, float time);
+			const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, float time, std::span<const SpellLight> lights);
+		GlassModelBatch& GetModels() { return m_Models; }
+		bool HasModels() const { return m_ModelFront != nullptr; }
 		uint32_t GetCount() const { return uint32_t(m_Facets.size()); }
 
 	private:
@@ -143,6 +170,8 @@ namespace Game
 			glm::vec4 SkyRadiance;
 			glm::vec4 GroundRadiance;
 			glm::vec4 Environment;
+			glm::vec4 Translucent;
+			std::array<glm::vec4, MaxSpellLights * 2> Lights;
 		};
 
 		struct PyramidConstants
@@ -165,6 +194,11 @@ namespace Game
 		std::unique_ptr<Rdn::Pipeline> m_Front;
 		std::unique_ptr<Rdn::Pipeline> m_CrackedFront;
 		std::unique_ptr<Rdn::Pipeline> m_Lattice;
+		std::unique_ptr<Rdn::Pipeline> m_ModelBack;
+		std::unique_ptr<Rdn::Pipeline> m_ModelFront;
+		std::unique_ptr<Rdn::Pipeline> m_ModelWater;
+		std::unique_ptr<Rdn::Pipeline> m_ModelDepth;
+		GlassModelBatch m_Models;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_Frame;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_Buffer;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_ShieldBuffer;

@@ -34,4 +34,5 @@ namespace Game
 	};
 
 	void ExecuteAbility(World& world, AbilityId id, const AbilityContext& context);
+	void EruptFrostNova(World& world, Vec2 fallback, const AbilityContext& context);
 }

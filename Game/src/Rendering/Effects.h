@@ -130,6 +130,12 @@ namespace Game
 		ObsidianTrail,
 		ObsidianImpact,
 		ObsidianCrumble,
+		NovaSpread,
+		NovaMist,
+		NovaBurst,
+		NovaErupt,
+		NovaShatter,
+		VoidBurst,
 		Count,
 	};
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "Rendering/PeakRelief.h"
 #include "Rendering/WorldRenderer.h"
 #include <GameShared/World/Level.h>
 #include <cstdint>
@@ -81,11 +82,13 @@ namespace Game
 	{
 		std::vector<SceneChunk> Chunks;
 		std::vector<LooseItem> Loose;
+		std::vector<SceneItem> Backdrop;
 		std::vector<uint8_t> Cells;
 		std::vector<uint8_t> PropDrawn;
 		std::vector<uint8_t> WallDrawn;
 		std::vector<LevelFire> Fires;
 		GroundField Ground;
+		PeakRelief Relief;
 		int32_t Width = 0;
 	};
 

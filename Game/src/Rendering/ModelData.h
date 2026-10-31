@@ -63,6 +63,9 @@ namespace Game
 		float Metallic = 0.0f;
 		float AlphaCutoff = 0.0f;
 		float Translucency = 0.0f;
+		float Transmission = 0.0f;
+		float Ior = 1.5f;
+		glm::vec3 Absorption{ 0.0f };
 		glm::vec3 Min{ 0.0f };
 		glm::vec3 Max{ 0.0f };
 		uint32_t Skeleton = NoSkeleton;

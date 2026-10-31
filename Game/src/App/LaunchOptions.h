@@ -58,6 +58,7 @@ namespace Game
 		bool Distortion = true;
 		bool Trails = true;
 		bool Translucency = true;
+		bool Refraction = true;
 		uint8_t DistortionStage = 0;
 		bool Steam = true;
 		std::optional<uint64_t> ConnectLobby;

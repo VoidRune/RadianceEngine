@@ -11,7 +11,10 @@ struct Material
 	vec4 Extra;
 };
 
-layout(std430, set = 0, binding = 3) readonly buffer Materials { Material materials[]; };
+#ifndef MATERIAL_BINDING
+#define MATERIAL_BINDING 3
+#endif
+layout(std430, set = 0, binding = MATERIAL_BINDING) readonly buffer Materials { Material materials[]; };
 layout(set = 1, binding = 0) uniform sampler2D Textures[];
 
 const uint MaterialAlphaTest = 1u;

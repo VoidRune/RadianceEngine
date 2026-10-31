@@ -19,6 +19,7 @@ namespace Game
 		Haze,
 		Implosion,
 		Lens,
+		Vortex,
 	};
 
 	enum class DistortionAlign : uint8_t

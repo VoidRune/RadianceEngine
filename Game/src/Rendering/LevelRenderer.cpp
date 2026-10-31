@@ -855,8 +855,8 @@ namespace Game
 
 	float LevelRenderer::GroundHeight(const Level& level, const BrawlStatus* brawl, Vec2 position, float clock) const
 	{
-		if (m_Mountain)
-			return m_Mountain->RimDistance(position) >= 0.0f ? m_Mountain->Height(position) : SampleGround(m_Scene, position).value_or(-60.0f);
+		if (const PeakRelief& relief = m_Scene.Relief; !relief.IsEmpty())
+			return relief.GetPlateau().RimDistance(position) >= 0.0f ? relief.Height(position) : SampleGround(m_Scene, position).value_or(-60.0f);
 		if (m_Island.IsBuilt())
 			if (const std::optional<float> height = m_Island.GroundHeight(brawl, clock, position))
 				return *height;
@@ -871,8 +871,8 @@ namespace Game
 
 	bool LevelRenderer::IsOverSky(const BrawlStatus* brawl, Vec2 position, float clock) const
 	{
-		if (m_Mountain)
-			return m_Mountain->RimDistance(position) < 0.0f;
+		if (!m_Scene.Relief.IsEmpty())
+			return m_Scene.Relief.GetPlateau().RimDistance(position) < 0.0f;
 		return m_Island.IsSky() && !m_Island.GroundHeight(brawl, clock, position);
 	}
 
@@ -907,8 +907,7 @@ namespace Game
 			renderer.SetSkyMask(0, 0, {}, {}, {});
 			m_Scene = BuildLevelScene(level, renderer);
 		}
-		m_Mountain = level.Relief.IsEmpty() ? nullptr : &level.Relief;
-		if (m_Mountain)
+		if (!m_Scene.Relief.IsEmpty())
 			m_Island.Clear();
 		else
 			m_Island.Build(renderer, level);
@@ -1030,6 +1029,8 @@ namespace Game
 
 	void LevelRenderer::DrawScene(WorldRenderer& renderer, const LevelView& view) const
 	{
+		for (const SceneItem& item : m_Scene.Backdrop)
+			renderer.SubmitModel(item.Mesh, item.Instance);
 		for (const SceneChunk& chunk : m_Scene.Chunks)
 		{
 			if ((chunk.Items.empty() && chunk.Boxes.empty()) || chunk.Max.x < view.Min.x || chunk.Min.x > view.Max.x || chunk.Max.y < view.Min.y || chunk.Min.y > view.Max.y)
@@ -1294,6 +1295,7 @@ namespace Game
 				const glm::vec3 anchor(prop.Position.x, prop.Base, prop.Position.y);
 				lift = glm::vec3(*carry * glm::vec4(anchor, 1.0f)) - anchor;
 			}
+			const float seat = m_Scene.Relief.IsEmpty() ? prop.Base : m_Scene.Relief.Footing(prop.Position, reach * 0.7f);
 			const PropDef& def = GetProp(prop.Id);
 			float cutTop = 1e9f;
 			if (def.Tall)
@@ -1301,7 +1303,7 @@ namespace Game
 				const Vec2 toFocus = view.Focus - prop.Position;
 				const float distance = Length(toFocus);
 				const Vec2 closest = distance > 1e-4f ? prop.Position + toFocus * (std::min(distance, reach) / distance) : prop.Position;
-				const float cut = CutFactor(view, closest, prop.Base + m_PropTop[i]);
+				const float cut = CutFactor(view, closest, seat + m_PropTop[i]);
 				if (cut > 0.0f)
 					cutTop = glm::mix(m_PropTop[i], CutHeight + 0.05f, cut);
 			}
@@ -1312,7 +1314,7 @@ namespace Game
 				const float fullTop = part.Base + part.Height;
 				const float top = std::min(fullTop, cutTop);
 				const Vec2 center = prop.Position + Rotate(part.Offset, axis) + Vec2(lift.x, lift.z);
-				const float base = prop.Base + lift.y;
+				const float base = seat + lift.y;
 				if (top < fullTop && part.Emission < 0.9f)
 					renderer.DrawShadowCaster(part.Mesh, { center.x, base + (bottom + fullTop) * 0.5f, center.y }, { part.Half.x, part.Height * 0.5f, part.Half.y }, prop.Yaw + part.Yaw);
 				if (top - bottom < 0.005f)

@@ -20,6 +20,7 @@ const uint DistortShockwave = 0u;
 const uint DistortHaze = 1u;
 const uint DistortImplosion = 2u;
 const uint DistortLens = 3u;
+const uint DistortVortex = 4u;
 
 const uint DistortBillboard = 0u;
 const uint DistortGround = 1u;

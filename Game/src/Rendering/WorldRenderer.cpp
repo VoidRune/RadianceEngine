@@ -17,6 +17,7 @@ namespace Game
 		constexpr uint32_t SphereStacks = 8;
 		constexpr uint32_t SphereSlices = 12;
 		constexpr float TwoPi = 6.28318531f;
+		constexpr float GlassScatter = 0.35f;
 
 		struct MeshVertex
 		{
@@ -257,6 +258,8 @@ namespace Game
 		m_Distortion = std::make_unique<ScreenDistortion>(device, allocator);
 		m_Glass = std::make_unique<GlassRenderer>(device, allocator);
 		m_Trails = std::make_unique<TrailRenderer>(device, allocator);
+		m_Lightning = std::make_unique<LightningRenderer>(device, allocator);
+		m_Void = std::make_unique<VoidRenderer>(device, allocator);
 		CreateMeshes();
 		EnsureCapacity(16384);
 		EnsureModelCapacity(1024, 4096);
@@ -291,6 +294,8 @@ namespace Game
 		m_Distortion.reset();
 		m_Glass.reset();
 		m_Trails.reset();
+		m_Lightning.reset();
+		m_Void.reset();
 		ReleaseModelData();
 		for (Rdn::GpuRingBuffer* buffer : { m_InstanceBuffer.get(), m_ModelInstanceBuffer.get(), m_PaletteBuffer.get() })
 			if (buffer)
@@ -408,6 +413,7 @@ namespace Game
 		}
 
 		const auto slot = [](uint32_t texture) { return texture == NoTexture ? 0u : texture + 2; };
+		m_GlassSurfaces.clear();
 		m_Materials.push_back({});
 		for (const ModelMesh& mesh : data.Meshes)
 		{
@@ -422,7 +428,13 @@ namespace Game
 			material.Color = glm::vec4(glows ? mesh.Emissive : glm::vec3(mesh.Color), alphaTested ? mesh.AlphaCutoff : 0.0f);
 			material.Params = glm::vec4(mesh.Roughness, mesh.Translucency > 0.0f ? 1.0f : mesh.Metallic, 1.0f, mesh.Translucency);
 			material.Extra = glm::vec4(glows ? glm::vec3(0.0f) : mesh.Emission, 0.0f);
-			m_DrawMeshes.push_back({ .FirstIndex = mesh.FirstIndex, .IndexCount = mesh.IndexCount, .Material = uint32_t(m_Materials.size()), .Flags = mesh.Water ? MeshWater : 0u, .Skinned = mesh.Skinned, .Glows = glows, .AlphaTested = alphaTested });
+			uint32_t glass = UINT32_MAX;
+			if (mesh.Transmission > 0.0f && !mesh.Skinned)
+			{
+				glass = uint32_t(m_GlassSurfaces.size());
+				m_GlassSurfaces.push_back({ .Absorb = glm::vec4(mesh.Absorption, mesh.Ior), .Look = glm::vec4(mesh.Transmission, mesh.Water ? 1.0f : GlassScatter, 0.0f, 0.0f), .Min = mesh.Min, .Max = mesh.Max, .Water = mesh.Water });
+			}
+			m_DrawMeshes.push_back({ .FirstIndex = mesh.FirstIndex, .IndexCount = mesh.IndexCount, .Material = uint32_t(m_Materials.size()), .Flags = mesh.Water ? MeshWater : 0u, .Skinned = mesh.Skinned, .Glows = glows, .AlphaTested = alphaTested, .Glass = glass });
 			m_Materials.push_back(material);
 		}
 		m_LibraryMeshes = uint32_t(m_DrawMeshes.size());
@@ -458,6 +470,7 @@ namespace Game
 		m_ModelDraws.assign(m_DrawMeshes.size(), {});
 		m_ModelShadowDraws.assign(m_DrawMeshes.size(), {});
 		m_ModelDissolveDraws.assign(m_DrawMeshes.size(), {});
+		m_ModelGlassDraws.assign(m_DrawMeshes.size(), {});
 		return true;
 	}
 
@@ -531,7 +544,19 @@ namespace Game
 		m_Device.WaitIdle();
 		m_Materials.push_back({ .Flags = 2u | 64u | (material.Translucency > 0.0f ? MaterialTranslucent : 0u), .Color = glm::vec4(material.Color, 0.0f), .Params = glm::vec4(material.Roughness, material.Translucency > 0.0f ? 1.0f : material.Metallic, 1.0f, material.Translucency), .Extra = glm::vec4(material.Emission, 0.0f) });
 		UploadMaterials();
-		return AddEffectMesh(name, vertices, indices, uint32_t(m_Materials.size() - 1), flags);
+		const uint32_t mesh = AddEffectMesh(name, vertices, indices, uint32_t(m_Materials.size() - 1), flags);
+		if (material.Transmission > 0.0f && mesh < m_DrawMeshes.size() && !vertices.empty())
+		{
+			GlassSurface surface{ .Absorb = glm::vec4(material.Absorption, material.Ior), .Look = glm::vec4(material.Transmission, GlassScatter, 0.0f, 0.0f), .Min = vertices.front().Position, .Max = vertices.front().Position };
+			for (const ModelVertex& vertex : vertices)
+			{
+				surface.Min = glm::min(surface.Min, vertex.Position);
+				surface.Max = glm::max(surface.Max, vertex.Position);
+			}
+			m_DrawMeshes[mesh].Glass = uint32_t(m_GlassSurfaces.size());
+			m_GlassSurfaces.push_back(surface);
+		}
+		return mesh;
 	}
 
 	uint32_t WorldRenderer::AddEffectMesh(std::string_view name, const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, uint32_t material, uint32_t flags)
@@ -557,6 +582,7 @@ namespace Game
 		m_ModelDraws.resize(m_DrawMeshes.size());
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
 		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
+		m_ModelGlassDraws.resize(m_DrawMeshes.size());
 		return mesh;
 	}
 
@@ -594,6 +620,7 @@ namespace Game
 		m_ModelDraws.resize(m_DrawMeshes.size());
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
 		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
+		m_ModelGlassDraws.resize(m_DrawMeshes.size());
 		return first;
 	}
 
@@ -609,6 +636,7 @@ namespace Game
 		m_ModelDraws.resize(m_DrawMeshes.size());
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
 		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
+		m_ModelGlassDraws.resize(m_DrawMeshes.size());
 	}
 
 	void WorldRenderer::SetSkyMask(uint32_t width, uint32_t height, const std::vector<uint8_t>& openness, glm::vec2 origin, glm::vec2 size)
@@ -910,6 +938,7 @@ namespace Game
 
 	void WorldRenderer::Begin(const WorldCamera& camera, const SceneLighting& lighting, float focusHeight, bool fadeBelowFocus)
 	{
+		m_Relief = nullptr;
 		for (std::vector<BoxInstance>& instances : m_Instances)
 			instances.clear();
 		for (std::vector<BoxInstance>& casters : m_ShadowCasters)
@@ -920,6 +949,8 @@ namespace Game
 			draws.clear();
 		for (std::vector<ModelInstance>& draws : m_ModelDissolveDraws)
 			draws.clear();
+		for (std::vector<ModelInstance>& draws : m_ModelGlassDraws)
+			draws.clear();
 		m_Lights.clear();
 		m_LavaQuads.clear();
 		m_Palettes.clear();
@@ -927,6 +958,8 @@ namespace Game
 		m_Distortion->BeginFrame();
 		m_Glass->BeginFrame();
 		m_Trails->BeginFrame(m_Particles->GetTime());
+		m_Lightning->BeginFrame(m_Particles->GetTime());
+		m_Void->BeginFrame(m_Particles->GetTime());
 		if (lighting.Grade != m_Post->GetGrade() && !m_Post->HasCustomLut())
 			m_Post->SetGrade(lighting.Grade);
 		m_Camera = camera;
@@ -995,10 +1028,39 @@ namespace Game
 	{
 		if (mesh >= m_ModelDraws.size() || instance.Dissolve.x >= 1.0f)
 			return;
+		if (const uint32_t glass = m_DrawMeshes[mesh].Glass; glass != UINT32_MAX && !shadowOnly && m_GlassModels && m_Glass->HasModels())
+		{
+			m_ModelGlassDraws[mesh].push_back(instance);
+			if (!m_GlassSurfaces[glass].Water)
+				m_ModelShadowDraws[mesh].push_back(instance);
+			return;
+		}
 		if (shadowOnly)
 			m_ModelShadowDraws[mesh].push_back(instance);
 		else
 			(instance.Dissolve.x > 0.0f && m_DissolvePipeline ? m_ModelDissolveDraws : m_ModelDraws)[mesh].push_back(instance);
+	}
+
+	void WorldRenderer::DrawDecal(const GroundDecal& decal)
+	{
+		if (!m_Relief)
+		{
+			m_Particles->DrawDecal(decal);
+			return;
+		}
+		const Plateau& peak = m_Relief->GetPlateau();
+		const Vec2 center(decal.Center.x, decal.Center.z);
+		const float reach = std::max(decal.Extent.x, decal.Extent.y);
+		float deviation = 0.0f;
+		for (int32_t k = 0; k < 17; k++)
+		{
+			const Vec2 point = k == 16 ? center : center + FromAngle(float(k % 8) * Pi * 0.25f) * (k < 8 ? reach : 0.5f * reach);
+			if (peak.RimDistance(point) >= 0.0f)
+				deviation = std::max(deviation, std::abs(m_Relief->Height(point) - decal.Center.y));
+		}
+		GroundDecal deeper = decal;
+		deeper.Depth = std::max(decal.Depth, std::min(deviation / 0.6f + 0.05f, 3.0f));
+		m_Particles->DrawDecal(deeper);
 	}
 
 	void WorldRenderer::DrawLight(const SpellLight& light)
@@ -1018,7 +1080,7 @@ namespace Game
 		camera.Projection[1][1] *= float(output.Height) / float(extent.Height);
 		camera.ViewProjection = camera.Projection * camera.View;
 		m_Constants.ViewProjection = camera.ViewProjection;
-		const glm::ivec2 anchor = m_Gi ? m_Gi->Update(extent, camera, m_FocusHeight) : glm::ivec2(0);
+		const glm::ivec2 anchor = m_Gi ? m_Gi->Update(extent, camera, m_Relief ? m_Relief->GetPlane() : m_FocusHeight) : glm::ivec2(0);
 		m_Constants.Focus.z = float(((anchor.x % 4) + 4) % 4);
 		m_Constants.Focus.w = float(((anchor.y % 4) + 4) % 4);
 
@@ -1045,6 +1107,7 @@ namespace Game
 		m_ModelRanges.resize(m_ModelDraws.size());
 		m_ModelShadowRanges.resize(m_ModelDraws.size());
 		m_ModelDissolveRanges.resize(m_ModelDraws.size());
+		m_ModelGlassRanges.resize(m_ModelDraws.size());
 		m_PackedModels.clear();
 		for (size_t mesh = 0; mesh < m_ModelDraws.size(); mesh++)
 		{
@@ -1061,6 +1124,11 @@ namespace Game
 			m_ModelDissolveRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(m_ModelDissolveDraws[mesh].size()) };
 			m_PackedModels.insert(m_PackedModels.end(), m_ModelDissolveDraws[mesh].begin(), m_ModelDissolveDraws[mesh].end());
 		}
+		for (size_t mesh = 0; mesh < m_ModelGlassDraws.size(); mesh++)
+		{
+			m_ModelGlassRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(m_ModelGlassDraws[mesh].size()) };
+			m_PackedModels.insert(m_PackedModels.end(), m_ModelGlassDraws[mesh].begin(), m_ModelGlassDraws[mesh].end());
+		}
 		const uint32_t modelCount = m_ModelPipeline && m_ModelIndices ? uint32_t(m_PackedModels.size()) : 0;
 		if (m_Palettes.empty())
 			m_Palettes.push_back(glm::mat4(1.0f));
@@ -1072,6 +1140,36 @@ namespace Game
 			std::memcpy(static_cast<uint8_t*>(m_PaletteBuffer->GetMappedPtr()) + m_PaletteBuffer->GetOffset(frameIndex), m_Palettes.data(), paletteCount * sizeof(glm::mat4));
 		}
 		m_LastCount = count + modelCount;
+		GlassModelBatch& glass = m_Glass->GetModels();
+		if (modelCount > 0 && m_TextureSet)
+		{
+			glass.Instances = m_ModelInstanceBuffer.get();
+			glass.InstanceBytes = uint64_t(modelCount) * sizeof(ModelInstance);
+			glass.Vertices = m_ModelVertices.get();
+			glass.Indices = m_ModelIndices.get();
+			glass.Materials = m_MaterialBuffer.get();
+			glass.Textures = m_TextureSet.get();
+			for (size_t mesh = 0; mesh < m_ModelGlassRanges.size(); mesh++)
+			{
+				const auto [first, instances] = m_ModelGlassRanges[mesh];
+				if (instances == 0)
+					continue;
+				const DrawMesh& source = m_DrawMeshes[mesh];
+				const GlassSurface& surface = m_GlassSurfaces[source.Glass];
+				glass.Draws.push_back({ .FirstIndex = source.FirstIndex, .IndexCount = source.IndexCount, .FirstInstance = first, .InstanceCount = instances, .Absorb = surface.Absorb, .Look = surface.Look, .Water = surface.Water });
+				for (uint32_t i = first; i < first + instances; i++)
+				{
+					const ModelInstance& instance = m_PackedModels[i];
+					for (uint32_t corner = 0; corner < 8; corner++)
+					{
+						const glm::vec4 local(corner & 1u ? surface.Max.x : surface.Min.x, corner & 2u ? surface.Max.y : surface.Min.y, corner & 4u ? surface.Max.z : surface.Min.z, 1.0f);
+						const glm::vec3 world(glm::dot(instance.Rows[0], local), glm::dot(instance.Rows[1], local), glm::dot(instance.Rows[2], local));
+						glass.Min = glm::min(glass.Min, world);
+						glass.Max = glm::max(glass.Max, world);
+					}
+				}
+			}
+		}
 
 		const auto image = [&](const char* name, Rdn::Format format) { return graph.CreateImage(name, Rdn::RGImageDesc{ .Size = Rdn::Extent3D(extent), .Format = format }); };
 		const GBuffer gbuffer{
@@ -1178,9 +1276,11 @@ namespace Game
 			m_Gi->Render(graph, gbuffer, giSource, emitters, backDepth, scene, extent, frameIndex, camera, m_Lighting, environment, m_GiQuality, m_Constants.Focus.x, edgeBand, m_View);
 		if (m_View != DebugView::Irradiance && m_View != DebugView::GiSource)
 		{
-			m_Glass->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera, m_Lighting, environment, m_Particles->GetTime());
+			m_Glass->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera, m_Lighting, environment, m_Particles->GetTime(), m_Lights);
 			m_Trails->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
+			m_Lightning->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
 			m_Particles->Draw(graph, scene, gbuffer.Emission, gbuffer.Depth, frameIndex);
+			m_Void->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
 		}
 		m_Post->Raw = IsRawView(m_View);
 		m_Post->SceneExposure = m_Lighting.Exposure;
