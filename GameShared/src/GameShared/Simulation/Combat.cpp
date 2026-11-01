@@ -245,7 +245,7 @@ namespace Game
 			if (!transform || !health || dummy.Fall > 0.0f)
 				return false;
 			if (const Replicated* replicated = entities.TryGet<Replicated>(target); replicated && record)
-				world.RecordHit({ replicated->NetId, transform->Position, 0, false, false, hit.Damages });
+				world.RecordHit({ .Target = replicated->NetId, .Position = transform->Position, .Damages = hit.Damages, .Ability = hit.Ability });
 			if (dummy.Kind == DummyKind::Balloon)
 			{
 				world.PopBalloon(dummy, hit.Attacker);
@@ -285,7 +285,7 @@ namespace Game
 				controller->LastAbility = uint8_t(CreditOf(AbilityId(hit.Ability)));
 			}
 			if (const Replicated* replicated = entities.TryGet<Replicated>(target); replicated && record)
-				world.RecordHit({ replicated->NetId, transform->Position, 0, false, true, hit.Damages });
+				world.RecordHit({ .Target = replicated->NetId, .Position = transform->Position, .OnPlayer = true, .Damages = hit.Damages, .Ability = hit.Ability });
 			if (hit.Swap)
 			{
 				SwapPlaces(world, hit.Source, target);
@@ -616,7 +616,7 @@ namespace Game
 		const Transform* transform = entities.TryGet<Transform>(target);
 		const Replicated* replicated = entities.TryGet<Replicated>(target);
 		if (transform && replicated)
-			world.RecordHit({ replicated->NetId, transform->Position, uint16_t(std::min(amount, 65535)), damage.Critical, controller != nullptr, damage.Damages, damage.Attacker });
+			world.RecordHit({ .Target = replicated->NetId, .Position = transform->Position, .Damage = uint16_t(std::min(amount, 65535)), .Critical = damage.Critical, .OnPlayer = controller != nullptr, .Damages = damage.Damages, .Attacker = damage.Attacker, .Ability = damage.Ability });
 		if (controller)
 			world.RecordDamage(controller->PlayerId, damage.Attacker, std::min(amount, std::max(health->Current, 0)), damage.Ability);
 

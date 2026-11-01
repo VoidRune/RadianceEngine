@@ -59,6 +59,7 @@ namespace Game
 		float Spread = 0.0f;
 		float Speed = 0.0f;
 		uint8_t Pierce = 0;
+		float Flare = 1.0f;
 	};
 
 	inline constexpr float MaxResist = 0.75f;
@@ -69,5 +70,6 @@ namespace Game
 	PlayerTraits ComputeTraits(const Equipment& gear, const GemSlots& gems, const BuffStacks& buffs, const UpgradeStacks& upgrades);
 	float DamageTakenScale(const PlayerTraits& traits, Element element, float maxArmor = MaxArmorReduction);
 	ProjectilePattern GetProjectilePattern(const AbilityDef& ability, uint8_t extraProjectiles, uint8_t extraPierce, float speedScale);
+	float ProjectileOffset(const ProjectilePattern& pattern, uint32_t index);
 	Vec2 ProjectileDirection(const ProjectilePattern& pattern, Vec2 aim, uint32_t index);
 }

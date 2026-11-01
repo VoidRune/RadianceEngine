@@ -129,11 +129,20 @@ namespace Game
 		return pattern;
 	}
 
+	float ProjectileOffset(const ProjectilePattern& pattern, uint32_t index)
+	{
+		if (pattern.Count <= 1)
+			return 0.0f;
+		const float t = float(index) / float(pattern.Count - 1) - 0.5f;
+		if (pattern.Flare == 1.0f)
+			return pattern.Spread * t;
+		return 0.5f * pattern.Spread * std::copysign(std::pow(2.0f * std::abs(t), pattern.Flare), t);
+	}
+
 	Vec2 ProjectileDirection(const ProjectilePattern& pattern, Vec2 aim, uint32_t index)
 	{
 		if (pattern.Count <= 1)
 			return aim;
-		const float angle = AngleOf(aim) + pattern.Spread * (float(index) / float(pattern.Count - 1) - 0.5f);
-		return FromAngle(angle);
+		return FromAngle(AngleOf(aim) + ProjectileOffset(pattern, index));
 	}
 }

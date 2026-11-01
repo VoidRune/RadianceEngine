@@ -512,8 +512,8 @@ namespace Game
 			return { .Windup = Anim::CastHurl, .Hold = true };
 		case AbilityId::PurpleFireball:
 			return { .Windup = Anim::CastSurge, .Hold = true };
-		case AbilityId::ObsidianShards:
-			return { .Windup = Anim::CastLunge, .Hold = true, .HoldAt = 0.5f, .HoldReach = 0.2f };
+		case AbilityId::ObsidianBlades:
+			return { Anim::CastSlash };
 		case AbilityId::HexShield:
 			return { .Windup = Anim::CastWard, .Hold = true, .HoldAt = 1.25f, .HoldReach = 0.14f };
 		case AbilityId::IceSpear:

@@ -437,6 +437,261 @@ namespace Game
 			AppendIceMound(vertices, indices, mound, mound * 0.25f, variant * 173u + 11u);
 		}
 
+		struct BladeShape
+		{
+			float Tip = 0.66f;
+			float Width = 0.13f;
+			float Belly = 0.6f;
+			float Bend = 0.0f;
+			float Thick = 0.05f;
+			std::array<float, 3> NotchLeft{ -1.0f, -1.0f, -1.0f };
+			std::array<float, 3> NotchRight{ -1.0f, -1.0f, -1.0f };
+			float Guard = 0.17f;
+			float HookLeft = 0.08f;
+			float HookRight = 0.08f;
+			float Grip = 0.17f;
+			float Vein = 0.62f;
+		};
+
+		constexpr float BladeHeel = -0.1f;
+		constexpr glm::vec3 BladeBody{ 0.03f, 0.024f, 0.042f };
+		constexpr glm::vec3 BladeDeep{ 0.13f, 0.045f, 0.27f };
+		constexpr glm::vec3 BladeEdge{ 0.25f, 0.24f, 0.29f };
+		constexpr glm::vec3 BladeTip{ 0.8f, 0.38f, 0.98f };
+		constexpr glm::vec3 BladeVein{ 0.62f, 0.24f, 1.0f };
+		constexpr glm::vec3 BladeGrip{ 0.06f, 0.05f, 0.07f };
+
+		void AppendFacet(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec3& outward, const glm::vec3& color)
+		{
+			glm::vec3 normal = glm::cross(b - a, c - a);
+			const float area = glm::length(normal);
+			if (area < 1e-9f)
+				return;
+			normal /= area;
+			if (glm::dot(normal, outward) < 0.0f)
+			{
+				std::swap(b, c);
+				normal = -normal;
+			}
+			const uint32_t base = uint32_t(vertices.size());
+			for (const glm::vec3& corner : { a, b, c })
+			{
+				ModelVertex vertex;
+				vertex.Position = corner;
+				vertex.Normal = normal;
+				vertex.Color = PackColor(color);
+				vertices.push_back(vertex);
+			}
+			indices.insert(indices.end(), { base, base + 1, base + 2 });
+		}
+
+		void AppendTube(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, std::span<const glm::vec3> path, std::span<const float> radii, uint32_t sides, float flatten, uint32_t seed, const glm::vec3& color, const glm::vec3& accent)
+		{
+			const auto point = [&](size_t ring, uint32_t side)
+			{
+				const glm::vec3 along = path[std::min(ring + 1, path.size() - 1)] - path[ring > 0 ? ring - 1 : 0];
+				const glm::vec3 lateral = glm::normalize(glm::vec3(-along.z, 0.0f, along.x) + glm::vec3(1e-6f, 0.0f, 0.0f));
+				const float angle = (float(side) + 0.5f * float(ring % 2)) / float(sides) * 6.2832f;
+				const float radius = radii[ring] * (0.88f + 0.24f * Unit(Mix(seed + uint32_t(ring) * 131u, side)));
+				return path[ring] + lateral * (radius * std::cos(angle)) + Up * (radius * std::sin(angle) * flatten);
+			};
+			for (size_t ring = 0; ring + 1 < path.size(); ring++)
+			{
+				const glm::vec3 middle = 0.5f * (path[ring] + path[ring + 1]);
+				for (uint32_t side = 0; side < sides; side++)
+				{
+					const uint32_t next = (side + 1) % sides;
+					const glm::vec3 a = point(ring, side);
+					const glm::vec3 b = point(ring, next);
+					const glm::vec3 c = point(ring + 1, next);
+					const glm::vec3 d = point(ring + 1, side);
+					const uint32_t key = Mix(seed ^ 0x5BD1E995u, uint32_t(ring) * 64u + side);
+					const glm::vec3 tone = (side == 0 || side == sides / 2 ? accent : color) * (0.8f + 0.4f * Unit(key));
+					AppendFacet(vertices, indices, a, b, c, (a + b + c) / 3.0f - middle, tone);
+					AppendFacet(vertices, indices, a, c, d, (a + c + d) / 3.0f - middle, tone);
+				}
+			}
+		}
+
+		float BladeWidth(const BladeShape& shape, float u)
+		{
+			return shape.Width * std::pow(std::max(1.0f - u, 0.0f), 0.8f) * (1.0f + shape.Belly * u);
+		}
+
+		float BladeSpine(const BladeShape& shape, float u)
+		{
+			return shape.Bend * shape.Width * u * u;
+		}
+
+		float BladeRidge(const BladeShape& shape, float u)
+		{
+			return shape.Thick * std::pow(BladeWidth(shape, u) / shape.Width, 0.7f);
+		}
+
+		void AppendVein(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, const BladeShape& shape, std::span<const glm::vec2> path, float width)
+		{
+			const float span = shape.Tip - BladeHeel;
+			const auto place = [&](const glm::vec2& p, float sign)
+			{
+				const float w = BladeWidth(shape, p.x);
+				const float height = BladeRidge(shape, p.x) * (1.0f - 0.92f * std::abs(p.y)) + 0.006f;
+				return glm::vec3(BladeHeel + span * p.x, sign * height, BladeSpine(shape, p.x) + p.y * w * 0.78f);
+			};
+			for (const float sign : { 1.0f, -1.0f })
+				for (size_t k = 0; k + 1 < path.size(); k++)
+				{
+					const glm::vec3 a = place(path[k], sign);
+					const glm::vec3 b = place(path[k + 1], sign);
+					const glm::vec3 run = b - a;
+					const glm::vec3 across = glm::normalize(glm::vec3(-run.z, 0.0f, run.x) + glm::vec3(0.0f, 0.0f, 1e-6f));
+					const float wa = width * (1.0f - 0.5f * float(k) / float(path.size()));
+					const float wb = width * (1.0f - 0.5f * float(k + 1) / float(path.size()));
+					const glm::vec3 outward(0.0f, sign, 0.0f);
+					AppendFacet(vertices, indices, a - across * wa, a + across * wa, b + across * wb, outward, BladeVein);
+					AppendFacet(vertices, indices, a - across * wa, b + across * wb, b - across * wb, outward, BladeVein);
+				}
+		}
+
+		void BuildObsidianBlade(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, uint32_t variant)
+		{
+			BladeShape shape;
+			switch (variant)
+			{
+			case 0:
+				shape.NotchRight = { 0.34f, 0.55f, -1.0f };
+				break;
+			case 1:
+				shape.Tip = 0.74f;
+				shape.Width = 0.11f;
+				shape.Belly = 0.8f;
+				shape.Bend = 0.35f;
+				shape.NotchLeft = { 0.46f, -1.0f, -1.0f };
+				shape.HookRight = -0.06f;
+				shape.Guard = 0.15f;
+				shape.Vein = 0.72f;
+				break;
+			case 2:
+				shape.Tip = 0.62f;
+				shape.Width = 0.15f;
+				shape.Belly = 0.3f;
+				shape.NotchRight = { 0.28f, 0.46f, 0.64f };
+				shape.Guard = 0.14f;
+				shape.HookLeft = 0.05f;
+				shape.HookRight = 0.05f;
+				shape.Thick = 0.055f;
+				shape.Vein = 0.55f;
+				break;
+			default:
+				shape.Tip = 0.7f;
+				shape.Width = 0.1f;
+				shape.Belly = 1.0f;
+				shape.Bend = -0.2f;
+				shape.NotchLeft = { 0.3f, -1.0f, -1.0f };
+				shape.NotchRight = { 0.52f, -1.0f, -1.0f };
+				shape.HookLeft = 0.11f;
+				shape.HookRight = 0.11f;
+				shape.Guard = 0.18f;
+				shape.Grip = 0.19f;
+				break;
+			}
+			const uint32_t seed = 977u + variant * 7919u;
+			constexpr uint32_t Stations = 14;
+			const float span = shape.Tip - BladeHeel;
+			for (const float side : { 1.0f, -1.0f })
+			{
+				std::vector<glm::vec2> knots;
+				for (uint32_t k = 0; k <= Stations; k++)
+					knots.push_back({ float(k) / float(Stations), k > 0 && k < Stations ? 0.9f + 0.2f * Unit(Mix(seed + (side > 0.0f ? 7u : 13u), k)) : 1.0f });
+				for (const float notch : side > 0.0f ? shape.NotchLeft : shape.NotchRight)
+					if (notch > 0.0f)
+					{
+						std::erase_if(knots, [notch](const glm::vec2& knot) { return std::abs(knot.x - notch) < 0.02f; });
+						knots.push_back({ notch - 0.012f, 1.14f });
+						knots.push_back({ notch + 0.004f, 0.5f });
+					}
+				std::sort(knots.begin(), knots.end(), [](const glm::vec2& a, const glm::vec2& b) { return a.x < b.x; });
+				std::vector<glm::vec3> edge, bevel, ridge;
+				std::vector<float> along;
+				for (const glm::vec2& knot : knots)
+				{
+					const float u = knot.x;
+					const float x = BladeHeel + span * u;
+					const float w = BladeWidth(shape, u) * knot.y;
+					const float spine = BladeSpine(shape, u);
+					const float h = BladeRidge(shape, u);
+					edge.push_back({ x, 0.0f, spine + side * w });
+					bevel.push_back({ x, 0.28f * h, spine + side * w * 0.8f });
+					ridge.push_back({ x, h, spine });
+					along.push_back(u);
+				}
+				for (const float sign : { 1.0f, -1.0f })
+				{
+					const glm::vec3 flip(1.0f, sign, 1.0f);
+					AppendFacet(vertices, indices, edge[0] * flip, bevel[0] * flip, ridge[0] * flip, { -1.0f, 0.0f, 0.0f }, BladeBody);
+					for (size_t k = 0; k + 1 < edge.size(); k++)
+					{
+						const float u = 0.5f * (along[k] + along[k + 1]);
+						const uint32_t key = Mix(seed + uint32_t(k) * 31u, side > 0.0f ? (sign > 0.0f ? 1u : 2u) : (sign > 0.0f ? 3u : 4u));
+						const glm::vec3 edgeTone = glm::mix(BladeEdge, BladeTip, glm::smoothstep(0.72f, 1.0f, u)) * (0.85f + 0.3f * Unit(key));
+						const float deep = u < 0.5f && Unit(Mix(key, 5u)) > 0.6f ? 0.35f * (1.0f - u / 0.5f) : 0.0f;
+						const glm::vec3 bodyTone = glm::mix(BladeBody * (0.7f + 0.7f * Unit(Mix(key, 9u))), BladeDeep, deep);
+						const glm::vec3 slope(0.0f, sign, 0.6f * side);
+						AppendFacet(vertices, indices, edge[k] * flip, edge[k + 1] * flip, bevel[k + 1] * flip, slope, edgeTone);
+						AppendFacet(vertices, indices, edge[k] * flip, bevel[k + 1] * flip, bevel[k] * flip, slope, edgeTone);
+						AppendFacet(vertices, indices, bevel[k] * flip, bevel[k + 1] * flip, ridge[k + 1] * flip, { 0.0f, sign, 0.0f }, bodyTone);
+						AppendFacet(vertices, indices, bevel[k] * flip, ridge[k + 1] * flip, ridge[k] * flip, { 0.0f, sign, 0.0f }, bodyTone);
+					}
+				}
+			}
+			std::vector<glm::vec2> vein{ { 0.04f, 0.0f } };
+			std::vector<std::vector<glm::vec2>> branches;
+			for (uint32_t k = 1; vein.back().x < shape.Vein; k++)
+			{
+				const glm::vec2 last = vein.back();
+				const float lateral = std::clamp(last.y + (Unit(Mix(seed + 101u, k)) - 0.5f) * 0.75f, -0.5f, 0.5f);
+				vein.push_back({ last.x + 0.07f + 0.06f * Unit(Mix(seed + 103u, k)), lateral });
+				if (k % 2u == 0u && branches.size() < 2u)
+				{
+					const float out = lateral >= 0.0f ? 1.0f : -1.0f;
+					branches.push_back({ vein.back(), vein.back() + glm::vec2(0.05f, out * 0.18f), vein.back() + glm::vec2(0.08f + 0.04f * Unit(Mix(seed, k)), out * 0.3f) });
+				}
+			}
+			AppendVein(vertices, indices, shape, vein, 0.012f);
+			for (const std::vector<glm::vec2>& branch : branches)
+				AppendVein(vertices, indices, shape, branch, 0.008f);
+			for (const float side : { 1.0f, -1.0f })
+			{
+				const float hook = side > 0.0f ? shape.HookLeft : shape.HookRight;
+				const glm::vec3 horn[] = {
+					{ BladeHeel + 0.015f, 0.0f, 0.0f },
+					{ BladeHeel, 0.0f, side * 0.45f * shape.Guard },
+					{ BladeHeel - 0.35f * hook, 0.0f, side * 0.85f * shape.Guard },
+					{ BladeHeel - hook, 0.0f, side * shape.Guard },
+				};
+				constexpr float HornRadii[] = { 0.05f, 0.04f, 0.026f, 0.0f };
+				AppendTube(vertices, indices, horn, HornRadii, 4, 0.55f, seed + (side > 0.0f ? 17u : 23u), BladeBody * 1.4f, BladeEdge);
+			}
+			for (const float sign : { 1.0f, -1.0f })
+			{
+				const glm::vec3 gem[] = { { BladeHeel - 0.035f, sign * 0.036f, 0.0f }, { BladeHeel, sign * 0.036f, 0.0f }, { BladeHeel + 0.035f, sign * 0.036f, 0.0f } };
+				constexpr float GemRadii[] = { 0.0f, 0.03f, 0.0f };
+				AppendTube(vertices, indices, gem, GemRadii, 4, 0.9f, seed + 29u, BladeVein, BladeTip);
+			}
+			std::vector<glm::vec3> grip;
+			std::vector<float> wraps;
+			for (float x = BladeHeel; x > BladeHeel - shape.Grip; x -= 0.028f)
+			{
+				grip.push_back({ x, 0.0f, 0.0f });
+				wraps.push_back(grip.size() % 2u ? 0.027f : 0.021f);
+			}
+			grip.push_back({ BladeHeel - shape.Grip, 0.0f, 0.0f });
+			wraps.push_back(0.024f);
+			AppendTube(vertices, indices, grip, wraps, 5, 0.8f, seed + 31u, BladeGrip, BladeGrip * 1.6f);
+			const glm::vec3 pommel[] = { { BladeHeel - shape.Grip + 0.005f, 0.0f, 0.0f }, { BladeHeel - shape.Grip - 0.04f, 0.0f, 0.0f }, { BladeHeel - shape.Grip - 0.085f, 0.0f, 0.0f } };
+			constexpr float PommelRadii[] = { 0.02f, 0.042f, 0.0f };
+			AppendTube(vertices, indices, pommel, PommelRadii, 4, 0.8f, seed + 37u, BladeEdge, BladeTip);
+		}
+
 		glm::mat4 Frame(const glm::vec3& origin, const glm::vec3& forward, const glm::vec3& up, float scale)
 		{
 			const glm::vec3 side = glm::normalize(glm::cross(forward, up));
@@ -497,43 +752,13 @@ namespace Game
 			BuildIceFang(vertices, indices, variant);
 			meshes.Fang[variant] = renderer.AddEffectMesh("IceFang" + std::to_string(variant), vertices, indices, clear, MeshVertexTint);
 		}
-		constexpr CrystalRing Blade[] = {
-			{ -0.4f, 0.0f, 0.0f },
-			{ -0.3f, 0.06f, 0.15f },
-			{ -0.16f, 0.1f, 0.35f },
-			{ 0.0f, 0.075f, 0.6f },
-			{ 0.16f, 0.11f, 0.8f },
-			{ 0.32f, 0.07f, 1.05f },
-			{ 0.46f, 0.04f, 1.15f },
-			{ 0.6f, 0.0f, 1.2f },
-		};
-		constexpr CrystalRing Flake[] = {
-			{ -0.36f, 0.0f, 0.3f },
-			{ -0.25f, 0.09f, 0.4f },
-			{ -0.08f, 0.13f, 0.62f },
-			{ 0.08f, 0.095f, 0.9f },
-			{ 0.24f, 0.12f, 1.0f },
-			{ 0.4f, 0.055f, 1.3f },
-			{ 0.6f, 0.0f, 1.35f },
-		};
-		constexpr CrystalRing Needle[] = {
-			{ -0.42f, 0.0f, 0.0f },
-			{ -0.32f, 0.05f, 0.1f },
-			{ -0.2f, 0.085f, 0.3f },
-			{ -0.1f, 0.045f, 0.45f },
-			{ 0.05f, 0.09f, 0.6f },
-			{ 0.22f, 0.06f, 0.85f },
-			{ 0.38f, 0.045f, 0.9f },
-			{ 0.6f, 0.0f, 1.0f },
-		};
-		const std::span<const CrystalRing> shards[] = { Blade, Flake, Needle };
-		const EffectMaterial glass{ .Color = { 0.05f, 0.04f, 0.065f }, .Roughness = 0.04f, .Metallic = 0.0f };
+		const EffectMaterial glass{ .Color = { 1.0f, 1.0f, 1.0f }, .Roughness = 0.05f, .Metallic = 0.0f };
 		for (uint32_t variant = 0; variant < meshes.Obsidian.size(); variant++)
 		{
 			vertices.clear();
 			indices.clear();
-			AppendCrystal(vertices, indices, shards[variant], 4, 0.4f, 61u + variant * 29u, { 0.75f, 0.62f, 1.0f }, { 1.0f, 0.95f, 1.0f });
-			meshes.Obsidian[variant] = renderer.AddEffectMesh("ObsidianShard" + std::to_string(variant), vertices, indices, glass, MeshVertexTint);
+			BuildObsidianBlade(vertices, indices, variant);
+			meshes.Obsidian[variant] = renderer.AddEffectMesh("ObsidianBlade" + std::to_string(variant), vertices, indices, glass, MeshVertexTint);
 		}
 		return meshes;
 	}
@@ -637,7 +862,7 @@ namespace Game
 		}
 	}
 
-	void DrawObsidianShard(WorldRenderer& renderer, const SpellMeshes& meshes, const ObsidianLook& look, float time, uint32_t seed)
+	void DrawObsidianBlade(WorldRenderer& renderer, const SpellMeshes& meshes, const ObsidianLook& look, float time, uint32_t seed)
 	{
 		const uint32_t mesh = meshes.Obsidian[look.Variant % meshes.Obsidian.size()];
 		const float length = ObsidianLength * look.Size * look.Grow;
@@ -647,32 +872,47 @@ namespace Game
 		const glm::vec3 level = std::abs(forward.y) < 0.99f ? glm::normalize(Up - forward * glm::dot(Up, forward)) : glm::vec3(1.0f, 0.0f, 0.0f);
 		const glm::vec3 across = glm::cross(forward, level);
 		const glm::vec3 up = level * std::cos(look.Roll) + across * std::sin(look.Roll);
-		const glm::vec3 origin = look.Center - forward * (0.1f * length);
-		const glm::vec4 rim(ObsidianSheen * (0.9f + 1.0f * look.Glint), 1.0f);
-		renderer.DrawModel(mesh, Frame(origin, forward, up, length), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.03f + 0.12f * look.Glint, look.Ground, rim);
-		const glm::vec3 tip = origin + forward * (0.6f * length);
-		const glm::vec3 middle = origin + forward * (0.1f * length);
-		DrawGlow(renderer, middle, 0.38f * length + 0.06f, ObsidianSheen * ((look.Flying ? 0.07f : 0.14f) + 0.12f * look.Glint), 0.35f);
-		if (look.Flying)
+		const glm::vec3 side = glm::cross(forward, up);
+		const glm::vec4 rim(ObsidianSheen * (0.12f + 0.4f * look.Glint), 1.0f);
+		const ModelDissolve burn{ .Amount = look.Dissolve, .Edge = ObsidianSheen * 2.2f, .Width = 0.08f, .Scale = 6.0f, .Seed = float(seed % 97u) };
+		renderer.DrawModel(mesh, Frame(look.Center, forward, up, length), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.25f * look.Flash), 0.08f + 0.35f * look.Glint, look.Ground, rim, 0u, glm::vec4(0.0f), burn);
+		const glm::vec3 tip = look.Center + forward * (0.68f * length);
+		const glm::vec3 heel = look.Center + forward * (BladeHeel * length);
+		DrawGlow(renderer, look.Center + forward * (0.2f * length), 0.36f * length + 0.05f, ObsidianSheen * ((0.03f + 0.05f * look.Glint) * (1.0f - look.Dissolve)), 0.45f);
+		if (look.Sweep >= 0.0f && look.Sweep <= 1.0f)
 		{
-			ParticleSprite smear = Stretched(ParticleShape::Beam, origin - forward * (0.25f * length), origin - forward * (2.4f * length), 0.06f * look.Size, glm::vec3(0.035f, 0.025f, 0.05f));
-			smear.Additive = 0.0f;
-			smear.Emission = 0.0f;
-			smear.Color.w = 0.55f;
-			renderer.DrawSprite(smear);
-			ParticleSprite edge = Stretched(ParticleShape::Beam, tip - forward * (0.3f * length), origin - forward * (1.3f * length), 0.014f * look.Size, ObsidianSheen * 0.32f);
-			edge.Emission = 0.5f;
-			renderer.DrawSprite(edge);
+			const float fade = std::sin(look.Sweep * Pi);
+			const float back = std::max(look.Sweep - 0.4f, 0.0f);
+			const glm::vec3 front = glm::mix(heel, tip, look.Sweep);
+			for (const float edge : { 1.0f, -1.0f })
+			{
+				const glm::vec3 a = glm::mix(heel, tip, back) + side * (edge * 0.12f * length * (1.0f - back));
+				const glm::vec3 b = front + side * (edge * 0.12f * length * (1.0f - look.Sweep));
+				ParticleSprite line = Stretched(ParticleShape::Beam, a, b, 0.01f * look.Size, glm::vec3(0.75f, 0.5f, 1.2f) * (0.5f * fade));
+				line.Emission = 0.6f;
+				renderer.DrawSprite(line);
+			}
+			DrawStar(renderer, front, 0.08f * look.Size * fade, glm::vec3(0.8f, 0.65f, 1.2f) * (0.6f * fade), time * 3.0f + float(seed % 7u));
+		}
+		if (look.Flash > 0.01f)
+			DrawStar(renderer, tip, 0.1f * look.Size * look.Flash, glm::vec3(0.9f, 0.75f, 1.2f) * (0.6f * look.Flash), time * 2.0f + float(seed % 13u));
+	}
+
+	void DrawBladeSlash(WorldRenderer& renderer, const BladeSlash& slash)
+	{
+		if (slash.Age < 0.0f || slash.Age > ObsidianSlashSeconds)
 			return;
-		}
-		if (look.Form < 1.0f)
-		{
-			ParticleSprite reel = Stretched(ParticleShape::Beam, look.From, middle, 0.025f, ObsidianSheen * (0.55f * (1.0f - look.Form) + 0.1f));
-			reel.Emission = 0.5f;
-			renderer.DrawSprite(reel);
-		}
-		if (look.Glint > 0.01f)
-			DrawStar(renderer, tip, 0.2f * look.Glint * look.Size, ObsidianSheen * (1.1f * look.Glint), time * 2.0f + float(seed % 13u));
+		const float reveal = glm::smoothstep(0.0f, 0.04f, slash.Age);
+		const float fade = 1.0f - glm::smoothstep(0.03f, ObsidianSlashSeconds, slash.Age);
+		const float half = (0.5f + 0.25f * slash.Kill) * slash.Size;
+		const glm::vec3 from = slash.Center - slash.Axis * half;
+		const glm::vec3 to = from + slash.Axis * (2.0f * half * reveal);
+		ParticleSprite glow = Stretched(ParticleShape::Beam, from, to, 0.08f * slash.Size, ObsidianSheen * (0.45f * fade));
+		glow.Emission = 0.5f;
+		renderer.DrawSprite(glow);
+		ParticleSprite core = Stretched(ParticleShape::Beam, from, to, (0.016f + 0.01f * slash.Kill) * slash.Size * (0.5f + 0.5f * fade), glm::vec3(0.95f, 0.8f, 1.2f) * (1.3f * fade));
+		core.Emission = 0.8f;
+		renderer.DrawSprite(core);
 	}
 
 	float FireballViolet(float power)
@@ -1474,18 +1714,6 @@ namespace Game
 		renderer.DrawSprite(sprite);
 	}
 
-	void DrawReticle(WorldRenderer& renderer, const glm::vec3& position, float radius, const glm::vec3& color)
-	{
-		ParticleSprite ring = RingSprite(position, radius, radius * 0.08f, color);
-		ring.Emission = 0.2f;
-		ring.Softness = 0.05f;
-		renderer.DrawSprite(ring);
-		ParticleSprite core = Sprite(ParticleShape::Glow, position, radius * 0.35f, color * 1.3f);
-		core.Emission = 0.2f;
-		core.Softness = 0.05f;
-		renderer.DrawSprite(core);
-	}
-
 	void DrawFloatingRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float thickness)
 	{
 		ParticleSprite sprite = RingSprite(center, radius, thickness, color);
@@ -1731,19 +1959,20 @@ namespace Game
 			style.Scroll = 0.0f;
 			style.Taper = 0.2f;
 			break;
-		case AbilityId::ObsidianShards:
+		case AbilityId::ObsidianBlades:
 			style.Look = TrailLook::Obsidian;
-			style.Head = { 0.05f, 0.03f, 0.07f };
-			style.Tail = { 0.03f, 0.02f, 0.04f };
-			style.Core = glm::vec4(ObsidianSheen * 0.9f, 1.0f);
-			style.Width = 0.14f;
-			style.AlphaCurve = { 0.8f, 0.55f, 0.25f, 0.0f };
-			style.Life = 0.14f;
-			style.Emission = 0.4f;
-			style.Additive = 0.25f;
+			style.Head = { 0.07f, 0.035f, 0.11f };
+			style.Tail = { 0.03f, 0.02f, 0.05f };
+			style.Core = glm::vec4(ObsidianSheen * 0.6f, 1.0f);
+			style.Width = 0.11f;
+			style.WidthCurve = { 1.0f, 0.7f, 0.4f, 0.1f };
+			style.AlphaCurve = { 0.85f, 0.5f, 0.2f, 0.0f };
+			style.Life = 0.065f;
+			style.Emission = 0.45f;
+			style.Additive = 0.3f;
 			style.Tiling = 1.5f;
 			style.Scroll = 0.0f;
-			style.Taper = 0.15f;
+			style.Taper = 0.1f;
 			break;
 		case AbilityId::ChainHook:
 			style.Look = TrailLook::Chain;

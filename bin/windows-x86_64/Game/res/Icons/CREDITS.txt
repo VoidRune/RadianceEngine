@@ -113,3 +113,4 @@ chess-rook.svg by Skoll
 heart-plus.svg by Zeromancer (CC0)
 eye.svg was drawn for this game and is not from game-icons.net (CC0)
 hex-shield.svg was drawn for this game and is not from game-icons.net (CC0)
+obsidian-blades.svg was drawn for this game and is not from game-icons.net (CC0)

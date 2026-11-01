@@ -143,6 +143,7 @@ namespace Game
 		Eye,
 		FireSpellCast,
 		HexShield,
+		ObsidianBlades,
 		Count,
 	};
 

@@ -16,7 +16,7 @@ namespace Game
 		{
 		case AbilityKind::Projectile:
 		{
-			const ProjectilePattern pattern = ChargedPattern(ability, GetProjectilePattern(ability, context.ExtraProjectiles, context.ExtraPierce, context.ProjectileSpeedScale), context.Charge, context.ProjectileSpeedScale);
+			const ProjectilePattern pattern = ShotPattern(ability, GetProjectilePattern(ability, context.ExtraProjectiles, context.ExtraPierce, context.ProjectileSpeedScale), context.Charge, context.ProjectileSpeedScale);
 			for (uint32_t i = 0; i < pattern.Count; i++)
 			{
 				const Vec2 direction = ProjectileDirection(pattern, context.Direction, i);
@@ -43,7 +43,11 @@ namespace Game
 			if (id == AbilityId::Gust && HasCard(context.Cards, CardId::DeflectingGale))
 				DeflectProjectiles(world, context, ability.Reach * context.AreaScale, ability.HalfArc);
 			if (id == AbilityId::GlacialEruption && HasCard(context.Cards, CardId::IceShrapnel))
-				world.SpawnCardStrike(AbilityId::GlacialEruption, context.Origin, AngleOf(axis), ShrapnelDelay, ability.Reach * ShrapnelReach * context.AreaScale, ability.Push * ShrapnelScale * context.PushScale, 0, false, context);
+			{
+				AbilityContext shards = context;
+				shards.DamageScale /= std::max(context.PushScale, 1e-3f);
+				world.SpawnCardStrike(AbilityId::GlacialEruption, context.Origin, AngleOf(axis), ShrapnelDelay, ability.Reach * ShrapnelReach * context.AreaScale, ability.Push * ShrapnelScale * context.PushScale, 0, false, shards);
+			}
 			break;
 		}
 		case AbilityKind::Ground:

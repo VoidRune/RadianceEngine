@@ -562,6 +562,14 @@ namespace Game
 		PlayAt(Cue::FireImpact, position, 0.2f, 0.55f + 0.15f * m_Random.Float(), 0.05f);
 	}
 
+	void GameAudio::PlayNovaRipe(Vec2 position, bool own)
+	{
+		const float loud = own ? 1.0f : 0.7f;
+		PlayAt(Cue::GlassLight, position, 0.45f * loud, 1.5f);
+		PlayAt(Cue::GlassLight, position, 0.35f * loud, 1.9f, 0.05f);
+		PlayAt(Cue::IceImpact, position, 0.22f * loud, 1.35f, 0.02f);
+	}
+
 	void GameAudio::OnAppear(const EntityState& entity, Tracked& tracked, const GameClient& client)
 	{
 		switch (entity.Kind)
@@ -653,8 +661,8 @@ namespace Game
 				ChargeSpear(entity, before, tracked, self, dt);
 			if ((before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::PurpleFireball)) || (entity.Has(EntityFlags::Attacking) && entity.Variant == uint8_t(AbilityId::PurpleFireball)))
 				ChargeFireball(entity, before, tracked, self, dt);
-			if ((before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::ObsidianShards)) || (entity.Has(EntityFlags::Attacking) && entity.Variant == uint8_t(AbilityId::ObsidianShards)))
-				ChargeObsidian(entity, before, tracked, self);
+			if (Fell(before.Flags, entity.Flags, EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::ObsidianBlades))
+				CancelObsidian(entity, self);
 			GuardSounds(entity, before, self);
 			if (!dead && !revived && moved > 3.0f)
 				PlayAt(Cue::TeleportIn, entity.Position, 0.6f);
@@ -854,16 +862,12 @@ namespace Game
 			PlayAt(Cue::Coins, at, 0.35f * loud, 1.55f, 0.02f);
 			PlayAt(Cue::Latch, at, 0.4f * loud, 1.2f);
 			break;
-		case AbilityId::ObsidianShards:
-		{
-			const float volley = float(std::count_if(client.GetEntities().begin(), client.GetEntities().end(), [&](const EntityState& other) { return other.Kind == EntityKind::Projectile && other.Owner == entity.Owner && other.Tag == entity.Tag && other.Variant == entity.Variant; })) / float(ObsidianVolley);
-			PlayAt(Cue::WhooshHeavy, at, (0.5f + 0.35f * volley) * loud, 1.45f - 0.2f * volley);
-			PlayAt(Cue::Rock, at, (0.3f + 0.3f * volley) * loud, 1.5f);
-			PlayAt(Cue::GlassLight, at, 0.35f * loud, 0.85f, 0.01f);
-			if (volley > 0.99f)
-				PlayAt(Cue::Explosion, at, 0.22f * loud, 1.9f);
+		case AbilityId::ObsidianBlades:
+			PlayAt(Cue::DaggerSwing, at, 0.75f * loud, 0.95f);
+			PlayAt(Cue::WhooshHeavy, at, 0.45f * loud, 1.5f);
+			PlayAt(Cue::SwordSwing, at, 0.35f * loud, 1.25f, 0.02f);
+			PlayAt(Cue::GlassLight, at, 0.2f * loud, 1.2f, 0.01f);
 			break;
-		}
 		default:
 			PlayAt(Cue::WhooshLight, at, 0.5f);
 			break;
@@ -891,10 +895,22 @@ namespace Game
 		case AbilityId::ChainLightning:
 			PlayAt(Cue::ShockHit, at, 0.6f);
 			break;
-		case AbilityId::ObsidianShards:
-			PlayAt(Cue::GlassLight, at, 0.32f, 1.15f + 0.35f * m_Random.Float());
-			PlayAt(Cue::Rock, at, 0.22f, 1.6f + 0.3f * m_Random.Float(), 0.01f);
+		case AbilityId::ObsidianBlades:
+		{
+			const float order = float(m_FrameImpacts - 1);
+			if (HitNear(at, 1.0f))
+			{
+				PlayAt(Cue::DaggerHit, at, 0.55f, 1.05f + 0.08f * order + 0.1f * m_Random.Float(), 0.03f * order);
+				PlayAt(Cue::GlassLight, at, 0.3f, 1.35f + 0.12f * order, 0.03f * order + 0.005f);
+				PlayAt(Cue::ShockHit, at, 0.1f, 1.8f + 0.2f * m_Random.Float(), 0.03f * order + 0.01f);
+			}
+			else
+			{
+				PlayAt(Cue::GlassLight, at, 0.26f, 1.5f + 0.3f * m_Random.Float());
+				PlayAt(Cue::Rock, at, 0.14f, 1.8f + 0.3f * m_Random.Float(), 0.01f);
+			}
 			break;
+		}
 		case AbilityId::ChainHook:
 			break;
 		case AbilityId::Arrow:
@@ -1312,9 +1328,11 @@ namespace Game
 			PlayAt(Cue::FireBuildup, at, 0.6f * loud, 0.9f);
 			tracked.Loop = PlayAt(Cue::FireLoop, at, 0.3f * loud, 0.75f);
 			break;
-		case AbilityId::ObsidianShards:
-			PlayAt(Cue::GlassLight, at, 0.4f * loud, 0.8f);
-			tracked.Loop = PlayAt(Cue::IceLoop, at, 0.18f * loud, 0.55f);
+		case AbilityId::ObsidianBlades:
+			PlayAt(Cue::ShockHit, at, 0.22f * loud, 1.9f);
+			PlayAt(Cue::WhooshLight, at, 0.25f * loud, 1.6f);
+			for (uint32_t k = 0; k < 3; k++)
+				PlayAt(Cue::GlassLight, at, 0.22f * loud, 1.5f + 0.2f * float(k), 0.02f + 0.025f * float(k));
 			break;
 		case AbilityId::HexShield:
 			PlayAt(Cue::Shield, at, 0.7f * loud, 1.35f);
@@ -1434,27 +1452,10 @@ namespace Game
 		}
 	}
 
-	void GameAudio::ChargeObsidian(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self)
+	void GameAudio::CancelObsidian(const EntityState& entity, bool self)
 	{
-		const float loud = self ? 1.0f : 0.75f;
-		const Vec2 at = entity.Position;
-		const bool held = before.Has(EntityFlags::Attacking) && before.Variant == uint8_t(AbilityId::ObsidianShards);
-		if (!entity.Has(EntityFlags::Attacking) || entity.Variant != uint8_t(AbilityId::ObsidianShards) || entity.Has(EntityFlags::Dead))
-		{
-			if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
-				PlayAt(Cue::Glass, at, 0.4f * loud, 0.75f);
-			return;
-		}
-		const float power = entity.GetChargePower();
-		tracked.Loop.SetPitch(0.55f + 0.35f * power);
-		tracked.Loop.SetVolume((0.18f + 0.22f * power) * loud, 0.04f);
-		if (!held)
-			return;
-		for (uint32_t k = ShardsFormed(before.GetChargePower()); k < ShardsFormed(power); k++)
-		{
-			PlayAt(Cue::GlassLight, at, 0.38f * loud, 0.95f + 0.14f * float(k));
-			PlayAt(Cue::Rock, at, 0.16f * loud, 1.7f + 0.1f * float(k), 0.01f);
-		}
+		if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
+			PlayAt(Cue::Glass, entity.Position, self ? 0.4f : 0.3f, 0.75f);
 	}
 
 	void GameAudio::GuardSounds(const EntityState& entity, const EntityState& before, bool self)

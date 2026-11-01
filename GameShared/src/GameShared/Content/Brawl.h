@@ -41,7 +41,7 @@ namespace Game
 		AbilityId::FrostSpear,
 		AbilityId::ChainHook,
 		AbilityId::Firebomb,
-		AbilityId::ObsidianShards,
+		AbilityId::ObsidianBlades,
 		AbilityId::StormStrike,
 		AbilityId::EarthSpike,
 		AbilityId::PurpleFireball,
@@ -156,6 +156,31 @@ namespace Game
 	inline constexpr float HookYankStop = 0.6f;
 	inline constexpr float FrostNovaWindow = 1.2f;
 	static_assert(FrostNovaWindow < Abilities[size_t(AbilityId::GlacialNova)].EffectDuration);
+	inline constexpr float FrostNovaUnripe = 0.3f;
+	inline constexpr float FrostNovaRipe = 0.8f;
+	inline constexpr float FrostNovaUnripeScale = 0.5f;
+	inline constexpr float FrostNovaBrittlePush = 1.2f;
+	static_assert(FrostNovaRipe < FrostNovaWindow);
+
+	inline bool IsNovaBrittle(float age)
+	{
+		return age >= FrostNovaRipe;
+	}
+
+	inline float NovaRipeness(float age)
+	{
+		return std::clamp((age - FrostNovaUnripe) / (FrostNovaRipe - FrostNovaUnripe), 0.0f, 1.0f);
+	}
+
+	inline float NovaEruptionScale(float age)
+	{
+		return FrostNovaUnripeScale + (1.0f - FrostNovaUnripeScale) * NovaRipeness(age);
+	}
+
+	inline float NovaEruptionPush(float age)
+	{
+		return IsNovaBrittle(age) ? FrostNovaBrittlePush : NovaEruptionScale(age);
+	}
 	inline constexpr float ChargeCrackSeconds = 1.0f;
 	inline constexpr float ChargeCrackPower = 0.55f;
 	inline constexpr float SpearFullSpeed = 23.0f;
@@ -196,8 +221,9 @@ namespace Game
 	inline constexpr float SpikeAimDeadzone = 0.35f;
 	inline constexpr float SpikeGroundStep = 0.2f;
 	inline constexpr float FirebombSkipDistance = 2.0f;
-	inline constexpr uint32_t ObsidianVolley = 5;
-	inline constexpr float ObsidianStep = 0.14f;
+	inline constexpr uint32_t ObsidianVolley = 7;
+	inline constexpr float ObsidianSpread = 0.56f;
+	inline constexpr float ObsidianFlare = 1.35f;
 	inline constexpr float LavaDamagePerSecond = 14.0f;
 	inline constexpr float AfterburnSeconds = 0.8f;
 	inline constexpr float AfterburnDamagePerSecond = 8.0f;
@@ -205,12 +231,12 @@ namespace Game
 	inline constexpr float BrawlPickSeconds = 20.0f;
 	inline constexpr float BrawlCountdownSeconds = 3.0f;
 	inline constexpr float BrawlOverSeconds = 3.5f;
-	inline constexpr float CollapseGrace = 7.0f;
-	inline constexpr float CollapseRate = 0.16f;
+	inline constexpr float CollapseGrace = 9.0f;
+	inline constexpr float CollapseRate = 0.13f;
 	inline constexpr float CollapseMinRadius = 2.8f;
 	inline constexpr float CollapseJitter = 1.6f;
-	inline constexpr float FinalCollapseStart = 78.0f;
-	inline constexpr float FinalCollapseRate = 0.35f;
+	inline constexpr float FinalCollapseStart = 92.0f;
+	inline constexpr float FinalCollapseRate = 0.3f;
 	inline constexpr float CollapseWarning = 2.5f;
 	inline constexpr float BrawlSpawnRing = 0.62f;
 	inline constexpr uint16_t RoundWinPoints = 3;
@@ -228,7 +254,7 @@ namespace Game
 	inline constexpr float IceBounce = 0.8f;
 	inline constexpr float BounceSpeed = 2.0f;
 	inline constexpr float HoleStartRadius = 0.9f;
-	inline constexpr float HoleRate = 0.075f;
+	inline constexpr float HoleRate = 0.062f;
 	inline constexpr float HoleSpawnClearance = 2.6f;
 	inline constexpr float WaterDamagePerSecond = 13.0f;
 	inline constexpr float RuinsScale = 2.0f;
@@ -738,24 +764,14 @@ namespace Game
 		return std::clamp((size - 1.0f) / (FireballFullSize - 1.0f), 0.0f, 1.0f);
 	}
 
-	inline uint32_t ShardsFormed(float power)
-	{
-		return 1u + uint32_t(std::clamp(power, 0.0f, 1.0f) * float(ObsidianVolley - 1) + 1e-3f);
-	}
-
-	inline bool FiresWhenFull(AbilityId id)
-	{
-		return id == AbilityId::ObsidianShards;
-	}
-
 	inline uint8_t CardPierce(AbilityId id, CardMask cards)
 	{
-		return id == AbilityId::ObsidianShards && HasCard(cards, CardId::RazorGlass) ? 1 : 0;
+		return id == AbilityId::ObsidianBlades && HasCard(cards, CardId::RazorGlass) ? 1 : 0;
 	}
 
 	inline bool IsChargedShot(AbilityId id)
 	{
-		return id == AbilityId::FrostSpear || id == AbilityId::PurpleFireball || id == AbilityId::ObsidianShards;
+		return id == AbilityId::FrostSpear || id == AbilityId::PurpleFireball;
 	}
 
 	inline ChargedShot ChargedShotOf(const AbilityDef& ability, float power)
@@ -767,19 +783,25 @@ namespace Game
 		return { .Speed = ability.ProjectileSpeed, .Range = ability.ProjectileRange, .Radius = ability.ProjectileRadius, .Push = ability.Push, .Chill = ability.Chill, .Blast = ability.ImpactRadius };
 	}
 
-	inline ProjectilePattern ChargedPattern(const AbilityDef& ability, ProjectilePattern pattern, float charge, float speedScale)
+	inline ProjectilePattern ShotPattern(const AbilityDef& ability, ProjectilePattern pattern, float charge, float speedScale)
 	{
+		if (ability.Id == AbilityId::ObsidianBlades)
+		{
+			pattern.Spread = ObsidianSpread * float(pattern.Count - 1) / float(ObsidianVolley - 1);
+			pattern.Flare = ObsidianFlare;
+			return pattern;
+		}
 		if (!IsChargedShot(ability.Id))
 			return pattern;
 		const ChargedShot shot = ChargedShotOf(ability, charge);
 		pattern.Speed = shot.Speed * speedScale;
 		pattern.Pierce = uint8_t(std::min(pattern.Pierce + shot.Pierce, 8));
-		if (ability.Id == AbilityId::ObsidianShards)
-		{
-			pattern.Count += ShardsFormed(charge) - 1u;
-			pattern.Spread = ObsidianStep * float(pattern.Count - 1);
-		}
 		return pattern;
+	}
+
+	inline ProjectilePattern BladePattern()
+	{
+		return ShotPattern(GetAbility(AbilityId::ObsidianBlades), { .Count = ObsidianVolley }, 0.0f, 1.0f);
 	}
 
 	inline float ChargedRange(const AbilityDef& ability, float charge)

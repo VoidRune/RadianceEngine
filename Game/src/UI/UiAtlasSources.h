@@ -46,7 +46,7 @@ namespace Game
 		"potion-ball", "cycle", "vortex", "fizzing-flask", "bleeding-heart", "broken-shield", "heartburn", "burning-embers",
 		"fire-ring", "frozen-block", "ice-bolt", "lightning-helix", "power-lightning", "energy-shield", "heart-bottle", "on-target",
 		"star-swirl", "sunbeams", "psychic-waves", "dripping-blade", "echo-ripples", "unstable-orb", "meditation", "eye",
-		"fire-spell-cast", "hex-shield",
+		"fire-spell-cast", "hex-shield", "obsidian-blades",
 	};
 
 	inline VectorAtlasDesc MakeUiAtlasDesc()

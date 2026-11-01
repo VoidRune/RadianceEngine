@@ -168,7 +168,7 @@ namespace Game
 		void ChooseTarget(const BotArena& arena);
 		void ChooseGoal(const World& world, const BotArena& arena);
 		Option PlanCast(const World& world, const BotArena& arena, uint32_t slot) const;
-		float NovaValue(const BotArena& arena, Vec2 center, AbilityId spell, float lead) const;
+		float NovaValue(const BotArena& arena, Vec2 center, AbilityId spell, float lead, float push = 1.0f, float damage = 1.0f) const;
 		float LandingValue(const BotArena& arena, Vec2 position, Vec2 impulse) const;
 		float Harm(float damage, const Rival& rival, AbilityId spell = AbilityId::Count) const;
 		float HitChance(float travel, float distance, const Rival& rival) const;

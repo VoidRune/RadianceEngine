@@ -26,14 +26,18 @@ namespace Game
 	inline constexpr float FireballBallRadius = 0.2f;
 	inline constexpr float FireballBlastHeight = 0.75f;
 	inline constexpr float FireballSteps[] = { 0.33f, 0.66f };
-	inline constexpr float ObsidianLength = 0.8f;
-	inline constexpr float ObsidianHoldHeight = 1.15f;
-	inline constexpr float ObsidianHoldReach = 0.5f;
-	inline constexpr float ObsidianFanRadius = 0.42f;
-	inline constexpr float ObsidianFirstForm = 0.14f;
-	inline constexpr float ObsidianFormWindow = 0.85f;
-	inline constexpr float ObsidianPullReach = 0.75f;
-	inline constexpr float ObsidianRecoilSeconds = 0.14f;
+	inline constexpr float ObsidianLength = 0.95f;
+	inline constexpr float ObsidianHoldHeight = 1.05f;
+	inline constexpr float ObsidianFanReach = 0.5f;
+	inline constexpr float ObsidianFanAngle = 2.6f;
+	inline constexpr float ObsidianFormSeconds = 0.065f;
+	inline constexpr float ObsidianFormStagger = 0.013f;
+	inline constexpr float ObsidianSweepStart = 0.07f;
+	inline constexpr float ObsidianSweepSeconds = 0.05f;
+	inline constexpr float ObsidianMergeSeconds = 0.09f;
+	inline constexpr float ObsidianSlashSeconds = 0.2f;
+	inline constexpr float ObsidianFadeSeconds = 0.34f;
+	inline constexpr float ObsidianStickSeconds = 0.22f;
 	inline constexpr glm::vec3 ObsidianSheen{ 0.42f, 0.16f, 0.85f };
 	inline constexpr float HexShieldCellSize = 0.15f;
 	inline constexpr float HexShieldSphere = 1.25f;
@@ -74,7 +78,7 @@ namespace Game
 		std::array<uint32_t, 2> Spike{ UINT32_MAX, UINT32_MAX };
 		uint32_t SpikeCollar = UINT32_MAX;
 		std::array<uint32_t, 6> Ice{ UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
-		std::array<uint32_t, 3> Obsidian{ UINT32_MAX, UINT32_MAX, UINT32_MAX };
+		std::array<uint32_t, 4> Obsidian{ UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
 		std::array<uint32_t, 3> Fang{ UINT32_MAX, UINT32_MAX, UINT32_MAX };
 	};
 
@@ -128,11 +132,20 @@ namespace Game
 		float Size = 1.0f;
 		float Grow = 1.0f;
 		float Glint = 0.0f;
-		float Form = 1.0f;
-		glm::vec3 From{ 0.0f };
+		float Flash = 0.0f;
+		float Sweep = -1.0f;
+		float Dissolve = 0.0f;
 		float Ground = 0.0f;
 		uint32_t Variant = 0;
-		bool Flying = false;
+	};
+
+	struct BladeSlash
+	{
+		glm::vec3 Center{ 0.0f };
+		glm::vec3 Axis{ 1.0f, 0.0f, 0.0f };
+		float Age = 0.0f;
+		float Size = 1.0f;
+		float Kill = 0.0f;
 	};
 
 	struct FireballLook
@@ -280,7 +293,8 @@ namespace Game
 	void DrawIceCluster(WorldRenderer& renderer, const SpellMeshes& meshes, const IceClusterLook& look);
 	uint32_t NovaArmCount(uint32_t seed);
 	float NovaArmAngle(uint32_t seed, uint32_t arm);
-	void DrawObsidianShard(WorldRenderer& renderer, const SpellMeshes& meshes, const ObsidianLook& look, float time, uint32_t seed);
+	void DrawObsidianBlade(WorldRenderer& renderer, const SpellMeshes& meshes, const ObsidianLook& look, float time, uint32_t seed);
+	void DrawBladeSlash(WorldRenderer& renderer, const BladeSlash& slash);
 	float FireballViolet(float power);
 	glm::vec3 FireballColor(float power);
 	void DrawPurpleFireball(WorldRenderer& renderer, const FireballLook& look, float time, uint32_t seed);
@@ -318,7 +332,6 @@ namespace Game
 
 	void DrawGlow(WorldRenderer& renderer, const glm::vec3& position, float size, const glm::vec3& color, float softness = 0.2f);
 	void DrawStar(WorldRenderer& renderer, const glm::vec3& position, float size, const glm::vec3& color, float rotation = 0.0f);
-	void DrawReticle(WorldRenderer& renderer, const glm::vec3& position, float radius, const glm::vec3& color);
 	void DrawFloatingRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float thickness);
 	void DrawBeam(WorldRenderer& renderer, const glm::vec3& base, float height, float width, const glm::vec3& color, float emission = 1.0f);
 	void DrawStreak(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float width, const glm::vec3& color);

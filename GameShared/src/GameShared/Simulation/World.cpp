@@ -240,7 +240,8 @@ namespace Game
 				continue;
 			const SkillTraits& skill = traits.Skills[slot];
 			AbilityContext eruption = context;
-			eruption.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, controller->State.Still);
+			eruption.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, controller->State.Still) * NovaEruptionScale(actions.RecastAge);
+			eruption.PushScale = NovaEruptionPush(actions.RecastAge);
 			eruption.AreaScale = traits.AreaScale * skill.AreaScale;
 			eruption.PvpScale = skill.PvpScale;
 			EruptFrostNova(*this, actions.RecastPoint, eruption);
@@ -977,7 +978,7 @@ namespace Game
 			perks |= PerkSlick;
 		if (ability.Id == AbilityId::FrostSpear && context.Charge >= 0.999f)
 			perks |= PerkBurst;
-		const bool seeking = ability.Id == AbilityId::ObsidianShards && HasCard(context.Cards, CardId::SeekerShards);
+		const bool seeking = ability.Id == AbilityId::ObsidianBlades && HasCard(context.Cards, CardId::SeekerBlades);
 		if (seeking)
 			perks |= PerkSeek;
 		const bool overcharged = ability.Id == AbilityId::ArcLightning && HasCard(context.Cards, CardId::Overcharge);
@@ -993,7 +994,7 @@ namespace Game
 			.Lifetime = lifetime,
 			.Span = lifetime,
 			.Radius = shot.Radius,
-			.Damage = charged ? ScaleDamage(damage, shot.DamageScale * (seeking ? SeekerDamage : 1.0f)) : damage,
+			.Damage = charged || seeking ? ScaleDamage(damage, shot.DamageScale * (seeking ? SeekerDamage : 1.0f)) : damage,
 			.Side = context.Side,
 			.Pierce = uint8_t(pattern.Pierce + CardPierce(ability.Id, context.Cards)),
 			.Chain = uint8_t(ability.Chain + (overcharged ? 1 : 0)),

@@ -201,7 +201,7 @@ namespace Game
 		case AbilityId::FrostSpear: return UiIcon::IceSpear;
 		case AbilityId::ChainHook: return UiIcon::SpearHook;
 		case AbilityId::Firebomb: return UiIcon::HighShot;
-		case AbilityId::ObsidianShards: return UiIcon::VoidShard;
+		case AbilityId::ObsidianBlades: return UiIcon::ObsidianBlades;
 		case AbilityId::StormStrike: return UiIcon::ArcingBolt;
 		case AbilityId::Ignite: return UiIcon::Fireball;
 		case AbilityId::ShatterBurst: return UiIcon::Snowflake;
@@ -238,7 +238,7 @@ namespace Game
 		case CardId::ClusterBomb: return UiIcon::ArrowCluster;
 		case CardId::StickyFire: return UiIcon::Fireball;
 		case CardId::RazorGlass: return UiIcon::StrikingArrows;
-		case CardId::SeekerShards: return UiIcon::Crosshair;
+		case CardId::SeekerBlades: return UiIcon::Crosshair;
 		case CardId::ForkedLightning: return UiIcon::LightningArc;
 		case CardId::StaticCharge: return UiIcon::Padlock;
 		case CardId::DeepWell: return UiIcon::PotionBall;

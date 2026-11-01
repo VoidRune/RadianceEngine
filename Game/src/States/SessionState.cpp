@@ -177,6 +177,8 @@ namespace Game
 				return StormTelegraph;
 			case AbilityId::ArcLightning:
 				return ArcTint;
+			case AbilityId::ObsidianBlades:
+				return ObsidianSheen * 0.7f;
 			default:
 				return SkillColor(ability);
 			}
@@ -214,7 +216,18 @@ namespace Game
 
 		float FlightLift(AbilityId ability)
 		{
-			return ability == AbilityId::FrostSpear ? SpearHoldHeight : ability == AbilityId::PurpleFireball ? FireballHoldHeight : ability == AbilityId::ObsidianShards ? ObsidianHoldHeight : ProjectileHeight;
+			return ability == AbilityId::FrostSpear ? SpearHoldHeight : ability == AbilityId::PurpleFireball ? FireballHoldHeight : ability == AbilityId::ObsidianBlades ? ObsidianHoldHeight : ProjectileHeight;
+		}
+
+		float BladeFanAngle(float facing, uint32_t slot)
+		{
+			return facing + ProjectileOffset(BladePattern(), slot) * ObsidianFanAngle;
+		}
+
+		glm::vec3 BladeRest(const glm::vec3& body, float facing, uint32_t slot)
+		{
+			const float rank = std::abs(float(slot) - float(ObsidianVolley / 2));
+			return body + Heading(facing) * 0.08f + Heading(BladeFanAngle(facing, slot)) * ObsidianFanReach + glm::vec3(0.0f, 0.03f * (float(ObsidianVolley / 2) - rank), 0.0f);
 		}
 
 		bool IsItemLoot(const EntityState& entity)
@@ -402,6 +415,7 @@ namespace Game
 		post.Desaturation = 0.0f;
 		m_Server.reset();
 		m_App.GetSteam().CloseLobby(m_LobbyTicket);
+		m_App.GetWindow().SetCursorMode(Rdn::CursorMode::Normal);
 	}
 
 	void SessionState::ReturnToMenu(std::string message)
@@ -1141,6 +1155,8 @@ namespace Game
 		{
 			const auto [it, inserted] = m_Fx.try_emplace(entity.NetId, EntityFx{ .LastHealth = entity.Health, .Last = entity });
 			EntityFx& fx = it->second;
+			if (inserted && entity.Kind == EntityKind::Projectile && AbilityOf(entity) == AbilityId::ObsidianBlades)
+				LaunchBlade(fx, entity);
 			if (inserted)
 				OnEntityAppeared(entity);
 			else if (entity.Kind == EntityKind::Player && entity.Has(EntityFlags::Dashing) && !fx.Last.Has(EntityFlags::Dashing) && !entity.Has(EntityFlags::Dead))
@@ -1233,7 +1249,10 @@ namespace Game
 					it->second.DeathColor = DeathColorOf(it->second.Last, it->second);
 			}
 			const glm::vec3 point = Ground(hit.Position, it != m_Fx.end() ? BarHeight(it->second.Last) * 0.5f : 0.8f);
-			m_Effects->Burst(HitFor(hit.Damages), point, glm::vec3(0.0f, 1.0f, 0.0f), hit.Critical ? 1.4f : 1.0f);
+			if (hit.Ability == uint8_t(AbilityId::ObsidianBlades))
+				StrikeBlade(hit);
+			else
+				m_Effects->Burst(HitFor(hit.Damages), point, glm::vec3(0.0f, 1.0f, 0.0f), hit.Critical ? 1.4f : 1.0f);
 			if (hit.Critical)
 				m_Effects->Burst(Fx::Critical, point);
 		}
@@ -1262,8 +1281,15 @@ namespace Game
 					m_Arcs.erase(it->first);
 					point = m_ArcFades.back().End;
 				}
-				if (const std::optional<Fx> impact = ProjectileImpactFor(ability))
-					m_Effects->Burst(*impact, point, ability == AbilityId::ObsidianShards ? Heading(fx.Last.Facing) : glm::vec3(0.0f, 1.0f, 0.0f), spear ? 0.6f + 0.4f * fx.Last.GetScale() : 1.0f);
+				const auto bodyNear = [&](const EntityState& other) { return (other.Kind == EntityKind::Player || other.Kind == EntityKind::Dummy) && other.Owner != fx.Last.Owner && !other.Has(EntityFlags::Dead) && LengthSquared(other.Position - fx.Last.Position) < 0.8f; };
+				const bool struck = ability == AbilityId::ObsidianBlades && ((fx.BladeStruck >= 0.0f && fx.Age - fx.BladeStruck < 0.1f) || std::any_of(m_Client.GetEntities().begin(), m_Client.GetEntities().end(), bodyNear));
+				if (ability == AbilityId::ObsidianBlades)
+				{
+					if (!struck)
+						FadeBlade(fx, point);
+				}
+				else if (const std::optional<Fx> impact = ProjectileImpactFor(ability))
+					m_Effects->Burst(*impact, point, glm::vec3(0.0f, 1.0f, 0.0f), spear ? 0.6f + 0.4f * fx.Last.GetScale() : 1.0f);
 				if (spear)
 					m_Effects->Impact(ability, Ground(fx.Last.Position), fx.Last.Facing, fx.Last.GetScale(), SpearIce, fx.Last.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
 				if (const auto path = m_SpearPaths.find(it->first); path != m_SpearPaths.end())
@@ -1320,6 +1346,18 @@ namespace Game
 		std::erase_if(m_Arcs, [this](const auto& item) { return !m_Fx.contains(item.first); });
 		for (ArcFade& fade : m_ArcFades)
 			fade.Age += dt;
+		for (BladeSlash& slash : m_BladeSlashes)
+			slash.Age += dt;
+		std::erase_if(m_BladeSlashes, [](const BladeSlash& slash) { return slash.Age >= ObsidianSlashSeconds; });
+		for (BladeFade& fade : m_BladeFades)
+		{
+			fade.Age += dt;
+			fade.Position += fade.Velocity * dt - glm::vec3(0.0f, (fade.Stuck ? 0.0f : 1.4f) * fade.Age * dt, 0.0f);
+			fade.Velocity *= std::exp(-10.0f * dt);
+			if (fade.Age >= (fade.Stuck ? ObsidianStickSeconds : ObsidianFadeSeconds))
+				m_Effects->Burst(Fx::ObsidianCrumble, fade.Position, Heading(fade.Facing), 0.55f);
+		}
+		std::erase_if(m_BladeFades, [](const BladeFade& fade) { return fade.Age >= (fade.Stuck ? ObsidianStickSeconds : ObsidianFadeSeconds); });
 		std::erase_if(m_ArcFades, [](const ArcFade& fade) { return fade.Age >= std::max(ArcFadeSeconds, ArcSparkSeconds); });
 		for (auto& [netId, body] : m_BodyHeights)
 			body.Seen = false;
@@ -1520,6 +1558,7 @@ namespace Game
 		StormStrikeLook look;
 		look.Ground = base;
 		look.Radius = radius;
+		look.Age = age;
 		look.Seed = seed;
 		for (uint32_t i = 0; i < StormGroundArcs; i++)
 		{
@@ -1888,13 +1927,11 @@ namespace Game
 					const float surface = 1.4f * FireballBallRadius * look.Size * look.Grow;
 					m_Effects->Converge(uint64_t(entity.NetId) | (14ull << 40), look.Center, reach, (26.0f + 70.0f * look.Power) * (1.0f - 0.6f * look.Over), 0.3f, dt, 0.9f + 0.3f * look.Size, ParticleKind::Streak, streak, 0.35f, std::clamp(1.0f - surface / reach, 0.3f, 1.0f));
 				}
-				if (entity.Has(EntityFlags::Attacking) && !entity.Has(EntityFlags::Dead) && entity.Variant == uint8_t(AbilityId::ObsidianShards))
+				if (entity.Has(EntityFlags::Attacking) && !entity.Has(EntityFlags::Dead) && entity.Variant == uint8_t(AbilityId::ObsidianBlades))
 				{
 					const auto fx = m_Fx.find(entity.NetId);
-					std::array<ObsidianLook, ObsidianVolley> shards;
-					const uint32_t formed = ChargingShards(entity, fx != m_Fx.end() ? std::max(fx->second.ObsidianAge, 0.0f) : 0.0f, shards);
-					if (formed < ObsidianVolley)
-						m_Effects->Converge(uint64_t(entity.NetId) | (15ull << 40), shards[formed].Center, 0.7f, 34.0f, 0.16f, dt, 0.7f, ParticleKind::Streak, ObsidianSheen * 0.5f, 0.25f, 0.85f);
+					if (fx != m_Fx.end() && fx->second.ObsidianAge < 0.08f)
+						m_Effects->Converge(uint64_t(entity.NetId) | (15ull << 40), BodyBase(entity, ObsidianHoldHeight) + Heading(entity.Facing) * 0.3f, 0.75f, 70.0f, 0.12f, dt, 0.7f, ParticleKind::Streak, ObsidianSheen * 0.55f, 0.35f, 0.9f);
 				}
 				if (entity.Has(EntityFlags::Burning) && !entity.Has(EntityFlags::Dead))
 					m_Effects->Trail(Fx::Campfire, uint64_t(entity.NetId) | (3ull << 40), Ground(entity.Position, 0.05f), dt, 0.55f);
@@ -2258,6 +2295,22 @@ namespace Game
 		}
 		m_Effects->Draw(renderer, m_SpellMeshes);
 		DrawArcFades(renderer);
+		for (const BladeSlash& slash : m_BladeSlashes)
+			DrawBladeSlash(renderer, slash);
+		for (const BladeFade& fade : m_BladeFades)
+		{
+			const float t = fade.Age / (fade.Stuck ? ObsidianStickSeconds : ObsidianFadeSeconds);
+			const float pitch = fade.Stuck ? 0.0f : 0.9f * t;
+			ObsidianLook look;
+			look.Center = fade.Position;
+			look.Forward = Heading(fade.Facing) * std::cos(pitch) - glm::vec3(0.0f, std::sin(pitch), 0.0f);
+			look.Roll = fade.Roll + (fade.Stuck ? 0.18f * std::sin(fade.Age * 70.0f) * std::exp(-fade.Age * 12.0f) : 5.0f * fade.Age);
+			look.Glint = 0.35f * (1.0f - t);
+			look.Dissolve = glm::smoothstep(0.15f, 1.0f, t);
+			look.Ground = fade.Ground;
+			look.Variant = fade.Slot;
+			DrawObsidianBlade(renderer, m_SpellMeshes, look, m_Time, fade.Seed);
+		}
 		DrawSpikeRuins(renderer);
 		DrawNovaFields(renderer);
 		DrawVoidWells(renderer);
@@ -2276,7 +2329,6 @@ namespace Game
 		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
 		if (m_AimPoint && self && !m_Paused && !m_Overview && m_HoveredPortal < 0)
 		{
-			DrawReticle(renderer, *m_AimPoint, 0.2f, { 1.0f, 0.92f, 0.75f });
 			if (state.CastSlot >= 0)
 			{
 				const AbilityDef& ability = GetAbility(m_Client.GetTraits().Skills[size_t(state.CastSlot)].Ability);
@@ -2419,9 +2471,9 @@ namespace Game
 			DrawFireballCharge(renderer, entity, base);
 			return;
 		}
-		if (casting == AbilityId::ObsidianShards)
+		if (casting == AbilityId::ObsidianBlades)
 		{
-			DrawObsidianCharge(renderer, entity, base);
+			DrawObsidianCharge(renderer, entity);
 			return;
 		}
 		const glm::vec3 glow = SpellTint(casting);
@@ -2617,112 +2669,201 @@ namespace Game
 		DrawGroundRing(renderer, Ground(entity.Position + aim * (def.SpawnOffset + shot.Range)), shot.Blast, color, 0.45f + 0.4f * look.Power, 0.025f, 18.0f, 0.4f);
 	}
 
-	uint32_t SessionState::ChargingShards(const EntityState& caster, float age, std::array<ObsidianLook, ObsidianVolley>& shards) const
+	uint32_t SessionState::FormingBlades(const EntityState& caster, float age, std::array<ObsidianLook, ObsidianVolley>& blades) const
 	{
-		constexpr float Slots[] = { 0.0f, 1.0f, -1.0f, 2.0f, -2.0f };
-		static_assert(std::size(Slots) == ObsidianVolley);
-		const AbilityDef& def = GetAbility(AbilityId::ObsidianShards);
-		const float power = caster.GetChargePower();
-		const uint32_t formed = ShardsFormed(power);
-		const float steps = power * float(ObsidianVolley - 1);
-		const float interval = (def.ChargeTime - def.CastTime) / float(ObsidianVolley - 1);
-		const auto progress = [&](uint32_t k)
-		{
-			if (k == 0)
-				return std::clamp(age / ObsidianFirstForm, 0.0f, 1.0f);
-			return std::clamp((steps - float(k) + ObsidianFormWindow) / ObsidianFormWindow, 0.0f, 1.0f);
-		};
-		const auto shift = [](uint32_t count) { return count % 2u == 0u ? -0.5f : 0.0f; };
-		const float centre = formed < ObsidianVolley ? glm::mix(shift(formed), shift(formed + 1), glm::smoothstep(0.0f, 1.0f, progress(formed))) : shift(formed);
-		const float phase = float(caster.NetId % 97u);
-		const glm::vec3 up(0.0f, 1.0f, 0.0f);
-		const glm::vec3 pivot = BodyBase(caster) + up * ObsidianHoldHeight + Heading(caster.Facing) * (ObsidianHoldReach - ObsidianFanRadius - 0.06f * power);
+		const glm::vec3 body = BodyBase(caster, ObsidianHoldHeight);
+		const glm::vec3 hand = body + Heading(caster.Facing) * 0.3f;
+		const float middle = float(ObsidianVolley / 2);
+		uint32_t formed = 0;
 		for (uint32_t k = 0; k < ObsidianVolley; k++)
 		{
-			const float form = progress(k);
-			const float locked = form < 1.0f ? -1.0f : k == 0 ? age - ObsidianFirstForm : (steps - float(k)) * interval;
-			const float recoil = locked >= 0.0f ? std::sin(std::min(locked / ObsidianRecoilSeconds, 1.0f) * Pi) * std::exp(-locked * 6.0f) : 0.0f;
-			const float pull = 1.0f - glm::smoothstep(0.0f, 1.0f, form);
-			const float slot = Slots[k] + centre;
-			const float angle = caster.Facing + 2.0f * ObsidianStep * slot;
-			const float tremble = form < 1.0f ? 0.0f : 0.006f + 0.012f * power;
-			ObsidianLook& look = shards[k];
-			look.Forward = Heading(angle);
-			const glm::vec3 rest = pivot + look.Forward * ObsidianFanRadius + up * ((k % 2u ? 0.06f : -0.03f) * std::min(float(k), 1.0f) + 0.025f * std::sin(m_Time * 4.0f + float(k) * 1.7f + phase));
-			look.From = rest + look.Forward * ObsidianPullReach + up * 0.15f;
-			look.Center = rest + look.Forward * (ObsidianPullReach * pull - 0.08f * recoil) + up * (0.15f * pull)
-				+ glm::vec3(std::sin(m_Time * 53.0f + float(k) * 2.3f), std::sin(m_Time * 47.0f + float(k)), std::cos(m_Time * 59.0f + float(k) * 1.1f)) * tremble;
-			look.Roll = 0.5f * float(k) + phase + 0.5f * std::sin(m_Time * 2.6f + float(k)) + 5.0f * pull * pull;
-			look.Grow = form > 0.0f ? std::pow(form, 0.6f) * (1.0f + 0.12f * recoil) : 0.0f;
-			look.Glint = form < 1.0f ? 0.4f + 0.6f * form : std::exp(-locked * 9.0f);
-			look.Form = form;
-			look.Ground = BodyBase(caster).y;
-			look.Variant = caster.NetId + k;
+			const float rank = std::abs(float(k) - middle);
+			const float side = float(k) < middle ? -1.0f : 1.0f;
+			const float t = age - rank * ObsidianFormStagger;
+			const float form = std::clamp(t / ObsidianFormSeconds, 0.0f, 1.0f);
+			const float back = form - 1.0f;
+			const float ease = 1.0f + 2.70158f * back * back * back + 1.70158f * back * back;
+			const float sweep = (age - ObsidianSweepStart - 0.006f * rank) / ObsidianSweepSeconds;
+			ObsidianLook& look = blades[k];
+			look.Center = glm::mix(hand, BladeRest(body, caster.Facing, k), ease);
+			look.Forward = Heading(BladeFanAngle(caster.Facing, k) + side * 2.4f * (1.0f - ease));
+			look.Roll = 0.08f * side * rank + 3.5f * (1.0f - ease);
+			look.Grow = form > 0.0f ? 0.35f + 0.65f * ease : 0.0f;
+			look.Flash = t > ObsidianFormSeconds ? std::exp(-(t - ObsidianFormSeconds) * 28.0f) : 0.0f;
+			look.Sweep = sweep >= 0.0f && sweep <= 1.0f ? sweep : -1.0f;
+			look.Glint = 0.15f + (look.Sweep >= 0.0f ? 0.55f * std::sin(sweep * Pi) : 0.0f) + 0.4f * look.Flash;
+			look.Ground = body.y - ObsidianHoldHeight;
+			look.Variant = k;
+			formed += form > 0.0f ? 1u : 0u;
 		}
 		return formed;
 	}
 
 	void SessionState::ObsidianMoments(EntityFx& fx, const EntityState& entity, float dt)
 	{
-		const auto charging = [](const EntityState& state) { return state.Has(EntityFlags::Attacking) && state.Variant == uint8_t(AbilityId::ObsidianShards) && !state.Has(EntityFlags::Dead); };
-		const bool was = charging(fx.Last);
+		const auto casting = [](const EntityState& state) { return state.Has(EntityFlags::Attacking) && state.Variant == uint8_t(AbilityId::ObsidianBlades) && !state.Has(EntityFlags::Dead); };
+		const bool was = casting(fx.Last);
 		const glm::vec3 up(0.0f, 1.0f, 0.0f);
-		std::array<ObsidianLook, ObsidianVolley> shards;
-		if (charging(entity))
+		std::array<ObsidianLook, ObsidianVolley> blades;
+		if (casting(entity))
 		{
 			fx.ObsidianAge = was && fx.ObsidianAge >= 0.0f ? fx.ObsidianAge + dt : 0.0f;
-			const uint32_t before = was ? ShardsFormed(fx.Last.GetChargePower()) : 0u;
+			if (!was)
+				m_Effects->Burst(Fx::ObsidianSummon, BodyBase(entity, ObsidianHoldHeight) + Heading(entity.Facing) * 0.3f, Heading(entity.Facing));
 			std::array<ObsidianLook, ObsidianVolley> previous;
 			if (was)
-				ChargingShards(fx.Last, std::max(fx.ObsidianAge - dt, 0.0f), previous);
-			const uint32_t formed = ChargingShards(entity, fx.ObsidianAge, shards);
-			for (uint32_t k = before; k < formed; k++)
-				m_Effects->Burst(Fx::ObsidianForm, shards[k].Center, up, 0.8f);
+				FormingBlades(fx.Last, std::max(fx.ObsidianAge - dt, 0.0f), previous);
+			FormingBlades(entity, fx.ObsidianAge, blades);
 			for (uint32_t k = 0; k < ObsidianVolley; k++)
-				if (shards[k].Grow > 0.0f && (!was || previous[k].Grow <= 0.0f))
-					m_Effects->Burst(Fx::ObsidianForm, shards[k].Center, up, 0.45f);
+				if (blades[k].Flash > 0.0f && previous[k].Flash <= 0.0f)
+					m_Effects->Burst(Fx::ObsidianForm, blades[k].Center, up, 0.6f);
 			return;
 		}
 		if (was)
 		{
-			const uint32_t formed = ChargingShards(fx.Last, std::max(fx.ObsidianAge, 0.0f), shards);
+			FormingBlades(fx.Last, std::max(fx.ObsidianAge, 0.0f), blades);
 			if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling) || entity.Has(EntityFlags::Dead))
-				for (uint32_t k = 0; k < formed; k++)
-					m_Effects->Burst(Fx::ObsidianCrumble, shards[k].Center, up, 0.5f);
+			{
+				for (const ObsidianLook& blade : blades)
+					if (blade.Grow > 0.0f)
+						m_Effects->Burst(Fx::ObsidianCrumble, blade.Center, up, 0.45f);
+			}
 			else
 			{
 				const glm::vec3 forward = Heading(fx.Last.Facing);
-				const float volley = float(formed) / float(ObsidianVolley);
-				m_Effects->Burst(Fx::ObsidianRelease, shards[0].Center, forward, 0.6f + 0.5f * volley);
-				GroundDecal blast;
-				blast.Center = Ground(fx.Last.Position) + forward * 0.3f;
-				blast.Yaw = fx.Last.Facing;
-				blast.Extent = glm::vec2(1.2f + 0.8f * volley);
-				blast.Depth = 0.75f;
-				blast.Shape = DecalShape::Sector;
-				blast.Color = glm::vec4(ObsidianSheen * (0.35f + 0.35f * volley), 1.0f);
-				blast.Params = glm::vec4(-1.0f, 1.0f, 0.5f * ObsidianStep * float(formed - 1) + 0.12f, 0.0f);
-				m_Effects->Mark(blast, 0.2f, 0.01f, 0.45f, 1.0f, 0.08f);
+				m_Effects->Burst(Fx::ObsidianRelease, BodyBase(fx.Last, ObsidianHoldHeight) + forward * 0.55f, forward);
 			}
 		}
 		fx.ObsidianAge = -1.0f;
 	}
 
-	void SessionState::DrawObsidianCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
+	void SessionState::DrawObsidianCharge(WorldRenderer& renderer, const EntityState& entity) const
 	{
 		const auto fx = m_Fx.find(entity.NetId);
-		std::array<ObsidianLook, ObsidianVolley> shards;
-		const uint32_t formed = ChargingShards(entity, fx != m_Fx.end() ? std::max(fx->second.ObsidianAge, 0.0f) : 0.0f, shards);
+		const float age = fx != m_Fx.end() ? std::max(fx->second.ObsidianAge, 0.0f) : 0.0f;
+		std::array<ObsidianLook, ObsidianVolley> blades;
+		FormingBlades(entity, age, blades);
 		for (uint32_t k = 0; k < ObsidianVolley; k++)
-			if (shards[k].Grow > 0.0f)
-				DrawObsidianShard(renderer, m_SpellMeshes, shards[k], m_Time, entity.NetId + k);
-		const float power = entity.GetChargePower();
-		DrawRuneCircle(renderer, { .Center = base, .Radius = (0.5f + 0.25f * power) * shards[0].Grow, .Color = ObsidianSheen, .Intensity = 0.06f + 0.1f * power, .Spin = 2.4f + 2.0f * power, .Progress = power, .Appear = std::min(shards[0].Grow, 1.0f), .Seed = entity.NetId });
-		if (entity.NetId != m_Client.GetPlayerNetId())
+			if (blades[k].Grow > 0.0f)
+				DrawObsidianBlade(renderer, m_SpellMeshes, blades[k], m_Time, entity.NetId + k);
+		const glm::vec3 hand = BodyBase(entity, ObsidianHoldHeight) + Heading(entity.Facing) * 0.3f;
+		const float tear = 1.0f - std::clamp(age / 0.12f, 0.0f, 1.0f);
+		DrawImplosion(renderer, hand, 0.6f, 0.07f * tear, m_Time * 1.5f, 2);
+		ParticleSprite rift;
+		rift.Position = hand;
+		rift.Size = 0.3f + 0.15f * tear;
+		rift.Color = glm::vec4(0.04f, 0.0f, 0.08f, 0.75f * tear);
+		rift.Additive = 0.0f;
+		rift.Emission = 0.0f;
+		rift.Softness = 0.5f;
+		renderer.DrawSprite(rift);
+		DrawGlow(renderer, hand, 0.34f, ObsidianSheen * (0.1f + 0.25f * tear), 0.4f);
+	}
+
+	void SessionState::LaunchBlade(EntityFx& fx, const EntityState& entity)
+	{
+		Vec2 sum;
+		for (const EntityState& other : m_Client.GetEntities())
+			if (other.Kind == EntityKind::Projectile && other.Owner == entity.Owner && other.Tag == entity.Tag && other.Variant == entity.Variant)
+				sum += FromAngle(other.Facing);
+		const float aim = LengthSquared(sum) > 1e-6f ? AngleOf(sum) : entity.Facing;
+		const float offset = AngleBetween(aim, entity.Facing);
+		const ProjectilePattern fan = BladePattern();
+		uint32_t slot = 0;
+		for (uint32_t k = 1; k < fan.Count; k++)
+			if (std::abs(ProjectileOffset(fan, k) - offset) < std::abs(ProjectileOffset(fan, slot) - offset))
+				slot = k;
+		fx.BladeSlot = slot;
+		const EntityState* caster = FindBody(entity.Owner);
+		if (!caster || Length(entity.Position - caster->Position) > GetAbility(AbilityId::ObsidianBlades).SpawnOffset + 1.0f)
 			return;
-		const AbilityDef& def = GetAbility(AbilityId::ObsidianShards);
-		const float halfArc = std::max(0.5f * ObsidianStep * float(formed - 1), 0.04f);
-		DrawSectorTelegraph(renderer, base, entity.Facing, def.ProjectileRange + def.SpawnOffset, halfArc, ObsidianSheen, 0.18f + 0.16f * power, -1.0f);
+		fx.BladeOffset = BladeRest(BodyBase(*caster, ObsidianHoldHeight), aim, slot) - glm::vec3(entity.Position.x, LaunchHeight(entity), entity.Position.y);
+		fx.BladeTurn = AngleBetween(entity.Facing, BladeFanAngle(aim, slot));
+	}
+
+	void SessionState::StrikeBlade(const HitEvent& hit)
+	{
+		EntityFx* blade = nullptr;
+		float nearest = 2.5f;
+		for (auto& [netId, fx] : m_Fx)
+		{
+			if (fx.Last.Kind != EntityKind::Projectile || AbilityOf(fx.Last) != AbilityId::ObsidianBlades || fx.BladeStruck >= 0.0f || (hit.Attacker != NoPlayer && fx.Last.Owner != hit.Attacker))
+				continue;
+			const float distance = LengthSquared(fx.Last.Position - hit.Position);
+			if (distance < nearest)
+			{
+				nearest = distance;
+				blade = &fx;
+			}
+		}
+		Vec2 heading(1.0f, 0.0f);
+		if (blade)
+		{
+			blade->BladeStruck = blade->Age;
+			heading = FromAngle(blade->Last.Facing);
+		}
+		else if (const EntityState* attacker = FindBody(hit.Attacker); attacker && LengthSquared(hit.Position - attacker->Position) > 1e-4f)
+			heading = Normalize(hit.Position - attacker->Position);
+		const auto victim = m_Fx.find(hit.Target);
+		const float height = victim != m_Fx.end() ? BarHeight(victim->second.Last) * 0.5f : 0.8f;
+		const float facing = AngleOf(heading);
+		const glm::vec3 forward = Heading(facing);
+		const glm::vec3 point = Ground(hit.Position, height) - forward * 0.22f;
+		const bool kill = victim != m_Fx.end() && (victim->second.Last.Has(EntityFlags::Dead) || victim->second.Last.Health == 0);
+		const uint32_t order = uint32_t(std::count_if(m_BladeSlashes.begin(), m_BladeSlashes.end(), [&](const BladeSlash& slash) { return slash.Age <= 0.0f && glm::distance(slash.Center, point) < 1.0f; }));
+		const float swing = order % 2u ? -1.0f : 1.0f;
+		const float lift = swing * (0.45f + 0.12f * float(order % 3u));
+		const glm::vec3 across = Heading(facing + HalfPi + swing * 0.55f);
+		m_BladeSlashes.push_back({ .Center = point, .Axis = glm::normalize(across * std::cos(lift) + glm::vec3(0.0f, std::sin(lift), 0.0f)), .Age = -0.035f * float(order), .Size = kill ? 1.3f : 1.0f, .Kill = kill ? 1.0f : 0.0f });
+		m_Effects->Burst(Fx::ObsidianImpact, point, forward, order == 0u ? 1.0f : 0.6f);
+		if (victim != m_Fx.end())
+			victim->second.FlashColor = ObsidianSheen * 0.75f;
+		if (kill && order == 0u)
+		{
+			m_Effects->Burst(Fx::ObsidianKill, point, glm::vec3(0.0f, 1.0f, 0.0f));
+			const glm::vec3 cross = Heading(facing + HalfPi - swing * 0.55f);
+			m_BladeSlashes.push_back({ .Center = point, .Axis = glm::normalize(cross * std::cos(lift) - glm::vec3(0.0f, std::sin(lift), 0.0f)), .Age = -0.06f, .Size = 1.4f, .Kill = 1.0f });
+		}
+	}
+
+	void SessionState::FadeBlade(const EntityFx& fx, const glm::vec3& point)
+	{
+		const AbilityDef& def = GetAbility(AbilityId::ObsidianBlades);
+		const bool stuck = fx.Age < def.ProjectileRange / def.ProjectileSpeed - 0.05f;
+		const glm::vec3 forward = Heading(fx.Last.Facing);
+		const float phase = float(fx.BladeSlot) * 1.7f + float(fx.Last.NetId % 13u);
+		BladeFade fade;
+		fade.Position = point + (stuck ? forward * 0.18f : glm::vec3(0.0f));
+		fade.Velocity = stuck ? glm::vec3(0.0f) : forward * (0.45f * def.ProjectileSpeed);
+		fade.Facing = fx.Last.Facing;
+		fade.Roll = (float(ObsidianVolley / 2) - float(fx.BladeSlot)) * 0.06f + 0.32f * std::sin(fx.Age * 13.0f + phase);
+		fade.Ground = GroundHeight(fx.Last.Position);
+		fade.Slot = fx.BladeSlot;
+		fade.Seed = fx.Last.NetId;
+		fade.Stuck = stuck;
+		m_BladeFades.push_back(fade);
+		if (stuck)
+			m_Effects->Burst(Fx::ObsidianImpact, point + forward * 0.3f, -forward, 0.5f);
+	}
+
+	void SessionState::DrawBlade(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& center, const glm::vec3& base) const
+	{
+		const auto fx = m_Fx.find(entity.NetId);
+		const bool known = fx != m_Fx.end();
+		const float age = known ? fx->second.Age : 1.0f;
+		const float merge = std::pow(1.0f - std::clamp(age / ObsidianMergeSeconds, 0.0f, 1.0f), 2.0f);
+		const uint32_t slot = known ? fx->second.BladeSlot : entity.NetId % ObsidianVolley;
+		const float phase = float(slot) * 1.7f + float(entity.NetId % 13u);
+		const float spin = std::sin(age * 13.0f + phase);
+		ObsidianLook look;
+		look.Center = center + (known ? fx->second.BladeOffset : glm::vec3(0.0f)) * merge;
+		look.Forward = Heading(entity.Facing + (known ? fx->second.BladeTurn : 0.0f) * merge);
+		look.Roll = (float(ObsidianVolley / 2) - float(slot)) * 0.06f + 0.32f * spin;
+		look.Glint = 0.1f + 0.35f * std::exp(-age * 16.0f) + 0.3f * std::pow(std::max(spin, 0.0f), 12.0f);
+		look.Ground = base.y;
+		look.Variant = slot;
+		DrawObsidianBlade(renderer, m_SpellMeshes, look, m_Time, entity.NetId);
+		renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), look.Center - look.Forward * (0.15f * ObsidianLength), ProjectileTrail(AbilityId::ObsidianBlades), 0.55f + 0.45f * std::exp(-age * 9.0f));
 	}
 
 	Vec2 SessionState::SpikeAimOf(const EntityState& caster) const
@@ -2922,17 +3063,18 @@ namespace Game
 			field = &m_NovaFields.back();
 		}
 		field->Erupt = 0.0f;
+		field->Strength = NovaEruptionPush(field->Age);
 		field->Shattered = 0;
 		const glm::vec3 ground = Ground(field->Position);
 		const float reach = GetAbility(AbilityId::GlacialNova).Reach * field->Scale;
-		m_Effects->Burst(Fx::NovaBurst, ground + up * 0.1f, up, field->Scale);
-		m_Effects->Shockwave(ground, reach * 1.25f, 0.4f, 0.13f, 0.3f);
+		m_Effects->Burst(Fx::NovaBurst, ground + up * 0.1f, up, field->Scale * (0.6f + 0.4f * field->Strength));
+		m_Effects->Shockwave(ground, reach * (0.95f + 0.25f * field->Strength), 0.4f, 0.13f * field->Strength, 0.3f);
 		std::array<NovaSpike, MaxNovaSpikes> spikes;
 		const uint32_t count = NovaSpikes(*field, spikes);
 		for (uint32_t i = 0; i < count; i++)
 			if (spikes[i].Main)
-				m_Effects->Burst(Fx::NovaErupt, Ground(spikes[i].Point, 0.1f), glm::normalize(Heading(spikes[i].Angle) * 0.8f + up * 0.7f));
-		Rumble(ground, 0.35f, entity.Owner);
+				m_Effects->Burst(Fx::NovaErupt, Ground(spikes[i].Point, 0.1f), glm::normalize(Heading(spikes[i].Angle) * 0.8f + up * 0.7f), std::min(0.6f + 0.4f * field->Strength, 1.1f));
+		Rumble(ground, 0.35f * field->Strength, entity.Owner);
 	}
 
 	uint32_t SessionState::NovaSpikes(const NovaField& field, std::span<NovaSpike> spikes) const
@@ -3013,6 +3155,16 @@ namespace Game
 						m_Effects->Burst(Fx::IceCrumble, middle, up, spike.Big);
 				}
 			}
+			if (field.Erupt < 0.0f && !field.Ripe && IsNovaBrittle(field.Age))
+			{
+				field.Ripe = true;
+				const glm::vec3 ground = Ground(field.Position);
+				m_Effects->Shockwave(ground, GetAbility(AbilityId::GlacialNova).Reach * field.Scale * 0.9f, 0.25f, 0.035f, 0.18f);
+				for (uint32_t i = 0; i < count; i++)
+					if (spikes[i].Main)
+						m_Effects->Burst(Fx::IceCrumble, Ground(spikes[i].Point, 0.25f), up, 0.6f, glm::vec3(0.8f, 0.95f, 1.3f));
+				m_App.GetGameAudio().PlayNovaRipe(field.Position, field.Owner == m_Client.GetPlayerId());
+			}
 			if (field.Erupt < 0.0f && !field.Thawed && field.Age >= FrostNovaWindow)
 			{
 				field.Thawed = true;
@@ -3053,8 +3205,10 @@ namespace Game
 			const float reach = GetAbility(AbilityId::GlacialNova).Reach * field.Scale;
 			const glm::vec3 ground = Ground(field.Position);
 			const float front = 1.0f - std::pow(1.0f - std::clamp(t / NovaSpreadSeconds, 0.0f, 1.0f), 2.2f);
-			const float ready = erupted ? 0.0f : 1.0f - smooth(FrostNovaWindow - 0.3f, FrostNovaWindow, t);
-			const float pulse = 0.5f + 0.5f * std::sin(m_Time * 5.0f + float(field.Seed % 61u));
+			const bool brittle = IsNovaBrittle(t);
+			const float ready = erupted ? 0.0f : NovaRipeness(t) * (1.0f - smooth(FrostNovaWindow - 0.3f, FrostNovaWindow, t));
+			const float snap = !erupted && brittle ? std::exp(-(t - FrostNovaRipe) * 7.0f) : 0.0f;
+			const float pulse = 0.5f + 0.5f * std::sin(m_Time * (brittle ? 11.0f : 5.0f) + float(field.Seed % 61u)) + 2.0f * snap;
 			const float fade = erupted ? 1.0f - smooth(NovaEruptLife - NovaFrostFade, NovaEruptLife, e) : 1.0f - smooth(FrostNovaWindow, FrostNovaWindow + NovaFadeSeconds, t);
 			const float flare = erupted ? std::exp(-e * 4.0f) : std::exp(-t * 3.5f);
 			GroundDecal frost;
@@ -3095,17 +3249,17 @@ namespace Game
 				if (!erupted)
 				{
 					const float thaw = smooth(FrostNovaWindow, FrostNovaWindow + NovaThawSeconds, t);
-					look.Glow += (0.55f + 0.2f * std::sin(m_Time * 5.0f + spike.Angle * 3.0f)) * ready * (spike.Main ? 1.0f : 0.6f);
+					look.Glow += ((brittle ? 0.6f : 0.3f) + 0.2f * std::sin(m_Time * (brittle ? 11.0f : 5.0f) + spike.Angle * 3.0f) + 1.2f * snap) * ready * (spike.Main ? 1.0f : 0.6f);
 					look.Melt = thaw;
 					look.Sink += spike.Small * 0.3f * thaw;
-					look.Frost += 0.3f * thaw;
+					look.Frost += (brittle ? 0.2f : 0.0f) + 0.3f * thaw;
 				}
 				else
 				{
 					const float lift = std::max(SpikeThrust(std::max(e - spike.Burst, 0.0f) * 0.9f), 0.0f);
 					const float stood = std::min(lift, 1.0f);
 					const float shatter = smooth(spike.Break, spike.Break + NovaShatterSeconds, e);
-					look.Scale = (look.Scale + (spike.Big - look.Scale) * lift) * (1.0f - 0.1f * shatter);
+					look.Scale = (look.Scale + (spike.Big * std::min(0.6f + 0.4f * field.Strength, 1.08f) - look.Scale) * lift) * (1.0f - 0.1f * shatter);
 					look.Lean = spike.Lean + (spike.Stand - spike.Lean) * stood;
 					look.Sink *= 1.0f - stood;
 					look.Glow = 0.25f + 0.6f * std::exp(-std::max(e - spike.Burst, 0.0f) * 5.0f) + 0.8f * smooth(spike.Break - 0.1f, spike.Break, e);
@@ -3707,18 +3861,9 @@ namespace Game
 			DrawArc(renderer, entity, center);
 			return;
 		}
-		if (ability == AbilityId::ObsidianShards)
+		if (ability == AbilityId::ObsidianBlades)
 		{
-			ObsidianLook look;
-			look.Center = center;
-			look.Forward = Heading(entity.Facing);
-			look.Roll = m_Time * 7.0f + float(entity.NetId % 97u);
-			look.Glint = 0.35f;
-			look.Ground = base.y;
-			look.Variant = entity.NetId;
-			look.Flying = true;
-			DrawObsidianShard(renderer, m_SpellMeshes, look, m_Time, entity.NetId);
-			renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability));
+			DrawBlade(renderer, entity, center, base);
 			return;
 		}
 		switch (ability)
@@ -3890,6 +4035,7 @@ namespace Game
 		Ui& ui = m_App.GetUi();
 		if (m_Client.GetState() != ClientState::InGame)
 		{
+			m_App.GetWindow().SetCursorMode(Rdn::CursorMode::Normal);
 			DrawConnecting();
 			return;
 		}
@@ -3943,6 +4089,119 @@ namespace Game
 		}
 		if (m_Fade > 0.0f)
 			draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.9f * m_Fade) });
+		DrawCursor();
+	}
+
+	void SessionState::DrawCursor()
+	{
+		Ui& ui = m_App.GetUi();
+		const bool show = !m_Paused && !m_Overview && !m_ShowInventory && !m_Station && !m_App.UiWantsMouse() && m_Extent.Width > 0;
+		m_App.GetWindow().SetCursorMode(show ? Rdn::CursorMode::Hidden : Rdn::CursorMode::Normal);
+		if (!show)
+			return;
+
+		UiDrawList& draw = ui.Draw(UiLayer::Overlay);
+		const glm::vec2 mouse = ui.ToLogical({ Rdn::Input::GetMouseX(), Rdn::Input::GetMouseY() });
+		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
+		const bool alive = self && !self->Has(EntityFlags::Dead);
+
+		float direction = -0.5f * glm::pi<float>();
+		float pointer = 0.0f;
+		if (alive)
+			if (const std::optional<glm::vec2> origin = ProjectToScreen(Ground(self->Position) + glm::vec3(0.0f, ProjectileHeight, 0.0f)))
+			{
+				const glm::vec2 offset = mouse - ui.ToLogical(*origin);
+				direction = std::atan2(offset.y, offset.x);
+				pointer = glm::smoothstep(16.0f, 42.0f, glm::length(offset));
+			}
+
+		bool hostile = false;
+		if (alive)
+			for (const EntityState& entity : m_Client.GetEntities())
+			{
+				if (entity.Has(EntityFlags::Dead) || !(m_Client.IsHostile(entity) || IsEnemyKind(entity.Kind) || entity.Kind == EntityKind::Dummy))
+					continue;
+				const std::optional<glm::vec3> point = MouseOnPlane(GroundHeight(entity.Position) + 0.9f);
+				if (point && LengthSquared(Vec2(point->x, point->z) - entity.Position) < 0.7f * 0.7f)
+				{
+					hostile = true;
+					break;
+				}
+			}
+
+		float charge = 0.0f;
+		float overcharge = 0.0f;
+		glm::vec3 spell(1.0f);
+		bool outOfRange = false;
+		if (alive && self->Has(EntityFlags::Attacking) && self->Variant < uint8_t(AbilityId::Count))
+		{
+			const AbilityId casting = AbilityId(self->Variant);
+			spell = casting == AbilityId::PurpleFireball ? FireballColor(self->GetChargePower()) : SpellTint(casting);
+			spell /= std::max({ spell.r, spell.g, spell.b, 1e-3f });
+			if (IsChargedShot(casting))
+			{
+				charge = self->GetChargePower();
+				overcharge = self->GetOvercharge();
+			}
+			const AbilityDef& ability = GetAbility(casting);
+			outOfRange = ability.Kind == AbilityKind::Ground && !AimsFromPoint(casting) && m_AimDistance > ability.Range;
+		}
+
+		const float hover = ui.Animate(Ui::MakeId("cursor.hostile"), hostile, 18.0f);
+		const float portal = ui.Animate(Ui::MakeId("cursor.portal"), m_HoveredPortal >= 0, 14.0f);
+		const float dim = ui.Animate(Ui::MakeId("cursor.range"), outOfRange, 14.0f);
+		const float charging = ui.Animate(Ui::MakeId("cursor.charge"), charge > 0.0f, 20.0f);
+		pointer *= 1.0f - portal;
+
+		const UiColor ink = WithAlpha(Theme::Ink, 0.78f);
+		UiColor light = Hex(0xF4F0FF);
+		light = glm::mix(light, Hex(0xFF7A7A), hover);
+		light = glm::mix(light, Theme::Astral, portal);
+		light = glm::mix(light, WithAlpha(Theme::Muted, 0.7f), dim);
+		UiColor accent = glm::mix(Theme::AccentLight, light, std::max(hover, portal));
+
+		const float radius = 11.0f * (1.0f - 0.2f * hover + 0.18f * portal);
+		const float quarter = 0.5f * glm::pi<float>();
+		const float gap = 0.34f;
+		const auto arc = [&](float center, float span, float ringRadius, float width, UiColor color)
+		{
+			const float sweep = 1.0f - span / glm::two_pi<float>();
+			draw.Rect(UiRect::Centered(mouse, glm::vec2(2.0f * ringRadius)), { .Radius = ringRadius, .Border = color, .BorderWidth = width, .Sweep = sweep, .Rotation = center + quarter + 0.5f * span });
+		};
+		const auto at = [&](float angle, float distance) { return mouse + glm::vec2(std::cos(angle), std::sin(angle)) * distance; };
+
+		const float spin = portal * 0.25f * glm::pi<float>();
+		for (int i = 0; i < 4; i++)
+			arc(direction + spin + quarter * (float(i) + 0.5f), quarter - gap, radius + 1.3f, 4.1f, ink);
+		for (int i = 0; i < 4; i++)
+			arc(direction + spin + quarter * (float(i) + 0.5f), quarter - gap - 0.08f, radius, 1.5f, light);
+
+		if (charging > 0.0f)
+		{
+			const float flicker = overcharge > 0.0f ? 0.5f + 0.5f * std::sin(ui.GetTime() * (14.0f + 30.0f * overcharge)) : 0.0f;
+			const UiColor fill = glm::mix(Lighten(WithAlpha(spell, 1.0f), 0.3f), Theme::Danger, flicker);
+			const float span = glm::two_pi<float>() * std::max(charge, 0.02f);
+			arc(direction, std::min(span + 0.1f, glm::two_pi<float>()), radius + 1.8f, 5.0f, WithAlpha(ink, charging));
+			arc(direction, span, radius + 0.8f, 3.0f, WithAlpha(fill, charging));
+		}
+
+		const auto tick = [&](float angle, float alpha)
+		{
+			draw.Rect(UiRect::Centered(at(angle, radius), glm::vec2(4.0f)), { .Fill = WithAlpha(accent, alpha), .Border = WithAlpha(ink, alpha), .BorderWidth = 1.2f, .Rotation = angle + 0.25f * glm::pi<float>() });
+		};
+		for (int i = 1; i < 4; i++)
+			tick(direction + spin + quarter * float(i), 1.0f - 0.5f * dim);
+		if (portal > 0.0f)
+			tick(direction + spin, portal);
+
+		if (pointer > 0.0f)
+		{
+			const UiColor tip = charge >= 1.0f ? Lighten(WithAlpha(spell, 1.0f), 0.45f) : light;
+			draw.Triangle(at(direction, radius + 5.5f), { 11.0f, 9.0f }, direction + quarter, WithAlpha(tip, pointer), WithAlpha(ink, pointer), 1.4f);
+		}
+
+		draw.Circle(mouse, 2.6f, ink);
+		draw.Circle(mouse, 1.5f, light);
 	}
 
 	void SessionState::DrawConnecting()
@@ -4906,7 +5165,7 @@ namespace Game
 			const bool guard = !dodge && IsGuard(skill);
 			const bool shattered = guard && IsGuardBroken(state, traits);
 			const float span = shattered ? GuardBreakCooldown(skill) : skill.Cooldown;
-			const bool recasting = !dodge && HoldsCooldown(state, slot);
+			const bool recasting = !dodge && AwaitsNovaRecast(state, slot);
 			const float ready = span > 0.0f && !recasting ? 1.0f - std::clamp(cooldown / span, 0.0f, 1.0f) : 1.0f;
 			const bool covered = state.Mana + 1e-3f >= skill.ManaCost;
 			const bool overloaded = !dodge && IsOverloaded(state, traits, slot);
@@ -4942,12 +5201,15 @@ namespace Game
 			}
 			if (recasting)
 			{
-				const float left = std::clamp(state.RecastTimer / FrostNovaWindow, 0.0f, 1.0f);
-				const float glint = 0.6f + 0.4f * std::sin(m_Time * 9.0f);
+				const bool brittle = IsNovaBrittle(state.RecastAge);
+				const float left = brittle ? std::clamp(state.RecastTimer / (FrostNovaWindow - FrostNovaRipe), 0.0f, 1.0f) : std::clamp(state.RecastAge / FrostNovaRipe, 0.0f, 1.0f);
+				const float glint = brittle ? 0.75f + 0.25f * std::sin(m_Time * 16.0f) : 0.35f + 0.15f * std::sin(m_Time * 6.0f);
+				const float snap = brittle ? std::exp(-(state.RecastAge - FrostNovaRipe) * 9.0f) : 0.0f;
+				const UiColor fill = brittle ? Lighten(color, 0.65f + 0.35f * snap) : WithAlpha(Lighten(color, 0.15f), 0.6f + 0.4f * NovaRipeness(state.RecastAge));
 				const UiRect bar{ rect.X + 7.0f, rect.Y + 5.0f, rect.W - 14.0f, 4.0f };
-				draw.Rect(rect.Expand(2.5f), { .Border = WithAlpha(Lighten(color, 0.5f), 0.9f * glint), .BorderWidth = 1.8f, .Glow = WithAlpha(color, 0.35f * glint), .GlowSize = 10.0f, .Chamfer = 11.0f });
+				draw.Rect(rect.Expand(2.5f + 3.0f * snap), { .Border = WithAlpha(Lighten(color, 0.5f), 0.9f * glint), .BorderWidth = brittle ? 2.2f : 1.4f, .Glow = WithAlpha(color, (brittle ? 0.5f : 0.2f) * glint + 0.5f * snap), .GlowSize = 10.0f + 8.0f * snap, .Chamfer = 11.0f });
 				draw.Rect(bar, { .Fill = Rgba(0.02f, 0.02f, 0.05f, 0.85f), .Chamfer = 1.5f });
-				draw.Rect({ bar.X, bar.Y, bar.W * left, bar.H }, { .Fill = Lighten(color, 0.4f), .Glow = WithAlpha(color, 0.35f), .GlowSize = 5.0f, .Chamfer = 1.5f });
+				draw.Rect({ bar.X, bar.Y, bar.W * left, bar.H }, { .Fill = fill, .Glow = WithAlpha(color, brittle ? 0.55f : 0.2f), .GlowSize = 5.0f, .Chamfer = 1.5f });
 			}
 			if (guard && !shattered)
 			{

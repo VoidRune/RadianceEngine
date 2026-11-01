@@ -104,6 +104,10 @@ namespace Game
 			float SpikeAge = -1.0f;
 			float FireballAge = -1.0f;
 			float ObsidianAge = -1.0f;
+			glm::vec3 BladeOffset{ 0.0f };
+			float BladeTurn = 0.0f;
+			float BladeStruck = -1.0f;
+			uint32_t BladeSlot = 0;
 			float DeathAge = -1.0f;
 			float SpawnAge = 1e9f;
 			glm::vec3 DeathColor{ 0.0f };
@@ -111,6 +115,19 @@ namespace Game
 			AbilityId Cast = AbilityId::Count;
 			EntityState Last;
 			CharacterAnimator Animator;
+		};
+
+		struct BladeFade
+		{
+			glm::vec3 Position{ 0.0f };
+			glm::vec3 Velocity{ 0.0f };
+			float Facing = 0.0f;
+			float Roll = 0.0f;
+			float Age = 0.0f;
+			float Ground = 0.0f;
+			uint32_t Slot = 0;
+			uint32_t Seed = 0;
+			bool Stuck = false;
 		};
 
 		struct Corpse
@@ -208,9 +225,11 @@ namespace Game
 			float Scale = 1.0f;
 			float Age = 0.0f;
 			float Erupt = -1.0f;
+			float Strength = 1.0f;
 			float Mist = 0.0f;
 			uint64_t Popped = 0;
 			uint64_t Shattered = 0;
+			bool Ripe = false;
 			bool Thawed = false;
 		};
 
@@ -325,9 +344,13 @@ namespace Game
 		FireballLook ChargingFireball(const EntityState& caster, float age) const;
 		void FireballMoments(EntityFx& fx, const EntityState& entity, float dt);
 		void DrawFireballCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
-		uint32_t ChargingShards(const EntityState& caster, float age, std::array<ObsidianLook, ObsidianVolley>& shards) const;
+		uint32_t FormingBlades(const EntityState& caster, float age, std::array<ObsidianLook, ObsidianVolley>& blades) const;
 		void ObsidianMoments(EntityFx& fx, const EntityState& entity, float dt);
-		void DrawObsidianCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
+		void DrawObsidianCharge(WorldRenderer& renderer, const EntityState& entity) const;
+		void LaunchBlade(EntityFx& fx, const EntityState& entity);
+		void StrikeBlade(const HitEvent& hit);
+		void FadeBlade(const EntityFx& fx, const glm::vec3& point);
+		void DrawBlade(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& center, const glm::vec3& base) const;
 		Vec2 SpikeAimOf(const EntityState& caster) const;
 		void SpikeMoments(EntityFx& fx, const EntityState& entity, float dt);
 		void EruptSpike(const EntityState& spike);
@@ -362,6 +385,7 @@ namespace Game
 		void DrawGateway(WorldRenderer& renderer, const EntityState& entity) const;
 
 		void DrawWorldUi();
+		void DrawCursor();
 		void DrawOverlay();
 		void DrawStatus();
 		void DrawHud();
@@ -546,6 +570,8 @@ namespace Game
 		std::unordered_map<uint32_t, glm::vec3> m_Lobs;
 		std::unordered_map<uint32_t, ArcChannel> m_Arcs;
 		std::vector<ArcFade> m_ArcFades;
+		std::vector<BladeSlash> m_BladeSlashes;
+		std::vector<BladeFade> m_BladeFades;
 		mutable std::unordered_map<uint32_t, std::pair<glm::vec3, float>> m_WandTips;
 		struct Flame
 		{

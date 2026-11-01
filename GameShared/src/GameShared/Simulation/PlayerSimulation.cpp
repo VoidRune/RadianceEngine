@@ -409,9 +409,14 @@ namespace Game
 		return ability == AbilityId::ChainHook || ability == AbilityId::GlacialNova;
 	}
 
-	bool HoldsCooldown(const PlayerState& state, uint32_t slot)
+	bool AwaitsNovaRecast(const PlayerState& state, uint32_t slot)
 	{
 		return state.RecastSlot == int8_t(slot) && state.RecastTimer > 0.0f && AbilityId(state.RecastAbility) == AbilityId::GlacialNova;
+	}
+
+	bool HoldsCooldown(const PlayerState& state, uint32_t slot)
+	{
+		return AwaitsNovaRecast(state, slot) && !IsNovaBrittle(state.RecastAge);
 	}
 
 	bool IsCharged(const SkillTraits& skill)
@@ -691,6 +696,7 @@ namespace Game
 			actions.Recast |= uint8_t(1u << slot);
 			actions.RecastAbility = AbilityId(state.RecastAbility);
 			actions.RecastPoint = actions.RecastAbility == AbilityId::ChainHook ? GetHookPoint(state) : state.RecastOrigin;
+			actions.RecastAge = state.RecastAge;
 			if (actions.RecastAbility == AbilityId::ChainHook)
 			{
 				const Vec2 offset = actions.RecastPoint - transform.Position;
@@ -734,8 +740,7 @@ namespace Game
 					state.CastTimer = std::max(state.CastTimer - dt, 0.0f);
 					state.Charge = std::min(state.Charge + dt, skill.ChargeTime + ChargeCrackSeconds);
 					const bool cracked = state.Charge >= skill.ChargeTime + ChargeCrackSeconds - ReadyEpsilon;
-					const bool full = FiresWhenFull(skill.Ability) && state.Charge >= skill.ChargeTime - ReadyEpsilon;
-					if (cracked || full || (state.CastTimer <= ReadyEpsilon && !input.IsDown(SlotButton(uint32_t(castingSlot)))))
+					if (cracked || (state.CastTimer <= ReadyEpsilon && !input.IsDown(SlotButton(uint32_t(castingSlot)))))
 					{
 						actions.Charge = cracked ? ChargeCrackPower : ChargePower(state, skill);
 						actions.Cracked = cracked;

@@ -16,5 +16,6 @@ namespace Game
 		uint32_t Attacker = NoPlayer;
 		bool Guarded = false;
 		bool Warded = false;
+		uint8_t Ability = UINT8_MAX;
 	};
 }

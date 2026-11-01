@@ -53,7 +53,7 @@ namespace Game
 		{
 		case AbilityId::ChainHook:
 			return { 1.0f, 0.68f, 0.34f };
-		case AbilityId::ObsidianShards:
+		case AbilityId::ObsidianBlades:
 			return { 0.7f, 0.45f, 0.92f };
 		case AbilityId::Firebomb:
 			return { 1.0f, 0.44f, 0.16f };

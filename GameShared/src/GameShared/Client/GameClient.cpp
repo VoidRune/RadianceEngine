@@ -760,10 +760,10 @@ namespace Game
 		{
 		case AbilityKind::Projectile:
 		{
-			if (ability.Id == AbilityId::ObsidianShards && HasCard(m_LocalPlayer.Brawl.Cards, CardId::SeekerShards))
+			if (ability.Id == AbilityId::ObsidianBlades && HasCard(m_LocalPlayer.Brawl.Cards, CardId::SeekerBlades))
 				return;
 			const float charge = IsCharged(skill) ? actions.Charge : 0.0f;
-			const ProjectilePattern pattern = ChargedPattern(ability, GetProjectilePattern(ability, uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles), traits.ExtraPierce, traits.ProjectileSpeedScale), charge, traits.ProjectileSpeedScale);
+			const ProjectilePattern pattern = ShotPattern(ability, GetProjectilePattern(ability, uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles), traits.ExtraPierce, traits.ProjectileSpeedScale), charge, traits.ProjectileSpeedScale);
 			const ChargedShot shot = ChargedShotOf(ability, charge);
 			const float blast = (ability.ImpactRadius > 0.0f ? shot.Blast / ability.ImpactRadius : 1.0f) * traits.AreaScale * skill.AreaScale;
 			for (uint32_t i = 0; i < pattern.Count && i < 16; i++)

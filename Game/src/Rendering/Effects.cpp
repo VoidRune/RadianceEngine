@@ -333,33 +333,44 @@ namespace Game
 				const glm::vec3 glassFlash{ 0.16f, 0.06f, 0.3f };
 				const glm::vec3 glassSpark{ 0.55f, 0.3f, 0.85f };
 				const glm::vec3 soot{ 0.45f, 0.38f, 0.55f };
+				set(Fx::ObsidianSummon, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.1f, 0.1f }, .Size = { 0.42f, 0.42f }, .Tint = glassFlash },
+					{ .Kind = K::Streak, .Count = 8.0f, .Outward = true, .Radius = 0.08f, .Cone = FullSphere, .Speed = { 3.0f, 6.0f }, .Life = { 0.06f, 0.12f }, .Size = { 0.012f, 0.02f }, .Tint = glassSpark * 0.5f },
+					{ .Kind = K::Obsidian, .Count = 5.0f, .Outward = true, .Radius = 0.1f, .Cone = FullSphere, .Speed = { 0.8f, 2.2f }, .Life = { 0.2f, 0.35f }, .Size = { 0.016f, 0.028f } },
+				});
 				set(Fx::ObsidianForm, {
-					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.08f, 0.08f }, .Size = { 0.22f, 0.22f }, .Tint = glassFlash },
-					{ .Kind = K::VioletEmber, .Count = 6.0f, .Outward = true, .Radius = 0.12f, .Cone = FullSphere, .Speed = { 0.6f, 1.8f }, .Life = { 0.12f, 0.25f }, .Size = { 0.012f, 0.022f } },
-					{ .Kind = K::Obsidian, .Count = 3.0f, .Outward = true, .Radius = 0.08f, .Cone = FullSphere, .Speed = { 0.4f, 1.2f }, .Life = { 0.3f, 0.5f }, .Size = { 0.018f, 0.03f } },
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.05f, 0.05f }, .Size = { 0.16f, 0.16f }, .Tint = glassFlash * 1.4f },
+					{ .Kind = K::VioletEmber, .Count = 3.0f, .Outward = true, .Radius = 0.1f, .Cone = FullSphere, .Speed = { 0.8f, 2.0f }, .Life = { 0.08f, 0.16f }, .Size = { 0.01f, 0.018f } },
+					{ .Kind = K::Obsidian, .Count = 2.0f, .Outward = true, .Radius = 0.08f, .Cone = FullSphere, .Speed = { 0.4f, 1.2f }, .Life = { 0.2f, 0.35f }, .Size = { 0.014f, 0.024f } },
 				});
 				set(Fx::ObsidianRelease, {
-					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.09f, 0.09f }, .Size = { 0.55f, 0.55f }, .Tint = glassFlash },
-					{ .Kind = K::Streak, .Count = 10.0f, .Aimed = true, .Radius = 0.12f, .Cone = 0.32f, .Speed = { 11.0f, 17.0f }, .Life = { 0.08f, 0.16f }, .Size = { 0.02f, 0.032f }, .Tint = glassSpark * 0.6f },
-					{ .Kind = K::VioletEmber, .Count = 12.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.45f, .Speed = { 5.0f, 10.0f }, .Life = { 0.12f, 0.28f }, .Size = { 0.012f, 0.024f } },
-					{ .Kind = K::Obsidian, .Count = 10.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.5f, .Speed = { 3.0f, 7.0f }, .Life = { 0.35f, 0.6f }, .Size = { 0.02f, 0.04f } },
-					{ .Kind = K::Smoke, .Count = 5.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.6f, .Speed = { 0.8f, 2.0f }, .Life = { 0.3f, 0.55f }, .Size = { 0.16f, 0.28f }, .Tint = soot },
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.08f, 0.08f }, .Size = { 0.5f, 0.5f }, .Tint = glassFlash },
+					{ .Kind = K::Streak, .Count = 9.0f, .Aimed = true, .Radius = 0.2f, .Cone = 0.35f, .Speed = { 12.0f, 18.0f }, .Life = { 0.06f, 0.12f }, .Size = { 0.016f, 0.026f }, .Tint = glassSpark * 0.55f },
+					{ .Kind = K::Obsidian, .Count = 6.0f, .Aimed = true, .Radius = 0.2f, .Cone = 0.5f, .Speed = { 3.0f, 6.5f }, .Life = { 0.25f, 0.45f }, .Size = { 0.016f, 0.03f } },
+					{ .Kind = K::Smoke, .Count = 3.0f, .Aimed = true, .Radius = 0.15f, .Cone = 0.6f, .Speed = { 0.8f, 2.0f }, .Life = { 0.25f, 0.45f }, .Size = { 0.14f, 0.24f }, .Tint = soot },
 				});
 				set(Fx::ObsidianTrail, {
-					{ .Kind = K::Obsidian, .Count = 6.0f, .Density = 1.6f, .Shape = SpawnShape::Segment, .Radius = 0.04f, .Speed = { 0.2f, 0.8f }, .Life = { 0.25f, 0.45f }, .Size = { 0.014f, 0.024f }, .Inherit = 0.06f },
-					{ .Kind = K::VioletEmber, .Count = 6.0f, .Density = 1.4f, .Shape = SpawnShape::Segment, .Radius = 0.03f, .Speed = { 0.1f, 0.4f }, .Life = { 0.1f, 0.2f }, .Size = { 0.01f, 0.016f }, .Inherit = 0.04f },
+					{ .Kind = K::Obsidian, .Count = 4.0f, .Density = 1.1f, .Shape = SpawnShape::Segment, .Radius = 0.05f, .Speed = { 0.2f, 0.7f }, .Life = { 0.18f, 0.32f }, .Size = { 0.012f, 0.022f }, .Inherit = 0.05f },
+					{ .Kind = K::VioletEmber, .Count = 3.0f, .Density = 0.9f, .Shape = SpawnShape::Segment, .Radius = 0.04f, .Speed = { 0.1f, 0.4f }, .Life = { 0.08f, 0.16f }, .Size = { 0.009f, 0.015f }, .Inherit = 0.04f },
 				});
 				set(Fx::ObsidianImpact, {
-					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.06f, 0.06f }, .Size = { 0.16f, 0.16f }, .Tint = glassFlash * 0.7f },
-					{ .Kind = K::Obsidian, .Count = 12.0f, .Aimed = true, .Radius = 0.06f, .Cone = 1.0f, .Speed = { 2.0f, 5.5f }, .Life = { 0.45f, 0.8f }, .Size = { 0.025f, 0.05f } },
-					{ .Kind = K::Obsidian, .Count = 5.0f, .Outward = true, .Radius = 0.06f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.1f, .Speed = { 1.5f, 3.5f }, .Life = { 0.5f, 0.85f }, .Size = { 0.02f, 0.04f } },
-					{ .Kind = K::Streak, .Count = 4.0f, .Outward = true, .Radius = 0.04f, .Cone = FullSphere, .Speed = { 4.0f, 8.0f }, .Life = { 0.06f, 0.12f }, .Size = { 0.012f, 0.02f }, .Tint = glassSpark * 0.35f },
-					{ .Kind = K::VioletEmber, .Count = 3.0f, .Outward = true, .Radius = 0.05f, .Cone = FullSphere, .Speed = { 2.5f, 6.0f }, .Life = { 0.1f, 0.2f }, .Size = { 0.01f, 0.018f } },
-					{ .Kind = K::Dust, .Count = 2.0f, .Radius = 0.08f, .Speed = { 0.2f, 0.6f }, .Life = { 0.3f, 0.5f }, .Size = { 0.1f, 0.16f }, .Tint = soot },
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.05f, 0.05f }, .Size = { 0.18f, 0.18f }, .Tint = glassFlash },
+					{ .Kind = K::Obsidian, .Count = 9.0f, .Aimed = true, .Radius = 0.06f, .Cone = 0.9f, .Speed = { 2.5f, 6.0f }, .Life = { 0.35f, 0.65f }, .Size = { 0.02f, 0.045f } },
+					{ .Kind = K::Obsidian, .Count = 3.0f, .Outward = true, .Radius = 0.06f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.0f, .Speed = { 1.5f, 3.2f }, .Life = { 0.4f, 0.7f }, .Size = { 0.018f, 0.035f } },
+					{ .Kind = K::Streak, .Count = 5.0f, .Aimed = true, .Radius = 0.04f, .Cone = 1.1f, .Speed = { 5.0f, 9.0f }, .Life = { 0.05f, 0.1f }, .Size = { 0.012f, 0.02f }, .Tint = glassSpark * 0.5f },
+					{ .Kind = K::VioletEmber, .Count = 4.0f, .Outward = true, .Radius = 0.05f, .Cone = FullSphere, .Speed = { 2.5f, 6.0f }, .Life = { 0.08f, 0.18f }, .Size = { 0.01f, 0.018f } },
 				});
 				set(Fx::ObsidianCrumble, {
-					{ .Kind = K::Obsidian, .Count = 14.0f, .Outward = true, .Radius = 0.25f, .Cone = FullSphere, .Speed = { 0.5f, 2.0f }, .Life = { 0.45f, 0.8f }, .Size = { 0.018f, 0.035f } },
-					{ .Kind = K::Smoke, .Count = 3.0f, .Radius = 0.2f, .Speed = { 0.2f, 0.6f }, .Life = { 0.4f, 0.7f }, .Size = { 0.15f, 0.25f }, .Tint = soot },
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.05f, 0.05f }, .Size = { 0.14f, 0.14f }, .Tint = glassFlash * 0.8f },
+					{ .Kind = K::Obsidian, .Count = 7.0f, .Aimed = true, .Radius = 0.12f, .Cone = 1.2f, .Speed = { 0.6f, 2.4f }, .Life = { 0.3f, 0.55f }, .Size = { 0.016f, 0.032f } },
+					{ .Kind = K::VioletEmber, .Count = 3.0f, .Outward = true, .Radius = 0.06f, .Cone = FullSphere, .Speed = { 1.0f, 2.5f }, .Life = { 0.06f, 0.14f }, .Size = { 0.009f, 0.015f } },
+				});
+				set(Fx::ObsidianKill, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.1f, 0.1f }, .Size = { 0.7f, 0.7f }, .Tint = glassFlash * 1.5f },
+					{ .Kind = K::Obsidian, .Count = 22.0f, .Outward = true, .Radius = 0.25f, .Direction = { 0.0f, 0.4f, 0.0f }, .Cone = 1.4f, .Speed = { 2.5f, 7.0f }, .Life = { 0.5f, 0.9f }, .Size = { 0.025f, 0.055f } },
+					{ .Kind = K::Streak, .Count = 12.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 8.0f, 14.0f }, .Life = { 0.08f, 0.18f }, .Size = { 0.016f, 0.028f }, .Tint = glassSpark * 0.6f },
+					{ .Kind = K::VioletEmber, .Count = 14.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 3.0f, 8.0f }, .Life = { 0.2f, 0.45f }, .Size = { 0.014f, 0.026f } },
+					{ .Kind = K::Smoke, .Count = 4.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 0.6f, 1.6f }, .Life = { 0.4f, 0.7f }, .Size = { 0.25f, 0.4f }, .Tint = soot * 0.6f },
 				});
 				set(Fx::VoidBurst, {
 					{ .Kind = K::Obsidian, .Count = 26.0f, .Outward = true, .Radius = 0.15f, .Cone = FullSphere, .Speed = { 3.0f, 8.0f }, .Life = { 0.5f, 0.9f }, .Size = { 0.025f, 0.055f } },
@@ -689,7 +700,7 @@ namespace Game
 		case AbilityId::TomeVolley:
 		case AbilityId::InkSpiral:
 			return Fx::ArcaneTrail;
-		case AbilityId::ObsidianShards:
+		case AbilityId::ObsidianBlades:
 			return Fx::ObsidianTrail;
 		case AbilityId::ShardBurst:
 			return Fx::ShardTrail;
@@ -712,8 +723,8 @@ namespace Game
 			return Fx::FrostBurst;
 		case AbilityId::FrostSpear:
 			return Fx::SpearShatter;
-		case AbilityId::ObsidianShards:
-			return Fx::ObsidianImpact;
+		case AbilityId::ObsidianBlades:
+			return Fx::ObsidianCrumble;
 		case AbilityId::EmberBolt:
 			return Fx::FireBurst;
 		case AbilityId::Swap:
@@ -798,7 +809,7 @@ namespace Game
 	std::optional<Fx> CastFor(AbilityId ability)
 	{
 		const AbilityDef& def = GetAbility(ability);
-		if (!def.Spell || ability == AbilityId::EarthSpike || ability == AbilityId::PurpleFireball || ability == AbilityId::ObsidianShards || ability == AbilityId::HexShield)
+		if (!def.Spell || ability == AbilityId::EarthSpike || ability == AbilityId::PurpleFireball || ability == AbilityId::ObsidianBlades || ability == AbilityId::HexShield)
 			return std::nullopt;
 		switch (def.Damages)
 		{

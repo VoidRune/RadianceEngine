@@ -33,6 +33,7 @@ namespace Game
 		bool Cracked = false;
 		AbilityId RecastAbility = AbilityId::Count;
 		Vec2 RecastPoint;
+		float RecastAge = 0.0f;
 		Vec2 Direction;
 		float AimDistance = 0.0f;
 		Vec2 CastPoint;
@@ -52,6 +53,7 @@ namespace Game
 	bool CanCast(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
 	bool IsOverloaded(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
 	bool IsRecastable(AbilityId ability);
+	bool AwaitsNovaRecast(const PlayerState& state, uint32_t slot);
 	bool HoldsCooldown(const PlayerState& state, uint32_t slot);
 	bool IsCharged(const SkillTraits& skill);
 	float ChargePower(const PlayerState& state, const SkillTraits& skill);

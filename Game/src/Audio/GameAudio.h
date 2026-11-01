@@ -50,6 +50,7 @@ namespace Game
 		void PlayUi(Cue cue, float volume = 1.0f, float pitch = 1.0f, float delay = 0.0f);
 		void PlayHover(int index);
 		void PlayCrumble(Vec2 position, bool ice = false);
+		void PlayNovaRipe(Vec2 position, bool own);
 		void PlayLightning(Vec2 position, float distance);
 		uint32_t GetPlayedCount() const { return m_Played; }
 		void SetTrace(bool trace) { m_Trace = trace; }
@@ -88,7 +89,7 @@ namespace Game
 		void StartWindup(const EntityState& entity, Tracked& tracked);
 		void ChargeSpear(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt);
 		void ChargeFireball(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt);
-		void ChargeObsidian(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self);
+		void CancelObsidian(const EntityState& entity, bool self);
 		void GuardSounds(const EntityState& entity, const EntityState& before, bool self);
 		void PlayGuardHit(const HitEvent& hit);
 		void WardSounds(const EntityState& entity, const EntityState& before, bool self);

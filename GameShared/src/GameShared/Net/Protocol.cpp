@@ -882,6 +882,7 @@ namespace Game
 			writer.Write(hit.Damage);
 			writer.Write(uint8_t((hit.Critical ? 1 : 0) | (hit.OnPlayer ? 2 : 0) | (uint32_t(hit.Damages) << 2) | (hit.Guarded ? 0x40 : 0) | (hit.Warded ? 0x80 : 0)));
 			writer.Write(uint8_t(hit.Attacker < MaxPlayers ? hit.Attacker : UINT8_MAX));
+			writer.Write(hit.Ability);
 		}
 	}
 
@@ -1023,6 +1024,7 @@ namespace Game
 			hit.Warded = (flags & 0x80) != 0;
 			const uint8_t attacker = reader.Read<uint8_t>();
 			hit.Attacker = attacker < MaxPlayers ? attacker : NoPlayer;
+			hit.Ability = reader.Read<uint8_t>();
 		}
 		return !reader.Failed();
 	}

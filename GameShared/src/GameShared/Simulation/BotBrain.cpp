@@ -96,7 +96,7 @@ namespace Game
 			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::DiamondWard },
 			{ AbilityId::GlacialNova, AbilityId::Swap, AbilityId::Warp },
 			{ AbilityId::Firebomb, AbilityId::StormStrike, AbilityId::Warp },
-			{ AbilityId::ObsidianShards, AbilityId::Gust, AbilityId::DiamondWard },
+			{ AbilityId::ObsidianBlades, AbilityId::Gust, AbilityId::DiamondWard },
 			{ AbilityId::EarthSpike, AbilityId::Comet, AbilityId::Warp },
 			{ AbilityId::PurpleFireball, AbilityId::Gust, AbilityId::Warp },
 			{ AbilityId::HexShield, AbilityId::FrostSpear, AbilityId::Warp },
@@ -110,7 +110,7 @@ namespace Game
 			{ AbilityId::EarthSpike, AbilityId::GlacialNova, AbilityId::Warp },
 			{ AbilityId::PurpleFireball, AbilityId::ChainHook, AbilityId::GlacialNova },
 			{ AbilityId::HexShield, AbilityId::Gust, AbilityId::GlacialNova },
-			{ AbilityId::ObsidianShards, AbilityId::GlacialNova, AbilityId::Warp },
+			{ AbilityId::ObsidianBlades, AbilityId::GlacialNova, AbilityId::Warp },
 		};
 		constexpr BrawlSpells SniperSets[] = {
 			{ AbilityId::FrostSpear, AbilityId::Comet, AbilityId::Warp },
@@ -126,7 +126,7 @@ namespace Game
 			{ AbilityId::GravityWell, AbilityId::Comet, AbilityId::DiamondWard },
 			{ AbilityId::Swap, AbilityId::FrostSpear, AbilityId::GravityWell },
 			{ AbilityId::ChainHook, AbilityId::Swap, AbilityId::Warp },
-			{ AbilityId::ObsidianShards, AbilityId::GravityWell, AbilityId::Firebomb },
+			{ AbilityId::ObsidianBlades, AbilityId::GravityWell, AbilityId::Firebomb },
 		};
 
 		constexpr const char* BotNames[] = {
@@ -157,7 +157,7 @@ namespace Game
 				return 0.18f;
 			case AbilityId::Firebomb:
 				return 0.14f;
-			case AbilityId::ObsidianShards:
+			case AbilityId::ObsidianBlades:
 				return 0.1f;
 			case AbilityId::StormStrike:
 				return 0.12f;
@@ -174,7 +174,7 @@ namespace Game
 			switch (style)
 			{
 			case BotStyle::Bruiser:
-				return spell == AbilityId::Gust || spell == AbilityId::GlacialNova || spell == AbilityId::ChainHook || spell == AbilityId::ObsidianShards ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
+				return spell == AbilityId::Gust || spell == AbilityId::GlacialNova || spell == AbilityId::ChainHook || spell == AbilityId::ObsidianBlades ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
 			case BotStyle::Sniper:
 				return spell == AbilityId::FrostSpear || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : spell == AbilityId::Gust ? 0.85f : 1.0f;
 			case BotStyle::Trickster:
@@ -1064,16 +1064,17 @@ namespace Game
 		const int32_t slot = m_State->RecastSlot;
 		if (slot < 0 || AbilityId(m_State->RecastAbility) != AbilityId::GlacialNova || m_State->RecastAge < ParamsOf(m_Profile.Skill).Reaction)
 			return false;
-		const float now = NovaValue(arena, m_State->RecastOrigin, AbilityId::GlacialEruption, NovaEruptLook);
+		const float age = m_State->RecastAge;
+		const float now = NovaValue(arena, m_State->RecastOrigin, AbilityId::GlacialEruption, NovaEruptLook, NovaEruptionPush(age), NovaEruptionScale(age));
 		if (now <= 0.0f)
 			return false;
-		if (m_State->RecastTimer > NovaLastCall && NovaValue(arena, m_State->RecastOrigin, AbilityId::GlacialEruption, NovaEruptLead) > now)
+		if (m_State->RecastTimer > NovaLastCall && NovaValue(arena, m_State->RecastOrigin, AbilityId::GlacialEruption, NovaEruptLead, NovaEruptionPush(age + NovaEruptLead), NovaEruptionScale(age + NovaEruptLead)) > now)
 			return false;
 		input.Buttons |= uint8_t(SlotButton(uint32_t(slot)));
 		return true;
 	}
 
-	float BotBrain::NovaValue(const BotArena& arena, Vec2 center, AbilityId spell, float lead) const
+	float BotBrain::NovaValue(const BotArena& arena, Vec2 center, AbilityId spell, float lead, float push, float damage) const
 	{
 		const AbilityDef& def = GetAbility(spell);
 		float value = 0.0f;
@@ -1084,8 +1085,8 @@ namespace Game
 			const float range = Length(reach);
 			if (rival.Warded || rival.Shielded || range > def.Reach || range < 1e-3f)
 				continue;
-			const Vec2 push = reach / range * (def.Push * (1.0f - 0.4f * range / def.Reach) * rival.Fling);
-			value += (range < def.Reach - 0.4f ? 0.85f : 0.55f) * (LandingValue(arena, position, push) + Harm(float(def.BrawlDamage), rival));
+			const Vec2 shove = reach / range * (def.Push * push * (1.0f - 0.4f * range / def.Reach) * rival.Fling);
+			value += (range < def.Reach - 0.4f ? 0.85f : 0.55f) * (LandingValue(arena, position, shove) + Harm(float(def.BrawlDamage) * damage, rival));
 		}
 		return value;
 	}
@@ -1184,13 +1185,12 @@ namespace Game
 			{
 				const float span = std::max(skill.ChargeTime - skill.CastTime, 0.0f);
 				const float fullRange = ChargedShotOf(def, 1.0f).Range;
-				const bool volley = spell == AbilityId::ObsidianShards;
 				for (const Rival& rival : m_Rivals)
 				{
 					if (rival.Warded)
 						continue;
 					const float gap = Length(rival.Position - m_Position);
-					const float needed = volley ? 0.0f : std::clamp((gap + 0.4f - def.ProjectileRange - def.SpawnOffset) / (fullRange - def.ProjectileRange), 0.0f, 1.0f);
+					const float needed = std::clamp((gap + 0.4f - def.ProjectileRange - def.SpawnOffset) / (fullRange - def.ProjectileRange), 0.0f, 1.0f);
 					for (const float power : { needed, std::max(needed, 0.5f), 1.0f })
 					{
 						const ChargedShot shot = ChargedShotOf(def, power);
@@ -1200,17 +1200,8 @@ namespace Game
 						const float distance = Length(offset);
 						if (distance < 0.3f || distance > shot.Range + def.SpawnOffset - 0.2f || !HasLineOfFire(level, m_Position, point))
 							continue;
-						float hits = 1.0f;
-						if (volley)
-						{
-							const uint32_t shards = ShardsFormed(power);
-							const float tolerance = std::atan2(shot.Radius + PlayerRadius * 0.8f, distance);
-							hits = 0.0f;
-							for (uint32_t i = 0; i < shards; i++)
-								hits += std::abs(ObsidianStep * (float(i) - float(shards - 1) * 0.5f)) < tolerance ? 1.0f : 0.0f;
-						}
-						float value = LandingValue(arena, point, offset / distance * (shot.Push * hits * rival.Fling)) + (shot.Chill > 0.0f ? 0.08f + (setupReady() ? 0.12f : 0.0f) : 0.0f);
-						value += Harm(damage * shot.DamageScale * hits, rival, spell);
+						float value = LandingValue(arena, point, offset / distance * (shot.Push * rival.Fling)) + (shot.Chill > 0.0f ? 0.08f + (setupReady() ? 0.12f : 0.0f) : 0.0f);
+						value += Harm(damage * shot.DamageScale, rival, spell);
 						if (shot.Blast > 0.0f)
 							for (const Rival& other : m_Rivals)
 								if (other.PlayerId != rival.PlayerId && !other.Warded && LengthSquared(other.Position - point) < shot.Blast * shot.Blast)
@@ -1250,6 +1241,15 @@ namespace Game
 				if (distance < 0.3f || distance > def.ProjectileRange + def.SpawnOffset - 0.2f || !HasLineOfFire(level, m_Position, point))
 					continue;
 				const Vec2 direction = offset / distance;
+				float hits = 1.0f;
+				if (spell == AbilityId::ObsidianBlades)
+				{
+					const ProjectilePattern fan = BladePattern();
+					const float tolerance = std::atan2(def.ProjectileRadius + PlayerRadius * 0.8f, distance);
+					hits = 0.0f;
+					for (uint32_t i = 0; i < fan.Count; i++)
+						hits += std::abs(ProjectileOffset(fan, i)) < tolerance ? 1.0f : 0.0f;
+				}
 				float value = 0.0f;
 				if (def.Swap)
 				{
@@ -1262,7 +1262,7 @@ namespace Game
 				}
 				else
 				{
-					value = LandingValue(arena, point, direction * (def.Push * rival.Fling));
+					value = LandingValue(arena, point, direction * (def.Push * hits * rival.Fling));
 					if (def.Chain > 0)
 					{
 						float chained = 0.0f;
@@ -1274,7 +1274,7 @@ namespace Game
 					if (def.Chill > 0.0f)
 						value += 0.08f + (setupReady() ? 0.12f : 0.0f);
 				}
-				value += Harm(damage, rival, spell);
+				value += Harm(damage * hits, rival, spell);
 				const float travel = skill.CastTime + distance / def.ProjectileSpeed;
 				consider(HitChance(travel, distance, rival) * value * weight - threshold, AngleOf(direction), distance, rival.PlayerId, point);
 			}

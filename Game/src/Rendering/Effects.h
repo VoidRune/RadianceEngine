@@ -130,6 +130,8 @@ namespace Game
 		ObsidianTrail,
 		ObsidianImpact,
 		ObsidianCrumble,
+		ObsidianSummon,
+		ObsidianKill,
 		NovaSpread,
 		NovaMist,
 		NovaBurst,
