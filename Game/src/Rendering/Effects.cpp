@@ -688,8 +688,6 @@ namespace Game
 			return Fx::SpearTrail;
 		case AbilityId::PurpleFireball:
 			return Fx::FireballTrail;
-		case AbilityId::Swap:
-			return Fx::ArcaneTrail;
 		case AbilityId::Arrow:
 		case AbilityId::Volley:
 		case AbilityId::Quarrel:
@@ -727,8 +725,6 @@ namespace Game
 			return Fx::ObsidianCrumble;
 		case AbilityId::EmberBolt:
 			return Fx::FireBurst;
-		case AbilityId::Swap:
-			return Fx::ArcaneBurst;
 		case AbilityId::Arrow:
 		case AbilityId::Volley:
 		case AbilityId::Quarrel:
@@ -771,7 +767,6 @@ namespace Game
 		case AbilityId::DiamondWard:
 			return std::nullopt;
 		case AbilityId::Warp:
-		case AbilityId::Swap:
 			return Fx::Blink;
 		case AbilityId::FirebombFlame:
 		case AbilityId::Firestrike:
@@ -1205,7 +1200,6 @@ namespace Game
 			Shockwave(ground, reach * 1.05f, 0.38f, 0.14f, 0.28f, facing, def.HalfArc);
 			break;
 		case AbilityId::Warp:
-		case AbilityId::Swap:
 		case AbilityId::DiamondWard:
 			runes(ground, 1.1f, 0.6f, 0.0f, 0.6f, 1.0f, 0.55f);
 			break;

@@ -101,8 +101,10 @@ namespace Game
 			float FallAge = -1.0f;
 			float FallFrom = 0.0f;
 			float SpearAge = -1.0f;
+			float SpearReady = -1.0f;
 			float SpikeAge = -1.0f;
 			float FireballAge = -1.0f;
+			float FireballReady = -1.0f;
 			float ObsidianAge = -1.0f;
 			glm::vec3 BladeOffset{ 0.0f };
 			float BladeTurn = 0.0f;
@@ -337,11 +339,11 @@ namespace Game
 		LevelView ComputeView() const;
 		void DrawEntity(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawPlayer(WorldRenderer& renderer, const EntityState& entity) const;
-		IceSpearLook ChargingSpear(const EntityState& caster, float age) const;
+		IceSpearLook ChargingSpear(const EntityState& caster, const EntityFx* fx) const;
 		void SpearMoments(EntityFx& fx, const EntityState& entity, float dt);
 		void DrawSpearCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
 		GroundDecal FrostLane(const SpearPath& path) const;
-		FireballLook ChargingFireball(const EntityState& caster, float age) const;
+		FireballLook ChargingFireball(const EntityState& caster, const EntityFx* fx) const;
 		void FireballMoments(EntityFx& fx, const EntityState& entity, float dt);
 		void DrawFireballCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
 		uint32_t FormingBlades(const EntityState& caster, float age, std::array<ObsidianLook, ObsidianVolley>& blades) const;

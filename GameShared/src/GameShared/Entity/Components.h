@@ -218,7 +218,6 @@ namespace Game
 		float Stun = 0.0f;
 		float PvpScale = 1.0f;
 		float Push = 0.0f;
-		bool Swap = false;
 		Element Damages = Element::Physical;
 		uint8_t Ability = 0;
 		Entity Source;

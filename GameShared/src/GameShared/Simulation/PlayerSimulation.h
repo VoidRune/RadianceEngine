@@ -30,7 +30,6 @@ namespace Game
 		float BloodCost = 0.0f;
 		float ManaBefore = 0.0f;
 		float Charge = 0.0f;
-		bool Cracked = false;
 		AbilityId RecastAbility = AbilityId::Count;
 		Vec2 RecastPoint;
 		float RecastAge = 0.0f;
@@ -57,7 +56,6 @@ namespace Game
 	bool HoldsCooldown(const PlayerState& state, uint32_t slot);
 	bool IsCharged(const SkillTraits& skill);
 	float ChargePower(const PlayerState& state, const SkillTraits& skill);
-	float ChargeOver(const PlayerState& state, const SkillTraits& skill);
 	Vec2 GetHookPoint(const PlayerState& state);
 	Vec2 GetGroundTarget(const Level& level, Vec2 origin, Vec2 direction, float aimDistance, float range);
 	bool AimsFromPoint(AbilityId ability);

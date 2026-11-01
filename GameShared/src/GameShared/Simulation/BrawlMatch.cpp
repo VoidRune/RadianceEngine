@@ -245,7 +245,6 @@ namespace Game
 			brawler.RoundKnockouts = 0;
 			brawler.RoundCasts = 0;
 			brawler.Hooked = {};
-			brawler.Swapped = {};
 			brawler.Returned = {};
 			brawler.Afterburn = 0.0f;
 			brawler.LavaBank = 0.0f;
@@ -1190,12 +1189,6 @@ namespace Game
 			world.Achieve(attacker, Achievement::BowlingNight);
 	}
 
-	void MatchDirector::NoteSwap(World& world, uint32_t victim, uint32_t attacker, Vec2 landing)
-	{
-		if (TracksFeats() && victim < MaxPlayers && attacker < MaxPlayers && attacker != victim && IsBrawlLava(world.GetLevel(), m_Brawl, landing))
-			m_Brawlers[victim].Swapped = { attacker, m_Brawl.Clock };
-	}
-
 	void MatchDirector::NoteKnockout(World& world, uint32_t victim, uint32_t killer, bool hazard)
 	{
 		if (!TracksFeats() || victim >= MaxPlayers)
@@ -1204,8 +1197,6 @@ namespace Game
 		const auto recent = [&](const FeatMark& mark) { return mark.By < MaxPlayers && mark.By != victim && m_Brawl.Clock - mark.At <= KillCreditSeconds; };
 		if (hazard && recent(fallen.Hooked))
 			world.Achieve(fallen.Hooked.By, Achievement::Hooked);
-		if (hazard && recent(fallen.Swapped))
-			world.Achieve(fallen.Swapped.By, Achievement::SwapMeet);
 		if (killer < MaxPlayers && killer != victim)
 		{
 			if (hazard)
@@ -1216,7 +1207,6 @@ namespace Game
 				world.Achieve(killer, Achievement::HatTrick);
 		}
 		fallen.Hooked = {};
-		fallen.Swapped = {};
 		fallen.Returned = {};
 	}
 

@@ -89,13 +89,11 @@ namespace Game
 
 		constexpr Sigil Sigils[] = {
 			{ AbilityId::EmberBolt, 6, { { 0.9f, 0.0f }, { 0.2f, 0.4f }, { 0.2f, -0.4f }, { -0.35f, 0.2f }, { -0.35f, -0.2f }, { -0.85f, 0.0f } }, 6, { { 0, 1 }, { 0, 2 }, { 1, 3 }, { 2, 4 }, { 3, 5 }, { 4, 5 } } },
-			{ AbilityId::Gust, 7, { { 0.0f, 0.0f }, { 0.3f, 0.2f }, { 0.25f, 0.6f }, { -0.2f, 0.75f }, { -0.65f, 0.35f }, { -0.6f, -0.35f }, { 0.1f, -0.75f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 } } },
 			{ AbilityId::Comet, 6, { { 0.6f, 0.6f }, { 0.15f, 0.2f }, { -0.35f, -0.25f }, { -0.85f, -0.7f }, { 0.3f, 0.7f }, { 0.7f, 0.3f } }, 5, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 4, 1 }, { 5, 1 } } },
 			{ AbilityId::Warp, 6, { { -0.85f, -0.55f }, { -0.25f, 0.3f }, { 0.1f, -0.3f }, { 0.8f, 0.55f }, { 0.4f, 0.62f }, { 0.75f, 0.15f } }, 5, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 3, 5 } } },
 			{ AbilityId::GlacialNova, 7, { { 0.0f, 0.0f }, { 0.8f, 0.0f }, { 0.4f, 0.69f }, { -0.4f, 0.69f }, { -0.8f, 0.0f }, { -0.4f, -0.69f }, { 0.4f, -0.69f } }, 6, { { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 }, { 6, 1 } } },
 			{ AbilityId::GravityWell, 7, { { 0.85f, 0.05f }, { 0.4f, 0.65f }, { -0.35f, 0.55f }, { -0.55f, -0.1f }, { -0.1f, -0.45f }, { 0.25f, -0.1f }, { 0.0f, 0.1f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 } } },
 			{ AbilityId::ArcLightning, 6, { { -0.15f, 0.9f }, { 0.3f, 0.25f }, { -0.2f, 0.05f }, { 0.25f, -0.5f }, { -0.1f, -0.9f }, { 0.65f, 0.55f } }, 5, { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 1, 5 } } },
-			{ AbilityId::Swap, 6, { { -0.8f, 0.3f }, { 0.8f, 0.3f }, { 0.5f, 0.6f }, { 0.8f, -0.3f }, { -0.8f, -0.3f }, { -0.5f, -0.6f } }, 4, { { 0, 1 }, { 1, 2 }, { 3, 4 }, { 4, 5 } } },
 			{ AbilityId::DiamondWard, 6, { { 0.0f, 0.92f }, { 0.58f, -0.12f }, { 0.0f, -0.62f }, { -0.58f, -0.12f }, { 0.32f, 0.22f }, { -0.32f, 0.22f } }, 8, { { 0, 4 }, { 4, 1 }, { 1, 2 }, { 2, 3 }, { 3, 5 }, { 5, 0 }, { 1, 3 }, { 4, 5 } } },
 			{ AbilityId::FrostSpear, 6, { { -0.85f, -0.62f }, { -0.3f, -0.22f }, { 0.25f, 0.18f }, { 0.82f, 0.6f }, { 0.4f, 0.57f }, { 0.67f, 0.21f } }, 6, { { 0, 1 }, { 1, 2 }, { 2, 4 }, { 4, 3 }, { 2, 5 }, { 5, 3 } } },
 		};
@@ -301,8 +299,6 @@ namespace Game
 			default:
 				break;
 			}
-			if (def.Swap)
-				return Format("Trades places   %.0f s", double(def.Cooldown));
 			if (def.Ward > 0.0f)
 				return Format("Reflects for %.1f s   %.0f s", double(def.Ward), double(def.Cooldown));
 			if (def.Push < 0.0f)
@@ -360,8 +356,6 @@ namespace Game
 			{
 			case AbilityId::EmberBolt:
 				return "Bolt";
-			case AbilityId::Gust:
-				return "Blast";
 			case AbilityId::Comet:
 				return "Zone";
 			case AbilityId::Warp:
@@ -372,8 +366,6 @@ namespace Game
 				return "Pull";
 			case AbilityId::ArcLightning:
 				return "Chain";
-			case AbilityId::Swap:
-				return "Swap";
 			case AbilityId::DiamondWard:
 				return "Block";
 			case AbilityId::FrostSpear:
@@ -483,7 +475,7 @@ namespace Game
 				tooltip.Pair("Range", Format("%.1f to %.1f", double(def.ProjectileRange), double(FireballFullRange)));
 				tooltip.Pair("Blast", Format("%.1f to %.1f across", double(2.0f * def.ImpactRadius), double(2.0f * FireballFullBlast)));
 				tooltip.Pair("Full charge", Format("%.1f s", double(def.ChargeTime)));
-				tooltip.Pair("Hold longer", Format("it tears loose after %.0f s", double(ChargeCrackSeconds)));
+				tooltip.Pair("Hold longer", Format("it flies at full power after %.0f s", double(ChargeHoldSeconds)));
 			}
 			else if (id == AbilityId::ObsidianBlades)
 			{
@@ -497,8 +489,8 @@ namespace Game
 				tooltip.Pair("Shove", Format(damage ? "%.1f to %.1f" : "%.0f to %.0f", double(def.Push * shove), double(SpearFullPush * shove)));
 				tooltip.Pair("Range", Format("%.1f to %.1f", double(def.ProjectileRange), double(SpearFullRange)));
 				tooltip.Pair("Full charge", Format("%.1f s, pierces %u rivals", double(def.ChargeTime), unsigned(SpearFullPierce)));
+				tooltip.Pair("Hold longer", Format("it flies at full power after %.0f s", double(ChargeHoldSeconds)));
 				tooltip.Pair("Burst", Format(damage ? "%.1f around where it stops, shove %.1f" : "%.1f around where it stops, shove %.0f", double(SpearBurstRadius), double(SpearBurstPush * shove)));
-				tooltip.Pair("Hold longer", Format("it cracks loose after %.0f s", double(ChargeCrackSeconds)));
 			}
 			else if (id == AbilityId::GlacialNova)
 			{

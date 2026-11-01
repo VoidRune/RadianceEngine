@@ -50,8 +50,6 @@ namespace Game
 		constexpr float PlantHorizon = 0.6f;
 		constexpr float PlantClearance = 1.5f;
 		constexpr float PlantCollapse = 3.0f;
-		constexpr float CycleReach = 7.0f;
-		constexpr float CycleScore = 0.05f;
 		constexpr float IslandSpan = 5.0f;
 		constexpr float GustLook = 1.2f;
 		constexpr float FlightSeconds = 0.4f;
@@ -91,26 +89,25 @@ namespace Game
 		}
 
 		constexpr BrawlSpells BalancedSets[] = {
-			{ AbilityId::Gust, AbilityId::Warp, AbilityId::Comet },
-			{ AbilityId::FrostSpear, AbilityId::Gust, AbilityId::Warp },
+			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::GlacialNova },
+			{ AbilityId::FrostSpear, AbilityId::GlacialNova, AbilityId::Warp },
 			{ AbilityId::ArcLightning, AbilityId::Comet, AbilityId::DiamondWard },
-			{ AbilityId::GlacialNova, AbilityId::Swap, AbilityId::Warp },
+			{ AbilityId::GlacialNova, AbilityId::GravityWell, AbilityId::Warp },
 			{ AbilityId::Firebomb, AbilityId::StormStrike, AbilityId::Warp },
-			{ AbilityId::ObsidianBlades, AbilityId::Gust, AbilityId::DiamondWard },
+			{ AbilityId::ObsidianBlades, AbilityId::Comet, AbilityId::DiamondWard },
 			{ AbilityId::EarthSpike, AbilityId::Comet, AbilityId::Warp },
-			{ AbilityId::PurpleFireball, AbilityId::Gust, AbilityId::Warp },
+			{ AbilityId::PurpleFireball, AbilityId::GlacialNova, AbilityId::Warp },
 			{ AbilityId::HexShield, AbilityId::FrostSpear, AbilityId::Warp },
 		};
 		constexpr BrawlSpells BruiserSets[] = {
-			{ AbilityId::Gust, AbilityId::GlacialNova, AbilityId::Warp },
-			{ AbilityId::Gust, AbilityId::GlacialNova, AbilityId::DiamondWard },
-			{ AbilityId::Gust, AbilityId::Swap, AbilityId::Warp },
-			{ AbilityId::ChainHook, AbilityId::Gust, AbilityId::GlacialNova },
+			{ AbilityId::ObsidianBlades, AbilityId::GlacialNova, AbilityId::Warp },
+			{ AbilityId::EarthSpike, AbilityId::GlacialNova, AbilityId::DiamondWard },
+			{ AbilityId::ChainHook, AbilityId::ObsidianBlades, AbilityId::Warp },
+			{ AbilityId::ChainHook, AbilityId::EarthSpike, AbilityId::GlacialNova },
 			{ AbilityId::ChainHook, AbilityId::Firebomb, AbilityId::Warp },
 			{ AbilityId::EarthSpike, AbilityId::GlacialNova, AbilityId::Warp },
 			{ AbilityId::PurpleFireball, AbilityId::ChainHook, AbilityId::GlacialNova },
-			{ AbilityId::HexShield, AbilityId::Gust, AbilityId::GlacialNova },
-			{ AbilityId::ObsidianBlades, AbilityId::GlacialNova, AbilityId::Warp },
+			{ AbilityId::HexShield, AbilityId::ObsidianBlades, AbilityId::GlacialNova },
 		};
 		constexpr BrawlSpells SniperSets[] = {
 			{ AbilityId::FrostSpear, AbilityId::Comet, AbilityId::Warp },
@@ -122,10 +119,10 @@ namespace Game
 			{ AbilityId::HexShield, AbilityId::ArcLightning, AbilityId::Comet },
 		};
 		constexpr BrawlSpells TricksterSets[] = {
-			{ AbilityId::Swap, AbilityId::GravityWell, AbilityId::Warp },
+			{ AbilityId::ChainHook, AbilityId::GravityWell, AbilityId::Warp },
 			{ AbilityId::GravityWell, AbilityId::Comet, AbilityId::DiamondWard },
-			{ AbilityId::Swap, AbilityId::FrostSpear, AbilityId::GravityWell },
-			{ AbilityId::ChainHook, AbilityId::Swap, AbilityId::Warp },
+			{ AbilityId::ChainHook, AbilityId::FrostSpear, AbilityId::GravityWell },
+			{ AbilityId::ChainHook, AbilityId::Firebomb, AbilityId::Warp },
 			{ AbilityId::ObsidianBlades, AbilityId::GravityWell, AbilityId::Firebomb },
 		};
 
@@ -144,13 +141,10 @@ namespace Game
 				return 0.09f;
 			case AbilityId::ArcLightning:
 				return 0.1f;
-			case AbilityId::Gust:
 			case AbilityId::GlacialNova:
 				return 0.16f;
 			case AbilityId::Comet:
 				return 0.13f;
-			case AbilityId::Swap:
-				return 0.2f;
 			case AbilityId::GravityWell:
 				return 0.22f;
 			case AbilityId::ChainHook:
@@ -174,11 +168,11 @@ namespace Game
 			switch (style)
 			{
 			case BotStyle::Bruiser:
-				return spell == AbilityId::Gust || spell == AbilityId::GlacialNova || spell == AbilityId::ChainHook || spell == AbilityId::ObsidianBlades ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
+				return spell == AbilityId::GlacialNova || spell == AbilityId::ChainHook || spell == AbilityId::ObsidianBlades ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
 			case BotStyle::Sniper:
-				return spell == AbilityId::FrostSpear || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : spell == AbilityId::Gust ? 0.85f : 1.0f;
+				return spell == AbilityId::FrostSpear || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : 1.0f;
 			case BotStyle::Trickster:
-				return spell == AbilityId::Swap || spell == AbilityId::GravityWell || spell == AbilityId::ChainHook ? 1.4f : spell == AbilityId::Firebomb ? 1.15f : 1.0f;
+				return spell == AbilityId::GravityWell || spell == AbilityId::ChainHook ? 1.4f : spell == AbilityId::Firebomb ? 1.15f : 1.0f;
 			default:
 				return 1.0f;
 			}
@@ -768,36 +762,6 @@ namespace Game
 			input.Aim = AngleOf(input.Move);
 			input.AimDistance = distance;
 		}
-		for (uint32_t slot = 1; slot < AbilitySlots && lava && act && m_State->CastSlot < 0; slot++)
-		{
-			const AbilityDef& def = GetAbility(SpellIn(slot));
-			if (!def.Swap || !Ready(slot))
-				continue;
-			const Rival* best = nullptr;
-			float bestScore = EscapeClearance;
-			Vec2 point;
-			for (const Rival& rival : m_Rivals)
-			{
-				if (rival.Warded || rival.Shielded)
-					continue;
-				const Vec2 aim = Lead(rival, m_Traits->Skills[slot].CastTime, def.ProjectileSpeed);
-				const float reach = Length(aim - m_Position);
-				if (reach > std::min(def.ProjectileRange + def.SpawnOffset - 0.3f, 7.5f) || !HasLineOfFire(world.GetLevel(), m_Position, aim))
-					continue;
-				if (const float score = arena.Clearance(rival.Position) - 0.12f * reach; score > bestScore)
-				{
-					bestScore = score;
-					best = &rival;
-					point = aim;
-				}
-			}
-			if (best)
-			{
-				Cast(input, slot, AngleOf(point - m_Position), Length(point - m_Position));
-				m_CastTarget = best->PlayerId;
-				return true;
-			}
-		}
 		for (uint32_t slot = 1; slot < AbilitySlots && lava && act; slot++)
 			if (SpellIn(slot) == AbilityId::Warp && Ready(slot) && distance > 1.3f)
 			{
@@ -1160,7 +1124,7 @@ namespace Game
 		const auto setupReady = [&]
 		{
 			for (uint32_t other = 1; other < AbilitySlots; other++)
-				if (other != slot && (SpellIn(other) == AbilityId::Comet || SpellIn(other) == AbilityId::Gust) && m_State->Cooldowns[other] < 0.5f)
+				if (other != slot && SpellIn(other) == AbilityId::Comet && m_State->Cooldowns[other] < 0.5f)
 					return true;
 			return false;
 		};
@@ -1250,30 +1214,17 @@ namespace Game
 					for (uint32_t i = 0; i < fan.Count; i++)
 						hits += std::abs(ProjectileOffset(fan, i)) < tolerance ? 1.0f : 0.0f;
 				}
-				float value = 0.0f;
-				if (def.Swap)
+				float value = LandingValue(arena, point, direction * (def.Push * hits * rival.Fling));
+				if (def.Chain > 0)
 				{
-					const float mine = arena.Clearance(m_Position);
-					const float theirs = arena.Clearance(rival.Position);
-					if (mine < 1.2f && theirs > mine + 1.5f)
-						value += 0.4f + 0.3f * std::clamp((theirs - mine) / 4.0f, 0.0f, 1.0f);
-					if (mine < 0.3f)
-						value += 0.5f;
+					float chained = 0.0f;
+					for (const Rival& other : m_Rivals)
+						if (other.PlayerId != rival.PlayerId && !other.Warded && LengthSquared(other.Position - point) < ChainReach * ChainReach)
+							chained = std::max(chained, LandingValue(arena, other.Position, Normalize(other.Position - point) * (def.Push * other.Fling)) + Harm(damage, other));
+					value += 0.5f * chained;
 				}
-				else
-				{
-					value = LandingValue(arena, point, direction * (def.Push * hits * rival.Fling));
-					if (def.Chain > 0)
-					{
-						float chained = 0.0f;
-						for (const Rival& other : m_Rivals)
-							if (other.PlayerId != rival.PlayerId && !other.Warded && LengthSquared(other.Position - point) < ChainReach * ChainReach)
-								chained = std::max(chained, LandingValue(arena, other.Position, Normalize(other.Position - point) * (def.Push * other.Fling)) + Harm(damage, other));
-						value += 0.5f * chained;
-					}
-					if (def.Chill > 0.0f)
-						value += 0.08f + (setupReady() ? 0.12f : 0.0f);
-				}
+				if (def.Chill > 0.0f)
+					value += 0.08f + (setupReady() ? 0.12f : 0.0f);
 				value += Harm(damage * hits, rival, spell);
 				const float travel = skill.CastTime + distance / def.ProjectileSpeed;
 				consider(HitChance(travel, distance, rival) * value * weight - threshold, AngleOf(direction), distance, rival.PlayerId, point);
@@ -1446,9 +1397,6 @@ namespace Game
 		default:
 			break;
 		}
-		if (best.Score <= 0.0f && slot > 0 && def.Swap && m_DamageMode && HasCard(m_Loadout.Cards, CardId::UnstableArcana))
-			if (const Rival* target = FindRival(m_Target); target && LengthSquared(target->Position - m_Position) < CycleReach * CycleReach)
-				consider(CycleScore, AngleOf(target->Position - m_Position), Length(target->Position - m_Position), target->PlayerId, target->Position);
 		return best;
 	}
 
@@ -1494,7 +1442,7 @@ namespace Game
 		const Rival* target = FindRival(m_Target);
 		bool closeIn = false;
 		for (uint32_t slot = 1; slot < AbilitySlots; slot++)
-			if ((SpellIn(slot) == AbilityId::Gust || SpellIn(slot) == AbilityId::GlacialNova) && m_State->Cooldowns[slot] < 0.6f)
+			if (SpellIn(slot) == AbilityId::GlacialNova && m_State->Cooldowns[slot] < 0.6f)
 				closeIn = true;
 		const float caution = ParamsOf(m_Profile.Skill).Caution;
 		const bool wary = m_DamageMode && m_Health < WaryHealth;

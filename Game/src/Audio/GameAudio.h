@@ -63,7 +63,6 @@ namespace Game
 			float Idle = 0.0f;
 			float SinceHit = 1e9f;
 			Timbre::Voice Loop;
-			float Crackle = 0.0f;
 			bool Seen = false;
 			bool LeftFoot = false;
 		};
@@ -87,8 +86,8 @@ namespace Game
 		void StartTelegraph(const EntityState& entity, Tracked& tracked);
 		void StartCast(const EntityState& entity, Tracked& tracked, bool self);
 		void StartWindup(const EntityState& entity, Tracked& tracked);
-		void ChargeSpear(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt);
-		void ChargeFireball(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self, float dt);
+		void ChargeSpear(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self);
+		void ChargeFireball(const EntityState& entity, const EntityState& before, Tracked& tracked, bool self);
 		void CancelObsidian(const EntityState& entity, bool self);
 		void GuardSounds(const EntityState& entity, const EntityState& before, bool self);
 		void PlayGuardHit(const HitEvent& hit);

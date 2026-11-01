@@ -61,8 +61,6 @@ namespace Game
 			return { 0.62f, 1.0f, 0.74f };
 		case AbilityId::GravityWell:
 			return { 0.45f, 0.42f, 1.0f };
-		case AbilityId::Swap:
-			return { 0.86f, 0.48f, 1.0f };
 		case AbilityId::DiamondWard:
 			return { 1.0f, 0.86f, 0.48f };
 		case AbilityId::EarthSpike:

@@ -120,7 +120,6 @@ namespace Game
 		void AfterBrawlDamage(Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt) { m_Match.AfterDamage(*this, target, victim, attacker, ability, dealt); }
 		void NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, bool pull, uint32_t returned) { m_Match.NoteBlow(victim, attacker, ability, pull, returned); }
 		void NoteFling(uint32_t victim, uint32_t attacker, uint8_t ability) { m_Match.NoteFling(*this, victim, attacker, ability); }
-		void NoteSwap(uint32_t victim, uint32_t attacker, Vec2 landing) { m_Match.NoteSwap(*this, victim, attacker, landing); }
 		CardMask GetCards(uint32_t playerId) const { return m_Match.GetCards(playerId); }
 		Entity SpawnLoot(LootKind kind, Vec2 position);
 		Entity SpawnItem(const Item& item, Vec2 position, uint32_t blockedPlayer, uint32_t forPlayer = NoPlayer);

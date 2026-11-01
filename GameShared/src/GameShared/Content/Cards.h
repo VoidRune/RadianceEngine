@@ -11,8 +11,6 @@ namespace Game
 	enum class CardId : uint8_t
 	{
 		SplittingEmber,
-		LingeringGale,
-		DeflectingGale,
 		ShatteringImpact,
 		TwinComets,
 		Afterimage,
@@ -20,7 +18,6 @@ namespace Game
 		Implosion,
 		Pinball,
 		Overcharge,
-		HeartSwap,
 		ThornedMirror,
 		BlackIce,
 		GlassCannon,
@@ -128,8 +125,6 @@ namespace Game
 
 	inline constexpr CardDef Cards[] = {
 		{ CardId::SplittingEmber, CardKind::Upgrade, CardRarity::Common, AbilityId::EmberBolt, "Splitting Ember", "At the end of its range, Ember Bolt splits into three smaller bolts.", "At the end of its range, Ember Bolt splits into three bolts that deal 60% damage.", TagFire },
-		{ CardId::LingeringGale, CardKind::Upgrade, CardRarity::Common, AbilityId::Gust, "Lingering Gale", "Gust leaves a whirlwind that keeps blasting rivals away for a second and a half.", "Gust leaves a whirlwind that hits rivals three more times over a second and a half.", TagStorm },
-		{ CardId::DeflectingGale, CardKind::Upgrade, CardRarity::Rare, AbilityId::Gust, "Deflecting Gale", "Gust bats enemy spells back at whoever cast them.", nullptr, TagGuard },
 		{ CardId::ShatteringImpact, CardKind::Upgrade, CardRarity::Rare, AbilityId::Comet, "Shattering Impact", "The crater cracks and sinks into the lava 1.5 s after the comet lands.", "A smaller crater cracks and sinks into the lava 3 s after the comet lands.", TagFire },
 		{ CardId::TwinComets, CardKind::Upgrade, CardRarity::Common, AbilityId::Comet, "Twin Comets", "A smaller second comet lands on the same spot half a second later.", "A second comet lands on the same spot half a second later.", TagFire },
 		{ CardId::Afterimage, CardKind::Upgrade, CardRarity::Rare, AbilityId::Warp, "Afterimage", "Warp leaves a shockwave where you left.", "Warp leaves a shockwave where you left that hits for 16.", TagMana },
@@ -137,7 +132,6 @@ namespace Game
 		{ CardId::Implosion, CardKind::Upgrade, CardRarity::Rare, AbilityId::GravityWell, "Implosion", "When the eye closes the void bursts, flinging everyone outward.", "When the eye closes the void bursts, hitting everyone inside for 5.", TagMana },
 		{ CardId::Pinball, CardKind::Upgrade, CardRarity::Rare, AbilityId::ArcLightning, "Pinball", "Every jump shoves half again as hard as the one before.", "Every jump hits half again as hard as the one before.", TagStorm },
 		{ CardId::Overcharge, CardKind::Upgrade, CardRarity::Common, AbilityId::ArcLightning, "Overcharge", "Arc Lightning jumps to one more rival.", nullptr, TagStorm },
-		{ CardId::HeartSwap, CardKind::Upgrade, CardRarity::Rare, AbilityId::Swap, "Heart Swap", "Swap also trades health, and with it how far each of you flies.", "If the rival Swap hits has more health than you, you steal up to 15 of it.", TagBlood },
 		{ CardId::ThornedMirror, CardKind::Upgrade, CardRarity::Common, AbilityId::DiamondWard, "Razor Facets", "Spells your Diamond Ward reflects come back 50% stronger.", nullptr, TagGuard },
 		{ CardId::BlackIce, CardKind::Upgrade, CardRarity::Common, AbilityId::FrostSpear, "Black Ice", "A rival your Ice Spear hits slides 40% further for a second and a half.", "Ice Spear chills half a second longer, and the rival slides 40% further.", TagFrost },
 		{ CardId::GlassCannon, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Glass Cannon", "Your spells shove 50% harder, but you fly 15% further.", "You deal 40% more damage, but take 10% more.", TagBlood },
@@ -250,14 +244,6 @@ namespace Game
 	inline constexpr float SplitRange = 3.0f;
 	inline constexpr float SplitPushScale = 0.6f;
 	inline constexpr float SplitRadiusScale = 0.8f;
-	inline constexpr uint32_t GalePulses = 3;
-	inline constexpr float GaleFirstDelay = 0.3f;
-	inline constexpr float GaleInterval = 0.45f;
-	inline constexpr float GaleOffset = 2.0f;
-	inline constexpr float GaleDrift = 0.6f;
-	inline constexpr float GaleRadius = 1.5f;
-	inline constexpr float GalePush = 9.0f;
-	inline constexpr float GaleDamagePush = 0.5f;
 	inline constexpr float TwinDelay = 0.5f;
 	inline constexpr float TwinScale = 0.7f;
 	inline constexpr float AfterimageDelay = 0.05f;
@@ -331,7 +317,6 @@ namespace Game
 	inline constexpr float ImplosionDamage = 0.45f;
 	inline constexpr float SeekerDamage = 0.6f;
 	inline constexpr float SeekerPush = 0.85f;
-	inline constexpr int32_t HeartSwapSteal = 15;
 	inline constexpr float DamageCraterDelay = 3.0f;
 	inline constexpr float DamageCraterScale = 0.7f;
 	inline constexpr float TwinDamage = 1.0f;

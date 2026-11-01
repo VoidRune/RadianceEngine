@@ -190,13 +190,11 @@ namespace Game
 		case AbilityId::Rejuvenate: return UiIcon::Healing;
 		case AbilityId::Roll: return UiIcon::Dodge;
 		case AbilityId::EmberBolt: return UiIcon::Fireball;
-		case AbilityId::Gust: return UiIcon::Whirlwind;
 		case AbilityId::Comet: return UiIcon::MeteorImpact;
 		case AbilityId::Warp: return UiIcon::Teleport;
 		case AbilityId::GlacialNova: return UiIcon::Snowflake;
 		case AbilityId::GravityWell: return UiIcon::MagicSwirl;
 		case AbilityId::ArcLightning: return UiIcon::LightningArc;
-		case AbilityId::Swap: return UiIcon::MagicPortal;
 		case AbilityId::DiamondWard: return UiIcon::CutDiamond;
 		case AbilityId::FrostSpear: return UiIcon::IceSpear;
 		case AbilityId::ChainHook: return UiIcon::SpearHook;
@@ -217,8 +215,6 @@ namespace Game
 		switch (card)
 		{
 		case CardId::SplittingEmber: return UiIcon::SplitArrows;
-		case CardId::LingeringGale: return UiIcon::Whirlwind;
-		case CardId::DeflectingGale: return UiIcon::Shield;
 		case CardId::ShatteringImpact: return UiIcon::EarthCrack;
 		case CardId::TwinComets: return UiIcon::MeteorImpact;
 		case CardId::Afterimage: return UiIcon::Teleport;
@@ -226,7 +222,6 @@ namespace Game
 		case CardId::Implosion: return UiIcon::MagicSwirl;
 		case CardId::Pinball: return UiIcon::ArcingBolt;
 		case CardId::Overcharge: return UiIcon::LightningArc;
-		case CardId::HeartSwap: return UiIcon::HeartDrop;
 		case CardId::ThornedMirror: return UiIcon::ThornedArrow;
 		case CardId::BlackIce: return UiIcon::Snowflake;
 		case CardId::GlassCannon: return UiIcon::SkullCrack;

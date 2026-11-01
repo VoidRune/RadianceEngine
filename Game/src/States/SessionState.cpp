@@ -1910,14 +1910,14 @@ namespace Game
 				if (entity.Has(EntityFlags::Attacking) && !entity.Has(EntityFlags::Dead) && entity.Variant == uint8_t(AbilityId::FrostSpear))
 				{
 					const auto fx = m_Fx.find(entity.NetId);
-					const IceSpearLook look = ChargingSpear(entity, fx != m_Fx.end() ? std::max(fx->second.SpearAge, 0.0f) : 0.0f);
+					const IceSpearLook look = ChargingSpear(entity, fx != m_Fx.end() ? &fx->second : nullptr);
 					m_Effects->Trail(Fx::SpearAura, uint64_t(entity.NetId) | (6ull << 40), look.Center, dt, 0.6f + 0.4f * look.Size);
-					m_Effects->Converge(uint64_t(entity.NetId) | (7ull << 40), look.Center, 1.0f + 0.35f * look.Size, (24.0f + 64.0f * look.Power) * (1.0f - 0.7f * look.Over), 0.32f, dt, 0.8f + 0.25f * look.Size);
+					m_Effects->Converge(uint64_t(entity.NetId) | (7ull << 40), look.Center, 1.0f + 0.35f * look.Size, 24.0f + 64.0f * look.Power, 0.32f, dt, 0.8f + 0.25f * look.Size);
 				}
 				if (entity.Has(EntityFlags::Attacking) && !entity.Has(EntityFlags::Dead) && entity.Variant == uint8_t(AbilityId::PurpleFireball))
 				{
 					const auto fx = m_Fx.find(entity.NetId);
-					const FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? std::max(fx->second.FireballAge, 0.0f) : 0.0f);
+					const FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? &fx->second : nullptr);
 					const float violet = FireballViolet(look.Power);
 					const float size = 0.6f + 0.4f * look.Size;
 					m_Effects->Trail(Fx::FireballKindle, uint64_t(entity.NetId) | (12ull << 40), look.Center, dt, size, glm::vec3(1.0f - violet));
@@ -1925,7 +1925,7 @@ namespace Game
 					const glm::vec3 streak = glm::mix(glm::vec3(0.75f, 0.32f, 0.08f), glm::vec3(0.45f, 0.18f, 0.8f), violet);
 					const float reach = 0.9f + 0.45f * look.Size;
 					const float surface = 1.4f * FireballBallRadius * look.Size * look.Grow;
-					m_Effects->Converge(uint64_t(entity.NetId) | (14ull << 40), look.Center, reach, (26.0f + 70.0f * look.Power) * (1.0f - 0.6f * look.Over), 0.3f, dt, 0.9f + 0.3f * look.Size, ParticleKind::Streak, streak, 0.35f, std::clamp(1.0f - surface / reach, 0.3f, 1.0f));
+					m_Effects->Converge(uint64_t(entity.NetId) | (14ull << 40), look.Center, reach, 26.0f + 70.0f * look.Power, 0.3f, dt, 0.9f + 0.3f * look.Size, ParticleKind::Streak, streak, 0.35f, std::clamp(1.0f - surface / reach, 0.3f, 1.0f));
 				}
 				if (entity.Has(EntityFlags::Attacking) && !entity.Has(EntityFlags::Dead) && entity.Variant == uint8_t(AbilityId::ObsidianBlades))
 				{
@@ -2487,24 +2487,21 @@ namespace Game
 		}
 	}
 
-	IceSpearLook SessionState::ChargingSpear(const EntityState& caster, float age) const
+	IceSpearLook SessionState::ChargingSpear(const EntityState& caster, const EntityFx* fx) const
 	{
 		const float power = caster.GetChargePower();
-		const float over = caster.GetOvercharge();
-		const float shake = over * over;
+		const float age = fx ? std::max(fx->SpearAge, 0.0f) : 0.0f;
 		const float phase = float(caster.NetId % 97u);
 		const glm::vec3 base = BodyBase(caster);
 		IceSpearLook look;
-		look.Facing = caster.Facing + 0.06f * shake * std::sin(m_Time * 53.0f + phase);
-		look.Center = base + glm::vec3(0.0f, SpearHoldHeight + 0.05f * std::sin(m_Time * 3.1f + phase), 0.0f) + Heading(caster.Facing - HalfPi) * SpearHoldSide
-			+ glm::vec3(std::sin(m_Time * 61.0f + phase), std::sin(m_Time * 47.0f + 1.3f), std::cos(m_Time * 57.0f)) * (0.03f * shake);
+		look.Facing = caster.Facing;
+		look.Center = base + glm::vec3(0.0f, SpearHoldHeight + 0.05f * std::sin(m_Time * 3.1f + phase), 0.0f) + Heading(caster.Facing - HalfPi) * SpearHoldSide;
 		look.Pitch = -0.05f;
-		look.Roll = 0.4f * std::sin(m_Time * 1.7f + phase) + 0.35f * shake * std::sin(m_Time * 41.0f);
+		look.Roll = 0.4f * std::sin(m_Time * 1.7f + phase);
 		look.Size = SpearShot(power).Size;
 		look.Grow = 1.0f - std::pow(1.0f - std::clamp(age / 0.2f, 0.0f, 1.0f), 3.0f);
 		look.Power = power;
-		look.Over = over;
-		look.Flash = power >= 1.0f ? std::exp(-over * ChargeCrackSeconds * 7.0f) : 0.0f;
+		look.Flash = fx && fx->SpearReady >= 0.0f ? std::exp(-fx->SpearReady * 7.0f) : 0.0f;
 		look.Ground = base.y;
 		return look;
 	}
@@ -2535,11 +2532,12 @@ namespace Game
 		if (charging(entity))
 		{
 			fx.SpearAge = was && fx.SpearAge >= 0.0f ? fx.SpearAge + dt : 0.0f;
+			fx.SpearReady = entity.GetChargePower() < 1.0f ? -1.0f : fx.SpearReady >= 0.0f ? fx.SpearReady + dt : 0.0f;
 			if (!was)
 				return;
 			const float before = fx.Last.GetChargePower();
 			const float after = entity.GetChargePower();
-			const IceSpearLook look = ChargingSpear(entity, fx.SpearAge);
+			const IceSpearLook look = ChargingSpear(entity, &fx);
 			if (before < 1.0f && after >= 1.0f)
 				m_Effects->Burst(Fx::SpearReady, look.Center, glm::vec3(0.0f, 1.0f, 0.0f), 0.5f + 0.3f * look.Size);
 			else
@@ -2550,23 +2548,22 @@ namespace Game
 		}
 		if (was)
 		{
-			const IceSpearLook look = ChargingSpear(fx.Last, std::max(fx.SpearAge, 0.0f));
-			if (fx.Last.GetOvercharge() > 0.9f)
-				m_Effects->Burst(Fx::SpearCrack, look.Center, glm::vec3(0.0f, 1.0f, 0.0f), 0.6f + 0.4f * look.Size);
-			else if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
+			const IceSpearLook look = ChargingSpear(fx.Last, &fx);
+			if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
 				m_Effects->Burst(Fx::SpearCrack, look.Center, glm::vec3(0.0f, 1.0f, 0.0f), 0.3f + 0.2f * look.Size);
 			else
 				m_Effects->Burst(Fx::SpearRelease, look.Center, Heading(fx.Last.Facing), 0.6f + 0.4f * look.Size);
 		}
 		fx.SpearAge = -1.0f;
+		fx.SpearReady = -1.0f;
 	}
 
 	void SessionState::DrawSpearCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
 	{
 		const auto fx = m_Fx.find(entity.NetId);
-		const IceSpearLook look = ChargingSpear(entity, fx != m_Fx.end() ? std::max(fx->second.SpearAge, 0.0f) : 0.0f);
+		const IceSpearLook look = ChargingSpear(entity, fx != m_Fx.end() ? &fx->second : nullptr);
 		DrawIceSpear(renderer, m_SpellMeshes, look, m_Time, entity.NetId);
-		DrawRuneCircle(renderer, { .Center = base, .Radius = (0.75f + 0.35f * look.Power) * look.Grow, .Color = SpearIce, .Intensity = 0.3f + 0.45f * look.Power + 0.4f * look.Flash, .Spin = 1.6f + 2.5f * look.Over, .Progress = look.Power, .Appear = look.Grow, .Seed = entity.NetId });
+		DrawRuneCircle(renderer, { .Center = base, .Radius = (0.75f + 0.35f * look.Power) * look.Grow, .Color = SpearIce, .Intensity = 0.3f + 0.45f * look.Power + 0.4f * look.Flash, .Spin = 1.6f, .Progress = look.Power, .Appear = look.Grow, .Seed = entity.NetId });
 		GroundDecal frost;
 		frost.Center = base;
 		frost.Extent = glm::vec2((0.5f + 1.0f * look.Power) * look.Grow);
@@ -2587,21 +2584,18 @@ namespace Game
 		}
 	}
 
-	FireballLook SessionState::ChargingFireball(const EntityState& caster, float age) const
+	FireballLook SessionState::ChargingFireball(const EntityState& caster, const EntityFx* fx) const
 	{
 		const float power = caster.GetChargePower();
-		const float over = caster.GetOvercharge();
-		const float shake = over * over;
+		const float age = fx ? std::max(fx->FireballAge, 0.0f) : 0.0f;
 		const float phase = float(caster.NetId % 97u);
 		FireballLook look;
 		look.Size = FireballShot(power).Size;
 		look.Grow = 1.0f - std::pow(1.0f - std::clamp(age / 0.25f, 0.0f, 1.0f), 3.0f);
 		look.Forward = Heading(caster.Facing);
-		look.Center = BodyBase(caster) + glm::vec3(0.0f, FireballHoldHeight + 0.04f * std::sin(m_Time * 2.7f + phase), 0.0f) + look.Forward * (FireballHoldReach + 0.6f * FireballBallRadius * look.Size * look.Grow)
-			+ glm::vec3(std::sin(m_Time * 61.0f + phase), std::sin(m_Time * 47.0f + 1.3f), std::cos(m_Time * 57.0f)) * (0.04f * shake);
+		look.Center = BodyBase(caster) + glm::vec3(0.0f, FireballHoldHeight + 0.04f * std::sin(m_Time * 2.7f + phase), 0.0f) + look.Forward * (FireballHoldReach + 0.6f * FireballBallRadius * look.Size * look.Grow);
 		look.Power = power;
-		look.Over = over;
-		look.Flash = power >= 1.0f ? std::exp(-over * ChargeCrackSeconds * 7.0f) : 0.0f;
+		look.Flash = fx && fx->FireballReady >= 0.0f ? std::exp(-fx->FireballReady * 7.0f) : 0.0f;
 		return look;
 	}
 
@@ -2613,11 +2607,12 @@ namespace Game
 		if (charging(entity))
 		{
 			fx.FireballAge = was && fx.FireballAge >= 0.0f ? fx.FireballAge + dt : 0.0f;
+			fx.FireballReady = entity.GetChargePower() < 1.0f ? -1.0f : fx.FireballReady >= 0.0f ? fx.FireballReady + dt : 0.0f;
 			if (!was)
 				return;
 			const float before = fx.Last.GetChargePower();
 			const float after = entity.GetChargePower();
-			const FireballLook look = ChargingFireball(entity, fx.FireballAge);
+			const FireballLook look = ChargingFireball(entity, &fx);
 			if (before < 1.0f && after >= 1.0f)
 			{
 				m_Effects->Burst(Fx::FireballReady, look.Center, up, 0.8f + 0.2f * look.Size);
@@ -2631,14 +2626,9 @@ namespace Game
 		}
 		if (was)
 		{
-			const FireballLook look = ChargingFireball(fx.Last, std::max(fx.FireballAge, 0.0f));
+			const FireballLook look = ChargingFireball(fx.Last, &fx);
 			const float scale = 0.6f + 0.4f * look.Size;
-			if (fx.Last.GetOvercharge() > 0.9f)
-			{
-				m_Effects->Burst(Fx::FireballSputter, look.Center, up, scale);
-				m_Effects->Burst(Fx::FireballRelease, look.Center, look.Forward, 0.7f * scale);
-			}
-			else if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
+			if (entity.Has(EntityFlags::Dashing) || entity.Has(EntityFlags::Stunned) || entity.Has(EntityFlags::Falling))
 				m_Effects->Burst(Fx::FireballSputter, look.Center, up, 0.5f * scale);
 			else if (look.Power < 0.35f)
 				m_Effects->Burst(Fx::FireBurst, look.Center, look.Forward, 0.5f);
@@ -2650,15 +2640,16 @@ namespace Game
 			}
 		}
 		fx.FireballAge = -1.0f;
+		fx.FireballReady = -1.0f;
 	}
 
 	void SessionState::DrawFireballCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
 	{
 		const auto fx = m_Fx.find(entity.NetId);
-		const FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? std::max(fx->second.FireballAge, 0.0f) : 0.0f);
+		const FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? &fx->second : nullptr);
 		DrawPurpleFireball(renderer, look, m_Time, entity.NetId);
 		const glm::vec3 color = FireballColor(look.Power);
-		DrawRuneCircle(renderer, { .Center = base, .Radius = (0.75f + 0.4f * look.Power) * look.Grow, .Color = color, .Intensity = 0.2f + 0.28f * look.Power + 0.12f * look.Flash, .Spin = 1.2f + 1.0f * look.Power + 2.5f * look.Over, .Progress = look.Power, .Appear = look.Grow, .Seed = entity.NetId });
+		DrawRuneCircle(renderer, { .Center = base, .Radius = (0.75f + 0.4f * look.Power) * look.Grow, .Color = color, .Intensity = 0.2f + 0.28f * look.Power + 0.12f * look.Flash, .Spin = 1.2f + 1.0f * look.Power, .Progress = look.Power, .Appear = look.Grow, .Seed = entity.NetId });
 		DrawGroundGlow(renderer, Ground(Vec2(look.Center.x, look.Center.z)), 0.8f + 0.9f * look.Power, color * (0.08f + 0.14f * look.Power + 0.1f * look.Flash), 1.0f);
 		if (entity.NetId != m_Client.GetPlayerNetId())
 			return;
@@ -4130,7 +4121,6 @@ namespace Game
 			}
 
 		float charge = 0.0f;
-		float overcharge = 0.0f;
 		glm::vec3 spell(1.0f);
 		bool outOfRange = false;
 		if (alive && self->Has(EntityFlags::Attacking) && self->Variant < uint8_t(AbilityId::Count))
@@ -4139,10 +4129,7 @@ namespace Game
 			spell = casting == AbilityId::PurpleFireball ? FireballColor(self->GetChargePower()) : SpellTint(casting);
 			spell /= std::max({ spell.r, spell.g, spell.b, 1e-3f });
 			if (IsChargedShot(casting))
-			{
 				charge = self->GetChargePower();
-				overcharge = self->GetOvercharge();
-			}
 			const AbilityDef& ability = GetAbility(casting);
 			outOfRange = ability.Kind == AbilityKind::Ground && !AimsFromPoint(casting) && m_AimDistance > ability.Range;
 		}
@@ -4178,8 +4165,7 @@ namespace Game
 
 		if (charging > 0.0f)
 		{
-			const float flicker = overcharge > 0.0f ? 0.5f + 0.5f * std::sin(ui.GetTime() * (14.0f + 30.0f * overcharge)) : 0.0f;
-			const UiColor fill = glm::mix(Lighten(WithAlpha(spell, 1.0f), 0.3f), Theme::Danger, flicker);
+			const UiColor fill = Lighten(WithAlpha(spell, 1.0f), 0.3f);
 			const float span = glm::two_pi<float>() * std::max(charge, 0.02f);
 			arc(direction, std::min(span + 0.1f, glm::two_pi<float>()), radius + 1.8f, 5.0f, WithAlpha(ink, charging));
 			arc(direction, span, radius + 0.8f, 3.0f, WithAlpha(fill, charging));

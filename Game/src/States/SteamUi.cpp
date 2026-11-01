@@ -20,7 +20,7 @@ namespace Game
 		constexpr float FriendRow = 48.0f;
 
 		constexpr UiIcon AchievementIcons[] = {
-			UiIcon::BurningEmbers, UiIcon::PointyHat, UiIcon::UnstableOrb, UiIcon::EnergyShield, UiIcon::SpearHook, UiIcon::Cycle, UiIcon::Meditation,
+			UiIcon::BurningEmbers, UiIcon::PointyHat, UiIcon::UnstableOrb, UiIcon::EnergyShield, UiIcon::SpearHook, UiIcon::Meditation,
 			UiIcon::BleedingHeart, UiIcon::Laurels, UiIcon::Upgrade, UiIcon::ScrollUnfurled, UiIcon::Dodge, UiIcon::StarSwirl, UiIcon::Eye,
 		};
 		static_assert(std::size(AchievementIcons) == size_t(Achievement::Count));

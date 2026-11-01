@@ -430,11 +430,6 @@ namespace Game
 		return span > ReadyEpsilon ? std::clamp((state.Charge - skill.CastTime) / span, 0.0f, 1.0f) : 1.0f;
 	}
 
-	float ChargeOver(const PlayerState& state, const SkillTraits& skill)
-	{
-		return std::clamp((state.Charge - skill.ChargeTime) / ChargeCrackSeconds, 0.0f, 1.0f);
-	}
-
 	Vec2 GetHookPoint(const PlayerState& state)
 	{
 		return state.RecastOrigin + state.RecastAim * std::min(state.RecastAge * GetAbility(AbilityId::ChainHook).ProjectileSpeed, state.RecastReach);
@@ -738,12 +733,11 @@ namespace Game
 				else if (IsCharged(skill))
 				{
 					state.CastTimer = std::max(state.CastTimer - dt, 0.0f);
-					state.Charge = std::min(state.Charge + dt, skill.ChargeTime + ChargeCrackSeconds);
-					const bool cracked = state.Charge >= skill.ChargeTime + ChargeCrackSeconds - ReadyEpsilon;
-					if (cracked || (state.CastTimer <= ReadyEpsilon && !input.IsDown(SlotButton(uint32_t(castingSlot)))))
+					state.Charge = std::min(state.Charge + dt, skill.ChargeTime + ChargeHoldSeconds);
+					const bool held = state.Charge >= skill.ChargeTime + ChargeHoldSeconds - ReadyEpsilon;
+					if (held || (state.CastTimer <= ReadyEpsilon && !input.IsDown(SlotButton(uint32_t(castingSlot)))))
 					{
-						actions.Charge = cracked ? ChargeCrackPower : ChargePower(state, skill);
-						actions.Cracked = cracked;
+						actions.Charge = ChargePower(state, skill);
 						Release(level, transform.Position, state, actions, traits, uint32_t(castingSlot), aim, input.AimDistance);
 					}
 				}

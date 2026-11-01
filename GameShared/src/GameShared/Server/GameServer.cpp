@@ -925,7 +925,7 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Attacking);
 					state.Variant = uint8_t(skill.Ability);
 					if (IsCharged(skill))
-						state.Charge = PackCharge(ChargePower(controller->State, skill), ChargeOver(controller->State, skill));
+						state.Charge = PackCharge(ChargePower(controller->State, skill));
 					if (IsGuard(skill))
 						state.Charge = PackGuard(GuardLeft(controller->State, controller->Traits), skill.Durability);
 					if (AimsFromPoint(skill.Ability))

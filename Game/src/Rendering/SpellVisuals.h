@@ -118,7 +118,6 @@ namespace Game
 		float Size = 1.0f;
 		float Grow = 1.0f;
 		float Power = 0.0f;
-		float Over = 0.0f;
 		float Flash = 0.0f;
 		float Ground = 0.0f;
 		bool Flying = false;
@@ -155,7 +154,6 @@ namespace Game
 		float Size = 1.0f;
 		float Grow = 1.0f;
 		float Power = 0.0f;
-		float Over = 0.0f;
 		float Flash = 0.0f;
 		bool Flying = false;
 	};

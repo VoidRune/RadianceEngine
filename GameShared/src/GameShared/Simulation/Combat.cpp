@@ -128,7 +128,6 @@ namespace Game
 			HitInfo hit{ projectile.Damage, owner, projectile.Source, projectile.CritChance, projectile.CritMultiplier, projectile.LifeSteal, projectile.Damages, projectile.Chill, projectile.Stun, projectile.PvpScale, projectile.Ability };
 			hit.Push = projectile.Push;
 			hit.PushDirection = projectile.Velocity;
-			hit.Swap = projectile.Swap;
 			hit.Slick = (projectile.Perks & PerkSlick) != 0;
 			hit.Returned = projectile.Returned;
 			return hit;
@@ -160,63 +159,6 @@ namespace Game
 			hit.PushOrigin = position;
 			hit.PushReach = SpearBurstRadius;
 			StrikeCircle(world, position, SpearBurstRadius, hit, projectile.Side, projectile.Rewind, { projectile.Hits.data(), projectile.HitCount });
-		}
-
-		void ResetHistory(World& world, Entity entity, Vec2 position)
-		{
-			if (MotionHistory* history = world.GetEntities().TryGet<MotionHistory>(entity))
-			{
-				history->Positions.fill(position);
-				history->FirstTick = world.GetTick() + 1;
-			}
-		}
-
-		bool SwapPlaces(World& world, Entity caster, Entity target)
-		{
-			EntityRegistry& entities = world.GetEntities();
-			Transform* from = entities.TryGet<Transform>(caster);
-			Transform* to = entities.TryGet<Transform>(target);
-			PlayerController* casterController = entities.TryGet<PlayerController>(caster);
-			PlayerController* targetController = entities.TryGet<PlayerController>(target);
-			Dummy* dummy = entities.TryGet<Dummy>(target);
-			if (caster == target || !from || !to || !casterController || (!targetController && !dummy) || !casterController->State.Alive)
-				return false;
-			std::swap(from->Position, to->Position);
-			if (targetController)
-				world.NoteSwap(targetController->PlayerId, casterController->PlayerId, to->Position);
-			for (PlayerController* controller : { casterController, targetController })
-				if (controller)
-				{
-					controller->State.Push = {};
-					controller->State.DashDistance = 0.0f;
-				}
-			if (dummy)
-			{
-				dummy->Push = {};
-				dummy->Idle = 0.0f;
-			}
-			if (targetController && world.GetMatch().HasPlayerCard(casterController->PlayerId, CardId::HeartSwap))
-				if (Health* mine = entities.TryGet<Health>(caster), *theirs = entities.TryGet<Health>(target); mine && theirs)
-				{
-					const float kept = float(mine->Current) / float(std::max(mine->Max, 1));
-					const float taken = float(theirs->Current) / float(std::max(theirs->Max, 1));
-					if (!world.IsDamageBrawl())
-					{
-						mine->Current = std::clamp(int32_t(std::lround(taken * float(mine->Max))), 1, mine->Max);
-						theirs->Current = std::clamp(int32_t(std::lround(kept * float(theirs->Max))), 1, theirs->Max);
-					}
-					else if (theirs->Current > mine->Current)
-					{
-						const int32_t stolen = std::min(HeartSwapSteal, (theirs->Current - mine->Current) / 2);
-						mine->Current = std::min(mine->Max, mine->Current + stolen);
-						theirs->Current = std::max(1, theirs->Current - stolen);
-					}
-				}
-			ResetHistory(world, caster, from->Position);
-			ResetHistory(world, target, to->Position);
-			world.SpawnEffect(AbilityId::Swap, from->Position, from->Facing, casterController->PlayerId, 0, 1.0f);
-			world.SpawnEffect(AbilityId::Swap, to->Position, to->Facing, casterController->PlayerId, 0, 1.0f);
-			return true;
 		}
 
 		Vec2 PushImpulse(const HitInfo& hit, Vec2 position)
@@ -251,11 +193,6 @@ namespace Game
 				world.PopBalloon(dummy, hit.Attacker);
 				return true;
 			}
-			if (hit.Swap)
-			{
-				SwapPlaces(world, hit.Source, target);
-				return true;
-			}
 			if (hit.Push == 0.0f)
 				return true;
 			const bool pull = hit.Mode == PushMode::Pull;
@@ -286,11 +223,6 @@ namespace Game
 			}
 			if (const Replicated* replicated = entities.TryGet<Replicated>(target); replicated && record)
 				world.RecordHit({ .Target = replicated->NetId, .Position = transform->Position, .OnPlayer = true, .Damages = hit.Damages, .Ability = hit.Ability });
-			if (hit.Swap)
-			{
-				SwapPlaces(world, hit.Source, target);
-				return true;
-			}
 			if (hit.Push == 0.0f || IsWarded(controller->State))
 				return true;
 			const float fraction = float(std::max(health->Current, 0)) / float(std::max(health->Max, 1));
@@ -346,7 +278,7 @@ namespace Game
 				world.RecordHit({ replicated->NetId, point, uint16_t(std::lround(absorbed)), false, true, hit.Damages, hit.Attacker, true });
 			if (wear <= left)
 			{
-				if (hit.Push != 0.0f && hit.Mode != PushMode::Pull && !hit.Swap)
+				if (hit.Push != 0.0f && hit.Mode != PushMode::Pull)
 				{
 					HitInfo brace = hit;
 					brace.Push *= HexShieldBrace;
@@ -764,39 +696,6 @@ namespace Game
 			if (HasLineOfFire(world.GetLevel(), context.Origin, position))
 				DealDamage(world, target.Handle, hit);
 		}
-	}
-
-	void DeflectProjectiles(World& world, const AbilityContext& context, float reach, float halfArc)
-	{
-		EntityRegistry& entities = world.GetEntities();
-		const float facing = AngleOf(context.Direction);
-		entities.Each<Projectile>([&](Entity entity, Projectile& projectile)
-		{
-			Transform* transform = entities.TryGet<Transform>(entity);
-			Replicated* replicated = entities.TryGet<Replicated>(entity);
-			if (!transform || !replicated || replicated->Owner == context.Owner || projectile.Source == context.Source)
-				return;
-			const Vec2 offset = transform->Position - context.Origin;
-			const float distance = Length(offset);
-			if (distance > reach + projectile.Radius || (distance > 0.3f && std::abs(AngleBetween(facing, AngleOf(offset))) > halfArc))
-				return;
-			const float speed = Length(projectile.Velocity);
-			Vec2 heading = Normalize(context.Direction);
-			if (const Transform* caster = entities.TryGet<Transform>(projectile.Source); caster && entities.Has<PlayerController>(projectile.Source))
-				if (const Vec2 toward = caster->Position - transform->Position; LengthSquared(toward) > 0.25f)
-					heading = Normalize(toward);
-			projectile.Velocity = heading * speed;
-			projectile.Lifetime = projectile.Span > 0.0f ? projectile.Span : GetProjectileLifetime(GetAbility(AbilityId(projectile.Ability)), speed);
-			CancelRecast(world, projectile.Source, AbilityId(projectile.Ability));
-			projectile.Source = context.Source;
-			projectile.Rewind = 0.0f;
-			projectile.Floor = LaunchFloor(world.GetLevel(), transform->Position, projectile.Floor);
-			projectile.Hits = {};
-			projectile.HitCount = 0;
-			transform->Facing = AngleOf(heading);
-			replicated->Owner = context.Owner;
-			replicated->Tag = 0;
-		});
 	}
 
 	void DropLoot(World& world, const EnemyDef& def, const Enemy& enemy, Vec2 position)

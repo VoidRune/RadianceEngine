@@ -32,16 +32,6 @@ namespace Game
 			StrikeArea(world, ability, damage, context);
 			world.SpawnEffect(ability, context, context.Origin, context.Tag);
 			const Vec2 axis = Normalize(context.Direction);
-			if (id == AbilityId::Gust && HasCard(context.Cards, CardId::LingeringGale))
-			{
-				const float calm = brawlDamage ? GaleDamagePush : 1.0f;
-				AbilityContext gale = context;
-				gale.DamageScale /= calm;
-				for (uint32_t pulse = 0; pulse < GalePulses; pulse++)
-					world.SpawnCardStrike(AbilityId::Gust, context.Origin + axis * ((GaleOffset + GaleDrift * float(pulse)) * context.AreaScale), AngleOf(axis), GaleFirstDelay + GaleInterval * float(pulse), GaleRadius * context.AreaScale, GalePush * calm * context.PushScale, PerkAlong, false, gale);
-			}
-			if (id == AbilityId::Gust && HasCard(context.Cards, CardId::DeflectingGale))
-				DeflectProjectiles(world, context, ability.Reach * context.AreaScale, ability.HalfArc);
 			if (id == AbilityId::GlacialEruption && HasCard(context.Cards, CardId::IceShrapnel))
 			{
 				AbilityContext shards = context;

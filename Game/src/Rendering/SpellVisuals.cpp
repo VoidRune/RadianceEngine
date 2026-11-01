@@ -824,12 +824,11 @@ namespace Game
 		const glm::vec3 level = glm::normalize(Up - forward * glm::dot(Up, forward));
 		const glm::vec3 across = glm::cross(forward, level);
 		const glm::vec3 up = level * std::cos(look.Roll) + across * std::sin(look.Roll);
-		const glm::vec3 side = glm::cross(forward, up);
 		const glm::vec3 origin = look.Center - forward * (0.1f * length);
 		const float pulse = 0.5f + 0.5f * std::sin(time * 9.0f + float(seed & 255u));
 		const float full = look.Power >= 0.999f ? 1.0f : 0.0f;
 		const float power = look.Power;
-		const float whiten = std::clamp(0.3f * look.Flash + 0.25f * look.Over * (0.6f + 0.4f * pulse), 0.0f, 0.7f);
+		const float whiten = std::min(0.3f * look.Flash, 0.7f);
 		const float emission = look.Flying ? 0.16f : 0.06f + 0.1f * power + 0.05f * full * pulse + 0.15f * look.Flash;
 		const glm::vec4 rim(glm::vec3(0.08f, 0.3f, 0.7f) * (0.6f + 0.6f * power + 0.6f * look.Flash), 1.0f);
 		const glm::vec4 tint(1.0f, 1.0f, 1.0f, whiten);
@@ -842,24 +841,9 @@ namespace Game
 		DrawGlow(renderer, look.Center, 0.5f * length, glm::vec3(0.02f, 0.06f, 0.14f) * (0.6f + 0.8f * power + 1.0f * look.Flash), 0.3f);
 		DrawGlow(renderer, tip, (0.06f + 0.05f * power + 0.04f * full * pulse) * look.Size, glm::vec3(0.5f, 0.75f, 1.1f) * (0.4f + 0.4f * power), 0.1f);
 		if (!look.Flying)
-			DrawImplosion(renderer, look.Center, (0.7f + 0.5f * power) * look.Grow, 0.03f + 0.08f * power + 0.03f * look.Over, time * (0.8f + 0.7f * power) + float(seed % 61u) * 0.37f);
+			DrawImplosion(renderer, look.Center, (0.7f + 0.5f * power) * look.Grow, 0.03f + 0.08f * power, time * (0.8f + 0.7f * power) + float(seed % 61u) * 0.37f);
 		if (look.Flash > 0.0f)
 			DrawStar(renderer, look.Center, 0.7f * length * look.Flash, glm::vec3(0.7f, 1.0f, 1.4f) * look.Flash, time * 0.7f);
-		if (look.Over > 0.0f)
-		{
-			const uint32_t frame = uint32_t(time * 24.0f);
-			const uint32_t cracks = 1u + uint32_t(look.Over * 6.0f);
-			for (uint32_t k = 0; k < cracks; k++)
-			{
-				const uint32_t key = Mix(seed + k * 31u, frame);
-				const float along = -0.3f + 0.8f * Unit(key);
-				const float around = 6.2832f * Unit(Mix(key, 7u));
-				ParticleSprite crack = Sprite(ParticleShape::Lightning, origin + forward * (along * length) + (up * std::sin(around) + side * std::cos(around)) * (0.06f * length), 0.13f * length, glm::vec3(0.8f, 1.0f, 1.3f) * (0.3f + 0.7f * look.Over));
-				crack.Rotation = 6.2832f * Unit(Mix(key, 13u));
-				crack.Seed = key;
-				renderer.DrawSprite(crack);
-			}
-		}
 	}
 
 	void DrawObsidianBlade(WorldRenderer& renderer, const SpellMeshes& meshes, const ObsidianLook& look, float time, uint32_t seed)
@@ -933,8 +917,8 @@ namespace Game
 			return;
 		const float violet = FireballViolet(look.Power);
 		const float full = look.Power >= 0.999f ? 1.0f : 0.0f;
-		const float pulse = 0.5f + 0.5f * std::sin(time * (7.0f + 9.0f * look.Over) + float(seed & 255u));
-		const float wobble = 1.0f + 0.04f * pulse + 0.08f * look.Over * std::sin(time * 37.0f + float(seed & 63u));
+		const float pulse = 0.5f + 0.5f * std::sin(time * 7.0f + float(seed & 255u));
+		const float wobble = 1.0f + 0.04f * pulse;
 		const float energy = 0.8f + 0.2f * look.Power + 0.12f * full * pulse;
 		const glm::vec3 halo = glm::mix(glm::vec3(0.5f, 0.15f, 0.03f), glm::vec3(0.28f, 0.05f, 0.6f), violet);
 		const glm::vec3 outer = glm::mix(glm::vec3(0.42f, 0.09f, 0.02f), glm::vec3(0.12f, 0.01f, 0.3f), violet);
@@ -986,13 +970,13 @@ namespace Game
 		shell.Additive = 0.12f;
 		shell.Emission = 0.25f;
 		shell.Softness = 0.15f;
-		shell.Params = glm::vec4(0.42f, 1.3f + 1.2f * look.Over, 0.7f, 0.85f + 0.15f * look.Power);
+		shell.Params = glm::vec4(0.42f, 1.3f, 0.7f, 0.85f + 0.15f * look.Power);
 		shell.Seed = seed;
 		renderer.DrawSprite(shell);
 		ParticleSprite flames = Sprite(ParticleShape::Inferno, look.Center + lag * 0.5f, radius * 1.25f * wobble, mid * energy);
 		flames.Emission = 0.35f;
 		flames.Softness = 0.15f;
-		flames.Params = glm::vec4(0.52f, 2.0f + 1.5f * look.Over, -0.95f, 0.7f);
+		flames.Params = glm::vec4(0.52f, 2.0f, -0.95f, 0.7f);
 		flames.Seed = seed * 7u + 3u;
 		renderer.DrawSprite(flames);
 		ParticleSprite ball = Sprite(ParticleShape::Orb, look.Center, radius * 0.8f, core * (0.85f + 0.15f * pulse));
@@ -1003,7 +987,7 @@ namespace Game
 		heat.Softness = 0.15f;
 		heat.Emission = 0.4f;
 		renderer.DrawSprite(heat);
-		const float crackle = look.Flying ? 0.0f : std::max(0.45f * full, look.Over);
+		const float crackle = look.Flying ? 0.0f : 0.45f * full;
 		if (crackle > 0.0f)
 		{
 			const uint32_t frame = uint32_t(time * 20.0f);
@@ -1751,22 +1735,6 @@ namespace Game
 		const glm::vec3 heart = glm::mix(owner, glm::vec3(1.0f), 0.3f) * 1.7f;
 		switch (ability)
 		{
-		case AbilityId::Swap:
-		{
-			DrawGlow(renderer, center, 0.6f, { 0.24f, 0.1f, 0.38f });
-			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.2f, { 1.3f, 0.65f, 1.8f });
-			core.Seed = seed;
-			renderer.DrawSprite(core);
-			for (uint32_t i = 0; i < 2; i++)
-			{
-				const float angle = time * 7.0f + float(i) * 3.1416f;
-				DrawStar(renderer, center + Heading(angle) * 0.32f + Up * (0.08f * std::sin(time * 9.0f + float(i))), 0.12f, { 1.5f, 0.85f, 2.0f }, angle);
-			}
-			renderer.DrawSprite(RingSprite(center, 0.3f, 0.03f, marked ? owner * 1.3f : glm::vec3(0.85f, 0.42f, 1.25f)));
-			if (marked)
-				DrawGlow(renderer, center, 0.1f, heart);
-			break;
-		}
 		case AbilityId::EmberBolt:
 		case AbilityId::Fireball:
 		{

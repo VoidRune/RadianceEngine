@@ -523,8 +523,6 @@ namespace Game
 			return { Anim::CastHurl };
 		case AbilityId::ChainHook:
 			return { Anim::CastLash };
-		case AbilityId::Swap:
-			return { Anim::CastBackhand };
 		case AbilityId::GravityWell:
 			return { Anim::CastGrasp };
 		case AbilityId::Firebomb:
@@ -535,8 +533,6 @@ namespace Game
 		case AbilityId::Blink:
 		case AbilityId::Warp:
 			return { Anim::CastBlink };
-		case AbilityId::Gust:
-			return { Anim::CastPush };
 		case AbilityId::Meteor:
 		case AbilityId::Comet:
 			return { Anim::CastSummon };

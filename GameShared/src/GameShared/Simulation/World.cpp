@@ -1007,7 +1007,6 @@ namespace Game
 			.Stun = ability.Stun,
 			.PvpScale = context.PvpScale,
 			.Push = push * context.PushScale * (seeking ? SeekerPush : 1.0f),
-			.Swap = ability.Swap,
 			.Damages = ability.Damages,
 			.Ability = uint8_t(ability.Id),
 			.Source = context.Source,

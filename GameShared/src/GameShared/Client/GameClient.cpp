@@ -1102,7 +1102,7 @@ namespace Game
 			self.Flags |= uint16_t(EntityFlags::Attacking);
 			self.Variant = uint8_t(skill.Ability);
 			if (IsCharged(skill))
-				self.Charge = PackCharge(ChargePower(m_PredictedState, skill), ChargeOver(m_PredictedState, skill));
+				self.Charge = PackCharge(ChargePower(m_PredictedState, skill));
 			if (IsGuard(skill))
 				self.Charge = PackGuard(GuardLeft(m_PredictedState, GetTraits()), skill.Durability);
 			if (AimsFromPoint(skill.Ability))

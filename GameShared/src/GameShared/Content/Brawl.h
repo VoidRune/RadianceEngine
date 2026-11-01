@@ -30,13 +30,11 @@ namespace Game
 
 	inline constexpr AbilityId BrawlBasic = AbilityId::EmberBolt;
 	inline constexpr AbilityId BrawlSpellPool[] = {
-		AbilityId::Gust,
 		AbilityId::Comet,
 		AbilityId::Warp,
 		AbilityId::GlacialNova,
 		AbilityId::GravityWell,
 		AbilityId::ArcLightning,
-		AbilityId::Swap,
 		AbilityId::DiamondWard,
 		AbilityId::FrostSpear,
 		AbilityId::ChainHook,
@@ -47,7 +45,7 @@ namespace Game
 		AbilityId::PurpleFireball,
 		AbilityId::HexShield,
 	};
-	inline constexpr BrawlSpells DefaultBrawlSpells = { AbilityId::Gust, AbilityId::Warp, AbilityId::Comet };
+	inline constexpr BrawlSpells DefaultBrawlSpells = { AbilityId::ArcLightning, AbilityId::Comet, AbilityId::GlacialNova };
 
 	inline bool IsBrawlSpell(AbilityId id)
 	{
@@ -181,11 +179,10 @@ namespace Game
 	{
 		return IsNovaBrittle(age) ? FrostNovaBrittlePush : NovaEruptionScale(age);
 	}
-	inline constexpr float ChargeCrackSeconds = 1.0f;
-	inline constexpr float ChargeCrackPower = 0.55f;
+	inline constexpr float ChargeHoldSeconds = 1.0f;
 	inline constexpr float SpearFullSpeed = 23.0f;
 	inline constexpr float SpearFullRange = 7.5f;
-	inline constexpr float SpearFullRadius = 0.34f;
+	inline constexpr float SpearFullRadius = 0.38f;
 	inline constexpr float SpearFullPush = 24.0f;
 	inline constexpr int32_t SpearFullDamage = 22;
 	inline constexpr float SpearFullChill = 2.2f;
@@ -197,7 +194,7 @@ namespace Game
 	inline constexpr float SpearBurstChill = 1.0f;
 	inline constexpr float FireballFullSpeed = 12.0f;
 	inline constexpr float FireballFullRange = 7.0f;
-	inline constexpr float FireballFullRadius = 0.5f;
+	inline constexpr float FireballFullRadius = 0.56f;
 	inline constexpr float FireballFullBlast = 2.6f;
 	inline constexpr float FireballFullPush = 32.0f;
 	inline constexpr int32_t FireballFullDamage = 26;

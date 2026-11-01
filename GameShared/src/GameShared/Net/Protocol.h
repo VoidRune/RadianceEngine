@@ -22,7 +22,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 50;
+	constexpr uint32_t ProtocolVersion = 53;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -278,17 +278,12 @@ namespace Game
 		bool Guarding() const { return Kind == EntityKind::Player && Has(EntityFlags::Attacking) && Variant == uint8_t(AbilityId::HexShield) && !Has(EntityFlags::Dead); }
 		float GetGuard() const { return float(Charge) / 255.0f; }
 		float GetScale() const { return float(Scale) / 16.0f; }
-		float GetChargePower() const { return float(std::min(Charge, ChargeFull)) / float(ChargeFull); }
-		float GetOvercharge() const { return Charge > ChargeFull ? float(Charge - ChargeFull) / float(255 - ChargeFull) : 0.0f; }
-
-		static constexpr uint8_t ChargeFull = 200;
+		float GetChargePower() const { return float(Charge) / 255.0f; }
 	};
 
-	inline uint8_t PackCharge(float power, float over)
+	inline uint8_t PackCharge(float power)
 	{
-		if (power < 1.0f)
-			return uint8_t(std::lround(std::clamp(power, 0.0f, 1.0f) * float(EntityState::ChargeFull)));
-		return uint8_t(EntityState::ChargeFull + std::lround(std::clamp(over, 0.0f, 1.0f) * float(255 - EntityState::ChargeFull)));
+		return uint8_t(std::lround(std::clamp(power, 0.0f, 1.0f) * 255.0f));
 	}
 
 	inline uint8_t PackGuard(float left, float durability)
