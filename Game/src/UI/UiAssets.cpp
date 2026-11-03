@@ -347,6 +347,7 @@ namespace Game
 		case StationKind::ProvingGrounds: return UiIcon::CrossedSwords;
 		case StationKind::WishingVoid: return UiIcon::Coins;
 		case StationKind::Chess: return UiIcon::ChessKnight;
+		case StationKind::ShardRift: return UiIcon::MagicPortal;
 		default: return UiIcon::Chest;
 		}
 	}

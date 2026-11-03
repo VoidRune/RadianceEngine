@@ -152,6 +152,13 @@ namespace Game
 				set(Fx::WindStreak, {
 					{ .Kind = K::Wind, .Count = 1.0f, .Shape = SpawnShape::Disc, .Aimed = true, .Radius = 13.0f, .Cone = 0.06f, .Speed = { 6.0f, 9.5f }, .Life = { 0.7f, 1.2f }, .Size = { 0.025f, 0.045f } },
 				});
+				set(Fx::StormCrackle, {
+					{ .Kind = K::Lightning, .Count = 55.0f, .Radius = 0.42f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = FullSphere, .Speed = { 1.5f, 4.0f }, .Life = { 0.08f, 0.2f }, .Size = { 0.02f, 0.035f } },
+					{ .Kind = K::Spark, .Count = 10.0f, .Radius = 0.3f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.9f, .Speed = { 1.0f, 3.0f }, .Life = { 0.2f, 0.45f }, .Size = { 0.015f, 0.025f }, .Tint = { 0.55f, 0.7f, 1.0f } },
+				});
+				set(Fx::Spindrift, {
+					{ .Kind = K::Snow, .Count = 1.0f, .Shape = SpawnShape::Disc, .Aimed = true, .Radius = 12.0f, .Cone = 0.25f, .Speed = { 2.5f, 5.5f }, .Life = { 1.4f, 2.4f }, .Size = { 0.018f, 0.04f } },
+				});
 				set(Fx::Rain, {
 					{ .Kind = K::Rain, .Count = 1.0f, .Shape = SpawnShape::Disc, .Aimed = true, .Radius = 14.0f, .Cone = 0.04f, .Speed = { 13.0f, 17.0f }, .Life = { 0.5f, 0.7f }, .Size = { 0.012f, 0.02f } },
 				});

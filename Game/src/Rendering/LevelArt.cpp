@@ -319,6 +319,8 @@ namespace Game
 				return { { { { .Mesh = "Summit/StormSpire_A" } } } };
 			case PropId::Monolith:
 				return { { { { .Mesh = "Summit/Monolith_A" } }, { { .Mesh = "Summit/Monolith_B" } }, { { .Mesh = "Summit/Monolith_C" } } } };
+			case PropId::SummitBoulder:
+				return { { { { .Mesh = "Summit/Boulder_A" } }, { { .Mesh = "Summit/Boulder_B" } } }, true };
 			case PropId::ObsidianCluster:
 			{
 				const glm::vec3 sink(0.0f, LavaSurface - ObsidianWaterline * ObsidianScale, 0.0f);
@@ -916,20 +918,181 @@ namespace Game
 		constexpr float MountainWallColumn = 0.24f;
 		constexpr float MountainBury = 0.1f;
 		constexpr int32_t MountainChunk = 32;
+		constexpr int32_t MountainFine = 2;
 		constexpr size_t PeakSnow = SplatGrass;
 		constexpr size_t PeakDirt = SplatDirt;
 		constexpr size_t PeakRock = SplatRock;
 		constexpr size_t PeakGrass = SplatSand;
+		constexpr float ChasmFloor = -19.0f;
+		constexpr uint32_t PeakCrystalShapes = 3;
+
+		std::string PeakCrystalName(uint32_t variant)
+		{
+			return (variant < PeakCrystalShapes ? "PeakCrystalStorm" : "PeakCrystalAmethyst") + std::to_string(variant % PeakCrystalShapes);
+		}
+
+		struct Scorch
+		{
+			Vec2 Center;
+			float Radius = 1.0f;
+			int32_t Salt = 0;
+		};
+
+		struct Fissure
+		{
+			std::vector<Vec2> Points;
+			std::vector<float> Width;
+			bool Glow = false;
+			float Reach = 0.0f;
+		};
+
+		float ScorchOf(const std::vector<Scorch>& scorches, Vec2 point)
+		{
+			float burn = 0.0f;
+			for (const Scorch& scorch : scorches)
+			{
+				const Vec2 offset = point - scorch.Center;
+				const float distance = Length(offset);
+				if (distance > scorch.Radius * 1.3f || distance < 1e-4f)
+					continue;
+				const Vec2 direction = offset / distance;
+				const float reach = scorch.Radius * (0.5f + 0.5f * ValueNoise(direction * 1.7f + Vec2(float(scorch.Salt) * 3.1f, 0.7f), 1471u) + 0.3f * (ValueNoise(direction * 5.3f + Vec2(1.9f, float(scorch.Salt)), 1473u) - 0.5f));
+				burn = std::max(burn, 1.0f - Ease((distance / std::max(reach, 0.1f) - 0.2f) / 0.8f));
+			}
+			return burn;
+		}
+
+		float ChasmDepth(const Plateau& peak, Vec2 point)
+		{
+			float deepest = 0.0f;
+			for (const Plateau::Chasm& chasm : peak.Chasms)
+			{
+				if (LengthSquared(point - Lerp(chasm.Spine.front(), chasm.Spine.back(), 0.5f)) > std::pow(0.5f * Length(chasm.Spine.back() - chasm.Spine.front()) + 2.5f, 2.0f))
+					continue;
+				float arc = 0.0f;
+				for (size_t k = 0; k + 1 < chasm.Spine.size(); k++)
+				{
+					const Vec2 a = chasm.Spine[k];
+					const Vec2 along = chasm.Spine[k + 1] - a;
+					const float length = Length(along);
+					const float t = std::clamp(Dot(point - a, along) / std::max(length * length, 1e-8f), 0.0f, 1.0f);
+					const float gap = Length(point - a - along * t) - std::lerp(chasm.Half[k], chasm.Half[k + 1], t);
+					deepest = std::max(deepest, Ease((0.35f - gap) / 0.7f) * Ease((arc + length * t - 0.9f) / 1.6f));
+					arc += length;
+				}
+			}
+			return deepest;
+		}
+
+		uint32_t CragSplat(const glm::vec3& point, const glm::vec3& normal)
+		{
+			const Relief relief = RockRelief(point);
+			std::array<float, 4> weights{};
+			weights[PeakSnow] = Ease((normal.y - 0.5f) / 0.18f) * (0.55f + 0.45f * ValueNoise3(point * 0.9f, 977u));
+			weights[PeakDirt] = (1.0f - weights[PeakSnow]) * 0.3f * relief.Cavity;
+			weights[PeakRock] = std::max(1.0f - weights[PeakSnow] - weights[PeakDirt], 0.0f);
+			return PackSplat(weights, 0.92f * (0.85f + 0.3f * ValueNoise3(point * 0.6f, 979u)));
+		}
+
+		float RimJag(Vec2 point)
+		{
+			return 0.15f * (2.0f * Fbm(point * 0.85f, 1491u, 2) - 1.0f) + 0.07f * (2.0f * Fbm(point * 2.6f, 1493u, 2) - 1.0f);
+		}
+
+		float Shingles(Vec2 point)
+		{
+			constexpr float Cell = 1.15f;
+			const Vec2 scaled = point / Cell;
+			const int32_t cx = int32_t(std::floor(scaled.x));
+			const int32_t cy = int32_t(std::floor(scaled.y));
+			float nearest = 1e9f;
+			int32_t ox = cx;
+			int32_t oy = cy;
+			Vec2 feature = scaled;
+			for (int32_t dy = -1; dy <= 1; dy++)
+				for (int32_t dx = -1; dx <= 1; dx++)
+				{
+					const Vec2 spot(float(cx + dx) + Unit(cx + dx, cy + dy, 1541u), float(cy + dy) + Unit(cx + dx, cy + dy, 1542u));
+					if (const float distance = LengthSquared(scaled - spot); distance < nearest)
+					{
+						nearest = distance;
+						ox = cx + dx;
+						oy = cy + dy;
+						feature = spot;
+					}
+				}
+			const Vec2 bedding = FromAngle(TwoPi * ValueNoise(point * 0.05f, 1543u)) * 0.085f;
+			const Vec2 jitter = Vec2(Unit(ox, oy, 1544u) - 0.5f, Unit(ox, oy, 1545u) - 0.5f) * 0.12f;
+			return Dot(bedding + jitter, point - feature * Cell) + 0.03f * (Unit(ox, oy, 1546u) - 0.5f);
+		}
+
+		float CliffRelief(const glm::vec3& point)
+		{
+			const glm::vec3 scaled = point * glm::vec3(0.62f, 0.45f, 0.62f);
+			const glm::ivec3 cell(glm::floor(scaled));
+			float nearest = 1e9f;
+			float second = 1e9f;
+			glm::ivec3 owner(0);
+			glm::vec3 feature(0.0f);
+			for (int32_t dz = -1; dz <= 1; dz++)
+				for (int32_t dy = -1; dy <= 1; dy++)
+					for (int32_t dx = -1; dx <= 1; dx++)
+					{
+						const glm::ivec3 id = cell + glm::ivec3(dx, dy, dz);
+						const uint32_t h = Hash(id.x, id.z, 1501u + uint32_t(id.y) * 2654435761u);
+						const glm::vec3 spot = glm::vec3(id) + glm::vec3(float(h & 1023u), float((h >> 10) & 1023u), float((h >> 20) & 1023u)) / 1023.0f;
+						const float distance = glm::dot(scaled - spot, scaled - spot);
+						if (distance < nearest)
+						{
+							second = nearest;
+							nearest = distance;
+							owner = id;
+							feature = spot;
+						}
+						else if (distance < second)
+							second = distance;
+					}
+			const float border = std::sqrt(second) - std::sqrt(nearest);
+			const uint32_t h = Hash(owner.x, owner.z, 1507u + uint32_t(owner.y) * 2654435761u);
+			const glm::vec3 tilt = glm::vec3(float(h & 1023u), float((h >> 10) & 1023u), float((h >> 20) & 1023u)) / 1023.0f - 0.5f;
+			const float block = 0.5f * (Unit(owner.x, owner.z, 1511u + uint32_t(owner.y) * 2654435761u) - 0.5f) + 0.45f * glm::dot(tilt, scaled - feature);
+			const float layer = point.y * 0.55f + 0.9f * ValueNoise3(point * 0.25f, 1517u);
+			const float strata = Ease((layer - std::floor(layer) - 0.7f) / 0.22f);
+			const float lumps = 2.0f * ValueNoise3(point * 1.5f + glm::vec3(2.3f, 0.0f, 5.1f), 1519u) - 1.0f;
+			const float buttress = 2.0f * ValueNoise3(point * glm::vec3(0.16f, 0.07f, 0.16f), 1523u) - 1.0f;
+			return 1.1f * block + 0.22f * strata + 0.07f * lumps + 0.75f * buttress - 0.16f * (1.0f - Ease(border / 0.09f));
+		}
+
+		struct PeakCliff
+		{
+			float Amplitude = 1.0f;
+
+			glm::vec3 operator()(Vec2 base, Vec2 outward, float top, float bottom, float t) const
+			{
+				const float y = std::lerp(top, bottom, t);
+				const glm::vec3 point(base.x, y, base.y);
+				const float below = top - y;
+				const float roll = 0.12f * Ease(below / 0.12f) * (1.0f - Ease((below - 0.2f) / 0.5f)) * (0.5f + ValueNoise3(point * 0.8f, 1527u));
+				const float push = std::clamp(CliffRelief(point) * Amplitude, -0.15f - 0.75f * Ease(below / 1.5f), 0.12f + 1.2f * Ease(below / 2.0f)) * Ease(below / 0.4f) + roll;
+				return point + glm::vec3(outward.x, 0.0f, outward.y) * push;
+			}
+		};
 
 		struct MountainSurface
 		{
 			const PeakRelief& Relief;
 			const Plateau& Peak;
+			const std::vector<Scorch>* Scorches = nullptr;
 
 			Vec2 Downhill(Vec2 point) const
 			{
 				const Vec2 rise = Peak.Gradient(Peak.Rim, point);
 				return LengthSquared(rise) > 1e-10f ? Normalize(rise) * -1.0f : Normalize(point - Peak.Center);
+			}
+
+			float RenderRim(Vec2 point) const
+			{
+				return Peak.RimDistance(point) + RimJag(point);
 			}
 
 			float Flank(Vec2 point) const
@@ -939,13 +1102,60 @@ namespace Game
 				const glm::vec3 radial(away.x * 4.5f, d * 0.11f, away.y * 4.5f);
 				const float ridge = 1.0f - std::abs(1.4f * ValueNoise3(radial, 709u) + 0.6f * ValueNoise3(radial * 2.1f, 711u) - 1.0f);
 				const float rough = Fbm(point * 0.45f, 719u, 3) - 0.5f;
-				const float drop = 2.6f + 1.4f * Fbm(point * 0.17f, 703u, 2);
-				return -drop - d * (1.8f + 0.55f * Fbm(point * 0.11f, 727u, 2)) - 0.045f * d * d + ridge * std::min(d, 9.0f) * 0.45f + rough * std::min(d * 0.6f, 1.4f) + (Crags(point) - 0.5f) * 1.3f * Ease(d / 2.5f);
+				const float drop = 15.0f + 5.0f * Fbm(point * 0.17f, 703u, 2);
+				const float flank = -drop - d * (3.5f + 0.8f * Fbm(point * 0.11f, 727u, 2)) - 0.3f * d * d + ridge * std::min(d, 9.0f) * 0.45f + rough * std::min(d * 0.6f, 1.4f) + (Crags(point) - 0.5f) * 1.3f * Ease(d / 2.5f);
+				if (Peak.Chasms.empty())
+					return flank;
+				return std::lerp(flank, std::min(flank, ChasmFloor + 4.0f * (Fbm(point * 0.4f, 733u, 2) - 0.5f)), ChasmDepth(Peak, point));
+			}
+
+			float SnowCover(Vec2 point) const
+			{
+				const float rim = RenderRim(point);
+				const float ritual = Length(point - Peak.Center) - Peak.Ritual;
+				const float patch = 0.12f + 0.88f * Ease((Fbm(point * 0.6f, 1533u, 2) - 0.34f) / 0.26f);
+				const float lip = 1.0f - Ease((rim - 0.12f) / 0.38f);
+				const float brink = 1.0f - Ease((rim - 0.35f) / 1.1f);
+				const float hollow = Relief.Hollow(point);
+				const float burn = Scorches ? ScorchOf(*Scorches, point) : 0.0f;
+				const float tongue = 1.0f - Ease((rim - 0.1f - 1.5f * std::pow(Fbm(point * 0.32f, 917u, 3), 2.5f)) / 0.25f);
+				float snow = Ease((hollow * (0.4f + 0.9f * Fbm(point * 0.5f, 923u, 2)) - 0.55f) / 0.25f);
+				snow = std::max(snow, Ease((Fbm(point * 0.17f, 919u, 3) - 0.78f) / 0.14f));
+				return std::max(snow * (1.0f - brink) * Ease((ritual - 0.6f) / 0.8f), std::max(lip, 0.92f * tongue) * patch) * (1.0f - burn);
+			}
+
+			float SnowLift(Vec2 point, float snow) const
+			{
+				if (snow <= 0.01f)
+					return 0.0f;
+				const float lumps = Ease((Fbm(point * 1.7f, 1531u, 2) - 0.25f) / 0.6f);
+				const float cornice = 1.0f - Ease((RenderRim(point) - 0.05f) / 0.6f);
+				return snow * snow * (0.03f + 0.09f * lumps + 0.07f * cornice * lumps);
+			}
+
+			float RiserGap(Vec2 point) const
+			{
+				const Vec2 offset = point - Peak.Center;
+				const float r = Length(offset);
+				float gap = 1e9f;
+				for (const PeakRelief::Shelf& shelf : Relief.GetShelves())
+				{
+					const float off = std::remainder(AngleOf(offset) - shelf.Angle, TwoPi);
+					if (std::abs(off) > 0.5f * shelf.Span + 0.6f / std::max(r, 1.0f))
+						continue;
+					for (int32_t step = 0; step < shelf.Steps; step++)
+						gap = std::min(gap, std::abs(r - PeakRelief::Edge(shelf, step, shelf.Angle + off)));
+				}
+				return gap;
 			}
 
 			float Height(Vec2 point, bool top) const
 			{
-				return top ? Relief.Height(point) : Flank(point);
+				if (!top)
+					return Flank(point);
+				const float snow = SnowCover(point);
+				const float calm = Ease((Length(point - Peak.Center) - Peak.Ritual - 0.35f) / 0.6f) * Ease((RiserGap(point) - 0.45f) / 0.4f) * (1.0f - snow);
+				return Relief.Height(point) + SnowLift(point, snow) + (calm > 0.0f ? Shingles(point) * calm : 0.0f);
 			}
 
 			glm::vec3 Normal(Vec2 point, bool top) const
@@ -958,37 +1168,32 @@ namespace Game
 
 			uint32_t TopSplat(Vec2 point, const glm::vec3& normal) const
 			{
-				const float rim = Peak.RimDistance(point);
-				const float ritual = Length(point - Peak.Center) - Peak.Ritual;
+				const float rim = RenderRim(point);
 				const float lip = 1.0f - Ease((rim - 0.12f) / 0.38f);
 				const float brink = 1.0f - Ease((rim - 0.35f) / 1.1f);
 				const float hollow = Relief.Hollow(point);
-				const float scree = Relief.Scree(point) * Ease((Fbm(point * 0.6f, 931u, 2) - 0.3f) / 0.3f);
-				float snow = Ease((hollow * (0.4f + 0.9f * Fbm(point * 0.5f, 923u, 2)) - 0.5f) / 0.25f);
-				snow = std::max(snow, Ease((Fbm(point * 0.17f, 919u, 3) - 0.74f) / 0.16f));
-				snow = std::max(snow * (1.0f - brink) * Ease((ritual - 0.6f) / 0.8f), lip);
-				const float grass = Ease((Fbm(point * 0.22f, 913u, 3) - 0.46f) / 0.24f) * (1.0f - brink) * (1.0f - scree) * Ease((ritual - 1.5f) / 2.0f);
-				const float rock = std::max({ Ease((Fbm(point * 0.3f, 929u, 3) - 0.64f) / 0.14f), 0.85f * brink, Ease((glm::length(glm::vec2(normal.x, normal.z)) - 0.3f) / 0.2f) }) * (1.0f - 0.6f * scree);
+				const float seam = Relief.Seam(point);
+				const float burn = Scorches ? ScorchOf(*Scorches, point) : 0.0f;
+				const float scree = Relief.Scree(point) * Ease((Fbm(point * 0.55f, 931u, 2) - 0.4f) / 0.22f) * (1.0f - burn);
+				const float snow = SnowCover(point);
+				const float steep = Ease((glm::length(glm::vec2(normal.x, normal.z)) - 0.2f) / 0.22f);
 				std::array<float, 4> weights{};
 				weights[PeakSnow] = snow;
-				weights[PeakGrass] = grass * (1.0f - snow);
-				weights[PeakRock] = rock * (1.0f - snow) * (1.0f - 0.5f * weights[PeakGrass]);
-				weights[PeakDirt] = std::max(1.0f - weights[PeakSnow] - weights[PeakGrass] - weights[PeakRock], 0.0f);
-				const float total = weights[0] + weights[1] + weights[2] + weights[3];
-				for (float& weight : weights)
-					weight /= std::max(total, 1e-4f);
-				const float shade = (0.9f + 0.16f * (Fbm(point * 0.21f, 941u, 2) - 0.5f)) * (1.0f + 0.15f * brink * (1.0f - lip)) * (1.0f - 0.12f * hollow) * (1.0f - 0.14f * scree);
+				weights[PeakDirt] = std::max(scree, 0.6f * steep) * (1.0f - snow);
+				weights[PeakRock] = std::max(1.0f - weights[PeakSnow] - weights[PeakDirt], 0.0f);
+				const float shade = (0.84f + 0.2f * (Fbm(point * 0.21f, 941u, 2) - 0.5f)) * (1.0f + 0.12f * brink * (1.0f - lip)) * (1.0f - 0.12f * hollow) * (1.0f - 0.1f * scree) * (1.0f - 0.55f * seam * (1.0f - snow)) * (1.0f - 0.72f * burn) * (1.0f - 0.45f * Relief.StepShadow(point)) * (1.0f - 0.4f * steep * (1.0f - snow));
 				return PackSplat(weights, shade);
 			}
 
 			uint32_t WallSplat(const glm::vec3& point, const glm::vec3& normal) const
 			{
-				const auto relief = RockRelief(point);
+				const float relief = CliffRelief(point);
+				const float cavity = Ease(-relief / 0.5f);
 				std::array<float, 4> weights{};
-				weights[PeakSnow] = Ease((normal.y - 0.62f) / 0.2f) * (0.4f + 0.6f * ValueNoise3(point * 0.9f, 963u));
-				weights[PeakDirt] = (1.0f - weights[PeakSnow]) * 0.55f * relief.Cavity;
+				weights[PeakSnow] = Ease((normal.y - 0.55f) / 0.2f) * (0.45f + 0.55f * ValueNoise3(point * 0.9f, 963u));
+				weights[PeakDirt] = (1.0f - weights[PeakSnow]) * 0.5f * cavity;
 				weights[PeakRock] = std::max(1.0f - weights[PeakSnow] - weights[PeakDirt], 0.0f);
-				const float shade = 0.72f * (1.0f - 0.5f * relief.Cavity) * (0.82f + 0.36f * ValueNoise3(point * 0.7f, 967u)) * (0.85f + 0.3f * Ease(relief.Offset / 0.25f + 0.5f));
+				const float shade = 0.78f * (1.0f - 0.5f * cavity) * (0.82f + 0.36f * ValueNoise3(point * 0.7f, 967u)) * (0.8f + 0.35f * Ease(relief / 0.6f + 0.5f));
 				return PackSplat(weights, shade);
 			}
 
@@ -1003,27 +1208,17 @@ namespace Game
 				return weights;
 			}
 
-			uint32_t FlankSplat(Vec2 point, const glm::vec3& normal) const
+			uint32_t FlankSplat(Vec2 point) const
 			{
 				const float d = std::max(-Peak.RimDistance(point), 0.0f);
 				std::array<float, 4> weights{};
-				const float snow = Ease((normal.y - 0.5f + 0.25f * (Fbm(point * 0.35f, 953u, 2) - 0.5f)) / 0.14f) * Ease((d - 0.8f) / 1.5f);
-				const float scree = (1.0f - Ease((d - 0.4f) / 1.6f)) * 0.6f;
-				weights[PeakSnow] = snow;
-				weights[PeakDirt] = (1.0f - snow) * (scree + 0.12f * Fbm(point * 0.8f, 957u, 2));
-				weights[PeakRock] = std::max(1.0f - weights[PeakSnow] - weights[PeakDirt], 0.0f);
-				const float shade = (0.78f + 0.2f * (Fbm(point * 0.3f, 961u, 2) - 0.5f)) * (1.0f - 0.35f * Ease(d / 18.0f));
+				weights[PeakDirt] = (1.0f - Ease((d - 0.4f) / 1.6f)) * 0.6f + 0.12f * Fbm(point * 0.8f, 957u, 2);
+				weights[PeakRock] = std::max(1.0f - weights[PeakDirt], 0.0f);
+				const float shade = (0.42f + 0.16f * (Fbm(point * 0.3f, 961u, 2) - 0.5f)) * (1.0f - 0.5f * Ease(d / 4.0f));
 				return PackSplat(weights, shade);
 			}
 		};
 
-		glm::vec3 MountainFace(Vec2 base, Vec2 outward, float top, float bottom, float t)
-		{
-			const glm::vec3 point(base.x, std::lerp(top, bottom, t), base.y);
-			const float envelope = Ease(t / 0.15f) * (1.0f - Ease((t - 0.8f) / 0.2f));
-			const float push = std::clamp(1.3f * RockRelief(point).Offset - 0.04f, -0.32f, 0.1f) * envelope;
-			return point + glm::vec3(outward.x, 0.0f, outward.y) * push;
-		}
 
 		struct MountainPoint
 		{
@@ -1218,6 +1413,62 @@ namespace Game
 			return 0.85f * reach;
 		}
 
+		void CrystalCluster(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, uint32_t variant)
+		{
+			constexpr int32_t Sides = 6;
+			const auto roll = [&](int32_t n) { return Unit(int32_t(variant), n, 0xC9A1u); };
+			const int32_t count = 4 + int32_t(roll(0) * 4.0f);
+			const auto face = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, float shade)
+			{
+				const glm::vec3 normal = glm::normalize(glm::cross(b - a, c - a));
+				const glm::vec3 tangent = glm::normalize(b - a);
+				for (const glm::vec3& corner : { a, b, c })
+				{
+					ModelVertex vertex;
+					vertex.Position = corner;
+					vertex.U = corner.x + corner.z;
+					vertex.V = corner.y;
+					vertex.Normal = normal;
+					vertex.Weights = 255;
+					vertex.Tangent = PackTangent(tangent, 1.0f);
+					vertex.Color = PackTint(glm::vec3(shade));
+					indices.push_back(uint32_t(vertices.size()));
+					vertices.push_back(vertex);
+				}
+			};
+			for (int32_t k = 0; k < count; k++)
+			{
+				const float length = k == 0 ? 1.0f : 0.32f + 0.55f * roll(10 + k);
+				const float radius = length * (0.12f + 0.05f * roll(20 + k));
+				const float tilt = k == 0 ? 0.15f * roll(30) : 0.35f + 0.55f * roll(30 + k);
+				const float azimuth = TwoPi * roll(40 + k);
+				const glm::vec3 spread(std::cos(azimuth), 0.0f, std::sin(azimuth));
+				const glm::vec3 axis = glm::normalize(glm::vec3(0.0f, std::cos(tilt), 0.0f) + spread * std::sin(tilt));
+				const glm::vec3 side = glm::normalize(glm::cross(axis, std::abs(axis.y) < 0.95f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f)));
+				const glm::vec3 other = glm::cross(axis, side);
+				const glm::vec3 root = spread * (k == 0 ? 0.0f : 0.06f + 0.12f * roll(50 + k)) - glm::vec3(0.0f, 0.18f * length, 0.0f);
+				const float twist = roll(60 + k) * TwoPi;
+				std::array<glm::vec3, Sides> foot{};
+				std::array<glm::vec3, Sides> shoulder{};
+				for (int32_t s = 0; s < Sides; s++)
+				{
+					const float angle = twist + TwoPi * float(s) / float(Sides);
+					const glm::vec3 offset = (side * std::cos(angle) + other * std::sin(angle)) * radius * (0.85f + 0.3f * roll(70 + k * 8 + s));
+					foot[size_t(s)] = root + offset;
+					shoulder[size_t(s)] = root + axis * (length * (0.74f + 0.08f * roll(130 + k))) + offset * 0.9f;
+				}
+				const glm::vec3 tip = root + axis * length + side * (radius * 0.25f * (roll(90 + k) - 0.5f));
+				for (int32_t s = 0; s < Sides; s++)
+				{
+					const size_t a = size_t(s);
+					const size_t b = size_t((s + 1) % Sides);
+					face(foot[a], foot[b], shoulder[b], 0.8f);
+					face(foot[a], shoulder[b], shoulder[a], 0.8f);
+					face(shoulder[a], shoulder[b], tip, 1.0f);
+				}
+			}
+		}
+
 		class SceneBuilder
 		{
 		public:
@@ -1242,9 +1493,14 @@ namespace Game
 				{
 					if (!m_Scene.Relief.IsEmpty())
 					{
+						PlanFissures();
 						Mountain();
 						SummitStones();
+						ShelfCurbs();
 						MountainSlabs();
+						Fissures();
+						PeakCrags();
+						PeakCrystals();
 						MountainDressing();
 						PeakBackdrop();
 					}
@@ -3413,13 +3669,12 @@ namespace Game
 			{
 				const PeakRelief& relief = m_Scene.Relief;
 				const Plateau& peak = relief.GetPlateau();
-				const MountainSurface surface{ relief, peak };
-				const std::optional<uint32_t> layers[] = { m_Renderer.FindMaterialSlot("GroundSnow"), m_Renderer.FindMaterialSlot("GroundScree"), m_Renderer.FindMaterialSlot("GroundCliff"), m_Renderer.FindMaterialSlot("GroundAlpine") };
-				const uint32_t plain = m_Renderer.GetPlainMaterial();
-				const uint32_t material = layers[0].value_or(plain) | (layers[1].value_or(plain) << 16);
-				const uint32_t layer = layers[2].value_or(plain) | (layers[3].value_or(plain) << 16);
-				const int32_t columns = peak.Columns;
-				const int32_t rows = peak.Rows;
+				const MountainSurface surface{ relief, peak, &m_Scorches };
+				const auto [material, layer] = MountainMaterials();
+				const uint32_t topLayer = m_Renderer.FindMaterialSlot("GroundRock").value_or(layer & 0xFFFFu) | (layer & 0xFFFF0000u);
+				const int32_t columns = (peak.Columns - 1) * MountainFine + 1;
+				const int32_t rows = (peak.Rows - 1) * MountainFine + 1;
+				const float spacing = peak.Spacing / float(MountainFine);
 				const auto node = [&](int32_t i, int32_t j) { return size_t(j) * size_t(columns) + size_t(i); };
 				const auto tangentOf = [](const glm::vec3& normal)
 				{
@@ -3444,8 +3699,8 @@ namespace Game
 				std::vector<uint32_t> flankIndices;
 				std::vector<MountainPoint> inside;
 				std::vector<MountainPoint> outside;
-				for (int32_t cy = 0; cy * MountainChunk < rows - 1; cy++)
-					for (int32_t cx = 0; cx * MountainChunk < columns - 1; cx++)
+				for (int32_t cy = 0; cy * (MountainChunk * MountainFine) < rows - 1; cy++)
+					for (int32_t cx = 0; cx * (MountainChunk * MountainFine) < columns - 1; cx++)
 					{
 						lookup.clear();
 						topIndices.clear();
@@ -3467,7 +3722,7 @@ namespace Game
 							vertex.Normal = normal;
 							vertex.Weights = 255;
 							vertex.Tangent = tangentOf(normal);
-							vertex.Color = top ? surface.TopSplat(point.Position, normal) : surface.FlankSplat(point.Position, normal);
+							vertex.Color = top ? surface.TopSplat(point.Position, normal) : surface.FlankSplat(point.Position);
 							const uint32_t index = uint32_t(vertices.size());
 							vertices.push_back(vertex);
 							lookup.emplace(key, index);
@@ -3498,11 +3753,11 @@ namespace Game
 									segments.push_back({ a.Key, b.Key, a.Position, b.Position });
 							}
 						};
-						for (int32_t j = cy * MountainChunk; j < std::min((cy + 1) * MountainChunk, rows - 1); j++)
-							for (int32_t i = cx * MountainChunk; i < std::min((cx + 1) * MountainChunk, columns - 1); i++)
+						for (int32_t j = cy * (MountainChunk * MountainFine); j < std::min((cy + 1) * (MountainChunk * MountainFine), rows - 1); j++)
+							for (int32_t i = cx * (MountainChunk * MountainFine); i < std::min((cx + 1) * (MountainChunk * MountainFine), columns - 1); i++)
 							{
 								const size_t corners[4] = { node(i, j), node(i + 1, j), node(i + 1, j + 1), node(i, j + 1) };
-								const Vec2 places[4] = { peak.Origin + Vec2(float(i), float(j)) * peak.Spacing, peak.Origin + Vec2(float(i + 1), float(j)) * peak.Spacing, peak.Origin + Vec2(float(i + 1), float(j + 1)) * peak.Spacing, peak.Origin + Vec2(float(i), float(j + 1)) * peak.Spacing };
+								const Vec2 places[4] = { peak.Origin + Vec2(float(i), float(j)) * spacing, peak.Origin + Vec2(float(i + 1), float(j)) * spacing, peak.Origin + Vec2(float(i + 1), float(j + 1)) * spacing, peak.Origin + Vec2(float(i), float(j + 1)) * spacing };
 								const uint8_t touching[4] = { 0b1001, 0b0011, 0b0110, 0b1100 };
 								const std::array<uint64_t, 4> edgeIds = { uint64_t(node(i, j)) * 2, uint64_t(node(i + 1, j)) * 2 + 1, uint64_t(node(i, j + 1)) * 2, uint64_t(node(i, j)) * 2 + 1 };
 								std::array<MountainPoint, 4> cell{};
@@ -3511,10 +3766,10 @@ namespace Game
 								bool deep = true;
 								for (size_t n = 0; n < 4; n++)
 								{
-									const float rim = peak.Rim[corners[n]];
+									const float rim = peak.RimDistance(places[n]) + RimJag(places[n]);
 									cell[n] = { places[n], rim, (1ull << 62) | uint64_t(corners[n]), touching[n], false };
 									(rim >= 0.0f ? positive : negative) = true;
-									deep = deep && rim < -40.0f;
+									deep = deep && rim < -3.5f;
 								}
 								if (deep)
 									continue;
@@ -3535,7 +3790,7 @@ namespace Game
 								return;
 							const uint32_t firstIndex = uint32_t(indices.size());
 							indices.insert(indices.end(), list.begin(), list.end());
-							meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(list.size()), .Material = material, .Layer = layer, .Flags = flags });
+							meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(list.size()), .Material = material, .Layer = (flags & MeshCliff) != 0 ? layer : topLayer, .Flags = flags });
 							bounds.push_back({ low, high });
 						};
 						flush(topIndices, topLow, topHigh, MeshSplat);
@@ -3610,7 +3865,7 @@ namespace Game
 						tallest = std::max(tallest, entry.Top - entry.Bottom);
 					if (tallest < 0.02f)
 						continue;
-					const int32_t tiers = std::clamp(int32_t(std::ceil((tallest + MountainBury) / MountainWallRow)), 3, 40);
+					const int32_t tiers = std::clamp(int32_t(std::ceil((tallest + MountainBury) / MountainWallRow)), 3, 140);
 					for (size_t c = 0; c < line.size(); c += 2)
 						m_WallSpots.push_back({ .Base = line[c].Base, .Outward = surface.Downhill(line[c].Base), .Top = line[c].Top, .Bottom = line[c].Bottom - MountainBury, .Cliff = true, .Rim = true });
 					float arc = 0.0f;
@@ -3627,14 +3882,15 @@ namespace Game
 							if (c > first)
 								arc += Length(entry.Base - line[c - 1].Base);
 							const Vec2 outward = surface.Downhill(entry.Base);
+							const PeakCliff face{ 1.0f - 0.65f * Ease(ChasmDepth(peak, entry.Base + outward * 0.6f) / 0.6f) };
 							const Vec2 along = Perpendicular(outward);
 							const float bottom = entry.Bottom - MountainBury;
 							for (int32_t r = 0; r <= tiers; r++)
 							{
 								const float t = float(r) / float(tiers);
 								ModelVertex vertex;
-								vertex.Position = MountainFace(entry.Base, outward, entry.Top, bottom, t);
-								vertex.Normal = FaceNormal(MountainFace, entry.Base, outward, entry.Top, bottom, t);
+								vertex.Position = face(entry.Base, outward, entry.Top, bottom, t);
+								vertex.Normal = FaceNormal(face, entry.Base, outward, entry.Top, bottom, t);
 								vertex.U = arc;
 								vertex.V = -vertex.Position.y;
 								vertex.Weights = 255;
@@ -3734,6 +3990,607 @@ namespace Game
 				return false;
 			}
 
+			std::pair<uint32_t, uint32_t> MountainMaterials() const
+			{
+				const std::optional<uint32_t> layers[] = { m_Renderer.FindMaterialSlot("GroundSnow"), m_Renderer.FindMaterialSlot("GroundScree"), m_Renderer.FindMaterialSlot("GroundCliff"), m_Renderer.FindMaterialSlot("GroundAlpine") };
+				const uint32_t plain = m_Renderer.GetPlainMaterial();
+				return { layers[0].value_or(plain) | (layers[1].value_or(plain) << 16), layers[2].value_or(plain) | (layers[3].value_or(plain) << 16) };
+			}
+
+			bool NearRiser(Vec2 point, float margin) const
+			{
+				const Vec2 offset = point - m_Scene.Relief.GetPlateau().Center;
+				const float r = Length(offset);
+				for (const PeakRelief::Shelf& shelf : m_Scene.Relief.GetShelves())
+				{
+					const float off = std::remainder(AngleOf(offset) - shelf.Angle, TwoPi);
+					if (std::abs(off) > 0.5f * shelf.Span + margin / std::max(r, 1.0f))
+						continue;
+					for (int32_t step = 0; step < shelf.Steps; step++)
+						if (std::abs(r - PeakRelief::Edge(shelf, step, shelf.Angle + off)) < margin)
+							return true;
+				}
+				return false;
+			}
+
+			bool NearFissure(Vec2 point, float margin) const
+			{
+				for (const Fissure& fissure : m_Fissures)
+				{
+					if (LengthSquared(point - fissure.Points.front()) > (fissure.Reach + margin) * (fissure.Reach + margin))
+						continue;
+					for (size_t k = 0; k + 1 < fissure.Points.size(); k++)
+						if (PointSegmentDistance(point, fissure.Points[k], fissure.Points[k + 1]) < margin)
+							return true;
+				}
+				return false;
+			}
+
+			void PlanFissures()
+			{
+				const Plateau& peak = m_Scene.Relief.GetPlateau();
+				const uint32_t salt = m_Level.Seed * 2654435761u + 0xF155u;
+				int32_t serial = 0;
+				const auto roll = [&] { return Unit(serial++, int32_t(salt & 0x7FFFu), 0xF156u ^ (salt >> 15)); };
+				const auto open = [&](Vec2 point)
+				{
+					return peak.RimDistance(point) >= 0.8f && Length(point - peak.Center) >= peak.Ritual + 0.1f && !NearBlocker(point, 1.05f) && !NearRiser(point, 0.25f);
+				};
+				const auto grow = [&](auto& self, Vec2 start, float heading, float length, float width, bool glow, int32_t depth) -> void
+				{
+					Fissure fissure;
+					fissure.Glow = glow;
+					fissure.Points.push_back(start);
+					std::vector<std::pair<Vec2, float>> forks;
+					Vec2 point = start;
+					for (float travelled = 0.0f; travelled < length;)
+					{
+						const float step = 0.28f + 0.24f * roll();
+						heading += (roll() - 0.5f) * 0.95f;
+						if (glow && depth == 0)
+							heading += std::remainder(AngleOf(point - peak.Center) - heading, TwoPi) * 0.22f;
+						const Vec2 next = point + FromAngle(heading) * step;
+						if (!open(next))
+							break;
+						point = next;
+						travelled += step;
+						fissure.Points.push_back(point);
+						if (depth == 0 && forks.size() < 3 && roll() < 0.12f)
+							forks.push_back({ point, heading + (roll() < 0.5f ? -1.0f : 1.0f) * (0.45f + 0.5f * roll()) });
+					}
+					const size_t count = fissure.Points.size();
+					if (count < 4)
+						return;
+					for (size_t k = 0; k < count; k++)
+					{
+						const float t = float(k) / float(count - 1);
+						const float head = glow && depth == 0 ? 1.0f : Ease(t / 0.2f);
+						fissure.Width.push_back(width * head * (1.0f - 0.85f * Ease(t)) + 0.004f);
+					}
+					fissure.Width.back() = 0.0f;
+					for (const Vec2 at : fissure.Points)
+						fissure.Reach = std::max(fissure.Reach, Length(at - start));
+					m_Fissures.push_back(std::move(fissure));
+					for (const auto& [at, toward] : forks)
+						self(self, at, toward, length * (0.22f + 0.2f * roll()), width * 0.65f, glow, depth + 1);
+				};
+				const int32_t veins = 6 + (roll() < 0.5f ? 1 : 0);
+				const float turn = roll() * TwoPi;
+				for (int32_t k = 0; k < veins; k++)
+				{
+					const float angle = turn + TwoPi * (float(k) + 0.4f * (roll() - 0.5f)) / float(veins);
+					grow(grow, peak.Center + FromAngle(angle) * (peak.Ritual + 0.15f), angle, 4.5f + 4.5f * roll(), 0.065f, true, 0);
+				}
+				for (const PeakRelief::Crater& crater : m_Scene.Relief.GetCraters())
+				{
+					m_Scorches.push_back({ crater.Center, crater.Radius * 1.6f, serial });
+					const int32_t rays = 3 + int32_t(roll() * 3.0f);
+					for (int32_t k = 0; k < rays; k++)
+					{
+						const float angle = TwoPi * (float(k) + 0.6f * roll()) / float(rays);
+						grow(grow, crater.Center + FromAngle(angle) * (crater.Radius * 0.7f), angle, 1.0f + 2.2f * roll(), k == 0 ? 0.045f : 0.06f, k == 0, 1);
+					}
+				}
+				for (int32_t attempt = 0, cracks = 0; attempt < 60 && cracks < 16; attempt++)
+				{
+					const Vec2 start = peak.Center + FromAngle(roll() * TwoPi) * (4.6f + 8.0f * roll());
+					if (!open(start) || peak.RimDistance(start) < 1.2f)
+						continue;
+					cracks++;
+					grow(grow, start, roll() * TwoPi, 1.2f + 2.6f * roll(), 0.055f, false, 0);
+				}
+				for (int32_t attempt = 0; attempt < 40 && m_Scorches.size() < m_Scene.Relief.GetCraters().size() + 2; attempt++)
+				{
+					const Vec2 spot = peak.Center + FromAngle(roll() * TwoPi) * (5.0f + 6.5f * roll());
+					if (peak.RimDistance(spot) < 1.5f || NearBlocker(spot, 1.6f))
+						continue;
+					if (std::any_of(m_Scorches.begin(), m_Scorches.end(), [&](const Scorch& other) { return Length(other.Center - spot) < 4.0f; }))
+						continue;
+					m_Scorches.push_back({ spot, 0.6f + 0.5f * roll(), serial });
+				}
+			}
+
+			void Fissures()
+			{
+				constexpr float Spacing = 0.16f;
+				const PeakRelief& relief = m_Scene.Relief;
+				const uint32_t plain = m_Renderer.GetPlainMaterial();
+				const glm::vec3 cyan = ToColor(0x5FE3FF);
+				const glm::vec3 ice = ToColor(0xB8F4FF);
+				const glm::vec3 violet = ToColor(0x8A7CFF);
+				const MountainSurface surface{ relief, relief.GetPlateau(), &m_Scorches };
+				for (int32_t pass = 0; pass < 2; pass++)
+				{
+					std::vector<ModelVertex> vertices;
+					std::vector<uint32_t> indices;
+					std::vector<LevelMeshDesc> meshes;
+					std::vector<std::pair<glm::vec3, glm::vec3>> bounds;
+					const bool glow = pass == 1;
+					for (const Fissure& fissure : m_Fissures)
+					{
+						if (glow && !fissure.Glow)
+							continue;
+						std::vector<Vec2> points;
+						std::vector<float> widths;
+						for (size_t k = 0; k + 1 < fissure.Points.size(); k++)
+						{
+							const int32_t steps = std::max(1, int32_t(std::ceil(Length(fissure.Points[k + 1] - fissure.Points[k]) / Spacing)));
+							for (int32_t s = 0; s < steps; s++)
+							{
+								points.push_back(Lerp(fissure.Points[k], fissure.Points[k + 1], float(s) / float(steps)));
+								widths.push_back(std::lerp(fissure.Width[k], fissure.Width[k + 1], float(s) / float(steps)));
+							}
+						}
+						points.push_back(fissure.Points.back());
+						widths.push_back(0.0f);
+						const uint32_t first = uint32_t(vertices.size());
+						const uint32_t firstIndex = uint32_t(indices.size());
+						glm::vec3 low(1e9f);
+						glm::vec3 high(-1e9f);
+						for (size_t k = 0; k < points.size(); k++)
+						{
+							const Vec2 along = Normalize(points[std::min(k + 1, points.size() - 1)] - points[k > 0 ? k - 1 : 0]);
+							const Vec2 side = Perpendicular(along);
+							const float t = float(k) / float(points.size() - 1);
+							const float jag = 0.6f + 0.8f * ValueNoise(points[k] * 6.0f, 1483u);
+							const float half = 0.5f * (glow ? widths[k] * 0.8f : (widths[k] * 2.4f + (fissure.Glow ? 0.02f : 0.0f) * Ease(widths[k] / 0.01f)) * jag);
+							const float hue = ValueNoise(points[k] * 0.35f, 1481u);
+							const glm::vec3 color = glow ? glm::mix(glm::mix(ice, cyan, Ease(t / 0.35f)), violet, 0.3f * Ease((hue - 0.55f) / 0.3f)) * (1.0f - 0.6f * Ease((t - 0.45f) / 0.55f)) : glm::vec3(0.035f, 0.04f, 0.05f);
+							for (const float sign : { -1.0f, 1.0f })
+							{
+								const Vec2 spot = points[k] + side * (sign * half * (glow ? 1.0f : 0.75f + 0.5f * ValueNoise(points[k] * 9.0f + Vec2(sign, 0.0f), 1487u)));
+								ModelVertex vertex;
+								vertex.Position = { spot.x, surface.Height(spot, true) + (glow ? 0.022f : 0.014f), spot.y };
+								vertex.U = spot.x;
+								vertex.V = spot.y;
+								vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
+								vertex.Weights = 255;
+								vertex.Tangent = PackTangent(glm::vec3(1.0f, 0.0f, 0.0f), 1.0f);
+								vertex.Color = PackTint(color);
+								vertices.push_back(vertex);
+								low = glm::min(low, vertex.Position);
+								high = glm::max(high, vertex.Position);
+							}
+						}
+						for (uint32_t k = 0; k + 1 < uint32_t(points.size()); k++)
+						{
+							const uint32_t a = first + 2 * k;
+							const glm::vec3 face = glm::cross(vertices[a + 1].Position - vertices[a].Position, vertices[a + 2].Position - vertices[a].Position);
+							if (face.y >= 0.0f)
+								indices.insert(indices.end(), { a, a + 1, a + 2, a + 1, a + 3, a + 2 });
+							else
+								indices.insert(indices.end(), { a, a + 2, a + 1, a + 1, a + 2, a + 3 });
+						}
+						meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(indices.size()) - firstIndex, .Material = plain, .Layer = plain, .Flags = glow ? MeshVertexTint | MeshBright : MeshVertexTint | MeshGround });
+						bounds.push_back({ low, high });
+					}
+					if (meshes.empty())
+						continue;
+					const uint32_t base = m_Renderer.AddLevelGeometry(vertices, indices, meshes);
+					for (uint32_t index = 0; index < uint32_t(meshes.size()); index++)
+					{
+						const auto& [low, high] = bounds[index];
+						Insert(base + index, m_Renderer.MakeModelInstance(base + index, glm::mat4(1.0f), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), glow ? 1.0f : 0.0f, low.y), low, high, false, low.y);
+					}
+				}
+			}
+
+			void ShelfCurbs()
+			{
+				constexpr float Gap = 0.035f;
+				const std::optional<uint32_t> material = m_Renderer.FindMaterialSlot("PavingStone");
+				if (!material)
+					return;
+				const PeakRelief& relief = m_Scene.Relief;
+				const Vec2 middle = relief.GetPlateau().Center;
+				const PavingStyle curb{ .Shoulder = 0.8f, .Dome = 0.012f, .Rim = 0.025f, .Bed = 0.3f, .Tilt = 0.022f, .Lift = 0.0f, .Texture = 0.75f, .Light = { 0.86f, 0.87f, 0.92f }, .Dark = { 0.5f, 0.51f, 0.56f }, .Salt = 0xC0B1u };
+				PavingBatch batch;
+				int32_t row = 0;
+				for (const PeakRelief::Shelf& shelf : relief.GetShelves())
+				{
+					const float down = shelf.Outer ? -1.0f : 1.0f;
+					for (int32_t step = 0; step < shelf.Steps; step++, row++)
+					{
+						float from = shelf.Angle - 0.5f * shelf.Span;
+						for (int32_t k = 0; from < shelf.Angle + 0.5f * shelf.Span - 0.02f; k++)
+						{
+							const auto roll = [&](uint32_t salt) { return Unit(row, k, salt); };
+							const float radius = PeakRelief::Edge(shelf, step, from);
+							const float to = std::min(from + (0.42f + 0.45f * roll(0xC0B2u)) / radius, shelf.Angle + 0.5f * shelf.Span);
+							const float gap = (0.5f + roll(0xC0B3u)) * Gap / radius;
+							const float start = from + 0.5f * gap;
+							const float end = to - 0.5f * gap;
+							from = to;
+							if (end <= start || roll(0xC0B4u) < 0.06f)
+								continue;
+							const float mid = 0.5f * (start + end);
+							const Vec2 direction = FromAngle(mid);
+							const float edge = PeakRelief::Edge(shelf, step, mid);
+							const float shift = 0.06f * (roll(0xC0B5u) - 0.3f);
+							const float depth = 0.26f + 0.1f * roll(0xC0B6u);
+							const float top = relief.Height(middle + direction * (edge - down * 0.26f)) + 0.012f + 0.035f * (roll(0xC0B7u) - 0.4f);
+							const float ground = relief.Height(middle + direction * (edge + down * 0.45f));
+							if (top - ground < 0.03f)
+								continue;
+							Outline outline;
+							for (int32_t s = 0; s <= 2; s++)
+							{
+								const float angle = std::lerp(start, end, float(s) / 2.0f);
+								outline.push_back(middle + FromAngle(angle) * (PeakRelief::Edge(shelf, step, angle) - down * depth + down * shift));
+							}
+							for (int32_t s = 2; s >= 0; s--)
+							{
+								const float angle = std::lerp(start, end, float(s) / 2.0f);
+								outline.push_back(middle + FromAngle(angle) * (PeakRelief::Edge(shelf, step, angle) + down * (0.2f + shift)));
+							}
+							PavingStyle shaped = curb;
+							shaped.Bed = top - ground + 0.12f;
+							LayStone(batch, outline, shaped, top, row, k);
+						}
+					}
+				}
+				if (batch.Indices.empty())
+					return;
+				const uint32_t base = m_Renderer.AddLevelGeometry(batch.Vertices, batch.Indices, { { .FirstIndex = 0, .IndexCount = uint32_t(batch.Indices.size()), .Material = *material, .Layer = *material, .Flags = MeshVertexTint | MeshGround } });
+				Insert(base, m_Renderer.MakeModelInstance(base, glm::mat4(1.0f), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.0f, batch.Min.y), batch.Min, batch.Max, false, batch.Min.y);
+			}
+
+			struct RockBatch
+			{
+				std::vector<ModelVertex> Vertices;
+				std::vector<uint32_t> Indices;
+				std::vector<LevelMeshDesc> Meshes;
+				std::vector<std::pair<glm::vec3, glm::vec3>> Bounds;
+				std::vector<uint8_t> Cut;
+			};
+
+			void Faceted(RockBatch& batch, const std::vector<std::vector<glm::vec3>>& rings, const std::optional<glm::vec3>& apex, bool cut)
+			{
+				const auto [material, layer] = MountainMaterials();
+				const uint32_t firstIndex = uint32_t(batch.Indices.size());
+				glm::vec3 low(1e9f);
+				glm::vec3 high(-1e9f);
+				const auto face = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
+				{
+					glm::vec3 normal = glm::cross(b - a, c - a);
+					if (glm::length(normal) < 1e-9f)
+						return;
+					normal = glm::normalize(normal);
+					const glm::vec3 tangent = glm::length(b - a) > 1e-6f ? glm::normalize(b - a) : glm::vec3(1.0f, 0.0f, 0.0f);
+					for (const glm::vec3& corner : { a, b, c })
+					{
+						ModelVertex vertex;
+						vertex.Position = corner;
+						vertex.U = corner.x;
+						vertex.V = -corner.y;
+						vertex.Normal = normal;
+						vertex.Weights = 255;
+						vertex.Tangent = PackTangent(tangent, 1.0f);
+						vertex.Color = CragSplat(corner, normal);
+						batch.Indices.push_back(uint32_t(batch.Vertices.size()));
+						batch.Vertices.push_back(vertex);
+						low = glm::min(low, corner);
+						high = glm::max(high, corner);
+					}
+				};
+				const size_t count = rings.front().size();
+				for (size_t r = 0; r + 1 < rings.size(); r++)
+					for (size_t s = 0; s < count; s++)
+					{
+						const glm::vec3& a = rings[r][s];
+						const glm::vec3& b = rings[r][(s + 1) % count];
+						const glm::vec3& c = rings[r + 1][(s + 1) % count];
+						const glm::vec3& d = rings[r + 1][s];
+						face(a, b, c);
+						face(a, c, d);
+					}
+				const std::vector<glm::vec3>& last = rings.back();
+				glm::vec3 center(0.0f);
+				for (const glm::vec3& point : last)
+					center += point / float(count);
+				const glm::vec3 tip = apex.value_or(center + glm::vec3(0.0f, 0.04f, 0.0f));
+				for (size_t s = 0; s < count; s++)
+					face(last[s], last[(s + 1) % count], tip);
+				batch.Meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(batch.Indices.size()) - firstIndex, .Material = material, .Layer = layer, .Flags = MeshSplat | MeshCliff });
+				batch.Bounds.push_back({ low, high });
+				batch.Cut.push_back(cut ? 1 : 0);
+			}
+
+			void Shard(RockBatch& batch, Vec2 base, float top, float above, float radius, Vec2 lean, float root, int32_t salt, bool cut)
+			{
+				const auto roll = [&](int32_t n) { return Unit(salt, n, 0xC4A6u); };
+				const int32_t sides = 5 + int32_t(roll(0) * 3.0f);
+				const std::array<float, 8> heights = { top - 26.0f, top - 9.0f, top - 4.5f, top - 1.2f, top + above * 0.12f, top + above * 0.42f, top + above * 0.7f, top + above * 0.88f };
+				const std::array<float, 8> widths = { root * 1.25f, root * 1.1f, root * (0.9f + 0.3f * roll(2)), 0.5f * (root + 1.0f), 1.0f, 0.74f, 0.46f, 0.22f };
+				const float twist = (roll(1) - 0.5f) * 0.6f;
+				const Vec2 into = LengthSquared(lean) > 1e-8f ? Normalize(lean) * -1.0f : Vec2(0.0f, 0.0f);
+				std::vector<std::vector<glm::vec3>> rings;
+				for (size_t r = 0; r < heights.size(); r++)
+				{
+					const float depth = std::max(top - heights[r], 0.0f);
+					const Vec2 kink = Vec2(roll(400 + int32_t(r)) - 0.5f, roll(420 + int32_t(r)) - 0.5f) * (radius * 0.5f * Ease(depth / 2.0f));
+					const Vec2 center = base + lean * std::max(heights[r] - top, 0.0f) + into * (depth * (0.4f + 0.2f * roll(3))) + kink;
+					std::vector<glm::vec3>& ring = rings.emplace_back();
+					for (int32_t s = 0; s < sides; s++)
+					{
+						const int32_t id = int32_t(r) * 16 + s;
+						const float angle = twist * float(r) + TwoPi * (float(s) + 0.35f * (roll(10 + id) - 0.5f)) / float(sides);
+						const Vec2 spot = center + FromAngle(angle) * (radius * widths[r] * (0.75f + 0.5f * roll(100 + id)));
+						ring.push_back({ spot.x, heights[r] + (r > 3 ? 0.14f * above * (roll(200 + id) - 0.5f) : 0.0f), spot.y });
+					}
+				}
+				const Vec2 tip = base + lean * above + Vec2(roll(300) - 0.5f, roll(301) - 0.5f) * (0.25f * radius);
+				const std::vector<std::vector<glm::vec3>> buried(rings.begin(), rings.begin() + 5);
+				const std::vector<std::vector<glm::vec3>> spike(rings.begin() + 4, rings.end());
+				Faceted(batch, buried, std::nullopt, false);
+				Faceted(batch, spike, glm::vec3(tip.x, top + above, tip.y), cut);
+			}
+
+			void Column(RockBatch& batch, Vec2 base, float top, float bottom, float radius, int32_t salt)
+			{
+				const auto roll = [&](int32_t n) { return Unit(salt, n, 0xC4B1u); };
+				const int32_t sides = 7 + int32_t(roll(0) * 3.0f);
+				std::vector<std::vector<glm::vec3>> rings;
+				const int32_t levels = 3 + int32_t((top - bottom) / 1.8f);
+				const Vec2 lean = FromAngle(roll(2) * TwoPi) * (0.12f + 0.12f * roll(3));
+				Vec2 center = base;
+				for (int32_t r = 0; r <= levels; r++)
+				{
+					const float t = float(r) / float(levels);
+					const float y = std::lerp(bottom, top - 0.25f, std::sqrt(t));
+					center = base + lean * (top - y) + (r == levels ? Vec2(0.0f, 0.0f) : Vec2(roll(600 + r) - 0.5f, roll(640 + r) - 0.5f) * (radius * 0.7f));
+					const float swell = (0.75f + 0.6f * (1.0f - t)) * (0.7f + 0.6f * roll(20 + r));
+					std::vector<glm::vec3>& ring = rings.emplace_back();
+					for (int32_t s = 0; s < sides; s++)
+					{
+						const float angle = 0.5f * float(r) * (roll(1) - 0.5f) + TwoPi * (float(s) + 0.35f * (roll(40 + r * 16 + s) - 0.5f)) / float(sides);
+						const Vec2 spot = center + FromAngle(angle) * (radius * swell * (0.7f + 0.6f * roll(400 + r * 16 + s)));
+						ring.push_back({ spot.x, y + (r > 0 ? 0.7f * (roll(800 + r * 16 + s) - 0.5f) : 0.0f), spot.y });
+					}
+				}
+				const std::vector<glm::vec3> shoulder = rings.back();
+				std::vector<glm::vec3>& crown = rings.emplace_back();
+				for (const glm::vec3& point : shoulder)
+				{
+					const Vec2 spot = center + (Vec2(point.x, point.z) - center) * (0.72f + 0.16f * roll(int32_t(crown.size()) + 900));
+					crown.push_back({ spot.x, top + 0.16f * (roll(int32_t(crown.size()) + 950) - 0.5f), spot.y });
+				}
+				Faceted(batch, rings, glm::vec3(center.x, top + 0.08f, center.y), false);
+			}
+
+			void Outcrop(RockBatch& batch, Vec2 base, float ground, float height, float radius, int32_t salt)
+			{
+				const auto roll = [&](int32_t n) { return Unit(salt, n, 0xC4B7u); };
+				const int32_t sides = 6 + int32_t(roll(0) * 3.0f);
+				const float turn = roll(1) * TwoPi;
+				std::vector<std::vector<glm::vec3>> rings(3);
+				for (int32_t s = 0; s < sides; s++)
+				{
+					const float angle = turn + TwoPi * (float(s) + 0.4f * (roll(10 + s) - 0.5f)) / float(sides);
+					const float reach = radius * (0.7f + 0.5f * roll(30 + s));
+					const Vec2 foot = base + FromAngle(angle) * reach;
+					const Vec2 shoulder = base + FromAngle(angle + 0.15f * (roll(50 + s) - 0.5f)) * (reach * (0.55f + 0.2f * roll(70 + s)));
+					rings[0].push_back({ foot.x, ground - 0.12f, foot.y });
+					rings[1].push_back({ foot.x, ground + height * (0.35f + 0.3f * roll(90 + s)), foot.y });
+					rings[2].push_back({ shoulder.x, ground + height * (0.8f + 0.25f * roll(110 + s)), shoulder.y });
+				}
+				Faceted(batch, rings, glm::vec3(base.x + 0.1f * radius * (roll(2) - 0.5f), ground + height, base.y + 0.1f * radius * (roll(3) - 0.5f)), false);
+			}
+
+			void Flush(RockBatch& batch)
+			{
+				if (batch.Meshes.empty())
+					return;
+				const uint32_t base = m_Renderer.AddLevelGeometry(batch.Vertices, batch.Indices, batch.Meshes);
+				for (uint32_t index = 0; index < uint32_t(batch.Meshes.size()); index++)
+				{
+					const auto& [low, high] = batch.Bounds[index];
+					Insert(base + index, m_Renderer.MakeModelInstance(base + index, glm::mat4(1.0f), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.0f, low.y), low, high, batch.Cut[index] != 0, low.y);
+				}
+			}
+
+			void PeakCrags()
+			{
+				const PeakRelief& relief = m_Scene.Relief;
+				const Plateau& peak = relief.GetPlateau();
+				RockBatch batch;
+				const auto tall = [&](Vec2 outward, float roll)
+				{
+					if (outward.y > 0.3f)
+						return 3.0f + 2.2f * roll;
+					if (outward.y > -0.35f)
+						return 1.9f + 1.3f * roll;
+					return 1.0f + 0.7f * roll;
+				};
+				const auto lipAt = [&](Vec2 point, Vec2 outward) { return relief.Height(point - outward * 0.6f); };
+				float mean = 0.0f;
+				for (const Vec2 corner : peak.Corners)
+					mean += Length(corner - peak.Center) / float(peak.Corners.size());
+				for (size_t k = 0; k < peak.Corners.size(); k++)
+				{
+					const Vec2 corner = peak.Corners[k];
+					const Vec2 previous = peak.Corners[(k + peak.Corners.size() - 1) % peak.Corners.size()];
+					const Vec2 next = peak.Corners[(k + 1) % peak.Corners.size()];
+					const Vec2 a = corner - previous;
+					const Vec2 b = next - corner;
+					const float prominence = Length(corner - peak.Center) / std::max(mean, 1.0f);
+					if (a.x * b.y - a.y * b.x <= 0.0f || prominence < 0.93f)
+						continue;
+					const int32_t salt = int32_t(m_Level.Seed % 9973u) * 131 + int32_t(k) * 17;
+					const auto roll = [&](int32_t n) { return Unit(salt, n, 0xC4A7u); };
+					const Vec2 outward = Normalize(corner - peak.Center);
+					const Vec2 along = Normalize(next - previous);
+					const Vec2 tip = corner + outward * (0.25f - peak.RimDistance(corner));
+					if (peak.ChasmDistance(tip) < 1.6f)
+						continue;
+					const bool front = outward.y < -0.35f;
+					const float scale = prominence > 1.12f ? 1.25f : 1.0f;
+					const float above = tall(outward, roll(1)) * scale;
+					const float radius = (0.55f + 0.3f * roll(0)) * (front ? 0.8f : 1.1f) * scale;
+					const float top = lipAt(tip, outward);
+					Shard(batch, tip - outward * 0.1f, top, 0.3f + 0.25f * roll(20), 0.9f + 0.35f * roll(21), outward * 0.15f, 1.3f, salt + 3, front);
+					Shard(batch, tip + outward * (radius * 0.6f), top, above, radius, outward * (0.28f + 0.14f * roll(2)) + along * (0.1f * (roll(3) - 0.5f)), 1.5f, salt, front);
+					const int32_t fan = 2 + int32_t(roll(4) * 2.0f);
+					for (int32_t n = 0; n < fan; n++)
+					{
+						const float sign = (n % 2 == 0 ? 1.0f : -1.0f) * (roll(5) < 0.5f ? 1.0f : -1.0f);
+						Vec2 spot = tip + along * (sign * (0.6f + 0.75f * roll(6 + n) + 0.35f * float(n / 2)));
+						spot = spot + outward * (0.35f - peak.RimDistance(spot));
+						const float small = radius * (0.45f + 0.3f * roll(9 + n));
+						if (peak.ChasmDistance(spot) < small + 0.6f)
+							continue;
+						Shard(batch, spot + outward * (small * 0.5f), lipAt(spot, outward), above * (0.3f + 0.4f * roll(12 + n)), small, outward * (0.32f + 0.2f * roll(15 + n)) + along * (sign * 0.22f), 1.4f, salt + 7 + n, front);
+					}
+					m_Formations.push_back(tip);
+				}
+				for (int32_t pass = 0; pass < 2; pass++)
+					for (size_t c = 0; c < m_WallSpots.size(); c += 2)
+					{
+						const WallSpot& spot = m_WallSpots[c];
+						if (!spot.Rim)
+							continue;
+						const int32_t hx = int32_t(std::lround(spot.Base.x * 8.0f));
+						const int32_t hy = int32_t(std::lround(spot.Base.y * 8.0f));
+						const auto roll = [&](uint32_t salt) { return Unit(hx, hy, salt); };
+						const float convex = 2.0f - std::clamp(peak.RimDistance(spot.Base - spot.Outward * 2.0f), 0.0f, 2.0f);
+						if ((pass == 0 && convex < 0.25f) || roll(0xC4A8u + uint32_t(pass)) > (pass == 0 ? 0.8f : 0.35f) || peak.ChasmDistance(spot.Base) < 1.8f)
+							continue;
+						if (std::any_of(m_Formations.begin(), m_Formations.end(), [&](Vec2 other) { return LengthSquared(other - spot.Base) < 3.8f * 3.8f; }))
+							continue;
+						const bool front = spot.Outward.y < -0.35f;
+						const Vec2 along = Perpendicular(spot.Outward);
+						const float above = tall(spot.Outward, roll(0xC4AAu)) * (0.75f + 0.35f * std::min(convex, 1.0f));
+						const float radius = 0.42f + 0.25f * roll(0xC4A9u);
+						const int32_t salt = hx * 31 + hy;
+						Shard(batch, spot.Base + spot.Outward * (radius * 0.6f), lipAt(spot.Base, spot.Outward), above, radius, spot.Outward * (0.28f + 0.16f * roll(0xC4ABu)) + along * (0.16f * (roll(0xC4ACu) - 0.5f)), 1.45f, salt, front);
+						const int32_t sides = 1 + int32_t(roll(0xC4ADu) * 2.0f);
+						for (int32_t n = 0; n < sides; n++)
+						{
+							const float sign = (n == 0 ? 1.0f : -1.0f) * (roll(0xC4AEu) < 0.5f ? 1.0f : -1.0f);
+							Vec2 side = spot.Base + along * (sign * (0.55f + 0.5f * Unit(hx + n, hy, 0xC4AFu)));
+							side = side + spot.Outward * (0.3f - peak.RimDistance(side));
+							const float small = radius * (0.5f + 0.25f * Unit(hx, hy + n, 0xC4B0u));
+							if (peak.ChasmDistance(side) < small + 0.6f)
+								continue;
+							Shard(batch, side + spot.Outward * (small * 0.5f), lipAt(side, spot.Outward), above * (0.35f + 0.3f * Unit(hx + n, hy + n, 0xC4B2u)), small, spot.Outward * (0.32f + 0.18f * Unit(hx, hy, 0xC4B5u + uint32_t(n))) + along * (sign * 0.22f), 1.4f, salt + 7 + n, front);
+						}
+						m_Formations.push_back(spot.Base);
+					}
+				const int32_t pillars = 1 + int32_t(Unit(int32_t(m_Level.Seed % 7919u), 5, 0xC4B3u) * 2.0f);
+				std::vector<Vec2> standing;
+				for (int32_t attempt = 0; attempt < 40 && int32_t(standing.size()) < pillars; attempt++)
+				{
+					const auto roll = [&](int32_t n) { return Unit(int32_t(m_Level.Seed % 7919u) + attempt * 13, n, 0xC4B4u); };
+					const Vec2 direction = FromAngle(roll(0) * TwoPi);
+					if (direction.y < -0.3f)
+						continue;
+					float reach = 4.0f;
+					while (reach < 30.0f && peak.RimDistance(peak.Center + direction * reach) > 0.0f)
+						reach += 0.25f;
+					const float radius = 1.0f + 0.8f * roll(1);
+					const Vec2 center = peak.Center + direction * (reach + radius + 1.6f + 1.6f * roll(2));
+					if (peak.RimDistance(center) > -(radius + 1.4f) || peak.ChasmDistance(center) < radius + 1.0f)
+						continue;
+					if (std::any_of(standing.begin(), standing.end(), [&](Vec2 other) { return Length(other - center) < 8.0f; }))
+						continue;
+					standing.push_back(center);
+					Column(batch, center, -0.9f - 1.6f * roll(3), -26.0f, radius, int32_t(m_Level.Seed % 7919u) + attempt);
+				}
+				Flush(batch);
+			}
+
+			void PeakCrystals()
+			{
+				const PeakRelief& relief = m_Scene.Relief;
+				const Plateau& peak = relief.GetPlateau();
+				std::array<uint32_t, PeakCrystalShapes * 2> meshes{};
+				for (uint32_t variant = 0; variant < PeakCrystalShapes * 2; variant++)
+				{
+					const std::optional<uint32_t> mesh = m_Renderer.FindEffectMesh(PeakCrystalName(variant));
+					if (!mesh)
+						return;
+					meshes[variant] = *mesh;
+				}
+				const uint32_t salt = m_Level.Seed * 2246822519u + 0xC9A3u;
+				int32_t serial = 0;
+				const auto roll = [&] { return Unit(serial++, int32_t(salt & 0x7FFFu), 0xC9A4u ^ (salt >> 15)); };
+				std::vector<Vec2> placed;
+				const auto place = [&](const glm::vec3& base, const glm::vec3& axis, float scale, bool cut)
+				{
+					const bool violet = roll() < 0.35f;
+					const uint32_t mesh = meshes[size_t(serial % int32_t(PeakCrystalShapes)) + (violet ? PeakCrystalShapes : 0u)];
+					const glm::mat4 transform = Translation(base) * AlignUp(axis, roll() * TwoPi) * Scaling(Uniform(scale));
+					glm::vec3 low(1e9f);
+					glm::vec3 high(-1e9f);
+					for (uint32_t corner = 0; corner < 8; corner++)
+					{
+						const glm::vec3 local((corner & 1) ? 0.7f : -0.7f, (corner & 2) ? 1.1f : -0.3f, (corner & 4) ? 0.7f : -0.7f);
+						const glm::vec3 world = glm::vec3(transform * glm::vec4(local, 1.0f));
+						low = glm::min(low, world);
+						high = glm::max(high, world);
+					}
+					Insert(mesh, m_Renderer.MakeModelInstance(mesh, transform, NoPalette, violet ? glm::vec4(0.86f, 0.62f, 1.0f, 0.0f) : glm::vec4(0.6f, 0.92f, 1.0f, 0.0f), 0.0f, base.y), low, high, cut, base.y);
+					placed.push_back(Vec2(base.x, base.z));
+				};
+				const auto spaced = [&](Vec2 point, float gap) { return std::none_of(placed.begin(), placed.end(), [&](Vec2 other) { return LengthSquared(other - point) < gap * gap; }); };
+				const glm::vec3 up(0.0f, 1.0f, 0.0f);
+				for (size_t n = 0; n < m_Level.Props.size(); n++)
+				{
+					const PlacedProp& prop = m_Level.Props[n];
+					if (prop.Id != PropId::SummitCrystal)
+						continue;
+					const Vec2 outward = Normalize(prop.Position - peak.Center);
+					place(glm::vec3(prop.Position.x, relief.Height(prop.Position) - 0.04f, prop.Position.y), glm::normalize(up + glm::vec3(outward.x, 0.0f, outward.y) * 0.55f), 1.1f + 0.6f * roll(), outward.y < -0.35f);
+					m_Scene.PropDrawn[n] = 1;
+				}
+				for (int32_t attempt = 0, rims = 0; attempt < 400 && rims < 4 && !m_WallSpots.empty(); attempt++)
+				{
+					const WallSpot& spot = m_WallSpots[size_t(roll() * float(m_WallSpots.size())) % m_WallSpots.size()];
+					if (!spot.Rim || !spaced(spot.Base, 4.0f) || peak.ChasmDistance(spot.Base) < 1.0f)
+						continue;
+					const glm::vec3 outward(spot.Outward.x, 0.0f, spot.Outward.y);
+					if (spot.Outward.y >= 0.3f)
+						continue;
+					const float drop = spot.Top - spot.Bottom;
+					const float below = 0.7f + 1.8f * roll();
+					const glm::vec3 at = PeakCliff{ 1.0f }(spot.Base, spot.Outward, spot.Top, spot.Bottom, below / drop) - outward * 0.12f;
+					place(at, glm::normalize(outward * 0.85f + up * 0.55f), 0.9f + 0.6f * roll(), false);
+					rims++;
+				}
+				for (const Plateau::Chasm& chasm : peak.Chasms)
+				{
+					const size_t k = std::min(chasm.Spine.size() - 2, size_t(float(chasm.Spine.size()) * (0.45f + 0.2f * roll())));
+					const Vec2 along = Normalize(chasm.Spine[k + 1] - chasm.Spine[k]);
+					const float sign = roll() < 0.5f ? 1.0f : -1.0f;
+					const Vec2 wall = chasm.Spine[k] + Perpendicular(along) * (sign * (chasm.Half[k] + 0.05f));
+					const glm::vec3 inward(-Perpendicular(along).x * sign, 0.0f, -Perpendicular(along).y * sign);
+					place(glm::vec3(wall.x, relief.Height(wall + Perpendicular(along) * (sign * 0.4f)) - 0.6f - 1.2f * roll(), wall.y), glm::normalize(inward + up * 0.45f), 1.0f + 0.5f * roll(), false);
+				}
+				for (const PeakRelief::Crater& crater : relief.GetCraters())
+					if (roll() < 0.7f)
+						place(glm::vec3(crater.Center.x, relief.Height(crater.Center) - 0.04f, crater.Center.y), glm::normalize(up + glm::vec3(roll() - 0.5f, 0.0f, roll() - 0.5f) * 0.4f), 0.5f + 0.2f * roll(), false);
+			}
+
 			void MountainSlabs()
 			{
 				constexpr float Pitch = 1.15f;
@@ -3743,7 +4600,7 @@ namespace Game
 					return;
 				const PeakRelief& relief = m_Scene.Relief;
 				const Plateau& peak = relief.GetPlateau();
-				const MountainSurface surface{ relief, peak };
+				const MountainSurface surface{ relief, peak, &m_Scorches };
 				const PavingStyle style{ .Shoulder = 0.78f, .Dome = 0.016f, .Rim = 0.03f, .Bed = 0.32f, .Tilt = 0.03f, .Lift = 0.0f, .Texture = 0.6f, .Light = { 0.78f, 0.79f, 0.82f }, .Dark = { 0.4f, 0.4f, 0.43f }, .Salt = 0x51ABu };
 				const auto seedAt = [&](int32_t row, int32_t column)
 				{
@@ -3759,10 +4616,10 @@ namespace Game
 					{
 						const Vec2 seed = seedAt(row, column);
 						const float away = Length(seed - peak.Center);
-						if (peak.RimDistance(seed) < 0.35f || away < peak.Ritual + 0.4f || NearBlocker(seed, 1.25f))
+						if (peak.RimDistance(seed) < 0.35f || away < peak.Ritual + 0.4f || NearBlocker(seed, 1.25f) || NearRiser(seed, 0.9f) || NearFissure(seed, 0.6f))
 							continue;
 						const float summit = 1.0f - Ease((away - 4.0f) / 6.0f);
-						if (Fbm(seed * 0.13f, 0x51AFu, 3) + 0.25f * (Unit(column, row, 0x51B0u) - 0.5f) + 0.2f * summit < 0.42f)
+						if (Fbm(seed * 0.13f, 0x51AFu, 3) + 0.25f * (Unit(column, row, 0x51B0u) - 0.5f) + 0.1f * summit < 0.68f)
 							continue;
 						if (surface.Cover(seed)[PeakSnow] > 0.6f)
 							continue;
@@ -3796,14 +4653,16 @@ namespace Game
 						center = center / float(outline.size());
 						const float poke = Unit(column, row, 0x51B2u);
 						PavingStyle shaped = style;
-						float lift = -0.03f + 0.07f * poke * poke;
-						if (poke > 0.92f)
+						float lift = 0.05f + 0.05f * poke * poke;
+						Vec2 grade = relief.Slope(center);
+						if (poke > 0.8f)
 						{
-							lift = 0.05f + 0.05f * Unit(column, row, 0x51B3u);
-							shaped.Tilt = 0.05f;
+							lift = 0.09f + 0.08f * Unit(column, row, 0x51B3u);
+							grade = grade + FromAngle(Unit(column, row, 0x51B5u) * TwoPi) * (0.12f + 0.14f * Unit(column, row, 0x51B6u));
+							shaped.Bed = 0.45f;
 						}
 						const size_t chunk = size_t(std::clamp(int32_t(center.y) / ChunkSize, 0, m_ChunksY - 1)) * size_t(m_ChunksX) + size_t(std::clamp(int32_t(center.x) / ChunkSize, 0, m_ChunksX - 1));
-						LayStone(batches[chunk], Rounded(outline, 0.18f + 0.12f * Unit(column, row, 0x51B4u)), shaped, relief.Height(center) + lift, row, column, relief.Slope(center));
+						LayStone(batches[chunk], Rounded(outline, 0.18f + 0.12f * Unit(column, row, 0x51B4u)), shaped, relief.Height(center) + lift, row, column, grade);
 					}
 				std::vector<ModelVertex> vertices;
 				std::vector<uint32_t> indices;
@@ -3833,69 +4692,120 @@ namespace Game
 
 			void MountainDressing()
 			{
-				constexpr float ShrineSpacing = 9.0f;
-				const glm::vec4 plain(1.0f, 1.0f, 1.0f, 0.0f);
 				const glm::vec4 stone(0.9f, 0.9f, 0.92f, 0.0f);
 				const glm::vec3 up(0.0f, 1.0f, 0.0f);
 				const PeakRelief& relief = m_Scene.Relief;
 				const Plateau& peak = relief.GetPlateau();
-				const MountainSurface surface{ relief, peak };
-				const auto rock = [&](const std::vector<WeightedMesh>& kit, uint32_t pick, const glm::vec3& center, const glm::vec3& axis, float spin, float radius, const glm::vec4& tint)
+				const MountainSurface surface{ relief, peak, &m_Scorches };
+				const std::vector<WeightedMesh> boulders = FindWeighted({ { "Summit/Boulder_A", 0.47f }, { "Summit/Boulder_B", 0.53f } });
+				const std::vector<WeightedMesh> slabs = FindWeighted({ { "Summit/Slab_A", 0.67f }, { "Summit/Slab_B", 0.8f } });
+				const std::vector<WeightedMesh>& big = boulders.empty() ? m_CliffRocks : boulders;
+				const auto rock = [&](const std::vector<WeightedMesh>& kit, uint32_t pick, const glm::vec3& center, const glm::vec3& axis, float spin, float radius)
 				{
 					if (kit.empty())
 						return;
 					const WeightedMesh& mesh = kit[pick % kit.size()];
-					Add(mesh, Translation(center) * AlignUp(axis, spin) * Scaling(Uniform(mesh.Scale * radius / 0.4f)), tint, center.y, false, center.y);
+					Add(mesh, Translation(center) * AlignUp(axis, spin) * Scaling(Uniform(mesh.Scale * radius / 0.4f)), stone, center.y, false, center.y);
 				};
-				std::vector<Vec2> shrines;
-				const std::optional<uint32_t> ledgeMaterial = m_Renderer.FindMaterialSlot("PavingStone");
-				PavingBatch ledges;
-				const PavingStyle ledge{ .Shoulder = 0.8f, .Dome = 0.012f, .Rim = 0.03f, .Bed = 0.9f, .Tilt = 0.02f, .Lift = 0.0f, .Texture = 0.65f, .Light = { 0.7f, 0.71f, 0.74f }, .Dark = { 0.36f, 0.36f, 0.39f }, .Salt = 0x5A1Eu };
+				const auto groundAt = [&](Vec2 point) { return surface.Height(point, true); };
+				const auto chip = [&](Vec2 point, float radius, uint32_t pick, float spin, float tilt)
+				{
+					if (peak.RimDistance(point) < 0.15f || Length(point - peak.Center) < peak.Ritual + 0.2f || NearRiser(point, 0.3f))
+						return;
+					rock(m_CliffRocks, pick, glm::vec3(point.x, groundAt(point) - radius * 0.5f, point.y), glm::normalize(up + glm::vec3(std::cos(spin), 0.0f, std::sin(spin)) * tilt), spin, radius);
+				};
+				const auto scatter = [&](Vec2 center, Vec2 toward, float spread, float near, float far, int32_t count, float small, float large, int32_t salt)
+				{
+					for (int32_t n = 0; n < count; n++)
+					{
+						const auto roll = [&](uint32_t k) { return Unit(salt, n, k); };
+						const float angle = AngleOf(toward) + spread * (roll(1401u) - 0.5f);
+						const float reach = std::lerp(near, far, roll(1402u) * roll(1402u));
+						const float size = std::lerp(small, large, std::pow(roll(1403u), 2.5f));
+						chip(center + FromAngle(angle) * reach, size, Hash(salt, n, 1404u), roll(1405u) * TwoPi, 0.6f * roll(1406u));
+					}
+				};
+
+				std::vector<Vec2> rims;
+				RockBatch ledge;
 				for (const WallSpot& spot : m_WallSpots)
 				{
+					if (!spot.Rim)
+						continue;
 					const int32_t hx = int32_t(std::lround(spot.Base.x * 8.0f));
 					const int32_t hy = int32_t(std::lround(spot.Base.y * 8.0f));
 					const auto roll = [&](uint32_t salt) { return Unit(hx, hy, salt); };
-					const glm::vec3 outward(spot.Outward.x, 0.0f, spot.Outward.y);
-					const float drop = spot.Top - spot.Bottom;
-					if (roll(1301u) < 0.26f)
-					{
-						const float radius = 0.12f + 0.2f * roll(1302u);
-						const glm::vec3 center = glm::vec3(spot.Base.x, spot.Bottom + MountainBury - radius * 0.4f, spot.Base.y) + outward * (0.08f + 0.2f * roll(1303u));
-						rock(m_CliffRocks, Hash(hx, hy, 1304u), center, glm::normalize(up + outward * (0.5f * roll(1305u))), roll(1306u) * TwoPi, radius, stone);
-					}
-					if (drop > 0.6f && roll(1311u) < 0.12f)
-					{
-						const float radius = 0.16f + 0.18f * roll(1312u);
-						const glm::vec3 axis = glm::normalize(outward * 0.85f + up * (0.35f + 0.45f * roll(1313u)));
-						const glm::vec3 center = MountainFace(spot.Base, spot.Outward, spot.Top, spot.Bottom, 0.3f + 0.45f * roll(1314u)) - outward * (radius * 0.3f) - axis * (radius * 0.35f);
-						rock(m_CliffRocks, Hash(hx, hy, 1315u), center, axis, roll(1316u) * TwoPi, radius, stone);
-					}
-					if (m_Shrines.empty() || !ledgeMaterial || roll(1361u) > 0.08f || spot.Outward.y > 0.35f)
-						continue;
-					if (std::any_of(shrines.begin(), shrines.end(), [&](Vec2 other) { return LengthSquared(other - spot.Base) < ShrineSpacing * ShrineSpacing; }))
-						continue;
-					shrines.push_back(spot.Base);
 					const Vec2 side = Perpendicular(spot.Outward);
-					const Vec2 middle = spot.Base + spot.Outward * 0.85f;
-					const float shelf = spot.Top - (0.9f + 0.5f * roll(1362u)) * std::max(drop, 1.0f) * 0.6f;
-					const float width = 0.9f + 0.4f * roll(1363u);
-					const Outline outline = {
-						middle - side * width - spot.Outward * 0.75f,
-						middle + side * (width * (0.9f + 0.2f * roll(1364u))) - spot.Outward * 0.75f,
-						middle + side * (width * 0.8f) + spot.Outward * (0.45f + 0.15f * roll(1365u)),
-						middle - side * (width * 0.85f) + spot.Outward * 0.5f,
-					};
-					LayStone(ledges, Rounded(outline, 0.2f), ledge, shelf, hx, hy);
-					const WeightedMesh& shrine = m_Shrines[Hash(hx, hy, 1366u) % m_Shrines.size()];
-					const glm::mat4 place = Translation({ middle.x, shelf - 0.02f, middle.y }) * RotationY(AngleOf(spot.Outward) + Pi * 0.5f + (roll(1367u) - 0.5f) * 0.6f) * Scaling(Uniform(shrine.Scale));
-					Add(shrine, place, plain, shelf, false, shelf);
+					if (roll(1301u) > 0.07f || (peak.ChasmDistance(spot.Base) < 0.8f && roll(1302u) < 0.5f))
+						continue;
+					if (std::any_of(rims.begin(), rims.end(), [&](Vec2 other) { return LengthSquared(other - spot.Base) < 2.0f * 2.0f; }))
+						continue;
+					if (std::any_of(m_Formations.begin(), m_Formations.end(), [&](Vec2 other) { return LengthSquared(other - spot.Base) < 2.2f * 2.2f; }))
+						continue;
+					rims.push_back(spot.Base);
+					const bool front = spot.Outward.y < -0.35f;
+					const int32_t pieces = 1 + int32_t(roll(1307u) * 2.5f);
+					for (int32_t n = 0; n < pieces; n++)
+					{
+						const float radius = (0.3f + 0.25f * Unit(hx + n, hy, 1308u)) * (n == 0 ? 1.0f : 0.7f);
+						const Vec2 at = spot.Base + side * (float(n == 0 ? 0 : (n % 2 == 0 ? 1 : -1)) * (0.45f + 0.35f * Unit(hx, hy + n, 1309u))) + spot.Outward * (radius * 0.55f);
+						Shard(ledge, at, relief.Height(at - spot.Outward * (radius + 0.3f)), (0.2f + 0.35f * Unit(hx + n, hy + n, 1310u)) * (front ? 0.7f : 1.0f), radius, spot.Outward * (0.25f + 0.2f * Unit(hx, hy, 1317u + uint32_t(n))), 1.35f, hx * 13 + hy * 7 + n, front);
+					}
+					scatter(spot.Base, spot.Outward * -1.0f, 2.2f, 0.2f, 1.3f, 3 + int32_t(roll(1318u) * 4.0f), 0.02f, 0.06f, hx * 7 + hy);
 				}
-				if (ledgeMaterial && !ledges.Indices.empty())
+				Flush(ledge);
+				for (size_t n = 0; n < m_Formations.size(); n++)
 				{
-					const uint32_t base = m_Renderer.AddLevelGeometry(ledges.Vertices, ledges.Indices, { { .FirstIndex = 0, .IndexCount = uint32_t(ledges.Indices.size()), .Material = *ledgeMaterial, .Layer = *ledgeMaterial, .Flags = MeshVertexTint } });
-					Insert(base, m_Renderer.MakeModelInstance(base, glm::mat4(1.0f), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.0f, ledges.Min.y), ledges.Min, ledges.Max, false, ledges.Min.y);
+					const Vec2 tip = m_Formations[n];
+					const Vec2 inward = Normalize(peak.Center - tip);
+					scatter(tip, inward, 2.4f, 0.4f, 2.4f, 12 + int32_t(Unit(int32_t(n), 3, 1421u) * 6.0f), 0.02f, 0.08f, int32_t(n) * 131 + 17);
 				}
+				for (size_t n = 0; n < relief.GetCraters().size(); n++)
+				{
+					const PeakRelief::Crater& crater = relief.GetCraters()[n];
+					scatter(crater.Center, Vec2(1.0f, 0.0f), TwoPi, crater.Radius * 0.9f, crater.Radius * 2.4f, 14 + int32_t(Unit(int32_t(n), 5, 1423u) * 6.0f), 0.02f, 0.08f, int32_t(n) * 97 + 5);
+				}
+				for (size_t n = 0; n < m_Level.Props.size(); n++)
+				{
+					const PlacedProp& prop = m_Level.Props[n];
+					if (GetProp(prop.Id).Colliders.empty() || prop.Id == PropId::StormSpire)
+						continue;
+					const float reach = Footprint(prop.Id) / 0.85f;
+					scatter(prop.Position, Vec2(1.0f, 0.0f), TwoPi, reach + 0.05f, reach + 0.9f, 6 + int32_t(Unit(int32_t(n), 7, 1425u) * 6.0f), 0.02f, 0.07f, int32_t(n) * 59 + 11);
+					if (prop.Id == PropId::Monolith && Unit(int32_t(n), 9, 1427u) < 0.65f)
+					{
+						const float angle = Unit(int32_t(n), 11, 1427u) * TwoPi;
+						const Vec2 at = prop.Position + FromAngle(angle) * (reach + 0.35f);
+						if (peak.RimDistance(at) > 0.8f && !NearRiser(at, 0.5f))
+							rock(slabs.empty() ? m_CliffRocks : slabs, Hash(int32_t(n), 13, 1429u), glm::vec3(at.x, groundAt(at) - 0.05f, at.y), glm::normalize(up + glm::vec3(std::cos(angle), 0.0f, std::sin(angle)) * 0.45f), angle, 0.3f + 0.15f * Unit(int32_t(n), 15, 1427u));
+					}
+				}
+
+				RockBatch outcrops;
+				std::vector<Vec2> crops;
+				for (int32_t attempt = 0; attempt < 240 && crops.size() < 13; attempt++)
+				{
+					const auto roll = [&](uint32_t k) { return Unit(attempt, int32_t(m_Level.Seed % 4093u), k); };
+					const Vec2 point = peak.Center + FromAngle(roll(1431u) * TwoPi) * (4.4f + 9.5f * roll(1432u));
+					const float rim = peak.RimDistance(point);
+					const bool edge = rim < 2.6f;
+					const bool beside = NearBlocker(point, 1.9f);
+					if (rim < 0.9f || NearBlocker(point, 1.1f) || NearRiser(point, 0.7f) || NearFissure(point, 0.4f) || Length(point - peak.Center) < peak.Ritual + 0.8f)
+						continue;
+					if (std::any_of(m_Level.SpawnPoints.begin(), m_Level.SpawnPoints.end(), [&](Vec2 spawn) { return LengthSquared(spawn - point) < 0.9f * 0.9f; }))
+						continue;
+					if (std::any_of(crops.begin(), crops.end(), [&](Vec2 other) { return LengthSquared(other - point) < 2.2f * 2.2f; }))
+						continue;
+					if (!edge && !beside && roll(1433u) < 0.6f)
+						continue;
+					crops.push_back(point);
+					const float height = edge || beside ? 0.1f + 0.14f * roll(1434u) : 0.05f + 0.05f * roll(1434u);
+					const float radius = 0.35f + 0.5f * roll(1435u);
+					Outcrop(outcrops, point, relief.Height(point), height, radius, attempt * 29 + 3);
+					scatter(point, Vec2(1.0f, 0.0f), TwoPi, radius * 0.8f, radius * 1.8f, 3 + int32_t(roll(1436u) * 4.0f), 0.025f, 0.07f, attempt * 43 + 9);
+				}
+				Flush(outcrops);
+
 				constexpr float Spacing = 0.55f;
 				const int32_t count = int32_t(float(m_Map.GetWidth()) / Spacing);
 				for (int32_t j = 0; j < count; j++)
@@ -3903,20 +4813,14 @@ namespace Game
 					{
 						const auto roll = [&](uint32_t salt) { return Unit(i, j, salt); };
 						const Vec2 point = Vec2(float(i) + roll(1341u), float(j) + roll(1342u)) * Spacing;
-						if (peak.RimDistance(point) < 0.7f || Length(point - peak.Center) < peak.Ritual + 0.3f || NearBlocker(point, 1.1f))
+						if (peak.RimDistance(point) < 0.4f || Length(point - peak.Center) < peak.Ritual + 0.3f || NearBlocker(point, 1.0f) || NearFissure(point, 0.15f))
 							continue;
 						const std::array<float, 4> cover = surface.Cover(point);
-						const float ground = relief.Height(point);
-						if (!m_Grass.empty() && roll(1343u) < 0.45f * Ease((cover[PeakGrass] - 0.25f) / 0.4f))
+						const float chance = (0.05f + 0.08f * cover[PeakDirt] + 0.05f * Ease((1.6f - peak.RimDistance(point)) / 1.2f)) * (1.0f - 0.8f * cover[PeakSnow]);
+						if (roll(1347u) < chance)
 						{
-							const WeightedMesh& tuft = m_Grass[Hash(i, j, 1344u) % m_Grass.size()];
-							const glm::vec3 base(point.x, ground - 0.02f, point.y);
-							Add(tuft, Translation(base) * RotationY(roll(1345u) * TwoPi) * Scaling(Uniform(tuft.Scale * (0.5f + 0.4f * roll(1346u)))), plain, base.y, false, base.y);
-						}
-						else if (roll(1347u) < 0.035f * (1.0f - cover[PeakSnow]))
-						{
-							const float radius = 0.05f + 0.06f * roll(1348u);
-							rock(m_CliffRocks, Hash(i, j, 1349u), glm::vec3(point.x, ground - radius * 0.3f, point.y), up, roll(1350u) * TwoPi, radius, stone);
+							const float tiny = roll(1348u);
+							chip(point, tiny < 0.6f ? 0.02f + 0.025f * tiny : 0.04f + 0.03f * roll(1349u), Hash(i, j, 1349u), roll(1350u) * TwoPi, 0.5f * roll(1351u));
 						}
 					}
 			}
@@ -3993,8 +4897,8 @@ namespace Game
 						ModelVertex& vertex = vertices[first + v];
 						vertex.Normal = glm::length(normals[v]) > 1e-9f ? glm::normalize(normals[v]) : glm::vec3(0.0f, 1.0f, 0.0f);
 						const float grain = ValueNoise3(vertex.Position * 0.3f, 1401u);
-						const float snow = Ease((vertex.Normal.y - 0.58f + 0.3f * (grain - 0.5f)) / 0.12f) * Ease((vertex.Position.y - (summit - 0.45f * height)) / (0.12f * height));
-						const glm::vec3 rock = glm::mix(ToColor(0x3E4046), ToColor(0x5C5E64), grain) * (0.8f + 0.25f * Ease(vertex.Normal.y));
+						const float snow = 0.4f * Ease((vertex.Normal.y - 0.62f + 0.3f * (grain - 0.5f)) / 0.12f) * Ease((vertex.Position.y - (summit - 0.3f * height)) / (0.12f * height));
+						const glm::vec3 rock = glm::mix(ToColor(0x3E4046), ToColor(0x5C5E64), grain) * (0.45f + 0.15f * Ease(vertex.Normal.y));
 						vertex.Color = PackTint(glm::mix(rock, ToColor(0xD9DEE6), snow));
 					}
 					meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(indices.size()) - firstIndex, .Material = material, .Layer = material, .Flags = MeshVertexTint });
@@ -4922,7 +5826,23 @@ namespace Game
 			std::vector<LedgeRun> m_LedgeRuns;
 			std::vector<std::vector<std::pair<Vec2, Vec2>>> m_Coast;
 			std::vector<WallSpot> m_WallSpots;
+			std::vector<Fissure> m_Fissures;
+			std::vector<Scorch> m_Scorches;
+			std::vector<Vec2> m_Formations;
 		};
+	}
+
+	void RegisterPeakMeshes(WorldRenderer& renderer)
+	{
+		const EffectMaterial storm{ .Color = { 0.82f, 0.96f, 1.0f }, .Roughness = 0.03f, .Metallic = 0.0f, .Emission = { 0.1f, 0.42f, 0.75f }, .Translucency = 0.5f, .Transmission = 1.0f, .Ior = 1.62f, .Absorption = { 2.8f, 0.8f, 0.25f } };
+		const EffectMaterial amethyst{ .Color = { 0.9f, 0.84f, 1.0f }, .Roughness = 0.03f, .Metallic = 0.0f, .Emission = { 0.42f, 0.16f, 0.75f }, .Translucency = 0.5f, .Transmission = 1.0f, .Ior = 1.62f, .Absorption = { 0.9f, 2.4f, 0.3f } };
+		for (uint32_t variant = 0; variant < PeakCrystalShapes * 2; variant++)
+		{
+			std::vector<ModelVertex> vertices;
+			std::vector<uint32_t> indices;
+			CrystalCluster(vertices, indices, variant % PeakCrystalShapes);
+			renderer.AddEffectMesh(PeakCrystalName(variant), vertices, indices, variant < PeakCrystalShapes ? storm : amethyst, MeshVertexTint);
+		}
 	}
 
 	LevelScene BuildLevelScene(const Level& level, WorldRenderer& renderer)

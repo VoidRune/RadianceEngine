@@ -104,7 +104,9 @@ namespace Game
 		m_ChessVersion++;
 		m_PendingHits.clear();
 		m_NewHits.clear();
+		m_Orbs.clear();
 		m_Snapshots.clear();
+		m_Decoder.Reset();
 		m_Entities.clear();
 		m_View.clear();
 		m_ClockStarted = false;
@@ -269,6 +271,12 @@ namespace Game
 	{
 		if (m_State == ClientState::InGame)
 			Send(ClientAction{ .Action = ActionType::StartMatch, .Value = uint16_t(GameMode::Brawl), .Target = uint16_t(map), .Rules = rules }, SendMode::Reliable);
+	}
+
+	void GameClient::StartShardfall(const RunRules& rules)
+	{
+		if (m_State == ClientState::InGame)
+			Send(PackRunRules(rules), SendMode::Reliable);
 	}
 
 	void GameClient::JoinMatch()
@@ -577,7 +585,7 @@ namespace Game
 				m_Players = std::move(list.Players);
 			break;
 		case MessageType::ServerSnapshot:
-			if (ServerSnapshot snapshot; m_State == ClientState::InGame && Decode(message.Data, snapshot))
+			if (ServerSnapshot snapshot; m_State == ClientState::InGame && m_Decoder.Decode(message.Data, snapshot))
 				OnSnapshot(std::move(snapshot));
 			break;
 		case MessageType::ServerInventory:
@@ -610,6 +618,7 @@ namespace Game
 		for (const HitEvent& hit : snapshot.Hits)
 			m_PendingHits.push_back({ snapshot.Tick, hit });
 		m_Status = snapshot.Status;
+		m_Orbs = snapshot.Orbs;
 		m_Snapshots.push_back(std::move(snapshot));
 		while (m_Snapshots.size() > MaxSnapshots)
 			m_Snapshots.pop_front();
@@ -620,7 +629,7 @@ namespace Game
 	{
 		const PlayerTraits knownTraits = m_LocalPlayer.Traits;
 		m_LocalPlayer = snapshot.LocalPlayer;
-		if (!m_LocalPlayer.HasTraits)
+		if (!m_LocalPlayer.Valid)
 			m_LocalPlayer.Traits = knownTraits;
 		while (!m_PendingInputs.empty() && m_PendingInputs.front().Sequence <= snapshot.LastProcessedInput)
 			m_PendingInputs.pop_front();
@@ -691,7 +700,7 @@ namespace Game
 		while (m_PendingInputs.size() > MaxPendingInputs)
 			m_PendingInputs.pop_front();
 		const size_t redundancy = std::min<size_t>(m_PendingInputs.size(), InputRedundancy);
-		Send(ClientInput{ .Inputs = { m_PendingInputs.end() - ptrdiff_t(redundancy), m_PendingInputs.end() } }, SendMode::Unreliable);
+		Send(ClientInput{ .Inputs = { m_PendingInputs.end() - ptrdiff_t(redundancy), m_PendingInputs.end() }, .Acked = m_Decoder.GetLatestTick() }, SendMode::Unreliable);
 
 		const float dt = GetTickSeconds();
 		m_PreviousMotion = m_PredictedMotion;

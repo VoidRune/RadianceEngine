@@ -101,6 +101,11 @@ namespace Game
 		GlacialEruption,
 		WellBurst,
 		WarpWake,
+		CrawlerBite,
+		Pounce,
+		ShardSpit,
+		RubyBurst,
+		RubyShard,
 		Count,
 	};
 
@@ -218,6 +223,11 @@ namespace Game
 		{ .Id = AbilityId::GlacialEruption, .Name = "Frost Nova", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Reach = 3.4f, .EffectDuration = 0.9f, .Push = 14.0f, .Parent = AbilityId::GlacialNova, .BrawlDamage = 12 },
 		{ .Id = AbilityId::WellBurst, .Name = "Void Gaze", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 13.5f, .Parent = AbilityId::GravityWell, .BrawlDamage = 11 },
 		{ .Id = AbilityId::WarpWake, .Name = "Warp", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 13.5f, .Parent = AbilityId::Warp, .BrawlDamage = 11 },
+		{ .Id = AbilityId::CrawlerBite, .Name = "Crystal Bite", .Kind = AbilityKind::Melee, .Cooldown = 1.3f, .Damage = 9, .Reach = 1.25f, .HalfArc = 0.8f, .EffectDuration = 0.12f },
+		{ .Id = AbilityId::Pounce, .Name = "Pounce", .Kind = AbilityKind::Melee, .Cooldown = 3.2f, .Damage = 14, .Reach = 3.0f, .EffectDuration = 0.2f, .Shape = StrikeShape::Line, .Width = 0.8f },
+		{ .Id = AbilityId::ShardSpit, .Name = "Shard Spit", .Cooldown = 3.0f, .Damage = 10, .ProjectileSpeed = 6.5f, .ProjectileRadius = 0.16f, .ProjectileRange = 8.0f, .ProjectileSpread = 0.32f, .SpawnOffset = 0.5f },
+		{ .Id = AbilityId::RubyBurst, .Name = "Ruby Burst", .Kind = AbilityKind::Ground, .EffectDuration = 0.3f, .ImpactRadius = 0.9f, .ImpactDelay = 0.5f, .Shape = StrikeShape::Ring, .InnerRadius = 0.55f },
+		{ .Id = AbilityId::RubyShard, .Name = "Ruby Shard", .Damage = 12, .ProjectileSpeed = 7.5f, .ProjectileRadius = 0.15f, .ProjectileRange = 5.5f, .SpawnOffset = 0.0f },
 	};
 
 	constexpr bool AbilitiesMatchIds()
@@ -281,6 +291,16 @@ namespace Game
 		return Names[size_t(element) < std::size(Names) ? size_t(element) : 0];
 	}
 
+	enum class EnemyBehavior : uint8_t
+	{
+		Hunter,
+		Pouncer,
+		Volatile,
+		Brood,
+		Treasure,
+		Egg,
+	};
+
 	struct EnemyDef
 	{
 		EntityKind Kind = EntityKind::Chaser;
@@ -296,6 +316,13 @@ namespace Game
 		float BuffChance = 0.015f;
 		bool Boss = false;
 		const char* Title = "";
+		EnemyBehavior Behavior = EnemyBehavior::Hunter;
+		uint8_t Tier = 0;
+		uint16_t Cost = 0;
+		uint16_t Xp = 0;
+		float Lunge = 0.0f;
+		float Keep = 0.0f;
+		uint8_t Volley = 0;
 	};
 
 	inline constexpr EnemyDef EnemyDefs[] = {
@@ -305,6 +332,13 @@ namespace Game
 		{ .Kind = EntityKind::Caster, .Name = "Pyromancer", .Health = 55, .Radius = 0.36f, .Speed = 2.5f, .Attack = AbilityId::Firestrike, .AttackRange = 7.0f, .Windup = 0.8f, .LootWeight = 1.5f, .OrbChance = 0.2f },
 		{ .Kind = EntityKind::Archivist, .Name = "The Archivist", .Health = 6000, .Radius = 0.85f, .Speed = 2.6f, .Attack = AbilityId::TomeVolley, .AttackRange = 10.0f, .Windup = 0.7f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Boss = true, .Title = "Keeper of the Burned Library" },
 		{ .Kind = EntityKind::Wyrm, .Name = "Crystal Wyrm", .Health = 7500, .Radius = 1.0f, .Speed = 3.0f, .Attack = AbilityId::CrystalSpike, .AttackRange = 9.0f, .Windup = 0.8f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Boss = true, .Title = "Devourer of the Deep Veins" },
+		{ .Kind = EntityKind::QuartzCrawler, .Name = "Quartz Crawler", .Health = 30, .Radius = 0.32f, .Speed = 3.7f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.85f, .Windup = 0.45f, .LootWeight = 0.0f, .OrbChance = 0.02f, .BuffChance = 0.0f, .Tier = 1, .Cost = 1, .Xp = 1, .Lunge = 0.7f },
+		{ .Kind = EntityKind::JadeCrawler, .Name = "Jade Crawler", .Health = 60, .Radius = 0.36f, .Speed = 3.3f, .Attack = AbilityId::Pounce, .AttackRange = 2.6f, .Windup = 0.6f, .LootWeight = 0.0f, .OrbChance = 0.04f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Pouncer, .Tier = 2, .Cost = 3, .Xp = 3, .Lunge = 3.0f },
+		{ .Kind = EntityKind::SapphireCrawler, .Name = "Sapphire Crawler", .Health = 85, .Radius = 0.4f, .Speed = 2.7f, .Attack = AbilityId::ShardSpit, .AttackRange = 6.5f, .Windup = 0.5f, .LootWeight = 0.0f, .OrbChance = 0.05f, .BuffChance = 0.0f, .Tier = 3, .Cost = 5, .Xp = 8, .Keep = 4.5f },
+		{ .Kind = EntityKind::RubyCrawler, .Name = "Ruby Crawler", .Health = 120, .Radius = 0.44f, .Speed = 3.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 1.0f, .Windup = 0.5f, .LootWeight = 0.0f, .OrbChance = 0.07f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Volatile, .Tier = 4, .Cost = 8, .Xp = 20, .Lunge = 0.8f },
+		{ .Kind = EntityKind::AmethystCrawler, .Name = "Amethyst Brood Mother", .Health = 260, .Radius = 0.5f, .Speed = 2.0f, .Attack = AbilityId::ShardSpit, .AttackRange = 7.5f, .Windup = 0.7f, .LootWeight = 0.0f, .OrbChance = 0.2f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Brood, .Tier = 5, .Cost = 16, .Xp = 50, .Keep = 6.0f, .Volley = 2 },
+		{ .Kind = EntityKind::PrismaticCrawler, .Name = "Prismatic Crawler", .Health = 160, .Radius = 0.4f, .Speed = 4.6f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .LootWeight = 0.0f, .OrbChance = 0.5f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Treasure, .Tier = 3, .Cost = 6, .Xp = 30 },
+		{ .Kind = EntityKind::CrawlerEgg, .Name = "Crawler Egg", .Health = 18, .Radius = 0.24f, .Speed = 0.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Egg, .Xp = 1 },
 	};
 
 	inline const EnemyDef* FindEnemyDef(EntityKind kind)

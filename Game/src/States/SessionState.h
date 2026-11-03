@@ -3,6 +3,7 @@
 #include "Online/SteamPlatform.h"
 #include "Rendering/LevelRenderer.h"
 #include "Rendering/Characters.h"
+#include "Rendering/Crawlers.h"
 #include "Rendering/Effects.h"
 #include "Rendering/Lighting.h"
 #include "Rendering/SpellVisuals.h"
@@ -295,6 +296,7 @@ namespace Game
 		std::optional<glm::vec2> ProjectToScreen(const glm::vec3& position) const;
 		float GroundHeight(Vec2 position) const;
 		bool IsOpenAir(Vec2 position) const;
+		bool InStorm() const;
 		float LaunchHeight(const EntityState& entity) const;
 		glm::vec3 Ground(Vec2 position, float lift = 0.0f) const { return { position.x, GroundHeight(position) + lift, position.y }; }
 		void UpdateCamera(float dt);
@@ -433,6 +435,7 @@ namespace Game
 		void DrawDraggedSpell();
 		void DrawSpellbook();
 		void DrawCalderaGate();
+		void DrawShardRift();
 		void DrawGateMatch(UiRect area);
 		void DrawGateCustom(UiRect area);
 		void DrawGateTeams(UiRect area);
@@ -522,6 +525,7 @@ namespace Game
 		std::vector<Corpse> m_Corpses;
 		std::unique_ptr<CharacterLibrary> m_Characters;
 		std::unique_ptr<EffectSystem> m_Effects;
+		std::unique_ptr<CrawlerSystem> m_Crawlers;
 		std::optional<uint32_t> m_MeteorMesh;
 		SpellMeshes m_SpellMeshes;
 		std::unordered_map<uint32_t, SpearPath> m_SpearPaths;
@@ -604,6 +608,7 @@ namespace Game
 		int m_SourceTab = 0;
 		MapKind m_BoardMap = MapKind::Town;
 		int m_BoardTier = 1;
+		RunRules m_RunRules;
 		ModifierMask m_BoardModifiers = 0;
 		MatchRules m_ArenaRules;
 		MapKind m_RoyaleMap = MapKind::Ashlands;
@@ -661,6 +666,7 @@ namespace Game
 		uint32_t m_MinimapTravel = UINT32_MAX;
 		MissionPhase m_SeenMission = MissionPhase::Explore;
 		GameMode m_SeenMode = GameMode::Count;
+		uint16_t m_SeenLevel = 0;
 		std::string m_BannerTitle;
 		std::string m_BannerText;
 		glm::vec4 m_BannerColor{ 1.0f };

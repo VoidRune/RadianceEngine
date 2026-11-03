@@ -3,6 +3,7 @@
 #include "Online/SteamPlatform.h"
 #include "Rendering/MenuBackdrop.h"
 #include "Rendering/ModelSources.h"
+#include "Rendering/LevelArt.h"
 #include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
 #include "States/LightingTestState.h"
@@ -132,6 +133,8 @@ namespace Game
 				m_Settings.Vsync = value == "1";
 			else if (uint32_t cap = 0; key == "FrameCap" && ParseNumber(value, cap))
 				m_Settings.FrameCap = std::clamp(cap, MinFrameCap, MaxFrameCap);
+			else if (uint32_t scale = 0; key == "RenderScale" && ParseNumber(value, scale))
+				m_Settings.RenderScale = std::clamp(scale, MinRenderScale, MaxRenderScale);
 			else if (key == "ScreenShake")
 				ReadVolume(value, m_Settings.ScreenShake);
 			else if (key == "ShowControls")
@@ -159,6 +162,7 @@ namespace Game
 			m_Stored.Fullscreen = m_Settings.Fullscreen;
 			m_Stored.Vsync = m_Settings.Vsync;
 			m_Stored.FrameCap = m_Settings.FrameCap;
+			m_Stored.RenderScale = m_Settings.RenderScale;
 			m_Stored.ShowControls = m_Settings.ShowControls;
 			m_Stored.ScreenShake = m_Settings.ScreenShake;
 			break;
@@ -181,7 +185,7 @@ namespace Game
 		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nFriendsCanJoin=" << (m_Stored.FriendsCanJoin ? 1 : 0) << "\nKit=" << GetKit(m_Stored.Kit).Name
 			<< "\nVolume=" << m_Stored.Volume << "\nMusicVolume=" << m_Stored.MusicVolume << "\nEffectsVolume=" << m_Stored.EffectsVolume << "\nMuted=" << (m_Stored.Muted ? 1 : 0)
 			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0) << "\nVsync=" << (m_Stored.Vsync ? 1 : 0)
-			<< "\nFrameCap=" << m_Stored.FrameCap << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\nScreenShake=" << m_Stored.ScreenShake << "\n";
+			<< "\nFrameCap=" << m_Stored.FrameCap << "\nRenderScale=" << m_Stored.RenderScale << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\nScreenShake=" << m_Stored.ScreenShake << "\n";
 		if (!m_GraphicsGpu.empty())
 			file << "Gpu=" << m_GraphicsGpu << "\n";
 		if (m_GraphicsTier)
@@ -226,6 +230,7 @@ namespace Game
 		m_Settings.Tier = options.Tier;
 		m_Settings.Modifiers = options.Modifiers;
 		m_Settings.Rules = options.Rules;
+		m_Settings.Run = options.Run;
 		m_ScreenshotPath = options.ScreenshotPath;
 		m_ScreenshotFrames = std::max(options.ScreenshotFrames, 1u);
 		m_ScreenshotBurst = std::max(options.ScreenshotBurst, 1u);
@@ -282,6 +287,8 @@ namespace Game
 			m_Settings.Vsync = *options.Vsync;
 		if (options.FrameCap)
 			m_Settings.FrameCap = *options.FrameCap;
+		if (options.RenderScale)
+			m_Settings.RenderScale = *options.RenderScale;
 		if (options.ScreenShake)
 			m_Settings.ScreenShake = *options.ScreenShake;
 		m_Settings.ShowPerformance = options.ShowPerformance;
@@ -334,11 +341,13 @@ namespace Game
 			std::exit(1);
 		}
 		RegisterSpellMeshes(*m_WorldRenderer);
+		RegisterPeakMeshes(*m_WorldRenderer);
 		m_MenuBackdrop = std::make_unique<MenuBackdrop>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
 		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
 		m_WorldRenderer->GetDistortion().Enabled = m_Settings.Distortion;
 		m_WorldRenderer->GetTrails().Enabled = m_Settings.Trails;
 		m_WorldRenderer->SetTranslucency(options.Translucency);
+		m_WorldRenderer->SetPointLights(options.PointLights);
 		m_WorldRenderer->SetGlassModels(options.Refraction);
 		if (options.Shadows)
 			m_Settings.Shadows = ShadowQuality(*options.Shadows);
@@ -346,6 +355,7 @@ namespace Game
 		if (options.Gi)
 			m_Settings.Gi = GiQuality(*options.Gi);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
+		m_WorldRenderer->SetRenderScale(float(m_Settings.RenderScale) / 100.0f);
 		PostProcess& post = m_WorldRenderer->GetPost();
 		if (options.Tonemap)
 			post.Tonemap = Tonemapper(*options.Tonemap);
@@ -447,6 +457,7 @@ namespace Game
 	{
 		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
+		m_WorldRenderer->SetRenderScale(float(m_Settings.RenderScale) / 100.0f);
 		m_Window->SetFullscreen(m_Settings.Fullscreen);
 		m_PresentQueue->SetPresentMode(PresentModeFor(m_Settings.Vsync));
 	}
@@ -461,14 +472,17 @@ namespace Game
 			m_Settings.Gi = next.Gi;
 		if (m_Settings.FrameCap == previous.FrameCap)
 			m_Settings.FrameCap = next.FrameCap;
+		if (m_Settings.RenderScale == previous.RenderScale)
+			m_Settings.RenderScale = next.RenderScale;
 		m_Stored.Shadows = m_Settings.Shadows;
 		m_Stored.Gi = m_Settings.Gi;
 		m_Stored.FrameCap = m_Settings.FrameCap;
+		m_Stored.RenderScale = m_Settings.RenderScale;
 		m_GraphicsGpu = m_Device->GetProperties().Name;
 		m_GraphicsTier = m_RecommendedGraphics;
 		m_PreferencesDirty = true;
 		m_PreferencesDelay = 0.0f;
-		RDN_LOG("Graphics for this GPU: indirect light {}, shadows {}, frame cap {}", GiQualityNames[size_t(m_Settings.Gi)], ShadowQualityNames[size_t(m_Settings.Shadows)], m_Settings.FrameCap);
+		RDN_LOG("Graphics for this GPU: indirect light {}, shadows {}, frame cap {}, render scale {}%", GiQualityNames[size_t(m_Settings.Gi)], ShadowQualityNames[size_t(m_Settings.Shadows)], m_Settings.FrameCap, m_Settings.RenderScale);
 	}
 
 	void GameApp::ApplyRecommendedGraphics()
@@ -477,6 +491,7 @@ namespace Game
 		m_Settings.Shadows = preset.Shadows;
 		m_Settings.Gi = preset.Gi;
 		m_Settings.FrameCap = preset.FrameCap;
+		m_Settings.RenderScale = preset.RenderScale;
 		ApplyVisualSettings();
 		RememberSettings(SettingsGroup::Visuals);
 	}

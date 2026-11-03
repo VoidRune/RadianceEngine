@@ -2,6 +2,7 @@
 #include <GameShared/Content/Items.h>
 #include <GameShared/Content/Missions.h>
 #include <GameShared/Content/Pvp.h>
+#include <GameShared/Content/Shardfall.h>
 #include <GameShared/Net/Transport.h>
 #include <GameShared/World/Level.h>
 #include <cstdint>
@@ -24,6 +25,7 @@ namespace Game
 		uint8_t Tier = 1;
 		ModifierMask Modifiers = 0;
 		MatchRules Rules;
+		RunRules Run;
 		uint32_t FirstWave = 1;
 		float LootRate = 1.0f;
 		bool Muted = false;
@@ -47,6 +49,7 @@ namespace Game
 		std::optional<uint8_t> Gi;
 		std::optional<bool> Vsync;
 		std::optional<uint32_t> FrameCap;
+		std::optional<uint32_t> RenderScale;
 		std::optional<float> ScreenShake;
 		bool ShowPerformance = false;
 		std::optional<float> Exposure;
@@ -58,6 +61,7 @@ namespace Game
 		bool Distortion = true;
 		bool Trails = true;
 		bool Translucency = true;
+		bool PointLights = true;
 		bool Refraction = true;
 		uint8_t DistortionStage = 0;
 		bool Steam = true;

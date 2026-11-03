@@ -1065,12 +1065,13 @@ namespace Game
 
 	void WorldRenderer::DrawLight(const SpellLight& light)
 	{
-		if (m_Lights.size() < MaxSpellLights && glm::dot(light.Color, glm::vec3(1.0f)) > 0.0f && light.Radius > 0.0f)
+		if (m_PointLights && glm::dot(light.Color, glm::vec3(1.0f)) > 0.0f && light.Radius > 0.0f)
 			m_Lights.push_back(light);
 	}
 
-	void WorldRenderer::Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D output, uint32_t frameIndex, const std::array<float, 4>& clearColor)
+	void WorldRenderer::Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D display, uint32_t frameIndex, const std::array<float, 4>& clearColor)
 	{
+		const Rdn::Extent2D output = m_RenderScale < 0.999f ? Rdn::Extent2D{ std::max(uint32_t(std::lround(float(display.Width) * m_RenderScale)), 1u), std::max(uint32_t(std::lround(float(display.Height) * m_RenderScale)), 1u) } : display;
 		const bool gi = HasGi();
 		const float guardBand = GetGuardBand();
 		const glm::uvec2 guard(uint32_t(std::lround(float(output.Width) * guardBand)), uint32_t(std::lround(float(output.Height) * guardBand)));
@@ -1156,7 +1157,7 @@ namespace Game
 					continue;
 				const DrawMesh& source = m_DrawMeshes[mesh];
 				const GlassSurface& surface = m_GlassSurfaces[source.Glass];
-				glass.Draws.push_back({ .FirstIndex = source.FirstIndex, .IndexCount = source.IndexCount, .FirstInstance = first, .InstanceCount = instances, .Absorb = surface.Absorb, .Look = surface.Look, .Water = surface.Water });
+				glass.Draws.push_back({ .FirstIndex = source.FirstIndex, .IndexCount = source.IndexCount, .FirstInstance = first, .InstanceCount = instances, .Absorb = surface.Absorb, .Look = glm::vec4(surface.Look.x, surface.Look.y, m_GiQuality != GiQuality::Off ? 1.0f : 0.0f, surface.Look.w), .Water = surface.Water });
 				for (uint32_t i = first; i < first + instances; i++)
 				{
 					const ModelInstance& instance = m_PackedModels[i];
@@ -1271,6 +1272,13 @@ namespace Game
 		}
 		const float edgeBand = guard.x > 0 ? 0.5f * float(std::min(guard.x, guard.y)) : 0.04f * float(std::min(half.Width, half.Height));
 		const EnvironmentView environment = GetEnvironmentView();
+		if (m_Lights.size() > MaxSpellLights)
+		{
+			const auto weight = [](const SpellLight& light) { return glm::dot(light.Color, glm::vec3(0.2126f, 0.7152f, 0.0722f)) * light.Radius * light.Radius; };
+			std::stable_sort(m_Lights.begin(), m_Lights.end(), [&](const SpellLight& a, const SpellLight& b) { return weight(a) > weight(b); });
+			if (m_Lights.size() > MaxSceneLights)
+				m_Lights.resize(MaxSceneLights);
+		}
 		m_Deferred->Render(graph, gbuffer, scene, shadowMap, giSource, emitters, extent, frameIndex, camera, m_Lighting, environment, shadow, m_ShadowQuality, m_Constants.Focus.x, edgeBand, background, m_View, m_Lights, m_Translucency);
 		if (gi)
 			m_Gi->Render(graph, gbuffer, giSource, emitters, backDepth, scene, extent, frameIndex, camera, m_Lighting, environment, m_GiQuality, m_Constants.Focus.x, edgeBand, m_View);
@@ -1285,7 +1293,7 @@ namespace Game
 		m_Post->Raw = IsRawView(m_View);
 		m_Post->SceneExposure = m_Lighting.Exposure;
 		const DistortionView distortion = IsRawView(m_View) ? DistortionView{} : m_Distortion->Render(graph, gbuffer.Depth, extent, frameIndex, camera, m_Particles->GetTime());
-		m_Post->Render(graph, scene, gbuffer.Emission, target, extent, output, distortion);
+		m_Post->Render(graph, scene, gbuffer.Emission, target, extent, output, distortion, display);
 	}
 
 	void WorldRenderer::RenderBackFaces(Rdn::RenderGraph& graph, Rdn::RGImage target, uint32_t boxCount, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex)

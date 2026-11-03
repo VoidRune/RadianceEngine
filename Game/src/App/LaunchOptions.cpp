@@ -85,7 +85,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource|translucency] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan] [--no-distortion] [--no-trails] [--no-translucency] [--no-refraction] [--distortion-stage all|shockwaves] [--no-steam]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--shardfall] [--run-minute 0..12] [--run-level 1..30] [--spawns 0..300] [--xp 25..500] [--only quartz|jade|sapphire|ruby|amethyst|prismatic] [--immortal] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource|translucency] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--render-scale 50..100] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan] [--no-distortion] [--no-trails] [--no-translucency] [--no-point-lights] [--no-refraction] [--distortion-stage all|shockwaves] [--no-steam]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -145,6 +145,11 @@ namespace Game
 					options.Map = map;
 					i++;
 				}
+			}
+			else if (argument == "--shardfall")
+			{
+				options.StartMode = GameMode::Shardfall;
+				options.Map = MapKind::ProvingHollow;
 			}
 			else if (argument == "--arena")
 			{
@@ -316,6 +321,35 @@ namespace Game
 					options.LootRate = rate;
 				i++;
 			}
+			else if ((argument == "--run-minute" || argument == "--run-level") && hasValue)
+			{
+				uint32_t number = 0;
+				const bool minute = argument == "--run-minute";
+				valid = ParseNumber(value, number) && (minute ? number <= MaxStartMinute : number >= 1 && number <= MaxStartLevel);
+				if (valid)
+					(minute ? options.Run.StartMinute : options.Run.StartLevel) = uint8_t(number);
+				i++;
+			}
+			else if ((argument == "--spawns" || argument == "--xp") && hasValue)
+			{
+				uint32_t percent = 0;
+				const bool spawns = argument == "--spawns";
+				valid = ParseNumber(value, percent) && (spawns ? percent <= MaxSpawnRate : percent >= MinXpRate && percent <= MaxXpRate);
+				if (valid)
+					(spawns ? options.Run.Spawns : options.Run.Xp) = uint16_t(percent);
+				i++;
+			}
+			else if (argument == "--only" && hasValue)
+			{
+				constexpr std::string_view Kinds[] = { "quartz", "jade", "sapphire", "ruby", "amethyst", "prismatic" };
+				const auto kind = std::find(std::begin(Kinds), std::end(Kinds), value);
+				valid = kind != std::end(Kinds);
+				if (valid)
+					options.Run.Only = uint8_t(kind - std::begin(Kinds) + 1);
+				i++;
+			}
+			else if (argument == "--immortal")
+				options.Run.Immortal = true;
 			else if (argument == "--mute")
 				options.Muted = true;
 			else if (argument == "--peaceful")
@@ -409,6 +443,14 @@ namespace Game
 					options.FrameCap = cap;
 				i++;
 			}
+			else if (argument == "--render-scale" && hasValue)
+			{
+				uint32_t scale = 0;
+				valid = ParseNumber(value, scale) && scale >= MinRenderScale && scale <= MaxRenderScale;
+				if (valid)
+					options.RenderScale = scale;
+				i++;
+			}
 			else if (argument == "--screen-shake" && hasValue)
 			{
 				float shake = 100.0f;
@@ -442,6 +484,8 @@ namespace Game
 				options.Trails = false;
 			else if (argument == "--no-translucency")
 				options.Translucency = false;
+			else if (argument == "--no-point-lights")
+				options.PointLights = false;
 			else if (argument == "--no-refraction")
 				options.Refraction = false;
 			else if (argument == "--distortion-stage" && hasValue)

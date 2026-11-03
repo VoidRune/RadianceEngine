@@ -10,6 +10,7 @@
 #include "GameShared/Entity/Components.h"
 #include "GameShared/Simulation/GameStatus.h"
 #include "GameShared/Simulation/HitEvent.h"
+#include "GameShared/Simulation/OrbField.h"
 #include "GameShared/Simulation/PlayerInput.h"
 #include "GameShared/World/Level.h"
 #include <algorithm>
@@ -22,7 +23,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 53;
+	constexpr uint32_t ProtocolVersion = 59;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -97,6 +98,7 @@ namespace Game
 		Chess,
 		SetCosmetics,
 		JoinMatch,
+		StartRun,
 		Count,
 	};
 
@@ -116,6 +118,7 @@ namespace Game
 	{
 		static constexpr MessageType Type = MessageType::ClientInput;
 		std::vector<PlayerInput> Inputs;
+		uint32_t Acked = 0;
 	};
 
 	struct ClientAction
@@ -129,6 +132,37 @@ namespace Game
 	};
 
 	constexpr uint16_t AnySlot = UINT16_MAX;
+	constexpr float NetAngleScale = 65536.0f / (2.0f * Pi);
+
+	inline uint16_t QuantizeAngle(float angle)
+	{
+		return uint16_t(int32_t(std::lround(std::remainder(angle, 2.0f * Pi) * NetAngleScale)) & 0xFFFF);
+	}
+
+	inline float DequantizeAngle(uint16_t value)
+	{
+		return float(int16_t(value)) / NetAngleScale;
+	}
+
+	inline uint8_t QuantizeOwner(uint32_t owner)
+	{
+		return owner < 255 ? uint8_t(owner) : uint8_t(255);
+	}
+
+	inline uint32_t DequantizeOwner(uint8_t owner)
+	{
+		return owner == 255 ? NoPlayer : owner;
+	}
+
+	inline ClientAction PackRunRules(const RunRules& rules)
+	{
+		return { .Action = ActionType::StartRun, .Value = uint16_t(rules.StartMinute | (rules.StartLevel << 8)), .Target = rules.Spawns, .Extra = rules.Xp | (uint32_t(rules.Only) << 16) | (rules.Immortal ? 1u << 24 : 0u) };
+	}
+
+	inline RunRules UnpackRunRules(const ClientAction& action)
+	{
+		return SanitizeRunRules({ .StartMinute = uint8_t(action.Value & 0xFFu), .StartLevel = uint8_t(action.Value >> 8), .Spawns = action.Target, .Xp = uint16_t(action.Extra & 0xFFFFu), .Only = uint8_t((action.Extra >> 16) & 0xFFu), .Immortal = (action.Extra >> 24) != 0 });
+	}
 
 	inline uint16_t EncodeItemRef(ItemRef ref)
 	{
@@ -148,6 +182,7 @@ namespace Game
 		uint8_t Tier = 1;
 		ModifierMask Modifiers = 0;
 		MatchRules Rules;
+		RunRules Run;
 		uint32_t Epoch = 0;
 		bool UnlimitedMaterials = false;
 	};
@@ -297,7 +332,6 @@ namespace Game
 		Transform Motion;
 		PlayerState State;
 		BuffStacks Buffs{};
-		bool HasTraits = false;
 		PlayerTraits Traits;
 		UpgradeOffer Offer{};
 		bool OfferPending = false;
@@ -322,6 +356,7 @@ namespace Game
 		LocalPlayerState LocalPlayer;
 		std::vector<EntityState> Entities;
 		std::vector<HitEvent> Hits;
+		std::vector<Orb> Orbs;
 	};
 
 	struct ServerInventory
@@ -335,6 +370,8 @@ namespace Game
 
 	void WriteItem(ByteWriter& writer, const Item& item);
 	bool ReadItem(ByteReader& reader, Item& item);
+	void WriteSnapshotBlock(ByteWriter& writer, const ServerSnapshot& message);
+	bool ReadSnapshotBlock(ByteReader& reader, ServerSnapshot& message);
 
 	void Write(ByteWriter& writer, const ClientHello& message);
 	void Write(ByteWriter& writer, const ClientInput& message);
@@ -342,7 +379,6 @@ namespace Game
 	void Write(ByteWriter& writer, const ServerWelcome& message);
 	void Write(ByteWriter& writer, const ServerReject& message);
 	void Write(ByteWriter& writer, const ServerPlayerList& message);
-	void Write(ByteWriter& writer, const ServerSnapshot& message);
 	void Write(ByteWriter& writer, const ServerInventory& message);
 	void Write(ByteWriter& writer, const ServerTravel& message);
 	void Write(ByteWriter& writer, const ServerStash& message);
@@ -357,7 +393,6 @@ namespace Game
 	bool Read(ByteReader& reader, ServerWelcome& message);
 	bool Read(ByteReader& reader, ServerReject& message);
 	bool Read(ByteReader& reader, ServerPlayerList& message);
-	bool Read(ByteReader& reader, ServerSnapshot& message);
 	bool Read(ByteReader& reader, ServerInventory& message);
 	bool Read(ByteReader& reader, ServerTravel& message);
 	bool Read(ByteReader& reader, ServerStash& message);

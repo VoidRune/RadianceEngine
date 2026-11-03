@@ -28,6 +28,7 @@ namespace Game
 		FrozenLake,
 		SkyRuins,
 		StormPeak,
+		ProvingHollow,
 		Count,
 	};
 
@@ -49,6 +50,7 @@ namespace Game
 		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes." },
 		{ MapKind::SkyRuins, "Sky Ruins", "A temple broken into islands high above the clouds. There is no lava, only a long fall: drifting islands carry you out and back, wind gusts push everyone one way, and the ruins crumble into the sky." },
 		{ MapKind::StormPeak, "Storm Peak", "A wide summit plateau high above the clouds, crowned by the old Stormcallers' ritual circle and its monoliths. Lightning falls at random, the storm closes in on the circle, and a shove off the edge is a long way down." },
+		{ MapKind::ProvingHollow, "Proving Hollow", "A grassy hollow ringed by cliffs, with a worn road around four crystal-studded pillar clusters, a stone boss ring to the north and a vault sealed behind an iron gate." },
 	};
 	static_assert(std::size(Maps) == size_t(MapKind::Count));
 
@@ -80,6 +82,11 @@ namespace Game
 		return kind == MapKind::Caldera || kind == MapKind::FrozenLake || kind == MapKind::SkyRuins || kind == MapKind::StormPeak;
 	}
 
+	inline bool IsShardfallMap(MapKind kind)
+	{
+		return kind == MapKind::ProvingHollow;
+	}
+
 	enum class StationKind : uint8_t
 	{
 		Stash,
@@ -91,6 +98,7 @@ namespace Game
 		CalderaGate,
 		WishingVoid,
 		Chess,
+		ShardRift,
 		Count,
 	};
 
@@ -111,6 +119,7 @@ namespace Game
 		{ StationKind::CalderaGate, "Caldera Gate", "start a Spellbrawl" },
 		{ StationKind::WishingVoid, "Wishing Void", "toss a gold coin into the void" },
 		{ StationKind::Chess, "Chess Table", "play chess" },
+		{ StationKind::ShardRift, "Shard Rift", "begin a Shardfall run" },
 	};
 	static_assert(std::size(Stations) == size_t(StationKind::Count));
 
@@ -261,6 +270,12 @@ namespace Game
 			float V = 0.0f;
 		};
 
+		struct Chasm
+		{
+			std::vector<Vec2> Spine;
+			std::vector<float> Half;
+		};
+
 		Vec2 Origin;
 		float Spacing = 0.25f;
 		int32_t Columns = 0;
@@ -268,8 +283,24 @@ namespace Game
 		std::vector<float> Rim;
 		Vec2 Center;
 		float Ritual = 0.0f;
+		std::vector<Vec2> Corners;
+		std::vector<Chasm> Chasms;
 
 		bool IsEmpty() const { return Rim.empty(); }
+
+		float ChasmDistance(Vec2 position) const
+		{
+			float nearest = 1e9f;
+			for (const Chasm& chasm : Chasms)
+				for (size_t k = 0; k + 1 < chasm.Spine.size(); k++)
+				{
+					const Vec2 a = chasm.Spine[k];
+					const Vec2 along = chasm.Spine[k + 1] - a;
+					const float t = std::clamp(Dot(position - a, along) / std::max(LengthSquared(along), 1e-8f), 0.0f, 1.0f);
+					nearest = std::min(nearest, Length(position - a - along * t) - std::lerp(chasm.Half[k], chasm.Half[k + 1], t));
+				}
+			return nearest;
+		}
 
 		Spot Locate(Vec2 position) const
 		{
@@ -344,6 +375,7 @@ namespace Game
 		std::vector<Region> Regions;
 		std::vector<Station> Stations;
 		std::vector<Vec2> SpawnPoints;
+		std::vector<Vec2> Sockets;
 		std::vector<LootSpot> LootSpots;
 		std::vector<PickupPad> Pads;
 		std::vector<Roof> Roofs;
@@ -426,4 +458,5 @@ namespace Game
 	Level BuildFrozenLakeLevel(uint32_t seed);
 	Level BuildSkyRuinsLevel(uint32_t seed);
 	Level BuildStormPeakLevel(uint32_t seed);
+	Level BuildProvingHollowLevel(uint32_t seed);
 }

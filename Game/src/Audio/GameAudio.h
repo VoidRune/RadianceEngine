@@ -29,6 +29,7 @@ namespace Game
 		RoundWon,
 		RoundLost,
 		ApexClaimed,
+		LevelUp,
 	};
 
 	class GameAudio
@@ -146,6 +147,7 @@ namespace Game
 		uint32_t m_FrameImpacts = 0;
 		uint32_t m_Played = 0;
 		bool m_Primed = false;
+		bool m_Storm = false;
 		bool m_Trace = false;
 		bool m_Overlaid = false;
 		bool m_InventoryOpen = false;

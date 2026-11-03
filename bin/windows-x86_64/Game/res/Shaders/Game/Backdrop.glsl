@@ -133,8 +133,8 @@ float DeckDensity(vec2 p, float time)
 
 vec3 DeckColor(float storm, float density)
 {
-	vec3 lit = mix(vec3(0.92, 0.9, 0.86), vec3(0.2, 0.22, 0.28), storm);
-	vec3 shade = mix(vec3(0.5, 0.57, 0.7), vec3(0.06, 0.07, 0.1), storm);
+	vec3 lit = mix(vec3(0.92, 0.9, 0.86), vec3(0.17, 0.16, 0.29), storm);
+	vec3 shade = mix(vec3(0.5, 0.57, 0.7), vec3(0.06, 0.055, 0.12), storm);
 	return mix(shade, lit, 0.45 + 0.55 * density);
 }
 
@@ -160,7 +160,7 @@ vec3 StormSky(vec3 origin, vec3 direction, float time, vec3 toLight, vec4 eye, f
 	vec3 day = mix(vec3(0.24, 0.35, 0.52), bright, smoothstep(0.3, 0.62, shape));
 
 	float churn = BackdropFbm(sea * 0.017 + flow * 2.5 + 7.3);
-	vec3 dark = mix(vec3(0.03, 0.034, 0.05), vec3(0.12, 0.13, 0.175), smoothstep(0.4, 0.92, churn)) * relief;
+	vec3 dark = mix(vec3(0.034, 0.03, 0.068), vec3(0.14, 0.13, 0.23), smoothstep(0.4, 0.92, churn)) * relief;
 	float cover = clamp(storm * 1.5 - 0.35 + (BackdropFbm(sea * 0.005 + 3.1) - 0.5) * 0.9, 0.0, 1.0);
 	cover = cover * cover * (3.0 - 2.0 * cover);
 	vec3 color = mix(day, dark, cover);
@@ -176,7 +176,7 @@ vec3 StormSky(vec3 origin, vec3 direction, float time, vec3 toLight, vec4 eye, f
 	color += vec3(0.32, 0.24, 0.13) * (sun * cover * smoothstep(0.4, 0.85, shape));
 
 	color = ThroughDeck(color, origin, origin + direction * ((origin.y - StormSea) / down), time, storm);
-	vec3 horizon = mix(vec3(0.62, 0.7, 0.82), vec3(0.06, 0.07, 0.1), storm);
+	vec3 horizon = mix(vec3(0.62, 0.7, 0.82), vec3(0.07, 0.065, 0.13), storm);
 	return mix(color, horizon, pow(1.0 - down, 3.0) * 0.6);
 }
 

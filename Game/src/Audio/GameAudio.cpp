@@ -69,6 +69,7 @@ namespace Game
 			case MapKind::Caves:
 				return AmbienceScene::Caves;
 			case MapKind::Crucible:
+			case MapKind::ProvingHollow:
 				return AmbienceScene::Crucible;
 			case MapKind::Ashlands:
 				return AmbienceScene::Ashlands;
@@ -307,6 +308,7 @@ namespace Game
 			if (const auto it = m_Tracked.find(hit.Target); it != m_Tracked.end())
 				it->second.SinceHit = 0.0f;
 
+		m_Storm = client.GetSession().Map == MapKind::StormPeak;
 		for (const EntityState& entity : client.GetEntities())
 		{
 			const auto [it, inserted] = m_Tracked.try_emplace(entity.NetId);
@@ -367,6 +369,7 @@ namespace Game
 			mood = status.Mission == MissionPhase::Boss ? MusicMood::Boss : session.Map == MapKind::Caves ? MusicMood::Caves : MusicMood::Town;
 			break;
 		case GameMode::Horde:
+		case GameMode::Shardfall:
 			mood = MusicMood::Horde;
 			break;
 		case GameMode::Arena:
@@ -466,6 +469,11 @@ namespace Game
 			PlayUi(Cue::Coins, 0.7f, 1.1f);
 			PlayUi(Cue::WhooshLight, 0.35f, 0.7f, 0.25f);
 			break;
+		case StationKind::ShardRift:
+			PlayUi(Cue::GlassLight, 0.55f, 0.8f);
+			PlayUi(Cue::WhooshLight, 0.4f, 0.6f, 0.08f);
+			PlayUi(Cue::GlassLight, 0.45f, 1.3f, 0.16f);
+			break;
 		default:
 			break;
 		}
@@ -533,6 +541,10 @@ namespace Game
 		case AudioEvent::ApexClaimed:
 			PlayFlat(Cue::Gong, m_Buses.Stingers, 0.85f, 0.7f);
 			PlayUi(Cue::UiRift, 0.6f, 1.0f, 0.08f);
+			break;
+		case AudioEvent::LevelUp:
+			PlayUi(Cue::UiReward, 0.8f, 1.15f);
+			PlayFlat(Cue::Bell, m_Buses.Stingers, 0.5f, 1.3f, 0.06f);
 			break;
 		}
 	}
@@ -639,7 +651,10 @@ namespace Game
 			}
 			if (Rose(before.Flags, entity.Flags, EntityFlags::Burning) && !dead)
 			{
-				PlayAt(Cue::FireImpact, entity.Position, self ? 0.6f : 0.4f, 1.35f);
+				if (m_Storm)
+					PlayAt(Cue::ShockHit, entity.Position, self ? 0.6f : 0.4f, 1.2f);
+				else
+					PlayAt(Cue::FireImpact, entity.Position, self ? 0.6f : 0.4f, 1.35f);
 				PlayAt(Cue::Soft, entity.Position, self ? 0.5f : 0.3f, 0.7f);
 			}
 			WardSounds(entity, before, self);

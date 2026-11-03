@@ -95,6 +95,7 @@ namespace Game
 	inline constexpr float FloorTop = 0.025f;
 	inline constexpr float FloorBottom = 0.075f;
 
+	void RegisterPeakMeshes(WorldRenderer& renderer);
 	LevelScene BuildLevelScene(const Level& level, WorldRenderer& renderer);
 	bool BuildAbbeyScene(const Level& level, WorldRenderer& renderer, LevelScene& scene);
 	std::optional<float> SampleGround(const LevelScene& scene, Vec2 position);

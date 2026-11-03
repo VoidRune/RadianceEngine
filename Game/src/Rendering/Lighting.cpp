@@ -95,6 +95,23 @@ namespace Game
 			.MemoryProperty = Rdn::MemoryProperty::HostVisible | Rdn::MemoryProperty::HostCoherent,
 			.Mapped = true,
 		});
+		m_Lights = std::make_unique<Rdn::GpuRingBuffer>();
+		m_Allocator.CreateGpuRingBuffer(m_Lights.get(), Rdn::GpuRingBufferDesc{
+			.ElementSize = uint32_t(MaxSceneLights * 2 * sizeof(glm::vec4)),
+			.ElementCount = m_Device.GetFramesInFlightCount(),
+			.UsageFlags = Rdn::BufferUsage::StorageBuffer,
+			.MemoryProperty = Rdn::MemoryProperty::HostVisible | Rdn::MemoryProperty::HostCoherent,
+			.Mapped = true,
+		});
+		if (Rdn::ShaderDesc cullDesc; Rdn::ShaderCompiler::Compile("res/Shaders/Game/LightCull.comp", cullDesc))
+		{
+			m_CullShader = std::make_unique<Rdn::Shader>();
+			m_Allocator.CreateShader(m_CullShader.get(), cullDesc);
+			m_CullPipeline = std::make_unique<Rdn::ComputePipeline>();
+			m_Allocator.CreateComputePipeline(m_CullPipeline.get(), Rdn::ComputePipelineDesc{ .ComputeShader = m_CullShader.get(), .PushDescriptorSets = { 0 } });
+		}
+		else
+			RDN_LOG_ERROR("The light culling shader failed to compile, point lights are off");
 		m_Sampler = std::make_unique<Rdn::Sampler>();
 		m_Allocator.CreateSampler(m_Sampler.get(), Rdn::SamplerDesc{ .MinFilter = Rdn::Filter::Nearest, .MagFilter = Rdn::Filter::Nearest, .AddressMode = Rdn::SamplerAddressMode::ClampToEdge });
 		m_LinearSampler = std::make_unique<Rdn::Sampler>();
@@ -104,17 +121,34 @@ namespace Game
 	DeferredLighting::~DeferredLighting()
 	{
 		m_Device.WaitIdle();
-		for (Rdn::ComputePipeline* pipeline : { m_Pipeline.get(), m_GiPipeline.get() })
+		for (Rdn::ComputePipeline* pipeline : { m_Pipeline.get(), m_GiPipeline.get(), m_CullPipeline.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
-		for (Rdn::Shader* shader : { m_Shader.get(), m_GiShader.get() })
+		for (Rdn::Shader* shader : { m_Shader.get(), m_GiShader.get(), m_CullShader.get() })
 			if (shader)
 				m_Allocator.ReleaseResource(shader);
-		if (m_Frame)
-			m_Allocator.ReleaseResource(m_Frame.get());
+		for (Rdn::GpuRingBuffer* buffer : { m_Frame.get(), m_Lights.get() })
+			if (buffer)
+				m_Allocator.ReleaseResource(buffer);
+		if (m_Tiles)
+			m_Allocator.ReleaseResource(m_Tiles.get());
 		for (Rdn::Sampler* sampler : { m_Sampler.get(), m_LinearSampler.get() })
 			if (sampler)
 				m_Allocator.ReleaseResource(sampler);
+	}
+
+	void DeferredLighting::EnsureTiles(uint32_t tiles)
+	{
+		const uint64_t size = uint64_t(std::max(tiles, 1u)) * (MaxSceneLights / 32) * sizeof(uint32_t);
+		if (m_Tiles && m_Tiles->GetSize() >= size)
+			return;
+		if (m_Tiles)
+		{
+			m_Device.WaitIdle();
+			m_Allocator.ReleaseResource(m_Tiles.get());
+		}
+		m_Tiles = std::make_unique<Rdn::GpuBuffer>();
+		m_Allocator.CreateGpuBuffer(m_Tiles.get(), Rdn::GpuBufferDesc{ .Size = size + size / 4, .UsageFlags = Rdn::BufferUsage::StorageBuffer, .MemoryProperty = Rdn::MemoryProperty::DeviceLocal });
 	}
 
 	void DeferredLighting::Render(Rdn::RenderGraph& graph, const GBuffer& gbuffer, Rdn::RGImage scene, Rdn::RGImage shadowMap, Rdn::RGImage giSource, Rdn::RGImage emitters, Rdn::Extent2D extent, uint32_t frameIndex,
@@ -143,22 +177,52 @@ namespace Game
 			.Backdrop = glm::vec4(lighting.Floating ? (lighting.Storm ? 3.0f : lighting.Daylight ? 2.0f : 1.0f) : 0.0f, lighting.FocusHeight, lighting.Time, lighting.Leviathan),
 			.Haze = glm::vec4(lighting.Haze, lighting.StormBuild),
 			.Eye = lighting.Eye,
-			.Translucent = glm::vec4(translucency ? 1.0f : 0.0f, float(translucency ? std::min<size_t>(lights.size(), MaxSpellLights) : 0), 0.0f, 0.0f),
 		};
-		for (size_t i = 0; i < lights.size() && i < MaxSpellLights; i++)
+		const uint32_t lightCount = m_CullPipeline ? uint32_t(std::min<size_t>(lights.size(), MaxSceneLights)) : 0;
+		frame.Translucent = glm::vec4(translucency ? 1.0f : 0.0f, float(lightCount), PointLightGain, 0.0f);
+		glm::vec4* packed = reinterpret_cast<glm::vec4*>(static_cast<uint8_t*>(m_Lights->GetMappedPtr()) + m_Lights->GetOffset(frameIndex));
+		for (uint32_t i = 0; i < lightCount; i++)
 		{
-			frame.Lights[i * 2] = glm::vec4(lights[i].Position, lights[i].Radius);
-			frame.Lights[i * 2 + 1] = glm::vec4(lights[i].Color, 0.0f);
+			packed[i * 2] = glm::vec4(lights[i].Position, lights[i].Radius);
+			packed[i * 2 + 1] = glm::vec4(lights[i].Color, 0.0f);
 		}
+		const uint32_t columns = (extent.Width + LightTileSize - 1) / LightTileSize;
+		const uint32_t rows = (extent.Height + LightTileSize - 1) / LightTileSize;
+		EnsureTiles(columns * rows);
+		const Rdn::RGBuffer tiles = graph.ImportBuffer("Light tiles", m_Tiles.get());
+		const Rdn::BufferWrite lightWrite(13, Rdn::DescriptorType::StorageBuffer, m_Lights->GetHandle(), m_Lights->GetOffset(frameIndex), MaxSceneLights * 2 * sizeof(glm::vec4));
 		const Rdn::ImageWrite environmentWrite(11, Rdn::DescriptorType::CombinedImageSampler, environment.Image->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, environment.Sampler->GetHandle());
 		const Rdn::ImageWrite skyMaskWrite(12, Rdn::DescriptorType::CombinedImageSampler, environment.SkyMask->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_LinearSampler->GetHandle());
 		m_Frame->Write(frameIndex, frame);
+		if (lightCount > 0)
+		{
+			const CullGpu cull{ frame.InverseViewProjection, glm::uvec4(extent.Width, extent.Height, lightCount, columns) };
+			graph.AddPass("Light culling", Rdn::PassType::Compute,
+				[&](Rdn::PassBuilder& builder)
+				{
+					builder.UseImage(gbuffer.Depth, Rdn::RGImageUsage::Sampled);
+					builder.UseBuffer(tiles, Rdn::RGBufferUsage::StorageWrite);
+				},
+				[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
+				{
+					Rdn::DescriptorWrite write;
+					write.AddWrite(Rdn::ImageWrite(0, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(gbuffer.Depth), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_Sampler->GetHandle()))
+						.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_Lights->GetHandle(), m_Lights->GetOffset(frameIndex), MaxSceneLights * 2 * sizeof(glm::vec4)))
+						.AddWrite(Rdn::BufferWrite(2, Rdn::DescriptorType::StorageBuffer, m_Tiles->GetHandle(), 0, m_Tiles->GetSize()));
+					cmd.BindComputePipeline(m_CullPipeline->GetHandle());
+					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Compute, m_CullPipeline->GetLayout(), 0, write);
+					cmd.PushConstants(Rdn::ShaderStage::Compute, m_CullPipeline->GetLayout(), &cull, sizeof(cull));
+					cmd.Dispatch(columns, rows, 1);
+				});
+		}
 		graph.AddPass("Lighting", Rdn::PassType::Compute,
 			[&](Rdn::PassBuilder& builder)
 			{
 				for (const Rdn::RGImage image : { gbuffer.Albedo, gbuffer.Surface, gbuffer.Emission, gbuffer.Depth, shadowMap })
 					builder.UseImage(image, Rdn::RGImageUsage::Sampled);
 				builder.UseImage(scene, Rdn::RGImageUsage::StorageWrite);
+				if (lightCount > 0)
+					builder.UseBuffer(tiles, Rdn::RGBufferUsage::StorageRead);
 				if (!gi)
 					return;
 				builder.UseImage(emitters, Rdn::RGImageUsage::Sampled);
@@ -173,7 +237,9 @@ namespace Game
 					.AddWrite(storage(4, scene))
 					.AddWrite(Rdn::BufferWrite(5, Rdn::DescriptorType::UniformBuffer, m_Frame->GetHandle(), m_Frame->GetOffset(frameIndex), sizeof(FrameGpu)))
 					.AddWrite(sampled(6, shadowMap))
-					.AddWrite(environmentWrite).AddWrite(skyMaskWrite);
+					.AddWrite(environmentWrite).AddWrite(skyMaskWrite)
+					.AddWrite(lightWrite)
+					.AddWrite(Rdn::BufferWrite(14, Rdn::DescriptorType::StorageBuffer, m_Tiles->GetHandle(), 0, m_Tiles->GetSize()));
 				if (gi)
 					write.AddWrite(sampled(7, emitters)).AddWrite(storage(8, giSource));
 				cmd.BindComputePipeline(pipeline->GetHandle());

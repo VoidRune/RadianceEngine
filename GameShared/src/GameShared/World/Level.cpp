@@ -229,6 +229,8 @@ namespace Game
 			return BuildSkyRuinsLevel(seed);
 		case MapKind::StormPeak:
 			return BuildStormPeakLevel(seed);
+		case MapKind::ProvingHollow:
+			return BuildProvingHollowLevel(seed);
 		default:
 			return BuildCavesLevel(seed);
 		}

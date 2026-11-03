@@ -3,6 +3,7 @@
 #include "GameShared/Content/Hub.h"
 #include "GameShared/Content/Traits.h"
 #include "GameShared/Net/Protocol.h"
+#include "GameShared/Net/SnapshotCodec.h"
 #include "GameShared/Net/Transport.h"
 #include "GameShared/Save/CharacterProfile.h"
 #include "GameShared/Simulation/PlayerSimulation.h"
@@ -60,6 +61,7 @@ namespace Game
 		void StartArena(MapKind map, const MatchRules& rules);
 		void StartRoyale(MapKind map);
 		void StartBrawl(MapKind map, const MatchRules& rules);
+		void StartShardfall(const RunRules& rules);
 		void PickBrawlSpell(uint32_t slot, AbilityId spell);
 		void PreferSpell(uint32_t slot, AbilityId spell);
 		void SendPreferredSpells();
@@ -113,6 +115,7 @@ namespace Game
 		const std::vector<HitEvent>& GetNewHits() const { return m_NewHits; }
 		const CharacterProfile& GetProfile() const { return m_Profile; }
 		const GameStatus& GetStatus() const { return m_Status; }
+		const std::vector<Orb>& GetOrbs() const { return m_Orbs; }
 		uint32_t GetPlayerId() const { return m_Welcome.PlayerId; }
 		uint32_t GetPlayerNetId() const { return m_Welcome.PlayerNetId; }
 		uint32_t GetTickRate() const { return m_Welcome.TickRate; }
@@ -122,6 +125,7 @@ namespace Game
 		double GetInterpolationDelay() const { return m_InterpolationDelay; }
 		uint32_t GetLatestTick() const { return m_Snapshots.empty() ? 0 : m_Snapshots.back().Tick; }
 		float GetSnapshotAge() const { return m_SnapshotAge; }
+		uint32_t GetSnapshotFailures() const { return m_Decoder.GetFailures(); }
 		int32_t GetPing() const { return m_Net.GetPing(); }
 		ConnectionStats GetConnectionStats() const { return m_Net.GetStats(); }
 		uint32_t GetPendingInputCount() const { return uint32_t(m_PendingInputs.size()); }
@@ -228,7 +232,9 @@ namespace Game
 		uint32_t m_InventoryVersion = 0;
 		std::deque<PendingHit> m_PendingHits;
 		std::vector<HitEvent> m_NewHits;
+		std::vector<Orb> m_Orbs;
 
+		SnapshotDecoder m_Decoder;
 		std::deque<ServerSnapshot> m_Snapshots;
 		double m_RenderTick = 0.0;
 		double m_PresentTick = 0.0;

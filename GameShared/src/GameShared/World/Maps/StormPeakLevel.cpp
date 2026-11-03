@@ -13,113 +13,271 @@ namespace Game
 		constexpr int32_t PeakSize = 64;
 		constexpr Vec2 Middle = { 32.0f, 32.0f };
 		constexpr float GridSpacing = 0.25f;
-		constexpr float PlateauArea = 590.0f;
-		constexpr int32_t RimSamples = 720;
-		constexpr float ExactBand = 4.0f;
-		constexpr float MinRimBend = 3.5f;
+		constexpr float PlateauArea = 540.0f;
+		constexpr float CornerReach = 13.0f;
+		constexpr float MinTipAngle = 1.0f;
+		constexpr float ConvexFillet = 0.55f;
+		constexpr float ConcaveFillet = 0.45f;
+		constexpr int32_t FilletSteps = 4;
+		constexpr float JagStep = 3.2f;
+		constexpr float JagDepth = 0.4f;
+		constexpr float NeckWidth = 1.0f;
+		constexpr float ChasmMouth = 0.85f;
+		constexpr float ChasmTip = 0.14f;
+		constexpr float ChasmStep = 0.35f;
+		constexpr float ChasmGap = 9.0f;
+		constexpr float ChasmInner = 7.0f;
 		constexpr float RitualRadius = 3.6f;
-		constexpr uint32_t Monoliths = 6;
-		constexpr float MonolithNear = 6.95f;
-		constexpr float MonolithFar = 9.0f;
+		constexpr uint32_t Monoliths = 4;
+		constexpr float MonolithNear = 6.1f;
+		constexpr float MonolithFar = 7.8f;
 		constexpr float MonolithReach = 0.81f;
 		constexpr float SpireReach = 0.62f;
-		constexpr float LaneWidth = 5.5f;
-		constexpr float RimClearance = 4.0f;
+		constexpr float LaneWidth = 4.6f;
+		constexpr float RimClearance = 3.0f;
+		constexpr uint32_t Boulders = 2;
+		constexpr float BoulderReach = 0.8f;
+		constexpr float BoulderLane = 4.0f;
+		constexpr float BoulderRim = 2.4f;
+		constexpr uint32_t Crystals = 4;
+		constexpr float CrystalReach = 0.4f;
+		constexpr float CrystalLane = 2.5f;
+		constexpr float CrystalRim = 0.6f;
 		constexpr float SpawnClearance = 2.5f;
 		constexpr float SpawnRimMin = 2.0f;
 		constexpr float SpawnRimMax = 4.2f;
 		constexpr uint32_t SpawnSlots = 36;
 		constexpr float SpawnGap = 2.2f;
-		constexpr std::array<int32_t, 3> Harmonics = { 3, 5, 7 };
-		constexpr std::array<float, 3> Waves = { 0.07f, 0.05f, 0.03f };
 
-		struct Bay
+		float Cross(Vec2 a, Vec2 b)
 		{
-			float Angle = 0.0f;
-			float Width = 0.5f;
-			float Depth = 0.0f;
-		};
+			return a.x * b.y - a.y * b.x;
+		}
 
-		class Outline
+		float PolygonArea(const std::vector<Vec2>& points)
 		{
-		public:
-			explicit Outline(Random& random)
+			float sum = 0.0f;
+			for (size_t k = 0; k < points.size(); k++)
+				sum += Cross(points[k] - Middle, points[(k + 1) % points.size()] - Middle);
+			return 0.5f * sum;
+		}
+
+		void ScaleTo(std::vector<Vec2>& points, float area)
+		{
+			const float scale = std::sqrt(area / std::max(PolygonArea(points), 1.0f));
+			for (Vec2& point : points)
+				point = Middle + (point - Middle) * scale;
+		}
+
+		float TipAngle(const std::vector<Vec2>& points, size_t k, bool& convex)
+		{
+			const Vec2 previous = points[(k + points.size() - 1) % points.size()];
+			const Vec2 next = points[(k + 1) % points.size()];
+			convex = Cross(points[k] - previous, next - points[k]) > 0.0f;
+			return std::acos(std::clamp(Dot(Normalize(previous - points[k]), Normalize(next - points[k])), -1.0f, 1.0f));
+		}
+
+		std::vector<Vec2> Corners(Random& random)
+		{
+			const uint32_t count = 8 + random.Below(3);
+			const float turn = random.Float() * 2.0f * Pi;
+			std::vector<float> angles(count);
+			std::vector<float> reach(count);
+			for (uint32_t k = 0; k < count; k++)
 			{
-				for (size_t k = 0; k < Harmonics.size(); k++)
-				{
-					m_Amplitudes[k] = Waves[k] * (0.6f + 0.4f * random.Float());
-					m_Phases[k] = random.Float() * 2.0f * Pi;
-				}
-				const uint32_t bays = 1 + random.Below(2);
-				const float first = random.Float() * 2.0f * Pi;
-				for (uint32_t i = 0; i < bays; i++)
-					m_Bays.push_back({ first + Pi * float(i) + (random.Float() - 0.5f) * 1.2f, 0.42f + 0.13f * random.Float(), 1.0f + 0.5f * random.Float() });
-				Normalize();
-				for (int32_t pass = 0; pass < 8 && TightestBend() < MinRimBend; pass++)
-				{
-					for (float& amplitude : m_Amplitudes)
-						amplitude *= 0.85f;
-					for (Bay& bay : m_Bays)
-						bay.Depth *= 0.85f;
-					Normalize();
-				}
+				angles[k] = turn + 2.0f * Pi * (float(k) + 0.32f * (random.Float() - 0.5f)) / float(count);
+				reach[k] = 0.88f + 0.2f * random.Float();
 			}
-
-			float At(float angle) const
+			const uint32_t spikes = 2 + random.Below(2);
+			const uint32_t first = random.Below(count);
+			for (uint32_t s = 0; s < spikes; s++)
+				reach[(first + s * count / spikes + random.Below(2)) % count] = 1.28f + 0.18f * random.Float();
+			const uint32_t notches = 1 + random.Below(2);
+			for (uint32_t n = 0; n < notches; n++)
+				if (float& notch = reach[random.Below(count)]; notch < 1.15f)
+					notch = 0.7f + 0.1f * random.Float();
+			std::vector<Vec2> corners(count);
+			for (int32_t pass = 0; pass < 16; pass++)
 			{
-				float radius = m_Radius;
-				for (size_t k = 0; k < Harmonics.size(); k++)
-					radius += m_Radius * m_Amplitudes[k] * std::sin(float(Harmonics[k]) * angle + m_Phases[k]);
-				for (const Bay& bay : m_Bays)
-					if (const float t = std::remainder(angle - bay.Angle, 2.0f * Pi) / bay.Width; std::abs(t) < 1.0f)
+				for (uint32_t k = 0; k < count; k++)
+					corners[k] = Middle + FromAngle(angles[k]) * (reach[k] * CornerReach);
+				bool sharp = false;
+				for (uint32_t k = 0; k < count; k++)
+				{
+					bool convex = false;
+					if (TipAngle(corners, k, convex) < MinTipAngle && convex)
 					{
-						const float c = std::cos(t * Pi * 0.5f);
-						radius -= bay.Depth * c * c;
+						reach[k] = std::lerp(reach[k], 0.5f * (reach[(k + count - 1) % count] + reach[(k + 1) % count]), 0.35f);
+						sharp = true;
 					}
-				return radius;
-			}
-
-		private:
-			float Area() const
-			{
-				double sum = 0.0;
-				for (int32_t i = 0; i < RimSamples; i++)
-				{
-					const double r = At(2.0f * Pi * float(i) / float(RimSamples));
-					sum += r * r;
 				}
-				return float(sum * Pi / double(RimSamples));
+				if (!sharp)
+					break;
 			}
+			return corners;
+		}
 
-			void Normalize()
+		std::vector<Vec2> Jagged(Random& random, const std::vector<Vec2>& corners)
+		{
+			std::vector<Vec2> points;
+			for (size_t k = 0; k < corners.size(); k++)
 			{
-				for (int32_t pass = 0; pass < 4; pass++)
-					m_Radius *= std::sqrt(PlateauArea / Area());
-			}
-
-			float TightestBend() const
-			{
-				const float step = 2.0f * Pi / float(RimSamples);
-				float tightest = 1e9f;
-				for (int32_t i = 0; i < RimSamples; i++)
+				const Vec2 from = corners[k];
+				const Vec2 to = corners[(k + 1) % corners.size()];
+				points.push_back(from);
+				const float length = Length(to - from);
+				const Vec2 outward = Perpendicular(to - from) * (-1.0f / std::max(length, 1e-4f));
+				const int32_t kinks = int32_t(length / JagStep);
+				for (int32_t i = 1; i <= kinks; i++)
 				{
-					const float angle = step * float(i);
-					const float r = At(angle);
-					const float d1 = (At(angle + step) - At(angle - step)) / (2.0f * step);
-					const float d2 = (At(angle + step) - 2.0f * r + At(angle - step)) / (step * step);
-					const float bend = std::abs(r * r + 2.0f * d1 * d1 - r * d2) / std::pow(r * r + d1 * d1, 1.5f);
-					tightest = std::min(tightest, 1.0f / std::max(bend, 1e-6f));
+					const float t = (float(i) + 0.3f * (random.Float() - 0.5f)) / float(kinks + 1);
+					points.push_back(Lerp(from, to, t) + outward * (JagDepth * (2.0f * random.Float() - 1.0f)));
 				}
-				return tightest;
 			}
+			return points;
+		}
 
-			std::array<float, Harmonics.size()> m_Amplitudes{};
-			std::array<float, Harmonics.size()> m_Phases{};
-			std::vector<Bay> m_Bays;
-			float m_Radius = 13.7f;
-		};
+		std::vector<Vec2> Filleted(const std::vector<Vec2>& points)
+		{
+			std::vector<Vec2> outline;
+			for (size_t k = 0; k < points.size(); k++)
+			{
+				const Vec2 corner = points[k];
+				const Vec2 previous = points[(k + points.size() - 1) % points.size()];
+				const Vec2 next = points[(k + 1) % points.size()];
+				bool convex = false;
+				const float angle = TipAngle(points, k, convex);
+				if (angle > Pi - 0.02f)
+				{
+					outline.push_back(corner);
+					continue;
+				}
+				const Vec2 back = Normalize(previous - corner);
+				const Vec2 ahead = Normalize(next - corner);
+				const float half = 0.5f * angle;
+				const float tangent = std::min((convex ? ConvexFillet : ConcaveFillet) / std::tan(half), 0.45f * std::min(Length(previous - corner), Length(next - corner)));
+				const float radius = tangent * std::tan(half);
+				const Vec2 center = corner + Normalize(back + ahead) * (radius / std::sin(half));
+				const Vec2 start = corner + back * tangent - center;
+				const float sweep = std::remainder(AngleOf(corner + ahead * tangent - center) - AngleOf(start), 2.0f * Pi);
+				for (int32_t s = 0; s <= FilletSteps; s++)
+					outline.push_back(center + FromAngle(AngleOf(start) + sweep * float(s) / float(FilletSteps)) * radius);
+			}
+			return outline;
+		}
 
-		Plateau Survey(const Outline& outline)
+		std::vector<float> OutlineField(const Plateau& peak, const std::vector<Vec2>& outline)
+		{
+			std::vector<float> field(size_t(peak.Columns) * size_t(peak.Rows));
+			for (int32_t j = 0; j < peak.Rows; j++)
+				for (int32_t i = 0; i < peak.Columns; i++)
+				{
+					const Vec2 point = peak.Origin + Vec2(float(i), float(j)) * peak.Spacing;
+					float nearest = 1e9f;
+					bool inside = false;
+					for (size_t k = 0; k < outline.size(); k++)
+					{
+						const Vec2 a = outline[k];
+						const Vec2 b = outline[(k + 1) % outline.size()];
+						nearest = std::min(nearest, PointSegmentDistance(point, a, b));
+						if ((a.y > point.y) != (b.y > point.y) && point.x < a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y))
+							inside = !inside;
+					}
+					field[size_t(j) * size_t(peak.Columns) + size_t(i)] = inside ? nearest : -nearest;
+				}
+			return field;
+		}
+
+		bool Connected(const Plateau& peak)
+		{
+			const auto open = [&](size_t k) { return peak.Rim[k] >= NeckWidth; };
+			std::vector<uint8_t> seen(peak.Rim.size(), 0);
+			const Plateau::Spot middle = peak.Locate(peak.Center);
+			std::vector<size_t> queue = { middle.Index };
+			seen[middle.Index] = 1;
+			for (size_t n = 0; n < queue.size(); n++)
+			{
+				const int32_t i = int32_t(queue[n] % size_t(peak.Columns));
+				const int32_t j = int32_t(queue[n] / size_t(peak.Columns));
+				for (const auto [di, dj] : { std::pair{ 1, 0 }, std::pair{ -1, 0 }, std::pair{ 0, 1 }, std::pair{ 0, -1 } })
+				{
+					if (i + di < 0 || j + dj < 0 || i + di >= peak.Columns || j + dj >= peak.Rows)
+						continue;
+					const size_t k = size_t(j + dj) * size_t(peak.Columns) + size_t(i + di);
+					if (!seen[k] && open(k))
+					{
+						seen[k] = 1;
+						queue.push_back(k);
+					}
+				}
+			}
+			size_t total = 0;
+			for (size_t k = 0; k < peak.Rim.size(); k++)
+				total += open(k) ? 1 : 0;
+			return queue.size() + total / 200 >= total;
+		}
+
+		std::vector<float> Combined(const std::vector<float>& outline, const Plateau& peak)
+		{
+			std::vector<float> rim = outline;
+			if (peak.Chasms.empty())
+				return rim;
+			for (int32_t j = 0; j < peak.Rows; j++)
+				for (int32_t i = 0; i < peak.Columns; i++)
+				{
+					const size_t k = size_t(j) * size_t(peak.Columns) + size_t(i);
+					if (rim[k] > -3.0f)
+						rim[k] = std::min(rim[k], peak.ChasmDistance(peak.Origin + Vec2(float(i), float(j)) * peak.Spacing));
+				}
+			return rim;
+		}
+
+		std::optional<Plateau::Chasm> Carve(Random& random, const std::vector<Vec2>& outline, const std::vector<Vec2>& corners, const std::vector<Vec2>& mouths)
+		{
+			std::vector<float> arcs = { 0.0f };
+			for (size_t k = 0; k < outline.size(); k++)
+				arcs.push_back(arcs.back() + Length(outline[(k + 1) % outline.size()] - outline[k]));
+			const float at = random.Float() * arcs.back();
+			const size_t edge = size_t(std::upper_bound(arcs.begin(), arcs.end(), at) - arcs.begin()) - 1;
+			const Vec2 from = outline[edge];
+			const Vec2 to = outline[(edge + 1) % outline.size()];
+			const Vec2 mouth = Lerp(from, to, (at - arcs[edge]) / std::max(arcs[edge + 1] - arcs[edge], 1e-4f));
+			for (const Vec2 corner : corners)
+				if (Length(corner - Middle) > 1.15f * CornerReach && Length(corner - mouth) < 3.0f)
+					return std::nullopt;
+			for (const Vec2 other : mouths)
+				if (Length(other - mouth) < ChasmGap)
+					return std::nullopt;
+			const Vec2 inward = Normalize(Normalize(Perpendicular(to - from)) + Normalize(Middle - mouth) * 0.8f);
+			const Vec2 direction = FromAngle(AngleOf(inward) + 0.5f * (random.Float() - 0.5f));
+			const Vec2 side = Perpendicular(direction);
+			float length = 3.4f + 1.8f * random.Float();
+			while (length > 2.4f && Length(mouth + direction * length - Middle) < ChasmInner)
+				length -= 0.2f;
+			if (length <= 2.4f)
+				return std::nullopt;
+			const std::array<Vec2, 4> controls = { mouth - direction * 1.6f, mouth, mouth + direction * (0.5f * length) + side * (0.9f * (random.Float() - 0.5f)), mouth + direction * length + side * (0.6f * (random.Float() - 0.5f)) };
+			const float wide = ChasmMouth + 0.3f * random.Float();
+			Plateau::Chasm chasm;
+			float travelled = 0.0f;
+			for (size_t c = 0; c + 1 < controls.size(); c++)
+			{
+				const float span = Length(controls[c + 1] - controls[c]);
+				const int32_t steps = std::max(1, int32_t(std::ceil(span / ChasmStep)));
+				for (int32_t s = 0; s < steps; s++)
+				{
+					const float inside = c == 0 ? 0.0f : std::clamp((travelled + span * float(s) / float(steps) - 1.6f) / length, 0.0f, 1.0f);
+					chasm.Spine.push_back(Lerp(controls[c], controls[c + 1], float(s) / float(steps)));
+					chasm.Half.push_back(std::max(ChasmTip + (wide - ChasmTip) * std::pow(1.0f - inside, 0.8f) + 0.07f * (2.0f * random.Float() - 1.0f) * (1.0f - inside), 0.12f));
+				}
+				travelled += span;
+			}
+			chasm.Spine.push_back(controls.back());
+			chasm.Half.push_back(ChasmTip);
+			return chasm;
+		}
+
+		Plateau Survey(Random& random)
 		{
 			Plateau peak;
 			peak.Spacing = GridSpacing;
@@ -127,34 +285,33 @@ namespace Game
 			peak.Rows = peak.Columns;
 			peak.Center = Middle;
 			peak.Ritual = RitualRadius;
-			std::vector<Vec2> edge(RimSamples);
-			for (int32_t i = 0; i < RimSamples; i++)
+			std::vector<float> field;
+			std::vector<Vec2> outline;
+			for (int32_t attempt = 0; attempt < 12; attempt++)
 			{
-				const float angle = 2.0f * Pi * float(i) / float(RimSamples);
-				edge[size_t(i)] = Middle + FromAngle(angle) * outline.At(angle);
+				peak.Corners = Corners(random);
+				ScaleTo(peak.Corners, PlateauArea);
+				outline = Filleted(Jagged(random, peak.Corners));
+				ScaleTo(outline, PlateauArea);
+				field = OutlineField(peak, outline);
+				peak.Rim = field;
+				if (Connected(peak))
+					break;
 			}
-			const auto wrap = [](int32_t k) { return size_t(((k % RimSamples) + RimSamples) % RimSamples); };
-			const int32_t window = RimSamples / 10;
-			peak.Rim.resize(size_t(peak.Columns) * size_t(peak.Rows));
-			for (int32_t j = 0; j < peak.Rows; j++)
-				for (int32_t i = 0; i < peak.Columns; i++)
+			const uint32_t chasms = 1 + random.Below(2);
+			std::vector<Vec2> mouths;
+			for (uint32_t tries = 0; tries < 60 && peak.Chasms.size() < chasms; tries++)
+				if (std::optional<Plateau::Chasm> chasm = Carve(random, outline, peak.Corners, mouths))
 				{
-					const Vec2 point = peak.Origin + Vec2(float(i), float(j)) * peak.Spacing;
-					const Vec2 offset = point - Middle;
-					const float reach = Length(offset);
-					const float angle = reach > 1e-4f ? AngleOf(offset) : 0.0f;
-					const float slope = (outline.At(angle + 1e-3f) - outline.At(angle - 1e-3f)) / 2e-3f;
-					float distance = (outline.At(angle) - reach) / std::sqrt(1.0f + slope * slope / std::max(reach * reach, 1.0f));
-					if (std::abs(distance) < ExactBand)
+					peak.Chasms.push_back(std::move(*chasm));
+					peak.Rim = Combined(field, peak);
+					if (Connected(peak))
+						mouths.push_back(peak.Chasms.back().Spine[size_t(std::ceil(1.6f / ChasmStep))]);
+					else
 					{
-						const int32_t near = int32_t(std::lround(angle / (2.0f * Pi) * float(RimSamples)));
-						float closest = 1e9f;
-						for (int32_t k = near - window; k <= near + window; k++)
-							closest = std::min(closest, PointSegmentDistance(point, edge[wrap(k)], edge[wrap(k + 1)]));
-						const float exact = std::clamp(ExactBand - std::abs(distance), 0.0f, 1.0f);
-						distance = std::lerp(distance, std::copysign(closest, distance), exact * exact * (3.0f - 2.0f * exact));
+						peak.Chasms.pop_back();
+						peak.Rim = Combined(field, peak);
 					}
-					peak.Rim[size_t(j) * size_t(peak.Columns) + size_t(i)] = distance;
 				}
 			return peak;
 		}
@@ -165,9 +322,17 @@ namespace Game
 			float Reach = 0.0f;
 		};
 
+		bool Clear(const std::vector<Blocker>& placed, Vec2 spot, float reach, float lane)
+		{
+			for (const Blocker& other : placed)
+				if (Length(spot - other.Position) - other.Reach - reach < lane)
+					return false;
+			return true;
+		}
+
 		std::vector<Blocker> PlaceMonoliths(Random& random, const Plateau& peak)
 		{
-			for (uint32_t count = Monoliths; count >= 5; count--)
+			for (uint32_t count = Monoliths; count >= 3; count--)
 				for (uint32_t attempt = 0; attempt < 400; attempt++)
 				{
 					std::vector<Blocker> placed = { { Middle, SpireReach } };
@@ -178,15 +343,57 @@ namespace Game
 						const float angle = turn + 2.0f * Pi * (float(k) + 0.3f * (random.Float() - 0.5f)) / float(count);
 						const float radius = MonolithNear + (MonolithFar - MonolithNear) * ((k % 2 == 0 ? 0.0f : 0.55f) + 0.45f * random.Float());
 						const Vec2 spot = Middle + FromAngle(angle) * radius;
-						fits = peak.RimDistance(spot) >= RimClearance + MonolithReach;
-						for (const Blocker& other : placed)
-							fits = fits && Length(spot - other.Position) - other.Reach - MonolithReach >= LaneWidth;
+						fits = peak.RimDistance(spot) >= RimClearance + MonolithReach && Clear(placed, spot, MonolithReach, LaneWidth);
 						placed.push_back({ spot, MonolithReach });
 					}
 					if (fits)
 						return placed;
 				}
 			return { { Middle, SpireReach } };
+		}
+
+		std::vector<Vec2> PlaceBoulders(Random& random, const Plateau& peak, std::vector<Blocker>& blockers)
+		{
+			std::vector<Vec2> boulders;
+			for (uint32_t attempt = 0; attempt < 600 && boulders.size() < Boulders; attempt++)
+			{
+				const Vec2 spot = Middle + FromAngle(random.Float() * 2.0f * Pi) * (4.8f + 6.0f * random.Float());
+				if (peak.RimDistance(spot) < BoulderRim + BoulderReach || !Clear(blockers, spot, BoulderReach, BoulderLane))
+					continue;
+				blockers.push_back({ spot, BoulderReach });
+				boulders.push_back(spot);
+			}
+			return boulders;
+		}
+
+		std::vector<Vec2> PlaceCrystals(Random& random, const Plateau& peak, std::vector<Blocker>& blockers)
+		{
+			std::vector<Vec2> candidates;
+			float mean = 0.0f;
+			for (const Vec2 corner : peak.Corners)
+				mean += Length(corner - Middle) / float(peak.Corners.size());
+			for (const Vec2 corner : peak.Corners)
+				if (Length(corner - Middle) > 0.97f * mean)
+					candidates.push_back(corner);
+			for (size_t k = candidates.size(); k > 1; k--)
+				std::swap(candidates[k - 1], candidates[random.Below(uint32_t(k))]);
+			candidates.push_back(Middle + FromAngle(random.Float() * 2.0f * Pi) * 40.0f);
+			std::vector<Vec2> crystals;
+			for (const Vec2 candidate : candidates)
+			{
+				if (crystals.size() >= Crystals)
+					break;
+				const Vec2 inward = Normalize(Middle - candidate);
+				Vec2 spot = candidate;
+				for (int32_t step = 0; step < 400 && peak.RimDistance(spot) < CrystalRim; step++)
+					spot = spot + inward * 0.1f;
+				spot = spot + Perpendicular(inward) * (0.8f * (random.Float() - 0.5f));
+				if (peak.RimDistance(spot) < CrystalRim - 0.2f || !Clear(blockers, spot, CrystalReach, CrystalLane))
+					continue;
+				blockers.push_back({ spot, CrystalReach });
+				crystals.push_back(spot);
+			}
+			return crystals;
 		}
 
 		std::vector<Vec2> PlaceSpawns(const Plateau& peak, const std::vector<Blocker>& blockers)
@@ -237,16 +444,19 @@ namespace Game
 	{
 		LevelBuilder builder(MapKind::StormPeak, seed, PeakSize, PeakSize, TerrainId::Sky);
 		Random& random = builder.GetRandom();
-		const Outline outline(random);
-		Plateau peak = Survey(outline);
+		Plateau peak = Survey(random);
 		for (int32_t y = 0; y < PeakSize; y++)
 			for (int32_t x = 0; x < PeakSize; x++)
 				if (peak.RimDistance({ float(x) + 0.5f, float(y) + 0.5f }) > -0.3f)
 					builder.Fill({ x, y, 1, 1 }, TerrainId::Slate);
-		const std::vector<Blocker> blockers = PlaceMonoliths(random, peak);
+		std::vector<Blocker> blockers = PlaceMonoliths(random, peak);
 		builder.Prop(PropId::StormSpire, Middle, random.Float() * 2.0f * Pi);
 		for (size_t i = 1; i < blockers.size(); i++)
 			builder.Prop(PropId::Monolith, blockers[i].Position, AngleOf(blockers[i].Position - Middle) + Pi * 0.5f + (random.Float() - 0.5f) * 0.5f);
+		for (const Vec2 boulder : PlaceBoulders(random, peak, blockers))
+			builder.Prop(PropId::SummitBoulder, boulder, random.Float() * 2.0f * Pi);
+		for (const Vec2 crystal : PlaceCrystals(random, peak, blockers))
+			builder.Prop(PropId::SummitCrystal, crystal, random.Float() * 2.0f * Pi);
 		for (const Vec2 spawn : PlaceSpawns(peak, blockers))
 			builder.SpawnPoint(spawn);
 		builder.SetPlayerSpawn(Middle);

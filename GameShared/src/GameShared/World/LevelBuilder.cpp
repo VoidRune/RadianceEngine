@@ -253,6 +253,12 @@ namespace Game
 		Reserve(position, 1.5f);
 	}
 
+	void LevelBuilder::Socket(Vec2 position)
+	{
+		m_Level.Sockets.push_back(position);
+		Reserve(position, 1.5f);
+	}
+
 	void LevelBuilder::LootSpot(Vec2 position, bool vault)
 	{
 		m_Level.LootSpots.push_back({ position, vault });

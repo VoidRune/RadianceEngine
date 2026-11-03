@@ -35,6 +35,7 @@ namespace Game
 		void Station(StationKind kind, Vec2 position, float radius = 2.4f);
 		void Dummy(Vec2 position, Vec2 patrol, bool duck = false);
 		void SpawnPoint(Vec2 position);
+		void Socket(Vec2 position);
 		void LootSpot(Vec2 position, bool vault = false);
 		void Pad(Vec2 position, PadKind kind);
 		void Roof(const TileRect& area, float height);

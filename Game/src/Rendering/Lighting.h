@@ -95,6 +95,9 @@ namespace Game
 	}
 
 	inline constexpr uint32_t MaxSpellLights = 16;
+	inline constexpr uint32_t MaxSceneLights = 256;
+	inline constexpr uint32_t LightTileSize = 16;
+	inline constexpr float PointLightGain = 0.15f;
 
 	struct SpellLight
 	{
@@ -172,8 +175,15 @@ namespace Game
 			glm::vec4 Haze;
 			glm::vec4 Eye;
 			glm::vec4 Translucent;
-			std::array<glm::vec4, MaxSpellLights * 2> Lights;
 		};
+
+		struct CullGpu
+		{
+			glm::mat4 InverseViewProjection;
+			glm::uvec4 Info;
+		};
+
+		void EnsureTiles(uint32_t tiles);
 
 		Rdn::Device& m_Device;
 		Rdn::ResourceAllocator& m_Allocator;
@@ -182,6 +192,10 @@ namespace Game
 		std::unique_ptr<Rdn::Shader> m_GiShader;
 		std::unique_ptr<Rdn::ComputePipeline> m_GiPipeline;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_Frame;
+		std::unique_ptr<Rdn::GpuRingBuffer> m_Lights;
+		std::unique_ptr<Rdn::GpuBuffer> m_Tiles;
+		std::unique_ptr<Rdn::Shader> m_CullShader;
+		std::unique_ptr<Rdn::ComputePipeline> m_CullPipeline;
 		std::unique_ptr<Rdn::Sampler> m_Sampler;
 		std::unique_ptr<Rdn::Sampler> m_LinearSampler;
 	};

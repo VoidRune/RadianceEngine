@@ -15,6 +15,7 @@ namespace Game
 		Arena,
 		Royale,
 		Brawl,
+		Shardfall,
 		Count,
 	};
 

@@ -49,6 +49,16 @@ const float IceBlur = 4.0;
 const float IceEdge = 0.6;
 const float InteriorGlow = 0.5;
 const vec2 InteriorDepths = vec2(0.12, 0.3);
+const float TintDistance = 0.16;
+const float GemIor = 1.55;
+const float GemSpread = 0.06;
+const float GemSurfaceGlow = 0.25;
+const float GemEdge = 0.3;
+const float GemVeil = 0.3;
+const float GemStudio = 1.6;
+const float GemCore = 0.06;
+const float GemHue = 0.65;
+const float GemDepth = 0.14;
 
 float FloorHit(vec3 origin, vec3 direction, float floorY, out vec2 uv)
 {
@@ -82,6 +92,18 @@ vec3 Refracted(vec3 point, vec3 direction, float travel, vec2 screen, float fron
 	offset *= min(1.0, Frame.Screen.w / max(reach, 1e-5));
 	float leak = LinearDepth(textureLod(SceneDepth, screen + offset, 0.0).r) < frontZ - 0.05 ? 0.0 : 1.0;
 	return SamplePyramid(screen + offset * leak, level);
+}
+
+vec3 Through(vec3 n, vec3 view, float eta, vec3 backNormal, bool exits, float travel, float beyond, vec2 screen, float frontZ, float level)
+{
+	vec3 entered = refract(-view, n, 1.0 / eta);
+	vec3 direction = entered;
+	if (exits)
+	{
+		vec3 escaped = refract(entered, backNormal, eta);
+		direction = dot(escaped, escaped) > 1e-6 ? escaped : reflect(entered, backNormal);
+	}
+	return Refracted(inWorld + entered * travel, direction, beyond, screen, frontZ, level);
 }
 
 #ifdef WATER
@@ -193,7 +215,13 @@ void main()
 	}
 	vec3 exitPoint = inWorld + entered * travel;
 	vec3 seen = Refracted(exitPoint, direction, beyond, screen, frontZ, roughness * IceBlur);
-	vec3 absorption = exp(-pc.Absorb.rgb * travel);
+	if (ior > GemIor && pc.Look.z > 0.5)
+	{
+		vec3 backNormal = -normalize(back.xyz);
+		seen.r = Through(n, view, ior - GemSpread, backNormal, exits, travel, beyond, screen, frontZ, roughness * IceBlur).r;
+		seen.b = Through(n, view, ior + GemSpread, backNormal, exits, travel, beyond, screen, frontZ, roughness * IceBlur).b;
+	}
+	vec3 absorption = exp(-pc.Absorb.rgb * travel) * pow(max(inTint.rgb, vec3(0.02)), vec3(travel / TintDistance));
 	vec3 veil = frost * (IceVeil + pc.Look.y * (1.0 - exp(-travel * IceScatter)));
 	float fresnel = FresnelDielectric(cosV, ior);
 	vec3 bounce = reflect(-view, n);
@@ -217,14 +245,28 @@ void main()
 			vec3 drift = entered * (InteriorDepths[k] / max(dot(-entered, geometric), 0.25));
 			vec2 shift = (dux * dot(drift, across) + duy * dot(drift, down)) / area;
 			float plane = texture(Textures[nonuniformEXT(material.Surface)], st + shift).a;
-			interior += material.Extra.rgb * (plane * InteriorGlow * exp(-pc.Absorb.rgb * InteriorDepths[k]));
+			interior += material.Extra.rgb * inTint.rgb * (plane * InteriorGlow * exp(-pc.Absorb.rgb * InteriorDepths[k]));
 		}
 	float facet = smoothstep(0.15, 0.5, length(fwidth(geometric)));
-	vec3 edge = (Frame.SkyRadiance.rgb + Frame.SunRadiance.rgb * 0.15) * (facet * IceEdge);
-	vec3 clear = (seen * absorption + veil) * (1.0 - fresnel) + reflected * fresnel + specular;
+	bool gem = ior > GemIor;
+	vec3 hue = gem ? mix(vec3(1.0), inTint.rgb, GemHue) : vec3(1.0);
+	vec3 edge = (Frame.SkyRadiance.rgb + Frame.SunRadiance.rgb * 0.15) * (facet * IceEdge * (ior > GemIor ? GemEdge : 1.0));
+	if (gem)
+		veil *= GemVeil;
+	vec3 clear = (seen * absorption + veil) * (1.0 - fresnel) + reflected * (fresnel * hue) + specular;
+	if (gem)
+	{
+		float cut = fract(sin(dot(floor(geometric * 6.0 + 0.5), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+		vec3 r = reflect(-view, n);
+		float studio = pow(max(dot(r, normalize(vec3(0.35, 0.85, 0.4))), 0.0), 20.0) + 0.7 * pow(max(dot(r, normalize(vec3(-0.6, 0.55, -0.35))), 0.0), 28.0);
+		float saturation = max(max(inTint.r, inTint.g), inTint.b) - min(min(inTint.r, inTint.g), inTint.b);
+		clear = clear * (0.6 + 0.8 * cut) + (vec3(0.55) * hue + Frame.SunRadiance.rgb * 0.06) * (studio * GemStudio) + albedo * ((GemCore + GemDepth * saturation) * (0.4 + 0.6 * cut));
+		edge *= hue;
+	}
 	clear += interior + edge;
 	vec3 radiance = mix(frost + inside, clear + inside, clarity);
-	vec3 glow = material.Extra.rgb * surface.a + albedo * clamp(inGlow, 0.0, 1.0) + inAccent.rgb * (pow(1.0 - cosV, 3.5) * inAccent.a);
+	float lining = ior > GemIor ? GemSurfaceGlow : 1.0;
+	vec3 glow = material.Extra.rgb * inTint.rgb * (surface.a * lining) + albedo * clamp(inGlow, 0.0, 1.0) + inAccent.rgb * (pow(1.0 - cosV, 3.5) * inAccent.a);
 	radiance += glow;
 #endif
 	vec3 burnLight = inBurn.rgb * (burn * burn);

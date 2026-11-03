@@ -19,16 +19,19 @@ namespace Game
 		ShadowQuality Shadows = ShadowQuality::High;
 		GiQuality Gi = GiQuality::Medium;
 		uint32_t FrameCap = 240;
+		uint32_t RenderScale = 100;
 	};
 
 	inline constexpr uint32_t MinFrameCap = 30;
 	inline constexpr uint32_t MaxFrameCap = 240;
+	inline constexpr uint32_t MinRenderScale = 50;
+	inline constexpr uint32_t MaxRenderScale = 100;
 
 	inline constexpr const char* GraphicsTierNames[] = { "low", "medium", "high" };
 	inline constexpr GraphicsPreset GraphicsPresets[] = {
-		{ ShadowQuality::Low, GiQuality::Off, 60 },
-		{ ShadowQuality::High, GiQuality::Low, 144 },
-		{ ShadowQuality::High, GiQuality::Medium, 240 },
+		{ ShadowQuality::Low, GiQuality::Off, 60, 75 },
+		{ ShadowQuality::High, GiQuality::Low, 144, 85 },
+		{ ShadowQuality::High, GiQuality::Medium, 240, 100 },
 	};
 	static_assert(std::size(GraphicsTierNames) == size_t(GraphicsTier::Count) && std::size(GraphicsPresets) == size_t(GraphicsTier::Count));
 

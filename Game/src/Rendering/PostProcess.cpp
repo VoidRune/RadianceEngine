@@ -49,6 +49,12 @@ namespace Game
 		};
 		static_assert(sizeof(CompositeConstants) == 128);
 
+		struct UpscaleConstants
+		{
+			glm::vec4 Size;
+			float Sharpness;
+		};
+
 		glm::vec3 ApplyGrade(const ColorGrade& grade, const glm::vec3& color)
 		{
 			constexpr glm::vec3 Rec709{ 0.2126f, 0.7152f, 0.0722f };
@@ -97,6 +103,21 @@ namespace Game
 			.ColorAttachmentFormats = { targetFormat },
 			.PushDescriptorSets = { 0 },
 		});
+		m_TargetFormat = targetFormat;
+		if (Rdn::Shader* upscale = compile("res/Shaders/Game/Upscale.frag"))
+		{
+			m_Upscale = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_Upscale.get(), Rdn::PipelineDesc{
+				.ShaderStages = { vertex, upscale },
+				.CullMode = Rdn::CullMode::None,
+				.DepthTest = false,
+				.DepthWrite = false,
+				.ColorAttachmentFormats = { targetFormat },
+				.PushDescriptorSets = { 0 },
+			});
+		}
+		else
+			RDN_LOG_ERROR("The upscale shader failed to compile, a scaled world is stretched with a plain bilinear filter");
 		m_Sampler = std::make_unique<Rdn::Sampler>();
 		m_Allocator.CreateSampler(m_Sampler.get(), Rdn::SamplerDesc{ .AddressMode = Rdn::SamplerAddressMode::ClampToEdge });
 		m_PointSampler = std::make_unique<Rdn::Sampler>();
@@ -110,8 +131,9 @@ namespace Game
 		for (Rdn::ComputePipeline* pipeline : { m_Down.get(), m_Up.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
-		if (m_Composite)
-			m_Allocator.ReleaseResource(m_Composite.get());
+		for (Rdn::Pipeline* pipeline : { m_Composite.get(), m_Upscale.get() })
+			if (pipeline)
+				m_Allocator.ReleaseResource(pipeline);
 		for (Rdn::Sampler* sampler : { m_Sampler.get(), m_PointSampler.get() })
 			if (sampler)
 				m_Allocator.ReleaseResource(sampler);
@@ -225,10 +247,14 @@ namespace Game
 		m_Allocator.SetImageData(m_GradingLut.get(), texels.data(), texels.size() * sizeof(uint16_t), Rdn::ImageLayout::ShaderReadOnlyOptimal);
 	}
 
-	void PostProcess::Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage target, Rdn::Extent2D extent, Rdn::Extent2D output, const DistortionView& distortion)
+	void PostProcess::Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage target, Rdn::Extent2D extent, Rdn::Extent2D output, const DistortionView& distortion, Rdn::Extent2D display)
 	{
 		if (!m_Composite)
 			return;
+		const bool upscale = m_Upscale && (display.Width > output.Width || display.Height > output.Height);
+		const Rdn::RGImage final = target;
+		if (upscale)
+			target = graph.CreateImage("World", Rdn::RGImageDesc{ .Size = { output.Width, output.Height, 1 }, .Format = m_TargetFormat });
 		const auto sampled = [this](uint32_t binding, Rdn::ImageViewHandle view) { return Rdn::ImageWrite(binding, Rdn::DescriptorType::CombinedImageSampler, view, Rdn::ImageLayout::ShaderReadOnlyOptimal, m_Sampler->GetHandle()); };
 		const auto storage = [](uint32_t binding, Rdn::ImageViewHandle view) { return Rdn::ImageWrite(binding, Rdn::DescriptorType::StorageImage, view, Rdn::ImageLayout::General); };
 
@@ -316,6 +342,22 @@ namespace Game
 					.AddWrite(sampled(3, context.GetImageView(offsets)))
 					.AddWrite(Rdn::ImageWrite(4, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(depth), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_PointSampler->GetHandle())));
 				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Composite->GetLayout(), &constants, sizeof(constants));
+				cmd.Draw(3, 1, 0, 0);
+			});
+		if (!upscale)
+			return;
+		const UpscaleConstants scale{ glm::vec4(float(output.Width), float(output.Height), 1.0f / float(output.Width), 1.0f / float(output.Height)), Sharpness };
+		graph.AddPass("Upscale", Rdn::PassType::Graphics,
+			[&](Rdn::PassBuilder& builder)
+			{
+				builder.AddColorAttachment(final, Rdn::AttachmentLoadOp::DontCare, Rdn::AttachmentStoreOp::Store);
+				builder.UseImage(target, Rdn::RGImageUsage::Sampled);
+			},
+			[=, this](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
+			{
+				cmd.BindPipeline(m_Upscale->GetHandle());
+				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_Upscale->GetLayout(), 0, Rdn::DescriptorWrite().AddWrite(sampled(0, context.GetImageView(target))));
+				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Upscale->GetLayout(), &scale, sizeof(scale));
 				cmd.Draw(3, 1, 0, 0);
 			});
 	}

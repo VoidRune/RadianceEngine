@@ -16,6 +16,8 @@
 #include "GameShared/Simulation/MatchDirector.h"
 #include "GameShared/Simulation/MissionDirector.h"
 #include "GameShared/Simulation/PlayerSimulation.h"
+#include "GameShared/Simulation/RunDirector.h"
+#include "GameShared/Simulation/TargetGrid.h"
 #include "GameShared/Simulation/WaveDirector.h"
 #include "GameShared/World/Level.h"
 #include "GameShared/World/Navigation.h"
@@ -39,6 +41,7 @@ namespace Game
 		uint8_t Tier = 1;
 		ModifierMask Modifiers = 0;
 		MatchRules Rules;
+		RunRules Run;
 		uint32_t Players = 1;
 		uint32_t TickRate = 60;
 		float IntermissionSeconds = 6.0f;
@@ -165,9 +168,13 @@ namespace Game
 		void ResetRun();
 		void WakePack(uint16_t pack);
 		void OnEnemyKilled(Entity entity, const Enemy& enemy, Vec2 position, uint32_t attacker);
+		void LevelUp(uint32_t level, bool announce = true);
 		bool ConsumeRevive(uint32_t playerId);
 
 		bool GetPastPosition(Entity entity, double tick, Vec2& position) const;
+		void GetTargetBounds(Entity entity, Vec2 position, float radius, Vec2& low, Vec2& high) const;
+		void GatherTargets(Vec2 low, Vec2 high, std::vector<Entity>& found);
+		void MarkTargetsMoved() { m_TargetsMoved = true; }
 		Vec2 FindSpawnPosition(uint32_t playerId) const;
 		Vec2 FindFreeSpotNear(Vec2 position, float radius) const;
 		Vec2 PlaceDrop(Vec2 origin, Vec2 desired) const;
@@ -207,6 +214,7 @@ namespace Game
 		GameMode GetMode() const { return m_Settings.Mode; }
 		bool IsHub() const { return m_Settings.Mode == GameMode::Hub; }
 		bool IsPvp() const { return IsPvpMode(m_Settings.Mode); }
+		bool IsShardfall() const { return m_Settings.Mode == GameMode::Shardfall; }
 		bool IsDamageBrawl() const { return m_Settings.Mode == GameMode::Brawl && m_Settings.Rules.Mode == BrawlMode::Damage; }
 		bool UsesBrawlDamage() const { return IsDamageBrawl() || IsHub(); }
 		bool AreRivals(uint32_t a, uint32_t b) const;
@@ -223,6 +231,7 @@ namespace Game
 		const NavGrid& GetNavGrid() const { return m_NavGrid; }
 		GameStatus GetStatus() const;
 		const MissionDirector& GetMission() const { return m_Mission; }
+		const RunDirector& GetRun() const { return m_Run; }
 		WorldStats& GetStats() { return m_Stats; }
 		const WorldStats& GetStats() const { return m_Stats; }
 		Random& GetRandom() { return m_Random; }
@@ -244,6 +253,7 @@ namespace Game
 		bool PayFor(Inventory& inventory, const MaterialStock& cost);
 		void InventoryChanged(Entity player);
 		void UpdateNavigation(float dt);
+		void RebuildTargets();
 		void RecordHistory();
 		void FlushDestroyed();
 
@@ -256,6 +266,11 @@ namespace Game
 		WaveDirector m_Director;
 		MissionDirector m_Mission;
 		MatchDirector m_Match;
+		RunDirector m_Run;
+		TargetGrid m_TargetGrid;
+		std::vector<Entity> m_TargetEntities;
+		std::vector<uint32_t> m_TargetFound;
+		bool m_TargetsMoved = true;
 		Random m_Random;
 		WorldStats m_Stats;
 		std::vector<Entity> m_Destroyed;
@@ -286,6 +301,7 @@ namespace Game
 		float m_BalloonTimer = 0.0f;
 		uint32_t m_BalloonLane = 0;
 		float m_NavigationTimer = 0.0f;
+		float m_WideNavigationTimer = 0.0f;
 		uint32_t m_Tick = 0;
 		uint32_t m_NextNetId = 1;
 		uint32_t m_NextItemId = 1;

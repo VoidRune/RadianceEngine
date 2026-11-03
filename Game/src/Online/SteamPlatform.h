@@ -56,7 +56,7 @@ namespace Game
 		const std::string& GetPersonaName() const { return m_Persona; }
 		bool IsOverlayEnabled() const;
 
-		uint32_t OpenLobby(bool friendsCanJoin);
+		uint32_t OpenLobby(bool friendsCanJoin, uint32_t members);
 		void CloseLobby(uint32_t ticket);
 		bool HasLobby(uint32_t ticket) const { return ticket != 0 && ticket == m_LobbyTicket && m_Lobby != 0; }
 		uint64_t GetLobbyId() const { return m_Lobby; }

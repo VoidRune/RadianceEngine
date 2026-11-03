@@ -33,6 +33,8 @@ const uint MeshAccentDye = 4096u;
 const uint MeshCrystal = 8192u;
 const uint MeshIce = 16384u;
 const uint MeshCliff = 32768u;
+const uint MeshTwoTone = 65536u;
+const uint MeshBright = 131072u;
 const uint MaterialTranslucent = 256u;
 
 vec4 SampleAlbedo(Material m, vec2 uv)

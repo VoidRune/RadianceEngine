@@ -38,6 +38,27 @@ namespace Game
 			m_Data.insert(m_Data.end(), text.begin(), text.begin() + size);
 		}
 
+		void WriteVarint(uint32_t value)
+		{
+			while (value >= 0x80u)
+			{
+				m_Data.push_back(uint8_t(value | 0x80u));
+				value >>= 7;
+			}
+			m_Data.push_back(uint8_t(value));
+		}
+
+		void WriteSigned(int32_t value)
+		{
+			WriteVarint((uint32_t(value) << 1) ^ uint32_t(value >> 31));
+		}
+
+		void WriteBytes(std::span<const uint8_t> bytes)
+		{
+			m_Data.insert(m_Data.end(), bytes.begin(), bytes.end());
+		}
+
+		size_t GetSize() const { return m_Data.size(); }
 		const std::vector<uint8_t>& GetData() const { return m_Data; }
 		std::vector<uint8_t> Take() { return std::move(m_Data); }
 
@@ -82,6 +103,38 @@ namespace Game
 			std::string text(reinterpret_cast<const char*>(m_Data.data() + m_Offset), size);
 			m_Offset += size;
 			return text;
+		}
+
+		uint32_t ReadVarint()
+		{
+			uint32_t value = 0;
+			for (uint32_t shift = 0; shift < 35; shift += 7)
+			{
+				const uint8_t byte = Read<uint8_t>();
+				value |= uint32_t(byte & 0x7Fu) << shift;
+				if ((byte & 0x80u) == 0 || m_Failed)
+					return value;
+			}
+			m_Failed = true;
+			return 0;
+		}
+
+		int32_t ReadSigned()
+		{
+			const uint32_t value = ReadVarint();
+			return int32_t(value >> 1) ^ -int32_t(value & 1u);
+		}
+
+		std::span<const uint8_t> ReadBytes(size_t size)
+		{
+			if (m_Failed || m_Offset + size > m_Data.size())
+			{
+				m_Failed = true;
+				return {};
+			}
+			const std::span<const uint8_t> bytes = m_Data.subspan(m_Offset, size);
+			m_Offset += size;
+			return bytes;
 		}
 
 		bool Failed() const { return m_Failed; }

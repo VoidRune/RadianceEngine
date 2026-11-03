@@ -52,6 +52,12 @@ const float RimPower = 3.5;
 const float CrystalTranslucency = 0.85;
 const float IceTranslucency = 0.3;
 const float CharDepth = 3.0;
+const float TwoToneLow = 0.1;
+const float TwoToneHigh = 0.25;
+const float TwoToneFacing = 0.35;
+const float TwoToneUp = 0.5;
+const float TwoToneVeins = 1.2;
+const float BrightGain = 3.0;
 
 struct Layer
 {
@@ -367,12 +373,20 @@ void main()
 	else
 		occlusion *= GroundOcclusion(inShading.y);
 
-	albedo = mix(albedo * inTint.rgb, vec3(1.0), clamp(inTint.a, 0.0, 1.0));
+	vec3 tint = inTint.rgb;
+	bool twoTone = (flags & MeshTwoTone) != 0u;
+	if (twoTone)
+		tint = mix(inTint.rgb, inAccent.rgb, clamp(smoothstep(TwoToneLow, TwoToneHigh, Luminance(albedo)) + smoothstep(TwoToneFacing, 1.0, geometric.y) * TwoToneUp, 0.0, 1.0));
+	albedo = mix(albedo * tint, vec3(1.0), clamp(inTint.a, 0.0, 1.0));
+	if (twoTone)
+		albedo = min(albedo, vec3(0.95));
 	float glow = clamp(inShading.x, 0.0, 1.0);
 	if ((flags & MeshLavaGlow) != 0u)
 		heat += HotRock * glow;
 	float fade = DepthFade(pc.Focus.x, inShading.z);
-	vec3 emitted = albedo * glow + heat + material.Extra.rgb * layer.Surface.a;
+	vec3 emitted = albedo * glow + heat + (twoTone ? inAccent.rgb * (TwoToneVeins * Luminance(material.Extra.rgb)) : material.Extra.rgb) * layer.Surface.a;
+	if ((flags & MeshBright) != 0u)
+		emitted *= BrightGain;
 	if (inFlash != 0u)
 	{
 		vec4 flash = unpackUnorm4x8(inFlash);

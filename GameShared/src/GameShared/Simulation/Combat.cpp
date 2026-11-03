@@ -24,6 +24,8 @@ namespace Game
 				return !boss->Burrowed;
 			if (const Dummy* dummy = entities.TryGet<Dummy>(entity))
 				return dummy->Fall <= 0.0f;
+			if (const Enemy* enemy = entities.TryGet<Enemy>(entity))
+				return enemy->Sprout <= 0.0f;
 			const PlayerController* controller = entities.TryGet<PlayerController>(entity);
 			return !controller || (controller->State.Alive && controller->State.Invulnerable <= 0.0f);
 		}
@@ -85,18 +87,100 @@ namespace Game
 			bool Warded = false;
 		};
 
+		bool MakeTarget(EntityRegistry& entities, Entity entity, const Health& health, Target& target)
+		{
+			const Transform* transform = entities.TryGet<Transform>(entity);
+			const Collider* collider = entities.TryGet<Collider>(entity);
+			const PlayerController* controller = entities.TryGet<PlayerController>(entity);
+			if (!transform || !collider || !IsVulnerable(entities, entity, health))
+				return false;
+			target = { entity, transform->Position, collider->Radius, health.Side, controller ? controller->PlayerId : NoPlayer, transform->Facing, controller && IsGuarding(controller->State, controller->Traits), controller && IsWarded(controller->State) && !controller->State.IsFalling() };
+			return true;
+		}
+
 		std::vector<Target> CollectTargets(EntityRegistry& entities)
 		{
 			std::vector<Target> targets;
 			entities.Each<Health>([&](Entity entity, Health& health)
 			{
-				const Transform* transform = entities.TryGet<Transform>(entity);
-				const Collider* collider = entities.TryGet<Collider>(entity);
-				const PlayerController* controller = entities.TryGet<PlayerController>(entity);
-				if (transform && collider && IsVulnerable(entities, entity, health))
-					targets.push_back({ entity, transform->Position, collider->Radius, health.Side, controller ? controller->PlayerId : NoPlayer, transform->Facing, controller && IsGuarding(controller->State, controller->Traits), controller && IsWarded(controller->State) && !controller->State.IsFalling() });
+				if (Target target; MakeTarget(entities, entity, health, target))
+					targets.push_back(target);
 			});
 			return targets;
+		}
+
+		std::vector<Target> CollectTargets(World& world, Vec2 center, float reach)
+		{
+			thread_local std::vector<Entity> nearby;
+			EntityRegistry& entities = world.GetEntities();
+			world.GatherTargets(center - Vec2(reach, reach), center + Vec2(reach, reach), nearby);
+			std::vector<Target> targets;
+			for (const Entity entity : nearby)
+				if (const Health* health = entities.TryGet<Health>(entity))
+					if (Target target; MakeTarget(entities, entity, *health, target))
+						targets.push_back(target);
+			return targets;
+		}
+
+		class TargetSweep
+		{
+		public:
+			void Build(const World& world, const std::vector<Target>& targets)
+			{
+				const float guard = GetAbility(AbilityId::HexShield).Reach;
+				m_Grid.Begin(world.GetMap().GetWidth(), world.GetMap().GetHeight());
+				for (const Target& target : targets)
+				{
+					Vec2 low;
+					Vec2 high;
+					world.GetTargetBounds(target.Handle, target.Position, std::max(target.Radius, target.Warded ? DiamondWardReach : target.Guarded ? guard : 0.0f), low, high);
+					m_Grid.Add(low, high);
+				}
+				m_Grid.Finish();
+			}
+
+			const std::vector<uint32_t>& Near(Vec2 low, Vec2 high)
+			{
+				m_Grid.Gather(low, high, m_Found);
+				return m_Found;
+			}
+
+			const std::vector<Target>& Pick(const std::vector<Target>& targets, Vec2 center, float reach)
+			{
+				m_Grid.Gather(center - Vec2(reach, reach), center + Vec2(reach, reach), m_Picked);
+				m_Subset.clear();
+				for (const uint32_t index : m_Picked)
+					m_Subset.push_back(targets[index]);
+				return m_Subset;
+			}
+
+		private:
+			TargetGrid m_Grid;
+			std::vector<uint32_t> m_Found;
+			std::vector<uint32_t> m_Picked;
+			std::vector<Target> m_Subset;
+		};
+
+		void BurstRuby(World& world, Vec2 center, float facing, const PendingStrike& strike)
+		{
+			const AbilityDef& shard = GetAbility(AbilityId::RubyShard);
+			const ProjectilePattern pattern = GetProjectilePattern(shard, 0, 0, 1.0f);
+			AbilityContext context;
+			context.Side = Team::Enemies;
+			context.Origin = center;
+			for (uint32_t i = 0; i < RubyShards; i++)
+			{
+				context.Direction = FromAngle(facing + 2.0f * Pi * float(i) / float(RubyShards));
+				world.SpawnProjectile(shard, pattern, center + context.Direction * 0.25f, context.Direction, strike.Damage, context);
+			}
+		}
+
+		float StrikeExtent(const PendingStrike& strike)
+		{
+			float extent = std::max(strike.Radius, strike.Length + strike.Width * 0.5f);
+			if (strike.Ability == uint8_t(AbilityId::StormStrike))
+				extent += GetAbility(AbilityId::StormJump).Range * float((strike.Perks & PerkFork) ? ForkedJumps : 1u);
+			return extent;
 		}
 
 		bool IsHostile(const World& world, Team side, uint32_t owner, const Target& target)
@@ -539,6 +623,8 @@ namespace Game
 			amount = std::min(amount, std::max(1, int32_t(float(controller->Traits.MaxHealth) * PvpMaxHitFraction)));
 		if (controller && world.IsDamageBrawl())
 			amount = world.ShapeBrawlDamage(controller->State, controller->PlayerId, damage.Attacker, damage.Ability, damage.Unmitigated, controller->State.Chill > 0.0f, amount);
+		if (const Enemy* shielded = entities.TryGet<Enemy>(target); shielded && shielded->Shielded)
+			amount = std::max(1, int32_t(std::lround(float(amount) * ShieldScale)));
 		if (controller && damage.Attacker != NoPlayer && damage.Attacker != controller->PlayerId)
 		{
 			controller->LastAttacker = damage.Attacker;
@@ -553,6 +639,8 @@ namespace Game
 			world.RecordDamage(controller->PlayerId, damage.Attacker, std::min(amount, std::max(health->Current, 0)), damage.Ability);
 
 		health->Current -= amount;
+		if (controller && world.IsShardfall() && world.GetSettings().Run.Immortal)
+			health->Current = std::max(health->Current, 1);
 		if (controller && world.IsDamageBrawl())
 			world.AfterBrawlDamage(target, controller->PlayerId, damage.Attacker, damage.Ability, amount);
 		if (Dummy* dummy = entities.TryGet<Dummy>(target))
@@ -655,7 +743,7 @@ namespace Game
 
 	void StrikeCircle(World& world, Vec2 center, float radius, const HitInfo& hit, Team side, float rewind, std::span<const Entity> spared)
 	{
-		for (const Target& target : CollectTargets(world.GetEntities()))
+		for (const Target& target : CollectTargets(world, center, radius))
 		{
 			Vec2 position;
 			if (!IsHostile(world, side, hit.Attacker, target) || std::find(spared.begin(), spared.end(), target.Handle) != spared.end() || !TargetPosition(world, target, rewind, position))
@@ -676,7 +764,7 @@ namespace Game
 		const float reach = ability.Reach * context.AreaScale;
 		const float halfWidth = ability.Width * context.AreaScale * 0.5f;
 		const HitInfo hit = MakeHit(damage, ability, context);
-		for (const Target& target : CollectTargets(world.GetEntities()))
+		for (const Target& target : CollectTargets(world, context.Origin, reach))
 		{
 			Vec2 position;
 			if (!IsHostile(world, context.Side, context.Owner, target) || !TargetPosition(world, target, context.Rewind, position))
@@ -703,6 +791,12 @@ namespace Game
 		if (world.IsHub())
 			return;
 		Random& random = world.GetRandom();
+		if (world.IsShardfall())
+		{
+			if (random.Float() < std::min(1.0f, def.OrbChance))
+				world.SpawnLoot(random.Below(2) == 0 ? LootKind::Health : LootKind::Mana, world.PlaceDrop(position, Scatter(random, position)));
+			return;
+		}
 		const uint32_t level = std::clamp<uint32_t>(enemy.Level, 1u, MaxItemLevel);
 		const float elite = enemy.Elite ? 1.0f : 0.0f;
 		if (world.IsPvp())
@@ -749,6 +843,8 @@ namespace Game
 	{
 		EntityRegistry& entities = world.GetEntities();
 		const std::vector<Target> targets = CollectTargets(entities);
+		thread_local TargetSweep sweep;
+		sweep.Build(world, targets);
 		struct Contact
 		{
 			Entity Handle;
@@ -788,7 +884,7 @@ namespace Game
 				return std::find(projectile.Hits.begin(), projectile.Hits.begin() + projectile.HitCount, target) != projectile.Hits.begin() + projectile.HitCount;
 			};
 			if (projectile.Perks & PerkSeek)
-				Seek(world, targets, projectile, transform->Position, owner, alreadyHit, dt);
+				Seek(world, sweep.Pick(targets, transform->Position, SeekRange), projectile, transform->Position, owner, alreadyHit, dt);
 			const Vec2 start = transform->Position;
 			const Vec2 end = start + projectile.Velocity * dt;
 			const float travel = CastSegment(world.GetLevel(), start, end, Block::Projectiles, &projectile.Floor);
@@ -800,8 +896,11 @@ namespace Game
 			const bool hook = projectile.Ability == uint8_t(AbilityId::ChainHook);
 
 			contacts.clear();
-			for (const Target& target : targets)
+			const Vec2 low = { std::min(start.x, reached.x) - projectile.Radius, std::min(start.y, reached.y) - projectile.Radius };
+			const Vec2 high = { std::max(start.x, reached.x) + projectile.Radius, std::max(start.y, reached.y) + projectile.Radius };
+			for (const uint32_t index : sweep.Near(low, high))
 			{
+				const Target& target = targets[index];
 				Vec2 position;
 				float parameter = 0.0f;
 				if (!IsHostile(world, projectile.Side, owner, target) || alreadyHit(target.Handle) || !TargetPosition(world, target, projectile.Rewind, position))
@@ -860,7 +959,7 @@ namespace Game
 				}
 				if (hook)
 					hooks.push_back({ point, transform->Facing, owner, tag, projectile.Source, true });
-				if (projectile.Chain > 0 && Chain(world, targets, projectile, contact.Handle, point, owner))
+				if (projectile.Chain > 0 && Chain(world, sweep.Pick(targets, point, ChainRange), projectile, contact.Handle, point, owner))
 				{
 					spent = true;
 					break;
@@ -946,6 +1045,13 @@ namespace Game
 				const Vec2 center = transform->Position;
 				const float facing = transform->Facing;
 				const PendingStrike landed = strike;
+				if (landed.Ability == uint8_t(AbilityId::RubyBurst))
+				{
+					BurstRuby(world, center, facing, landed);
+					world.SpawnEffect(AbilityId::RubyBurst, center, facing, NoPlayer, 0, 1.0f);
+					world.QueueDestroy(entity);
+					return;
+				}
 				HitInfo hit{ landed.Damage, landed.Owner, landed.Source, landed.CritChance, landed.CritMultiplier, landed.LifeSteal, landed.Damages, landed.Chill, landed.Stun, landed.PvpScale, landed.Ability };
 				hit.Push = landed.Push;
 				hit.Mode = landed.Push < 0.0f ? PushMode::Pull : (landed.Perks & PerkAlong) ? PushMode::Along : PushMode::Radial;
@@ -953,7 +1059,7 @@ namespace Game
 				hit.PushDirection = FromAngle(facing);
 				hit.PushReach = landed.Radius;
 				hit.Static = (landed.Perks & PerkStatic) != 0;
-				const std::vector<Target> targets = CollectTargets(entities);
+				const std::vector<Target> targets = CollectTargets(world, center, StrikeExtent(landed));
 				std::vector<Entity> struck;
 				for (const Target& target : targets)
 				{

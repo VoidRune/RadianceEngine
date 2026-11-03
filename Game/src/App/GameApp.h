@@ -50,6 +50,7 @@ namespace Game
 		bool Fullscreen = false;
 		bool Vsync = true;
 		uint32_t FrameCap = GraphicsPreset{}.FrameCap;
+		uint32_t RenderScale = GraphicsPreset{}.RenderScale;
 		float ScreenShake = 1.0f;
 		bool ShowControls = true;
 		bool ShowPerformance = false;
@@ -58,6 +59,7 @@ namespace Game
 		uint8_t Tier = 1;
 		ModifierMask Modifiers = 0;
 		MatchRules Rules;
+		RunRules Run;
 		bool UnlimitedMaterials = false;
 		bool Peaceful = false;
 		bool Leviathan = false;

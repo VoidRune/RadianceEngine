@@ -144,6 +144,8 @@ namespace Game
 		RuinRubble,
 		StormSpire,
 		Monolith,
+		SummitBoulder,
+		SummitCrystal,
 		Count,
 	};
 
@@ -928,6 +930,12 @@ namespace Game
 			Box({}, 0.0f, { 0.7f, 0.4f }, 3.2f, Granite),
 			Box({ 0.0f, -0.41f }, 0.9f, { 0.16f, 0.02f }, 1.6f, StormGlow, 0.0f, 0.6f),
 		};
+
+		inline constexpr PropCollider SummitBoulderColliders[] = { Circle(0.8f) };
+		inline constexpr PropPart SummitBoulderParts[] = { Sphere({}, -0.1f, { 0.85f, 0.7f }, 1.1f, Granite, 0.3f) };
+
+		inline constexpr PropCollider SummitCrystalColliders[] = { Circle(0.4f, Block::Movement) };
+		inline constexpr PropPart SummitCrystalParts[] = { Box({}, 0.0f, { 0.25f, 0.25f }, 1.2f, StormGlow, 0.4f, 0.6f) };
 	}
 
 	inline constexpr PropDef Props[] = {
@@ -1033,6 +1041,8 @@ namespace Game
 		{ PropId::RuinRubble, "Ruin rubble", {}, PropData::RuinRubbleParts },
 		{ PropId::StormSpire, "Storm spire", PropData::StormSpireColliders, PropData::StormSpireParts, true },
 		{ PropId::Monolith, "Ritual monolith", PropData::MonolithColliders, PropData::MonolithParts, true },
+		{ PropId::SummitBoulder, "Summit boulder", PropData::SummitBoulderColliders, PropData::SummitBoulderParts },
+		{ PropId::SummitCrystal, "Storm crystal", PropData::SummitCrystalColliders, PropData::SummitCrystalParts },
 	};
 
 	constexpr bool PropsMatchIds()

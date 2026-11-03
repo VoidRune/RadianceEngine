@@ -1,5 +1,6 @@
 #pragma once
 #include "GameShared/Net/Protocol.h"
+#include "GameShared/Net/SnapshotCodec.h"
 #include "GameShared/Net/Transport.h"
 #include "GameShared/Simulation/BotBrain.h"
 #include "GameShared/Simulation/World.h"
@@ -25,6 +26,7 @@ namespace Game
 		uint8_t Tier = 1;
 		ModifierMask Modifiers = 0;
 		MatchRules Rules;
+		RunRules Run;
 		uint32_t MaxPlayers = Game::MaxPlayers;
 		float IntermissionSeconds = 6.0f;
 		uint32_t FirstWave = 1;
@@ -40,6 +42,8 @@ namespace Game
 		uint32_t InputBufferTarget = 0;
 		uint32_t QueuedInputs = 0;
 		ConnectionStats Connection;
+		uint64_t SnapshotBytes = 0;
+		uint32_t Snapshots = 0;
 	};
 
 	class GameServer
@@ -60,7 +64,7 @@ namespace Game
 		const World* GetWorld() const { return m_World.get(); }
 		World* GetWorld() { return m_World.get(); }
 		const SessionInfo& GetSession() const { return m_Session; }
-		void Travel(GameMode mode, MapKind map, uint8_t tier, ModifierMask modifiers, MatchRules rules = {});
+		void Travel(GameMode mode, MapKind map, uint8_t tier, ModifierMask modifiers, MatchRules rules = {}, RunRules run = {});
 		uint32_t GetPlayerCount() const;
 		uint32_t GetBotCount() const { return uint32_t(m_Bots.size()); }
 		uint32_t GetStarvedTicks() const { return m_StarvedTicks; }
@@ -88,12 +92,12 @@ namespace Game
 			uint32_t Deaths = 0;
 			bool Host = false;
 			std::optional<Inventory> Saved;
-			PlayerTraits SentTraits;
-			uint32_t TraitsResend = 0;
-			uint32_t TraitsRefresh = 0;
+			SnapshotEncoder Encoder;
 			uint8_t Honors = 0;
 			Cosmetics Style;
 			AchievementMask Awarded = 0;
+			uint64_t SnapshotBytes = 0;
+			uint32_t Snapshots = 0;
 		};
 
 		struct Bot

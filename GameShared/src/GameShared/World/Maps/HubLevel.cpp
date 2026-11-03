@@ -22,6 +22,8 @@ namespace Game
 		constexpr Vec2 BoardSpot = { 26.2f, 12.4f };
 		constexpr Vec2 WishSpot = { 22.2f, 33.0f };
 		constexpr Vec2 ChessCenter = { 32.8f, 25.3f };
+		constexpr Vec2 RiftCenter = { 9.2f, 20.4f };
+		constexpr float RiftCrystalRing = 1.35f;
 		constexpr float ConstellationReach = 6.6f;
 		constexpr AbilityId Constellations[] = { AbilityId::EmberBolt, AbilityId::Comet, AbilityId::Warp, AbilityId::GlacialNova, AbilityId::GravityWell, AbilityId::ArcLightning, AbilityId::DiamondWard, AbilityId::FrostSpear };
 		constexpr Vec2 ShrineTethers[][2] = { { { 19.6f, 9.45f }, { 19.7f, 6.5f } }, { { 21.2f, 9.45f }, { 21.9f, 6.5f } }, { { 12.2f, 9.4f }, { 18.6f, 4.4f } } };
@@ -184,6 +186,14 @@ namespace Game
 		for (const Vec2 crystal : { Vec2(12.2f, 18.4f), Vec2(14.8f, 18.5f), Vec2(15.2f, 16.0f) })
 			builder.Prop(PropId::Crystal, crystal, crystal.x);
 		builder.Station(StationKind::Lapidary, { 13.2f, 15.8f }, 2.4f);
+
+		for (int i = 0; i < 3; i++)
+		{
+			const float angle = Pi * 0.5f + float(i) * Pi * 2.0f / 3.0f;
+			builder.Prop(PropId::Crystal, RiftCenter + FromAngle(angle) * RiftCrystalRing, angle);
+		}
+		builder.Station(StationKind::ShardRift, RiftCenter, 2.4f);
+		builder.Reserve(RiftCenter, 2.2f);
 
 		builder.Prop(PropId::MissionBoard, { 14.2f, 12.0f }, FaceNorth);
 		builder.Prop(PropId::Brazier, { 12.6f, 11.8f });

@@ -47,7 +47,15 @@ float DepthFade(float focusHeight, float worldHeight)
 	return clamp((focusHeight - worldHeight - 1.6) / 2.5, 0.0, 0.88);
 }
 
+const float AbyssStart = 3.0;
+const float AbyssEnd = 13.0;
+
 float Haze(float focusHeight, float worldHeight)
 {
 	return 0.92 * (1.0 - exp(-max(focusHeight - worldHeight - 2.5, 0.0) / 15.0));
+}
+
+float Abyss(float focusHeight, float worldHeight)
+{
+	return smoothstep(AbyssStart, AbyssEnd, focusHeight - worldHeight);
 }

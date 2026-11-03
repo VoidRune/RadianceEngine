@@ -111,6 +111,7 @@ namespace Game
 		constexpr float LiftPull = 6.0f;
 		constexpr float SkyAbyss = -60.0f;
 		constexpr float StormSunlight = 0.16f;
+		constexpr float StormGloom = 0.8f;
 		constexpr float RainRate = 260.0f;
 		constexpr float CameraGlideSeconds = 0.5f;
 		constexpr float CameraGlideRate = 7.0f;
@@ -199,6 +200,8 @@ namespace Game
 
 		float HealthBarHeight(EntityKind kind)
 		{
+			if (IsCrawlerKind(kind))
+				return (kind == EntityKind::CrawlerEgg ? 0.6f : 1.15f) * CrawlerScale(kind);
 			switch (kind)
 			{
 			case EntityKind::Chaser:
@@ -296,14 +299,14 @@ namespace Game
 			else if (map == MapKind::StormPeak)
 			{
 				lighting.SunDirection = { 0.62f, -0.66f, 0.42f };
-				lighting.SunColor = { 1.0f, 0.89f, 0.74f };
+				lighting.SunColor = { 0.94f, 0.9f, 0.96f };
 				lighting.SunIntensity = 2.6f;
-				lighting.SkyColor = { 0.3f, 0.37f, 0.5f };
+				lighting.SkyColor = { 0.27f, 0.29f, 0.48f };
 				lighting.GroundColor = { 0.15f, 0.15f, 0.17f };
 				lighting.EmissionGi = 3.0f;
 				lighting.Floating = true;
 				lighting.Storm = true;
-				lighting.Haze = { 0.55f, 0.62f, 0.76f };
+				lighting.Haze = { 0.3f, 0.31f, 0.48f };
 				lighting.Grade = { .MidSaturation = 0.08f, .Shadows = { 0.9f, 0.96f, 1.12f }, .Highlights = { 1.05f, 1.0f, 0.94f } };
 			}
 			else if (map == MapKind::FrozenLake)
@@ -343,8 +346,10 @@ namespace Game
 		: m_App(app), m_Config(std::move(config)), m_Extent{ app.GetWindow().Width(), app.GetWindow().Height() }
 	{
 		m_BrawlRules.Mode = app.GetSettings().Rules.Mode;
+		m_RunRules = app.GetSettings().Run;
 		m_Characters = std::make_unique<CharacterLibrary>(app.GetWorldRenderer().GetModels());
 		m_Effects = std::make_unique<EffectSystem>(app.GetWorldRenderer().GetParticles());
+		m_Crawlers = std::make_unique<CrawlerSystem>(app.GetWorldRenderer().GetModels());
 		m_MeteorMesh = app.GetWorldRenderer().GetModels().FindMesh("Rock_3_F_Color1");
 		m_SpellMeshes = RegisterSpellMeshes(app.GetWorldRenderer());
 		constexpr const char* CritterMeshes[] = { "Critters/Cat_Body", "Critters/Cat_Head", "Critters/Cat_Tail", "Critters/Duck", "Critters/Balloon", "Critters/Dummy_Post", "Critters/Dummy_Body" };
@@ -382,6 +387,7 @@ namespace Game
 				.Tier = settings.Tier,
 				.Modifiers = settings.Modifiers,
 				.Rules = settings.Rules,
+				.Run = settings.Run,
 				.IntermissionSeconds = settings.Peaceful ? 1e9f : 6.0f,
 				.FirstWave = settings.FirstWave,
 				.LootRate = settings.LootRate,
@@ -394,7 +400,7 @@ namespace Game
 				return;
 			}
 			m_Client.ConnectLocal(m_Server->OpenLocalConnection(), m_Config.Profile);
-			m_LobbyTicket = steam.OpenLobby(settings.FriendsCanJoin);
+			m_LobbyTicket = steam.OpenLobby(settings.FriendsCanJoin, m_Server->GetConfig().MaxPlayers);
 		}
 		else if (m_Config.RelayHost != 0)
 		{
@@ -453,6 +459,7 @@ namespace Game
 		m_ShowInventory = false;
 		m_Fx.clear();
 		m_Corpses.clear();
+		m_Crawlers->Clear();
 		m_Effects->Clear();
 		m_App.GetWorldRenderer().GetParticles().Clear();
 		m_App.GetWorldRenderer().GetTrails().Clear();
@@ -481,6 +488,7 @@ namespace Game
 			m_App.GetGameAudio().PlayEvent(AudioEvent::Travel);
 		}
 		m_SeenMode = session.Mode;
+		m_SeenLevel = 0;
 		m_SeenMission = MissionPhase::Explore;
 		m_SeenMatch = MatchPhase::Countdown;
 		m_SeenCountdown = -1;
@@ -515,6 +523,8 @@ namespace Game
 			m_BannerText = "Battle royale. Loot fast, outrun the ash storm, be the last one standing";
 		else if (session.Mode == GameMode::Brawl)
 			m_BannerText = "Spellbrawl, " + std::to_string(session.Rules.Rounds) + " rounds. Pick three spells, then " + (session.Rules.Mode == BrawlMode::Damage ? std::string("outlast everyone") : std::string("shove everyone into the ") + TermsFor(session.Map).Hazard);
+		else if (session.Mode == GameMode::Shardfall)
+			m_BannerText = "Shardfall, endless for now. The horde grows every minute";
 		else
 		{
 			const EnemyDef* boss = FindEnemyDef(session.Map == MapKind::Caves ? EntityKind::Wyrm : EntityKind::Archivist);
@@ -648,6 +658,21 @@ namespace Game
 		if (m_Client.GetTravelCount() != m_SeenTravels || m_SeenMode == GameMode::Count)
 			OnTravel();
 		SyncSpellbook();
+		if (const GameStatus& status = m_Client.GetStatus(); status.Mode == GameMode::Shardfall)
+		{
+			if (m_SeenLevel != 0 && status.Run.Level > m_SeenLevel)
+			{
+				m_BannerTitle = "Level " + std::to_string(status.Run.Level);
+				m_BannerText = "The whole party grows stronger";
+				m_BannerColor = Hex(0x8FE3FF);
+				m_BannerTime = 2.5f;
+				m_App.GetGameAudio().PlayEvent(AudioEvent::LevelUp);
+				for (const EntityState& entity : m_Client.GetEntities())
+					if (entity.Kind == EntityKind::Player && !entity.Has(EntityFlags::Dead))
+						m_Effects->Burst(Fx::Heal, Ground(entity.Position, 0.2f), glm::vec3(0.0f, 1.0f, 0.0f), 1.3f, glm::vec3(0.55f, 0.85f, 1.0f));
+			}
+			m_SeenLevel = status.Run.Level;
+		}
 
 		if (m_Client.HasInventory() && IsProfileDirty())
 		{
@@ -688,7 +713,14 @@ namespace Game
 		const Level* level = m_Client.GetLevel();
 		if (!level)
 			return false;
+		if (!level->Peak.IsEmpty() && level->Peak.RimDistance(position) < 0.0f)
+			return true;
 		return !level->Map.IsInside(int32_t(std::floor(position.x)), int32_t(std::floor(position.y))) || level->Map.IsAbyssAt(position);
+	}
+
+	bool SessionState::InStorm() const
+	{
+		return m_Client.GetSession().Map == MapKind::StormPeak;
 	}
 
 	float SessionState::LaunchHeight(const EntityState& entity) const
@@ -1193,10 +1225,10 @@ namespace Game
 				if (entity.Has(EntityFlags::Flung) && !fx.Last.Has(EntityFlags::Flung))
 					m_Effects->Burst(Fx::Dodge, Ground(entity.Position, 0.2f), glm::vec3(0.0f, 1.0f, 0.0f), 1.4f);
 				if (entity.Has(EntityFlags::Burning) && !fx.Last.Has(EntityFlags::Burning))
-					m_Effects->Burst(Fx::FireBurst, Ground(entity.Position, 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.7f);
+					m_Effects->Burst(InStorm() ? Fx::LightningBurst : Fx::FireBurst, Ground(entity.Position, InStorm() ? 0.9f : 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.7f);
 			}
 			if (!inserted && entity.Kind == EntityKind::Dummy && entity.Has(EntityFlags::Burning) && !fx.Last.Has(EntityFlags::Burning))
-				m_Effects->Burst(Fx::FireBurst, Ground(entity.Position, 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.8f);
+				m_Effects->Burst(InStorm() ? Fx::LightningBurst : Fx::FireBurst, Ground(entity.Position, InStorm() ? 0.6f : 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.8f);
 			if (entity.Has(EntityFlags::Falling) || entity.Has(EntityFlags::Lifted))
 			{
 				if (fx.FallAge < 0.0f)
@@ -1264,7 +1296,9 @@ namespace Game
 				++it;
 				continue;
 			}
-			if (fx.SinceHit < KillWindow && m_Characters->ForEnemy(fx.Last.Kind))
+			if (IsCrawlerKind(fx.Last.Kind))
+				m_Crawlers->Vanish(fx.Last, fx.SinceHit < KillWindow, *m_Effects);
+			else if (fx.SinceHit < KillWindow && m_Characters->ForEnemy(fx.Last.Kind))
 			{
 				m_Corpses.push_back({ fx.Last, fx.Animator });
 				m_Corpses.back().Entity.Flags |= uint16_t(EntityFlags::Dead);
@@ -1306,7 +1340,7 @@ namespace Game
 				const glm::vec3 splash = Ground(fx.Last.Position, 0.15f);
 				const float size = DummyKind(fx.Last.Variant) == DummyKind::Golden ? 1.6f : 1.0f;
 				if (fx.Last.Has(EntityFlags::Burning))
-					m_Effects->Burst(Fx::FireBurst, splash, glm::vec3(0.0f, 1.0f, 0.0f), size);
+					m_Effects->Burst(InStorm() ? Fx::LightningBurst : Fx::FireBurst, splash, glm::vec3(0.0f, 1.0f, 0.0f), size);
 				else
 					m_Effects->Burst(Fx::Dodge, splash, glm::vec3(0.0f, 1.0f, 0.0f), 1.4f * size);
 				m_Effects->Burst(Fx::Debris, splash, glm::vec3(0.0f, 1.0f, 0.0f), 0.8f * size);
@@ -1322,6 +1356,9 @@ namespace Game
 		UpdateHexShards(m_ShieldShards, dt);
 		UpdateDiamondShards(m_WardShards, dt);
 		UpdateAnimators(dt);
+		const auto ground = [this](Vec2 point) { return GroundHeight(point); };
+		m_Crawlers->Update(dt, m_Client.GetEntities(), ground);
+		m_Crawlers->UpdateOrbs(dt, m_Client.GetOrbs(), m_Client.GetEntities(), *m_Effects, ground);
 
 		const bool exact = m_LevelRenderer.GetRelief() != nullptr;
 		for (auto& [netId, flight] : m_ProjectileHeights)
@@ -1800,7 +1837,7 @@ namespace Game
 			const float build = live ? StormBuild(brawl.Plan, clock) : 0.2f;
 			m_Effects->Stream(Fx::Rain, m_CameraTarget + glm::vec3(-1.6f, 7.5f, -0.8f), glm::normalize(glm::vec3(0.22f, -1.0f, 0.1f)), RainRate * (0.08f + 0.5f * build * build + 0.7f * outside), dt);
 			const Vec2 wind = FromAngle(0.35f);
-			m_Effects->Stream(Fx::WindStreak, m_CameraTarget + glm::vec3(-wind.x * 6.0f, 0.4f + 1.8f * (0.5f + 0.5f * std::sin(m_Time * 41.3f)), -wind.y * 6.0f), glm::vec3(wind.x, 0.0f, wind.y), 6.0f + 20.0f * build + 40.0f * outside, dt);
+			m_Effects->Stream(Fx::Spindrift, m_CameraTarget + glm::vec3(-wind.x * 7.0f, 0.15f + 1.4f * (0.5f + 0.5f * std::sin(m_Time * 41.3f)), -wind.y * 7.0f), glm::vec3(wind.x, -0.08f, wind.y), 30.0f + 60.0f * build + 80.0f * outside, dt);
 		}
 		else if (const Level* level = m_Client.GetLevel(); level && level->Skyborne && m_Client.GetSession().Mode == GameMode::Brawl)
 		{
@@ -1934,7 +1971,7 @@ namespace Game
 						m_Effects->Converge(uint64_t(entity.NetId) | (15ull << 40), BodyBase(entity, ObsidianHoldHeight) + Heading(entity.Facing) * 0.3f, 0.75f, 70.0f, 0.12f, dt, 0.7f, ParticleKind::Streak, ObsidianSheen * 0.55f, 0.35f, 0.9f);
 				}
 				if (entity.Has(EntityFlags::Burning) && !entity.Has(EntityFlags::Dead))
-					m_Effects->Trail(Fx::Campfire, uint64_t(entity.NetId) | (3ull << 40), Ground(entity.Position, 0.05f), dt, 0.55f);
+					m_Effects->Trail(InStorm() ? Fx::StormCrackle : Fx::Campfire, uint64_t(entity.NetId) | (3ull << 40), Ground(entity.Position, InStorm() ? 0.85f : 0.05f), dt, 0.55f);
 				if (entity.AimsFromPoint() && !entity.Has(EntityFlags::Dead))
 				{
 					const auto fx = m_Fx.find(entity.NetId);
@@ -2205,7 +2242,7 @@ namespace Game
 		if (entity.Has(EntityFlags::Chilled))
 			color = glm::mix(color, glm::vec3(0.6f, 0.85f, 1.0f), 0.5f);
 		if (entity.Has(EntityFlags::Burning))
-			color = glm::mix(color, glm::vec3(1.0f, 0.5f, 0.28f), 0.45f + 0.15f * std::sin(m_Time * 11.0f + float(entity.NetId)));
+			color = InStorm() ? glm::mix(color, glm::vec3(0.62f, 0.76f, 1.0f), 0.35f + (std::fmod(std::floor(m_Time * 14.0f) * 0.618f + float(entity.NetId) * 0.37f, 1.0f) > 0.5f ? 0.3f : 0.0f)) : glm::mix(color, glm::vec3(1.0f, 0.5f, 0.28f), 0.45f + 0.15f * std::sin(m_Time * 11.0f + float(entity.NetId)));
 		return glm::vec4(color, 0.0f);
 	}
 
@@ -2262,14 +2299,14 @@ namespace Game
 			const bool live = brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over;
 			const float clock = live ? m_Client.GetArenaClock(m_Client.GetPresentTick()) : 0.0f;
 			const StormRing ring = RingAt(brawl.Plan, clock);
-			const float storm = live ? StormBuild(brawl.Plan, clock) : StormBuild(brawl.Plan, 0.0f);
+			const float storm = std::lerp(StormGloom, 1.0f, live ? StormBuild(brawl.Plan, clock) : StormBuild(brawl.Plan, 0.0f));
 			m_Lighting.StormBuild = storm;
 			m_Lighting.Eye = ring.Active ? glm::vec4(ring.Center.x, ring.Center.y, ring.Radius, StormSunlight) : glm::vec4(0.0f);
 			m_Lighting.SunIntensity *= 1.0f - 0.5f * storm * storm;
 			m_Lighting.SunColor = glm::mix(m_Lighting.SunColor, glm::vec3(0.82f, 0.86f, 1.0f), storm * storm);
-			m_Lighting.SkyColor = glm::mix(m_Lighting.SkyColor, glm::vec3(0.12f, 0.14f, 0.21f), storm);
-			m_Lighting.GroundColor = glm::mix(m_Lighting.GroundColor, glm::vec3(0.06f, 0.07f, 0.1f), storm);
-			m_Lighting.Haze = glm::mix(m_Lighting.Haze, glm::vec3(0.07f, 0.08f, 0.115f), storm);
+			m_Lighting.SkyColor = glm::mix(m_Lighting.SkyColor, glm::vec3(0.13f, 0.13f, 0.25f), storm);
+			m_Lighting.GroundColor = glm::mix(m_Lighting.GroundColor, glm::vec3(0.06f, 0.06f, 0.1f), storm);
+			m_Lighting.Haze = glm::mix(m_Lighting.Haze, glm::vec3(0.055f, 0.052f, 0.11f), storm);
 			m_Lighting.SkyColor += glm::vec3(0.5f, 0.6f, 0.9f) * (1.4f * m_Flash);
 			m_Lighting.GroundColor += glm::vec3(0.25f, 0.3f, 0.45f) * m_Flash;
 		}
@@ -2319,6 +2356,12 @@ namespace Game
 		for (const EntityState& entity : m_Client.GetEntities())
 			DrawEntity(renderer, entity);
 		DrawCorpses(renderer);
+		m_Crawlers->DrawRemains(renderer, m_Time);
+		m_Crawlers->DrawTethers(renderer, m_Client.GetEntities(), m_Time);
+		m_Crawlers->DrawOrbs(renderer, m_Time);
+		if (const Level* level = m_Client.GetLevel(); level && m_Client.GetSession().Mode == GameMode::Hub)
+			if (const Station* rift = level->FindStation(StationKind::ShardRift))
+				m_Crawlers->DrawRift(renderer, Ground(rift->Position), m_Time, m_Station == StationKind::ShardRift);
 		DrawStorm(renderer);
 		DrawPeak(renderer);
 		DrawWonders(renderer);
@@ -2376,6 +2419,15 @@ namespace Game
 		case EntityKind::Archivist:
 		case EntityKind::Wyrm:
 			DrawBoss(renderer, entity);
+			break;
+		case EntityKind::QuartzCrawler:
+		case EntityKind::JadeCrawler:
+		case EntityKind::SapphireCrawler:
+		case EntityKind::RubyCrawler:
+		case EntityKind::AmethystCrawler:
+		case EntityKind::PrismaticCrawler:
+		case EntityKind::CrawlerEgg:
+			m_Crawlers->Draw(renderer, entity, m_Time, HitLight(entity));
 			break;
 		case EntityKind::Chest:
 			DrawChest(renderer, entity);
@@ -3852,6 +3904,13 @@ namespace Game
 			DrawArc(renderer, entity, center);
 			return;
 		}
+		if (ability == AbilityId::ShardSpit || ability == AbilityId::RubyShard)
+		{
+			const glm::vec3 tone = CrawlerTone(ability == AbilityId::RubyShard ? EntityKind::RubyCrawler : EntityKind::SapphireCrawler, m_Time);
+			m_Crawlers->DrawShard(renderer, center, entity.Facing, tone, m_Time);
+			DrawGroundGlow(renderer, base, 0.35f, tone, 0.35f);
+			return;
+		}
 		if (ability == AbilityId::ObsidianBlades)
 		{
 			DrawBlade(renderer, entity, center, base);
@@ -4781,7 +4840,7 @@ namespace Game
 			DrawMatchStatus();
 			return;
 		}
-		if (m_Client.GetSession().Mode != GameMode::Horde)
+		if (m_Client.GetSession().Mode != GameMode::Horde && m_Client.GetSession().Mode != GameMode::Shardfall)
 		{
 			DrawMissionStatus();
 			return;
@@ -4794,7 +4853,13 @@ namespace Game
 		char title[64];
 		char subtitle[96];
 		bool danger = false;
-		switch (status.Phase)
+		if (status.Mode == GameMode::Shardfall)
+		{
+			const unsigned clock = unsigned(status.Run.ActClock);
+			std::snprintf(title, sizeof(title), "Act %u", unsigned(status.Run.Act));
+			std::snprintf(subtitle, sizeof(subtitle), "%u:%02u   %u %s", clock / 60u, clock % 60u, unsigned(status.Run.Alive), status.Run.Alive == 1 ? "enemy" : "enemies");
+		}
+		else switch (status.Phase)
 		{
 		case GamePhase::Intermission:
 			if (status.PhaseTime > 1e5f)
@@ -4838,6 +4903,39 @@ namespace Game
 		draw.TextAligned({ 0.0f, 16.0f, ui.GetSize().x, 36.0f }, title, titleStyle, { 0.5f, 0.5f });
 		DrawTitleOrnament(center, 33.0f, titleWidth);
 		draw.TextAligned({ 0.0f, 56.0f, ui.GetSize().x, 22.0f }, subtitle, Theme::Floating(16.0f, danger ? Theme::Danger : Theme::Text, UiFont::Body), { 0.5f, 0.5f });
+		if (status.Mode == GameMode::Shardfall)
+		{
+			const UiColor tone = Hex(0x8FE3FF);
+			const float fill = std::clamp(float(status.Run.Xp) / float(std::max(status.Run.XpGoal, 1u)), 0.0f, 1.0f);
+			const UiRect bar = UiRect::Centered({ center + 24.0f, 90.0f }, { 340.0f, 7.0f });
+			draw.Rect(bar.Expand(2.0f), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.72f), .Border = WithAlpha(tone, 0.35f), .BorderWidth = 1.0f, .Chamfer = 3.0f });
+			if (fill > 0.0f)
+			{
+				draw.Rect({ bar.X, bar.Y, bar.W * fill, bar.H }, { .Fill = Lighten(tone, 0.35f), .FillBottom = Darken(tone, 0.2f), .Glow = WithAlpha(tone, 0.3f), .GlowSize = 6.0f, .Chamfer = 2.0f });
+				draw.Shadow({ bar.X + bar.W * fill - 3.0f, bar.Y, 6.0f, bar.H }, 3.0f, 6.0f, WithAlpha(Lighten(tone, 0.6f), 0.8f), { 0.0f, 0.0f });
+			}
+			char level[24];
+			std::snprintf(level, sizeof(level), "Level %u", unsigned(status.Run.Level));
+			draw.TextAligned({ bar.X - 96.0f, bar.Center().y - 10.0f, 84.0f, 20.0f }, level, Theme::Floating(15.0f, Lighten(tone, 0.3f), UiFont::Body), { 1.0f, 0.5f });
+			const RunRules& rules = m_Client.GetSession().Run;
+			if (rules != RunRules{})
+			{
+				std::string test = "Test run";
+				if (rules.StartMinute > 0)
+					test += ", from " + std::to_string(rules.StartMinute) + ":00";
+				if (rules.StartLevel > 1)
+					test += ", from level " + std::to_string(rules.StartLevel);
+				if (rules.Spawns != 100)
+					test += rules.Spawns == 0 ? std::string(", no spawns") : ", spawns " + std::to_string(rules.Spawns) + "%";
+				if (rules.Xp != 100)
+					test += ", XP " + std::to_string(rules.Xp) + "%";
+				if (rules.Only > 0)
+					test += std::string(", only ") + FindEnemyDef(RunOnlyKinds[rules.Only - 1])->Name + "s";
+				if (rules.Immortal)
+					test += ", immortal";
+				draw.TextAligned({ 0.0f, bar.Bottom() + 8.0f, ui.GetSize().x, 18.0f }, test, Theme::Floating(13.5f, Theme::Warning, UiFont::Body), { 0.5f, 0.5f });
+			}
+		}
 		if (status.Phase == GamePhase::Intermission && status.PendingChoices > 0)
 		{
 			if (m_Client.GetLocalPlayer().OfferPending)
@@ -5106,7 +5204,7 @@ namespace Game
 		}
 
 		const GameMode mode = m_Client.GetSession().Mode;
-		if (mode != GameMode::Horde && !IsPvpMode(mode))
+		if (mode != GameMode::Horde && mode != GameMode::Shardfall && !IsPvpMode(mode))
 		{
 			const UiRect strip{ size.x - 374.0f, 14.0f, 360.0f, 34.0f };
 			draw.Rect(strip, { .Fill = Hex(0x120E24, 0.8f), .FillBottom = Hex(0x07060E, 0.82f), .Border = WithAlpha(Theme::Edge, 0.75f), .BorderWidth = 1.0f, .Chamfer = 9.0f, .Aether = 0.4f, .Seed = 0.61f });
@@ -5540,7 +5638,7 @@ namespace Game
 		title.Shimmer = 0.5f;
 		if (m_PauseSettings)
 		{
-			const UiRect panel = UiRect::Centered(center, { 600.0f, std::min(836.0f, screen.H - 40.0f) });
+			const UiRect panel = UiRect::Centered(center, { 600.0f, std::min(872.0f, screen.H - 40.0f) });
 			ui.Panel(panel, 18.0f);
 			UiRect content = panel.Shrink(36.0f, 30.0f);
 			draw.Text({ content.X, content.Y }, "Attunement", title);

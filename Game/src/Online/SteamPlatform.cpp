@@ -142,7 +142,7 @@ namespace Game
 		return m_Ready && SteamUtils()->IsOverlayEnabled();
 	}
 
-	uint32_t SteamPlatform::OpenLobby(bool friendsCanJoin)
+	uint32_t SteamPlatform::OpenLobby(bool friendsCanJoin, uint32_t members)
 	{
 		if (!m_Ready)
 			return 0;
@@ -150,7 +150,7 @@ namespace Game
 		m_LobbyFriends = friendsCanJoin;
 		m_CreatingTicket = ++m_NextTicket;
 		if (!m_Listener->Created.IsActive())
-			m_Listener->Created.Set(SteamMatchmaking()->CreateLobby(friendsCanJoin ? k_ELobbyTypeFriendsOnly : k_ELobbyTypePrivate, int(MaxPlayers)), m_Listener.get(), &Listener::OnCreated);
+			m_Listener->Created.Set(SteamMatchmaking()->CreateLobby(friendsCanJoin ? k_ELobbyTypeFriendsOnly : k_ELobbyTypePrivate, int(members)), m_Listener.get(), &Listener::OnCreated);
 		return m_CreatingTicket;
 	}
 

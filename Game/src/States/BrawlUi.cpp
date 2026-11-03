@@ -20,6 +20,8 @@ namespace Game
 	{
 		constexpr glm::vec3 LavaGlow{ 1.0f, 0.42f, 0.12f };
 		constexpr glm::vec3 FrostGlow{ 0.3f, 0.62f, 1.0f };
+		constexpr glm::vec3 StormBurnGlow{ 0.4f, 0.55f, 1.0f };
+		constexpr float StormArcRate = 9.0f;
 		constexpr glm::vec3 MarkGlow{ 0.66f, 0.4f, 1.0f };
 		constexpr glm::vec3 BarrierGlow{ 0.72f, 0.88f, 1.0f };
 		constexpr float CardBurnDelay = 0.2f;
@@ -73,6 +75,8 @@ namespace Game
 		constexpr const char* ArenaNames[] = { "Random", "Caldera", "Frozen Lake", "Sky Ruins", "Storm Peak" };
 		constexpr const char* ModeNames[] = { "Damage", "Knockback" };
 		constexpr const char* GateTabs[] = { "Match", "Custom", "Teams" };
+		constexpr const char* RunOnlyNames[] = { "Every kind", "Quartz", "Jade", "Sapphire", "Ruby", "Amethyst", "Prismatic" };
+		static_assert(std::size(RunOnlyNames) == std::size(RunOnlyKinds) + 1);
 		constexpr const char* TeamChoices[] = { "Off", "2 teams", "3 teams", "4 teams" };
 		static_assert(std::size(BotLevelNames) == BotLevels);
 		static_assert(std::size(ModeNames) == size_t(BrawlMode::Count));
@@ -764,7 +768,21 @@ namespace Game
 
 	void SessionState::DrawBrawlPlayer(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
 	{
-		if (entity.Has(EntityFlags::Burning))
+		if (entity.Has(EntityFlags::Burning) && InStorm())
+		{
+			const uint32_t beat = uint32_t(m_Time * StormArcRate);
+			const float age = m_Time - float(beat) / StormArcRate;
+			for (uint32_t k = 0; k < 2; k++)
+			{
+				const uint32_t seed = (beat * 2654435761u) ^ (entity.NetId * 40503u) ^ (k * 977u);
+				const float angle = float(seed % 6283u) * 0.001f;
+				const glm::vec3 foot = base + glm::vec3(std::cos(angle), 0.05f, std::sin(angle)) * 0.55f;
+				const glm::vec3 body = base + glm::vec3(0.0f, 0.55f + 0.9f * float((seed >> 13) % 100u) * 0.01f, 0.0f) + glm::vec3(-std::sin(angle), 0.0f, std::cos(angle)) * 0.12f;
+				DrawStormJump(renderer, foot, body, seed, age + 0.02f * float(k), m_Time);
+			}
+			DrawGroundGlow(renderer, base, 0.85f, StormBurnGlow, 0.7f + 0.3f * std::sin(m_Time * 23.0f + float(entity.NetId)));
+		}
+		else if (entity.Has(EntityFlags::Burning))
 		{
 			const float flicker = 0.7f + 0.3f * std::sin(m_Time * 17.0f + float(entity.NetId) * 1.3f);
 			const glm::vec3 glow = m_Client.GetSession().Map == MapKind::FrozenLake ? FrostGlow : LavaGlow;
@@ -1904,6 +1922,79 @@ namespace Game
 		else
 			DrawGateTeams(content);
 		DrawGateFooter(footer);
+	}
+
+	void SessionState::DrawShardRift()
+	{
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		constexpr float Width = 820.0f;
+		constexpr float Height = 610.0f;
+		const UiRect home{ (ui.GetSize().x - Width) * 0.5f, std::max((ui.GetSize().y - Height) * 0.5f - 66.0f, 12.0f), Width, Height };
+		bool open = true;
+		UiRect content = ui.Window(Ui::MakeId("shardrift"), "Shard Rift", home, &open);
+		if (!open)
+		{
+			m_Station.reset();
+			return;
+		}
+		content.CutTop(draw.TextWrapped(content, "Shardfall is a co-op crystal hunt for up to four mages. Crystal crawlers claw out of the ground in packs that grow every minute. Their kills spill XP shards that level up the whole party, and every level brings an upgrade.", Theme::Body(14.5f, Theme::Text)) + 12.0f);
+		UiRect strip = content.CutTop(28.0f);
+		const float slot = strip.W / float(std::size(RunOnlyKinds));
+		for (size_t i = 0; i < std::size(RunOnlyKinds); i++)
+		{
+			const UiRect cell = strip.CutLeft(slot);
+			const glm::vec3 tone = CrawlerTone(RunOnlyKinds[i], m_Time);
+			draw.Diamond({ cell.X + 10.0f, cell.Center().y }, 16.0f, WithAlpha(tone), Lighten(WithAlpha(tone), 0.5f), 1.0f);
+			draw.TextAligned({ cell.X + 24.0f, cell.Y, cell.W - 24.0f, cell.H }, RunOnlyNames[i + 1], Theme::Bold(15.0f, Lighten(WithAlpha(tone), 0.35f)), { 0.0f, 0.5f });
+		}
+		content.CutTop(14.0f);
+		const UiRect footer = content.CutBottom(52.0f);
+		ui.Separator(content.CutTop(20.0f), "TEST SETTINGS");
+		content.CutTop(4.0f);
+		draw.TextFit(content.CutTop(20.0f), "For trying things out. Leave them at the defaults for a normal run.", Theme::Body(13.5f, Theme::Muted));
+		content.CutTop(8.0f);
+
+		int minute = m_RunRules.StartMinute;
+		StepRow(ui, content, Ui::MakeId("runminute"), minute, { .Label = "Start at minute", .Value = Format("%d:00", minute), .Low = 0, .High = MaxStartMinute, .Note = "Later minutes bring denser, tougher packs", .Tip = "Jumps the act clock forward, so the spawner, enemy health and the prismatic timer act as if that much time had passed." });
+		int level = m_RunRules.StartLevel;
+		StepRow(ui, content, Ui::MakeId("runlevel"), level, { .Label = "Starting level", .Value = std::to_string(level), .Low = 1, .High = MaxStartLevel, .Note = "Every level adds health, damage and a random upgrade" });
+		int spawns = m_RunRules.Spawns;
+		StepRow(ui, content, Ui::MakeId("runspawns"), spawns, { .Label = "Enemy spawns", .Value = spawns == 0 ? std::string("Off") : Percent(spawns), .Low = 0, .High = MaxSpawnRate, .Step = 25, .Note = spawns == 0 ? "Peaceful: nothing spawns" : "Scales the crowd size and how fast packs arrive" });
+		int xp = m_RunRules.Xp;
+		StepRow(ui, content, Ui::MakeId("runxp"), xp, { .Label = "XP gain", .Value = Percent(xp), .Low = MinXpRate, .High = MaxXpRate, .Step = 25, .Note = "How fast the party levels up" });
+		m_RunRules.StartMinute = uint8_t(minute);
+		m_RunRules.StartLevel = uint8_t(level);
+		m_RunRules.Spawns = uint16_t(spawns);
+		m_RunRules.Xp = uint16_t(xp);
+
+		UiRect row = content.CutTop(40.0f);
+		draw.TextAligned(row.CutLeft(170.0f), "Only spawn", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
+		int only = m_RunRules.Only;
+		if (ui.Choice(Ui::MakeId("runonly"), row.CutLeft(std::min(240.0f, row.W)), only, RunOnlyNames))
+			m_RunRules.Only = uint8_t(only);
+		draw.TextFit(row.Shrink(12.0f, 0.0f), m_RunRules.Only == 0 ? "The normal mix of packs" : m_RunRules.Only == std::size(RunOnlyKinds) ? "A prismatic crawler is always out there" : "Packs of a single kind, caps still apply", Theme::Body(13.5f, Theme::Faint));
+		content.CutTop(10.0f);
+		ToggleRow(ui, content, Ui::MakeId("runimmortal"), "Immortal players", m_RunRules.Immortal, true, "Hits still land and show, but nobody drops below 1 health");
+
+		const RunRules defaults;
+		const uint32_t players = std::max<uint32_t>(uint32_t(m_Client.GetPlayers().size()), 1u);
+		const bool fits = players <= ShardfallMaxPlayers;
+		UiRect bar = footer;
+		const UiRect start = bar.CutRight(230.0f);
+		bar.CutRight(12.0f);
+		const UiRect reset = bar.CutRight(150.0f);
+		if (ui.Button(Ui::MakeId("runreset"), reset, "Defaults", ButtonKind::Normal, m_RunRules != defaults))
+			m_RunRules = defaults;
+		const std::string who = fits ? Format("%u of %u seats taken. Everyone here comes along.", unsigned(players), unsigned(ShardfallMaxPlayers)) : Format("%u mages are here, a run takes at most %u.", unsigned(players), unsigned(ShardfallMaxPlayers));
+		draw.TextFit({ bar.X, bar.Y, bar.W - 12.0f, 24.0f }, who, Theme::Body(14.0f, fits ? Theme::Muted : Theme::Danger));
+		if (m_RunRules != defaults)
+			draw.TextFit({ bar.X, bar.Y + 24.0f, bar.W - 12.0f, 22.0f }, "Test settings are on", Theme::Bold(14.0f, Theme::Warning));
+		if (ui.Button(Ui::MakeId("runstart"), start, "Open the rift", ButtonKind::Primary, fits, UiIcon::MagicPortal))
+		{
+			m_Client.StartShardfall(m_RunRules);
+			m_Station.reset();
+		}
 	}
 
 	void SessionState::DrawGateMatch(UiRect area)

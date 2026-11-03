@@ -2,6 +2,7 @@
 #include "GameShared/Content/Brawl.h"
 #include "GameShared/Content/Missions.h"
 #include "GameShared/Content/Pvp.h"
+#include "GameShared/Content/Shardfall.h"
 #include <array>
 #include <cstdint>
 
@@ -49,6 +50,7 @@ namespace Game
 		uint8_t Entrants = 0;
 		StormState Storm;
 		BrawlStatus Brawl;
+		RunStatus Run;
 		uint16_t HubFalls = 0;
 	};
 }

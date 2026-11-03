@@ -128,6 +128,7 @@ namespace Game
 			for (int32_t step = 1; step <= 8 && !peak && !clearOfHoles(wanted); step++)
 				wanted = ArenaPoint(m_Brawl.Plan, angle + float(step % 2 == 0 ? step / 2 : -(step + 1) / 2) * 0.16f, radius * (step >= 5 ? 0.8f : 1.0f));
 			const Vec2 spot = world.FindFreeSpotNear(wanted, PlayerRadius);
+			world.MarkTargetsMoved();
 			transform->Position = spot;
 			transform->Facing = AngleOf(m_Brawl.Plan.Center - spot);
 			controller->State.Invulnerable = 0.0f;
@@ -509,6 +510,7 @@ namespace Game
 						best = spot;
 		if (!best)
 			return false;
+		world.MarkTargetsMoved();
 		transform->Position = *best;
 		controller.State.Fall = 0.0f;
 		controller.State.Push = {};

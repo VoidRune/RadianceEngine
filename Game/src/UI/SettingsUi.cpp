@@ -78,6 +78,13 @@ namespace Game
 				visuals = true;
 			}
 		}
+		float scale = float(settings.RenderScale);
+		std::snprintf(text, sizeof(text), "%u%%", unsigned(settings.RenderScale));
+		if (ui.Slider(Ui::MakeId("settings.renderscale"), row("Render scale"), scale, float(MinRenderScale), float(MaxRenderScale), text))
+		{
+			settings.RenderScale = uint32_t(std::lround(scale / 5.0f) * 5.0f);
+			visuals = true;
+		}
 		if (ui.Slider(Ui::MakeId("settings.shake"), row("Screen shake"), settings.ScreenShake, 0.0f, 1.0f, percent(settings.ScreenShake)))
 		{
 			settings.ScreenShake = std::round(settings.ScreenShake * 20.0f) / 20.0f;

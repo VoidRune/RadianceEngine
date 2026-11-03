@@ -138,6 +138,8 @@ namespace Game
 		NovaErupt,
 		NovaShatter,
 		VoidBurst,
+		Spindrift,
+		StormCrackle,
 		Count,
 	};
 

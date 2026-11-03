@@ -107,7 +107,7 @@ void main()
 	vec3 irradiance = max(average + shX * n.x + shY * n.y + shZ * n.z, vec3(0.0));
 	vec3 dominant = DominantDirection(n, v, roughness);
 	vec3 reflected = max(average + shX * dominant.x + shY * dominant.y + shZ * dominant.z, vec3(0.0));
-	if (Rc.Shading.y > 0.5 && roughness < 0.75)
+	if (mod(Rc.Shading.y, 2.0) > 0.5 && roughness < 0.75)
 	{
 		vec2 coarse = TileCoordinate(dominant, 4);
 		vec3 sharp = vec3(0.0);
@@ -144,7 +144,7 @@ void main()
 
 	uint view = Rc.Options.x;
 	if (view == ViewLit)
-		scene.rgb += ambient * (1.0 - DepthFade(Rc.Shading.x, world.y)) * (1.0 - Haze(Rc.Shading.w, world.y));
+		scene.rgb += ambient * (1.0 - DepthFade(Rc.Shading.x, world.y)) * (1.0 - Haze(Rc.Shading.w, world.y)) * (Rc.Shading.y > 1.5 ? 1.0 - Abyss(Rc.Shading.w, world.y) : 1.0);
 	else if (view == ViewAmbient)
 		scene.rgb += ambient;
 	else if (view == ViewIrradiance)

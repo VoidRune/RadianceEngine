@@ -40,6 +40,8 @@ namespace Game
 	inline constexpr uint32_t MeshCrystal = 8192;
 	inline constexpr uint32_t MeshIce = 16384;
 	inline constexpr uint32_t MeshCliff = 32768;
+	inline constexpr uint32_t MeshTwoTone = 65536;
+	inline constexpr uint32_t MeshBright = 131072;
 	inline constexpr uint32_t MaterialTranslucent = 256;
 
 	struct LevelMeshDesc
@@ -145,6 +147,9 @@ namespace Game
 		void DrawLight(const SpellLight& light);
 		bool GetTranslucency() const { return m_Translucency; }
 		void SetTranslucency(bool enabled) { m_Translucency = enabled; }
+		void SetPointLights(bool enabled) { m_PointLights = enabled; }
+		void SetRenderScale(float scale) { m_RenderScale = std::clamp(scale, 0.5f, 1.0f); }
+		float GetRenderScale() const { return m_RenderScale; }
 		void SetGlassModels(bool enabled) { m_GlassModels = enabled; }
 		void DrawFacet(const GlassFacet& facet) { m_Glass->Draw(facet); }
 		uint32_t AddShield(const EnergyShield& shield) { return m_Glass->AddShield(shield); }
@@ -334,6 +339,8 @@ namespace Game
 		bool m_GlassModels = true;
 		std::vector<SpellLight> m_Lights;
 		bool m_Translucency = true;
+		bool m_PointLights = true;
+		float m_RenderScale = 1.0f;
 		std::unique_ptr<ParticleSystem> m_Particles;
 		std::unique_ptr<DeferredLighting> m_Deferred;
 		std::unique_ptr<RadianceCascades> m_Gi;

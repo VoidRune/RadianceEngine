@@ -62,6 +62,14 @@ namespace Game
 			return uint8_t(std::clamp(std::lround(scale * 16.0f), 1l, 255l));
 		}
 
+		void ApplyRunLevel(PlayerTraits& traits, uint32_t level)
+		{
+			const uint32_t gained = level > 0 ? level - 1 : 0;
+			traits.MaxHealth += LevelHealth * int32_t(gained);
+			for (SkillTraits& skill : traits.Skills)
+				skill.DamageScale *= 1.0f + LevelDamage * float(gained);
+		}
+
 		void ApplyPenalties(PlayerTraits& traits, ModifierMask mask)
 		{
 			const PlayerPenalties penalties = GetPlayerPenalties(mask);
@@ -83,10 +91,13 @@ namespace Game
 		m_Settings.Tier = uint8_t(std::clamp<uint32_t>(m_Settings.Tier, 1u, MaxMissionTier));
 		m_Settings.Modifiers &= AllModifiers;
 		m_Settings.Rules = SanitizeRules(m_Settings.Rules);
+		m_Settings.Run = SanitizeRunRules(m_Settings.Run);
 		m_NavGrid.Build(m_Level);
 		m_HubSpells.fill(DefaultBrawlSpells);
 		if (m_Settings.Mode == GameMode::Mission)
 			m_Mission.Begin(*this);
+		else if (IsShardfall())
+			m_Run.Begin(m_Settings.Run);
 		else if (IsPvp())
 			m_Match.Begin(*this);
 		else if (IsHub())
@@ -106,11 +117,13 @@ namespace Game
 	void World::Step()
 	{
 		const float dt = GetTickSeconds();
+		MarkTargetsMoved();
 		UpdateNavigation(dt);
 		if (m_Settings.Mode != GameMode::Horde || m_Director.GetStatus().Phase != GamePhase::Defeat)
 			UpdateRespawns(*this, dt);
 		UpdateRegeneration(*this, dt);
 		UpdateEnemies(*this, dt);
+		MarkTargetsMoved();
 		UpdateEchoes(dt);
 		UpdateProjectiles(*this, dt);
 		UpdateStrikes(*this, dt);
@@ -124,6 +137,9 @@ namespace Game
 			m_Match.Update(*this, dt);
 		else if (IsHub())
 			UpdateHub(dt);
+		else if (IsShardfall())
+			m_Run.Update(*this, dt);
+		MarkTargetsMoved();
 		if (const ArenaState arena = GetArena(); arena.Field)
 			SinkFallenProps(m_Level, *arena.Field, arena.Clock);
 		FlushDestroyed();
@@ -144,6 +160,8 @@ namespace Game
 			m_Match.Describe(*this, status);
 		else if (IsHub())
 			status.HubFalls = uint16_t(std::min<uint32_t>(m_HubFalls, UINT16_MAX));
+		else if (IsShardfall())
+			status.Run = m_Run.GetStatus();
 		return status;
 	}
 
@@ -182,6 +200,7 @@ namespace Game
 		CollectBodies(transform->Position, m_Bodies);
 		const Vec2 origin = transform->Position;
 		const PlayerActions actions = SimulatePlayer(m_Level, *transform, controller->State, traits, input, GetTickSeconds(), m_Bodies, GetArena());
+		MarkTargetsMoved();
 		if (actions.Teleported())
 			Emit({ WorldEventType::Teleported, controller->PlayerId, uint8_t(actions.Portal) });
 		if (actions.Fell && IsHub())
@@ -310,13 +329,13 @@ namespace Game
 	void World::CollectBodies(Vec2 around, std::vector<BodyCircle>& bodies)
 	{
 		bodies.clear();
-		m_Entities.Each<Enemy>([&](Entity entity, Enemy&)
+		m_Entities.Each<Enemy>([&](Entity entity, Enemy& enemy)
 		{
 			const Transform* transform = m_Entities.TryGet<Transform>(entity);
 			const Collider* collider = m_Entities.TryGet<Collider>(entity);
 			const Health* health = m_Entities.TryGet<Health>(entity);
 			const Boss* boss = m_Entities.TryGet<Boss>(entity);
-			if (!transform || !collider || !health || health->IsDead() || (boss && boss->Burrowed))
+			if (!transform || !collider || !health || health->IsDead() || (boss && boss->Burrowed) || enemy.Sprout > 0.0f)
 				return;
 			if (LengthSquared(transform->Position - around) < BodyCollectRange * BodyCollectRange)
 				bodies.push_back({ SnapToNetGrid(transform->Position), collider->Radius });
@@ -356,9 +375,12 @@ namespace Game
 		PlayerTraits traits = m_Settings.Mode == GameMode::Brawl ? m_Match.GetBrawlTraits(playerId) : IsHub() ? HubTraits(playerId) : ComputeTraits(inventory.Gear, inventory.Gems, {}, inventory.Upgrades);
 		if (m_Settings.Mode == GameMode::Mission)
 			ApplyPenalties(traits, m_Settings.Modifiers);
+		if (IsShardfall())
+			ApplyRunLevel(traits, m_Run.GetLevel());
 		PlayerController controller{ .PlayerId = playerId, .Traits = traits };
 		controller.State.Mana = traits.MaxMana;
 		const Vec2 position = IsPvp() ? m_Match.FindSpawn(*this, playerId) : FindSpawnPosition(playerId);
+		MarkTargetsMoved();
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, position, 0.0f);
 		m_Entities.Add<Collider>(entity, PlayerRadius);
@@ -409,6 +431,7 @@ namespace Game
 			});
 			position = teammate ? FindFreeSpotNear(*teammate, PlayerRadius) : FindSpawnPosition(controller->PlayerId);
 		}
+		MarkTargetsMoved();
 		transform->Position = position;
 		controller->State = PlayerState{};
 		controller->State.Mana = controller->Traits.MaxMana;
@@ -475,6 +498,7 @@ namespace Game
 		if (const PlayerController* controller = m_Entities.TryGet<PlayerController>(player))
 			LeaveChess(controller->PlayerId);
 		m_Entities.Destroy(player);
+		MarkTargetsMoved();
 	}
 
 	Entity World::FindPlayer(uint32_t playerId) const
@@ -525,6 +549,7 @@ namespace Game
 		if (spot >= m_Level.Dummies.size())
 			return;
 		const DummySpot& place = m_Level.Dummies[spot];
+		MarkTargetsMoved();
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, place.Position, -0.5f * Pi);
 		m_Entities.Add<Collider>(entity, DummyRadius);
@@ -564,6 +589,7 @@ namespace Game
 			return;
 		const uint32_t lanes = uint32_t(m_Level.DriftLanes.size());
 		const DriftLane& drift = m_Level.DriftLanes[lane % lanes];
+		MarkTargetsMoved();
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, drift.From, AngleOf(drift.To - drift.From));
 		m_Entities.Add<Collider>(entity, DummyRadius);
@@ -921,6 +947,8 @@ namespace Game
 		controller->Traits = m_Settings.Mode == GameMode::Brawl ? m_Match.GetBrawlTraits(controller->PlayerId) : IsHub() ? HubTraits(controller->PlayerId) : ComputeTraits(inventory->Gear, inventory->Gems, controller->Buffs, inventory->Upgrades);
 		if (m_Settings.Mode == GameMode::Mission)
 			ApplyPenalties(controller->Traits, m_Settings.Modifiers);
+		if (IsShardfall())
+			ApplyRunLevel(controller->Traits, m_Run.GetLevel());
 		controller->State.Mana = std::min(controller->State.Mana, controller->Traits.MaxMana);
 		health->Max = controller->Traits.MaxHealth;
 		if (controller->State.Alive)
@@ -934,6 +962,7 @@ namespace Game
 			return {};
 		const int32_t health = std::max(1, int32_t(std::lround(float(def->Health) * scaling.Health)));
 		const float size = scaling.Elite ? EliteSize : 1.0f;
+		MarkTargetsMoved();
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, position, 0.0f);
 		m_Entities.Add<Collider>(entity, def->Radius * size);
@@ -1579,10 +1608,49 @@ namespace Game
 		});
 	}
 
-	void World::OnEnemyKilled(Entity, const Enemy& enemy, Vec2 position, uint32_t)
+	void World::OnEnemyKilled(Entity entity, const Enemy& enemy, Vec2 position, uint32_t)
 	{
 		if (m_Settings.Mode == GameMode::Mission)
 			m_Mission.OnKilled(*this, position, IsBossKind(enemy.Type));
+		const EnemyDef* def = FindEnemyDef(enemy.Type);
+		if (def && def->Behavior == EnemyBehavior::Volatile)
+		{
+			AbilityContext context;
+			context.Side = Team::Enemies;
+			context.Origin = position;
+			const Entity burst = SpawnPendingStrike(GetAbility(AbilityId::RubyBurst), position, ScaleDamage(GetAbility(AbilityId::RubyShard).Damage, enemy.DamageScale), context);
+			if (Transform* transform = m_Entities.TryGet<Transform>(burst))
+				transform->Facing = m_Random.Float() * 2.0f * Pi;
+		}
+		if (def && IsShardfall())
+		{
+			const Replicated* replicated = m_Entities.TryGet<Replicated>(entity);
+			m_Run.OnKilled(*this, *def, position, (uint64_t(replicated ? replicated->NetId : 0) << 20) ^ m_Tick);
+		}
+	}
+
+	void World::LevelUp(uint32_t level, bool announce)
+	{
+		m_Entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
+		{
+			Inventory* inventory = m_Entities.TryGet<Inventory>(entity);
+			if (!inventory)
+				return;
+			std::vector<UpgradeId> open;
+			for (const UpgradeDef& upgrade : Upgrades)
+				if (inventory->Upgrades[size_t(upgrade.Id)] < upgrade.MaxPicks)
+					open.push_back(upgrade.Id);
+			std::string text = "Level " + std::to_string(level);
+			if (!open.empty())
+			{
+				const UpgradeDef& picked = GetUpgrade(open[m_Random.Below(uint32_t(open.size()))]);
+				inventory->Upgrades[size_t(picked.Id)]++;
+				text += ": " + std::string(picked.Name);
+			}
+			RefreshTraits(entity);
+			if (announce)
+				Notify(controller.PlayerId, text, true);
+		});
 	}
 
 	bool World::ConsumeRevive(uint32_t playerId)
@@ -1648,6 +1716,7 @@ namespace Game
 	void World::DestroyEntity(Entity entity)
 	{
 		m_Entities.Destroy(entity);
+		MarkTargetsMoved();
 	}
 
 	void World::ResetRun()
@@ -1777,7 +1846,10 @@ namespace Game
 	void World::UpdateNavigation(float dt)
 	{
 		m_NavigationTimer -= dt;
-		if (m_NavigationTimer > 0.0f)
+		m_WideNavigationTimer -= dt;
+		const bool narrow = m_NavigationTimer <= 0.0f;
+		const bool wide = m_WideNavigationTimer <= 0.0f;
+		if (!narrow && !wide)
 			return;
 		if (IsPvp())
 		{
@@ -1786,7 +1858,6 @@ namespace Game
 			if (!hunting)
 				return;
 		}
-		m_NavigationTimer = NavigationInterval;
 		std::vector<Vec2> targets;
 		m_Entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
 		{
@@ -1794,8 +1865,60 @@ namespace Game
 				if (const Transform* transform = m_Entities.TryGet<Transform>(entity))
 					targets.push_back(transform->Position);
 		});
-		m_Navigation.Build(m_Level, m_NavGrid, NarrowBodyRadius, targets);
-		m_WideNavigation.Build(m_Level, m_NavGrid, WideBodyRadius, targets);
+		if (narrow)
+		{
+			m_NavigationTimer = NavigationInterval;
+			m_Navigation.Build(m_Level, m_NavGrid, NarrowBodyRadius, targets);
+		}
+		if (wide)
+		{
+			m_WideNavigationTimer = NavigationInterval * (IsShardfall() && narrow ? 1.5f : 1.0f);
+			m_WideNavigation.Build(m_Level, m_NavGrid, WideBodyRadius, targets);
+		}
+	}
+
+	void World::GetTargetBounds(Entity entity, Vec2 position, float radius, Vec2& low, Vec2& high) const
+	{
+		low = position;
+		high = position;
+		if (const MotionHistory* history = m_Entities.TryGet<MotionHistory>(entity))
+			for (const Vec2 past : history->Positions)
+			{
+				low = { std::min(low.x, past.x), std::min(low.y, past.y) };
+				high = { std::max(high.x, past.x), std::max(high.y, past.y) };
+			}
+		low -= Vec2(radius, radius);
+		high += Vec2(radius, radius);
+	}
+
+	void World::GatherTargets(Vec2 low, Vec2 high, std::vector<Entity>& found)
+	{
+		if (m_TargetsMoved)
+			RebuildTargets();
+		m_TargetGrid.Gather(low, high, m_TargetFound);
+		found.clear();
+		for (const uint32_t entry : m_TargetFound)
+			found.push_back(m_TargetEntities[entry]);
+	}
+
+	void World::RebuildTargets()
+	{
+		m_TargetsMoved = false;
+		m_TargetEntities.clear();
+		m_TargetGrid.Begin(m_Level.Map.GetWidth(), m_Level.Map.GetHeight());
+		m_Entities.Each<Health>([&](Entity entity, Health&)
+		{
+			const Transform* transform = m_Entities.TryGet<Transform>(entity);
+			const Collider* collider = m_Entities.TryGet<Collider>(entity);
+			if (!transform || !collider)
+				return;
+			Vec2 low;
+			Vec2 high;
+			GetTargetBounds(entity, transform->Position, collider->Radius, low, high);
+			m_TargetGrid.Add(low, high);
+			m_TargetEntities.push_back(entity);
+		});
+		m_TargetGrid.Finish();
 	}
 
 	void World::RecordHistory()
@@ -1811,6 +1934,8 @@ namespace Game
 	{
 		for (Entity entity : m_Destroyed)
 			m_Entities.Destroy(entity);
+		if (!m_Destroyed.empty())
+			MarkTargetsMoved();
 		m_Destroyed.clear();
 	}
 }

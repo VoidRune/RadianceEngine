@@ -6,29 +6,6 @@ namespace Game
 {
 	namespace
 	{
-		constexpr uint32_t MaxListSize = 4096;
-		constexpr float AngleScale = 65536.0f / (2.0f * Pi);
-
-		uint16_t QuantizeAngle(float angle)
-		{
-			return uint16_t(int32_t(std::lround(std::remainder(angle, 2.0f * Pi) * AngleScale)) & 0xFFFF);
-		}
-
-		float DequantizeAngle(uint16_t value)
-		{
-			return float(int16_t(value)) / AngleScale;
-		}
-
-		uint8_t QuantizeOwner(uint32_t owner)
-		{
-			return owner < 255 ? uint8_t(owner) : uint8_t(255);
-		}
-
-		uint32_t DequantizeOwner(uint8_t owner)
-		{
-			return owner == 255 ? NoPlayer : owner;
-		}
-
 		template<typename T, size_t Size>
 		void WriteBytes(ByteWriter& writer, const std::array<T, Size>& values)
 		{
@@ -441,6 +418,12 @@ namespace Game
 			writer.Write(session.Tier);
 			writer.Write(session.Modifiers);
 			WriteRules(writer, session.Rules);
+			writer.Write(session.Run.StartMinute);
+			writer.Write(session.Run.StartLevel);
+			writer.Write(session.Run.Spawns);
+			writer.Write(session.Run.Xp);
+			writer.Write(session.Run.Only);
+			writer.Write(uint8_t(session.Run.Immortal ? 1 : 0));
 			writer.Write(session.Epoch);
 			writer.Write(uint8_t(session.UnlimitedMaterials ? 1 : 0));
 		}
@@ -453,6 +436,13 @@ namespace Game
 			session.Tier = reader.Read<uint8_t>();
 			session.Modifiers = reader.Read<ModifierMask>();
 			session.Rules = ReadRules(reader);
+			session.Run.StartMinute = reader.Read<uint8_t>();
+			session.Run.StartLevel = reader.Read<uint8_t>();
+			session.Run.Spawns = reader.Read<uint16_t>();
+			session.Run.Xp = reader.Read<uint16_t>();
+			session.Run.Only = reader.Read<uint8_t>();
+			session.Run.Immortal = reader.Read<uint8_t>() != 0;
+			session.Run = SanitizeRunRules(session.Run);
 			session.Epoch = reader.Read<uint32_t>();
 			session.UnlimitedMaterials = reader.Read<uint8_t>() != 0;
 			return !reader.Failed() && session.Mode < GameMode::Count && session.Map < MapKind::Count;
@@ -514,6 +504,7 @@ namespace Game
 			writer.Write(input.ViewTick);
 			writer.Write(input.ViewFraction);
 		}
+		writer.Write(message.Acked);
 	}
 
 	bool Read(ByteReader& reader, ClientInput& message)
@@ -531,6 +522,7 @@ namespace Game
 			input.ViewTick = reader.Read<uint32_t>();
 			input.ViewFraction = reader.Read<uint8_t>();
 		}
+		message.Acked = reader.Read<uint32_t>();
 		return !reader.Failed();
 	}
 
@@ -762,12 +754,8 @@ namespace Game
 		return !reader.Failed();
 	}
 
-	void Write(ByteWriter& writer, const ServerSnapshot& message)
+	void WriteSnapshotBlock(ByteWriter& writer, const ServerSnapshot& message)
 	{
-		writer.Write(message.Epoch);
-		writer.Write(message.Tick);
-		writer.Write(message.LastProcessedInput);
-
 		const GameStatus& status = message.Status;
 		writer.Write(status.Mode);
 		writer.Write(status.Map);
@@ -811,6 +799,19 @@ namespace Game
 			WriteBrawlStatus(writer, status.Brawl);
 		if (status.Mode == GameMode::Hub)
 			writer.Write(status.HubFalls);
+		if (status.Mode == GameMode::Shardfall)
+		{
+			const RunStatus& run = status.Run;
+			writer.Write(run.Phase);
+			writer.Write(run.Act);
+			writer.Write(run.ActClock);
+			writer.Write(run.RunClock);
+			writer.Write(run.Alive);
+			writer.Write(run.Goal);
+			writer.Write(run.Level);
+			writer.Write(run.Xp);
+			writer.Write(run.XpGoal);
+		}
 
 		const LocalPlayerState& local = message.LocalPlayer;
 		writer.Write(uint8_t(local.Valid ? 1 : 0));
@@ -820,9 +821,7 @@ namespace Game
 			writer.Write(local.Motion.Facing);
 			WriteState(writer, local.State);
 			WriteBytes(writer, local.Buffs);
-			writer.Write(uint8_t(local.HasTraits ? 1 : 0));
-			if (local.HasTraits)
-				WriteTraits(writer, local.Traits);
+			WriteTraits(writer, local.Traits);
 			WriteBytes(writer, local.Offer);
 			writer.Write(uint8_t(local.OfferPending ? 1 : 0));
 			writer.Write(local.Health);
@@ -839,59 +838,10 @@ namespace Game
 			if (status.Mode == GameMode::Hub)
 				writer.Write(local.Starlit);
 		}
-
-		const size_t count = std::min<size_t>(message.Entities.size(), MaxListSize);
-		writer.Write(uint16_t(count));
-		for (size_t i = 0; i < count; i++)
-		{
-			const EntityState& entity = message.Entities[i];
-			writer.Write(entity.NetId);
-			writer.Write(entity.Kind);
-			writer.Write(QuantizePosition(entity.Position.x));
-			writer.Write(QuantizePosition(entity.Position.y));
-			writer.Write(QuantizeAngle(entity.Facing));
-			writer.Write(QuantizeOwner(entity.Owner));
-			writer.Write(entity.Tag);
-			writer.Write(entity.Variant);
-			writer.Write(entity.Scale);
-			writer.Write(entity.Health);
-			writer.Write(uint16_t(entity.Flags));
-			if (entity.Kind == EntityKind::Player)
-			{
-				writer.Write(uint8_t(entity.Flags >> 16));
-				writer.Write(entity.Charge);
-				if (entity.Warded())
-					writer.Write(entity.Ward);
-				if (entity.AimsFromPoint())
-				{
-					writer.Write(QuantizePosition(entity.CastPoint.x));
-					writer.Write(QuantizePosition(entity.CastPoint.y));
-					writer.Write(QuantizeAngle(entity.CastAim));
-				}
-			}
-		}
-
-		const size_t hits = std::min<size_t>(message.Hits.size(), MaxListSize);
-		writer.Write(uint16_t(hits));
-		for (size_t i = 0; i < hits; i++)
-		{
-			const HitEvent& hit = message.Hits[i];
-			writer.Write(hit.Target);
-			writer.Write(QuantizePosition(hit.Position.x));
-			writer.Write(QuantizePosition(hit.Position.y));
-			writer.Write(hit.Damage);
-			writer.Write(uint8_t((hit.Critical ? 1 : 0) | (hit.OnPlayer ? 2 : 0) | (uint32_t(hit.Damages) << 2) | (hit.Guarded ? 0x40 : 0) | (hit.Warded ? 0x80 : 0)));
-			writer.Write(uint8_t(hit.Attacker < MaxPlayers ? hit.Attacker : UINT8_MAX));
-			writer.Write(hit.Ability);
-		}
 	}
 
-	bool Read(ByteReader& reader, ServerSnapshot& message)
+	bool ReadSnapshotBlock(ByteReader& reader, ServerSnapshot& message)
 	{
-		message.Epoch = reader.Read<uint32_t>();
-		message.Tick = reader.Read<uint32_t>();
-		message.LastProcessedInput = reader.Read<uint32_t>();
-
 		GameStatus& status = message.Status;
 		status.Mode = reader.Read<GameMode>();
 		status.Map = reader.Read<MapKind>();
@@ -939,6 +889,21 @@ namespace Game
 			status.HubFalls = reader.Read<uint16_t>();
 		if (status.Mode == GameMode::Brawl && !ReadBrawlStatus(reader, status.Brawl))
 			return false;
+		if (status.Mode == GameMode::Shardfall)
+		{
+			RunStatus& run = status.Run;
+			run.Phase = reader.Read<RunPhase>();
+			run.Act = reader.Read<uint8_t>();
+			run.ActClock = reader.Read<float>();
+			run.RunClock = reader.Read<float>();
+			run.Alive = reader.Read<uint16_t>();
+			run.Goal = reader.Read<uint16_t>();
+			run.Level = reader.Read<uint16_t>();
+			run.Xp = reader.Read<uint32_t>();
+			run.XpGoal = reader.Read<uint32_t>();
+			if (uint8_t(run.Phase) > uint8_t(RunPhase::Travel))
+				return false;
+		}
 
 		LocalPlayerState& local = message.LocalPlayer;
 		local.Valid = reader.Read<uint8_t>() != 0;
@@ -949,8 +914,7 @@ namespace Game
 			if (!ReadState(reader, local.State))
 				return false;
 			ReadBytes(reader, local.Buffs);
-			local.HasTraits = reader.Read<uint8_t>() != 0;
-			if (local.HasTraits && !ReadTraits(reader, local.Traits))
+			if (!ReadTraits(reader, local.Traits))
 				return false;
 			ReadBytes(reader, local.Offer);
 			local.OfferPending = reader.Read<uint8_t>() != 0;
@@ -970,61 +934,6 @@ namespace Game
 					return false;
 				local.Shield = reader.Read<uint8_t>();
 			}
-		}
-
-		const uint16_t count = reader.Read<uint16_t>();
-		if (reader.Failed() || count > MaxListSize)
-			return false;
-		message.Entities.resize(count);
-		for (EntityState& entity : message.Entities)
-		{
-			entity.NetId = reader.Read<uint32_t>();
-			entity.Kind = reader.Read<EntityKind>();
-			entity.Position.x = DequantizePosition(reader.Read<uint16_t>());
-			entity.Position.y = DequantizePosition(reader.Read<uint16_t>());
-			entity.Facing = DequantizeAngle(reader.Read<uint16_t>());
-			entity.Owner = DequantizeOwner(reader.Read<uint8_t>());
-			entity.Tag = reader.Read<uint16_t>();
-			entity.Variant = reader.Read<uint8_t>();
-			entity.Scale = reader.Read<uint8_t>();
-			entity.Health = reader.Read<uint8_t>();
-			entity.Flags = reader.Read<uint16_t>();
-			if (entity.Kind == EntityKind::Player)
-			{
-				entity.Flags |= uint32_t(reader.Read<uint8_t>()) << 16;
-				entity.Charge = reader.Read<uint8_t>();
-				if (entity.Warded())
-					entity.Ward = reader.Read<uint8_t>();
-				if (entity.AimsFromPoint())
-				{
-					entity.CastPoint.x = DequantizePosition(reader.Read<uint16_t>());
-					entity.CastPoint.y = DequantizePosition(reader.Read<uint16_t>());
-					entity.CastAim = DequantizeAngle(reader.Read<uint16_t>());
-				}
-			}
-			if (uint8_t(entity.Kind) >= uint8_t(EntityKind::Count))
-				return false;
-		}
-
-		const uint16_t hits = reader.Read<uint16_t>();
-		if (reader.Failed() || hits > MaxListSize)
-			return false;
-		message.Hits.resize(hits);
-		for (HitEvent& hit : message.Hits)
-		{
-			hit.Target = reader.Read<uint32_t>();
-			hit.Position.x = DequantizePosition(reader.Read<uint16_t>());
-			hit.Position.y = DequantizePosition(reader.Read<uint16_t>());
-			hit.Damage = reader.Read<uint16_t>();
-			const uint8_t flags = reader.Read<uint8_t>();
-			hit.Critical = (flags & 1) != 0;
-			hit.OnPlayer = (flags & 2) != 0;
-			hit.Damages = Element(std::min<uint32_t>((flags >> 2) & 0xFu, uint32_t(Element::Count) - 1));
-			hit.Guarded = (flags & 0x40) != 0;
-			hit.Warded = (flags & 0x80) != 0;
-			const uint8_t attacker = reader.Read<uint8_t>();
-			hit.Attacker = attacker < MaxPlayers ? attacker : NoPlayer;
-			hit.Ability = reader.Read<uint8_t>();
 		}
 		return !reader.Failed();
 	}

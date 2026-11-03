@@ -47,7 +47,7 @@ namespace Game
 		PostProcess(const PostProcess&) = delete;
 		PostProcess& operator=(const PostProcess&) = delete;
 
-		void Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage target, Rdn::Extent2D source, Rdn::Extent2D output, const DistortionView& distortion = {});
+		void Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage target, Rdn::Extent2D source, Rdn::Extent2D output, const DistortionView& distortion = {}, Rdn::Extent2D display = {});
 		void SetGrade(const ColorGrade& grade);
 		bool LoadGradingLut(const char* path, std::string& error);
 		const ColorGrade& GetGrade() const { return m_Grade; }
@@ -59,6 +59,7 @@ namespace Game
 		float SceneExposure = 1.0f;
 		float Vignette = 0.0f;
 		float Desaturation = 0.0f;
+		float Sharpness = 0.3f;
 		Tonemapper Tonemap = Tonemapper::SoftClip;
 		bool Grading = true;
 		bool Raw = false;
@@ -72,6 +73,8 @@ namespace Game
 		std::unique_ptr<Rdn::ComputePipeline> m_Down;
 		std::unique_ptr<Rdn::ComputePipeline> m_Up;
 		std::unique_ptr<Rdn::Pipeline> m_Composite;
+		std::unique_ptr<Rdn::Pipeline> m_Upscale;
+		Rdn::Format m_TargetFormat = Rdn::Format::Undefined;
 		std::unique_ptr<Rdn::Sampler> m_Sampler;
 		std::unique_ptr<Rdn::Sampler> m_PointSampler;
 		std::unique_ptr<Rdn::GpuImage> m_GradingLut;

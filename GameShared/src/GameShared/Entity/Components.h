@@ -31,6 +31,13 @@ namespace Game
 		Chest,
 		Gateway,
 		Dummy,
+		QuartzCrawler,
+		JadeCrawler,
+		SapphireCrawler,
+		RubyCrawler,
+		AmethystCrawler,
+		PrismaticCrawler,
+		CrawlerEgg,
 		Count,
 	};
 
@@ -169,6 +176,12 @@ namespace Game
 		float Wander = 0.0f;
 		uint32_t Level = 1;
 		uint8_t ExtraProjectiles = 0;
+		float Sprout = 0.0f;
+		float Lunge = 0.0f;
+		float Age = 0.0f;
+		float Brood = 0.0f;
+		float Far = 0.0f;
+		bool Shielded = false;
 	};
 
 	enum class DummyKind : uint8_t

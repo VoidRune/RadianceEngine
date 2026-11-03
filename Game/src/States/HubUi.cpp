@@ -154,6 +154,9 @@ namespace Game
 		case StationKind::CalderaGate:
 			DrawCalderaGate();
 			break;
+		case StationKind::ShardRift:
+			DrawShardRift();
+			break;
 		case StationKind::Chess:
 			DrawChess();
 			break;

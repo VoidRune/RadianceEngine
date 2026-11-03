@@ -16,8 +16,6 @@ namespace Game
 		constexpr float BufferRelaxSeconds = 4.0f;
 		constexpr float BufferGrowCooldown = 1.0f;
 		constexpr uint32_t SurplusTicks = 30;
-		constexpr uint32_t TraitsResendTicks = 30;
-		constexpr uint32_t TraitsRefreshTicks = 120;
 		constexpr float JoinTimeout = 10.0f;
 		constexpr float PlayerListInterval = 2.0f;
 		constexpr float FlungSpeed = 6.0f;
@@ -102,6 +100,8 @@ namespace Game
 				return "battle royale";
 			case GameMode::Brawl:
 				return "spellbrawl";
+			case GameMode::Shardfall:
+				return "shardfall";
 			default:
 				return "mission";
 			}
@@ -113,7 +113,7 @@ namespace Game
 	{
 		m_Config.TickRate = std::clamp(m_Config.TickRate, 1u, 240u);
 		m_Config.SnapshotInterval = std::max(m_Config.SnapshotInterval, 1u);
-		m_Config.MaxPlayers = std::clamp(m_Config.MaxPlayers, 1u, Game::MaxPlayers);
+		m_Config.MaxPlayers = std::clamp(m_Config.MaxPlayers, 1u, GetPlayerCap(m_Config.StartMode));
 	}
 
 	GameServer::~GameServer()
@@ -141,6 +141,8 @@ namespace Game
 			map = MapKind::Ashlands;
 		else if (m_Config.StartMode == GameMode::Brawl && !IsBrawlMap(map))
 			map = map == RandomBrawlMap ? BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))] : MapKind::Caldera;
+		else if (m_Config.StartMode == GameMode::Shardfall && !IsShardfallMap(map))
+			map = MapKind::ProvingHollow;
 		CreateWorld({
 			.Mode = m_Config.StartMode,
 			.Map = map,
@@ -148,6 +150,7 @@ namespace Game
 			.Tier = m_Config.Tier,
 			.Modifiers = m_Config.Modifiers,
 			.Rules = m_Config.Rules,
+			.Run = m_Config.Run,
 		});
 		RDN_LOG("Server started: {} (seed {}), {} props, {} portals, {} Hz, {}{}", GetMapDef(m_Session.Map).Name, m_Session.MapSeed, m_World->GetLevel().Props.size(), m_World->GetLevel().Portals.size(), m_Config.TickRate, m_Config.Listen ? "accepting players" : "local only", m_Config.UnlimitedMaterials ? ", unlimited crafting materials" : "");
 		return true;
@@ -159,6 +162,7 @@ namespace Game
 		m_Session.Tier = uint8_t(std::clamp<uint32_t>(session.Tier, 1u, MaxMissionTier));
 		m_Session.Modifiers = session.Mode == GameMode::Mission ? ModifierMask(session.Modifiers & AllModifiers) : ModifierMask(0);
 		m_Session.Rules = SanitizeRules(session.Rules);
+		m_Session.Run = session.Mode == GameMode::Shardfall ? SanitizeRunRules(session.Run) : RunRules{};
 		m_Session.Epoch = ++m_TravelCount;
 		m_Session.UnlimitedMaterials = m_Config.UnlimitedMaterials;
 		m_World = std::make_unique<World>(WorldSettings{
@@ -168,6 +172,7 @@ namespace Game
 			.Tier = m_Session.Tier,
 			.Modifiers = m_Session.Modifiers,
 			.Rules = m_Session.Rules,
+			.Run = m_Session.Run,
 			.Players = std::max(GetPlayerCount(), 1u),
 			.TickRate = m_Config.TickRate,
 			.IntermissionSeconds = m_Config.IntermissionSeconds,
@@ -180,16 +185,21 @@ namespace Game
 		m_ReturnTimer = 0.0f;
 	}
 
-	void GameServer::Travel(GameMode mode, MapKind map, uint8_t tier, ModifierMask modifiers, MatchRules rules)
+	void GameServer::Travel(GameMode mode, MapKind map, uint8_t tier, ModifierMask modifiers, MatchRules rules, RunRules run)
 	{
 		if (!m_World)
 			return;
 		const bool hub = mode == GameMode::Hub;
-		const bool valid = hub || (mode == GameMode::Arena ? IsArenaMap(map) : mode == GameMode::Royale ? IsRoyaleMap(map) : mode == GameMode::Brawl ? IsBrawlMap(map) : IsMissionMap(map));
+		const bool valid = hub || (mode == GameMode::Arena ? IsArenaMap(map) : mode == GameMode::Royale ? IsRoyaleMap(map) : mode == GameMode::Brawl ? IsBrawlMap(map) : mode == GameMode::Shardfall ? IsShardfallMap(map) : IsMissionMap(map));
 		if (!valid)
 			return;
+		if (GetPlayerCount() > GetPlayerCap(mode))
+		{
+			RDN_LOG_WARNING("{} needs at most {} players, {} are here", DescribeMode(mode), GetPlayerCap(mode), GetPlayerCount());
+			return;
+		}
 		const uint32_t seed = hub ? m_Config.MapSeed : (uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()) ^ (m_TravelCount * 0x9E3779B9u)) | 1u;
-		m_PendingTravel = SessionInfo{ .Mode = mode, .Map = hub ? MapKind::Hub : map, .MapSeed = seed, .Tier = tier, .Modifiers = modifiers, .Rules = rules };
+		m_PendingTravel = SessionInfo{ .Mode = mode, .Map = hub ? MapKind::Hub : map, .MapSeed = seed, .Tier = tier, .Modifiers = modifiers, .Rules = rules, .Run = run };
 	}
 
 	Entity GameServer::SpawnClient(Client& client, const Inventory& inventory)
@@ -337,7 +347,7 @@ namespace Game
 		std::vector<ServerPlayerStats> stats;
 		for (const Client& client : m_Clients)
 			if (client.Joined)
-				stats.push_back({ client.Name, client.BufferTarget, uint32_t(client.PendingInputs.size()), m_Net.GetStats(client.Connection) });
+				stats.push_back({ client.Name, client.BufferTarget, uint32_t(client.PendingInputs.size()), m_Net.GetStats(client.Connection), client.SnapshotBytes, client.Snapshots });
 		return stats;
 	}
 
@@ -534,6 +544,14 @@ namespace Game
 				}
 			}
 			break;
+		case ActionType::StartRun:
+			if (m_World->IsHub())
+			{
+				const RunRules run = UnpackRunRules(action);
+				Travel(GameMode::Shardfall, MapKind::ProvingHollow, 1, 0, {}, run);
+				RDN_LOG("{} opened a Shardfall run{}", client.Name, run == RunRules{} ? "" : " with test settings");
+			}
+			break;
 		case ActionType::Spectate:
 			m_World->Spectate(client.Player, int16_t(action.Value));
 			break;
@@ -653,6 +671,7 @@ namespace Game
 		}
 		while (client.PendingInputs.size() > MaxQueuedInputs)
 			client.PendingInputs.pop_front();
+		client.Encoder.Acknowledge(message.Acked);
 	}
 
 	void GameServer::RemoveClient(ConnectionId connection)
@@ -867,6 +886,11 @@ namespace Game
 		snapshot.Tick = m_World->GetTick();
 		snapshot.Status = m_World->GetStatus();
 		snapshot.Hits = m_World->TakeHits();
+		if (m_World->IsShardfall())
+		{
+			MergeHits(snapshot.Hits);
+			snapshot.Orbs = m_World->GetRun().GetOrbs().GetOrbs();
+		}
 		EntityRegistry& entities = m_World->GetEntities();
 		struct Visibility
 		{
@@ -956,6 +980,14 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Chilled);
 				if (enemy->Stun > 0.0f)
 					state.Flags |= uint16_t(EntityFlags::Stunned);
+				if (enemy->Sprout > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Pending);
+				if (enemy->Lunge > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Dashing);
+				if (enemy->Shielded)
+					state.Flags |= uint16_t(EntityFlags::Barrier);
+				if (const EnemyDef* def = FindEnemyDef(enemy->Type); def && def->Behavior == EnemyBehavior::Treasure && enemy->Age >= BurrowSeconds - BurrowWarning)
+					state.Flags |= uint16_t(EntityFlags::Falling);
 			}
 			if (entities.TryGet<PendingStrike>(entity))
 				state.Flags |= uint16_t(EntityFlags::Pending);
@@ -996,23 +1028,10 @@ namespace Game
 			}
 			snapshot.LastProcessedInput = client.LastProcessedInput;
 			snapshot.LocalPlayer = DescribeLocalPlayer(client);
-			if (LocalPlayerState& local = snapshot.LocalPlayer; local.Valid)
-			{
-				if (local.Traits != client.SentTraits)
-				{
-					client.SentTraits = local.Traits;
-					client.TraitsResend = TraitsResendTicks;
-				}
-				if (client.TraitsRefresh == 0)
-				{
-					client.TraitsRefresh = TraitsRefreshTicks;
-					client.TraitsResend = std::max(client.TraitsResend, 1u);
-				}
-				client.TraitsRefresh--;
-				local.HasTraits = client.TraitsResend > 0;
-				client.TraitsResend -= local.HasTraits ? 1 : 0;
-			}
-			Send(client, snapshot, SendMode::Unreliable);
+			const std::vector<uint8_t> bytes = client.Encoder.Encode(snapshot, focus);
+			client.SnapshotBytes += bytes.size();
+			client.Snapshots++;
+			m_Net.Send(client.Connection, bytes, SendMode::Unreliable);
 		}
 	}
 
@@ -1131,7 +1150,8 @@ namespace Game
 
 	bool GameServer::AllocatePlayerId(uint32_t& playerId) const
 	{
-		for (playerId = 0; playerId < m_Config.MaxPlayers; playerId++)
+		const uint32_t seats = std::min(m_Config.MaxPlayers, GetPlayerCap(m_Session.Mode));
+		for (playerId = 0; playerId < seats; playerId++)
 			if (std::none_of(m_Clients.begin(), m_Clients.end(), [&](const Client& client) { return client.Joined && client.PlayerId == playerId; }) && std::none_of(m_Bots.begin(), m_Bots.end(), [&](const Bot& bot) { return bot.PlayerId == playerId; }))
 				return true;
 		return false;
