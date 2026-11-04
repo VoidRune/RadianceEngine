@@ -48,7 +48,7 @@ namespace Game
 		{ MapKind::Abbey, "Vesper Abbey", "A rain-soaked abbey courtyard at dusk, with a walled garden, a storage yard and a candlelit crypt." },
 		{ MapKind::Caldera, "The Caldera", "A disc of basalt floating on a lake of lava inside a volcano. It crumbles from the edge inward every round." },
 		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes." },
-		{ MapKind::SkyRuins, "Sky Ruins", "A temple broken into islands high above the clouds. There is no lava, only a long fall: drifting islands carry you out and back, wind gusts push everyone one way, and the ruins crumble into the sky." },
+		{ MapKind::SkyRuins, "Sky Observatory", "The domed observatory of a vanished sky civilization, high above the clouds. There is no lava, only a long fall: a hole gapes in the middle of its star-chart floor, and the old core's burning field closes in around it." },
 		{ MapKind::StormPeak, "Storm Peak", "A wide summit plateau high above the clouds, crowned by the old Stormcallers' ritual circle and its monoliths. Lightning falls at random, the storm closes in on the circle, and a shove off the edge is a long way down." },
 		{ MapKind::ProvingHollow, "Proving Hollow", "A grassy hollow ringed by cliffs, with a worn road around four crystal-studded pillar clusters, a stone boss ring to the north and a vault sealed behind an iron gate." },
 	};
@@ -251,16 +251,6 @@ namespace Game
 		float Yaw = 0.0f;
 	};
 
-	struct DriftIsland
-	{
-		std::vector<TileCoord> Cells;
-		Vec2 Center;
-		Vec2 Axis;
-		float Reach = 4.0f;
-		float Period = 22.0f;
-		float Phase = 0.0f;
-	};
-
 	struct Plateau
 	{
 		struct Spot
@@ -329,6 +319,42 @@ namespace Game
 		}
 	};
 
+	inline constexpr float RotundaRadius = 13.5f;
+	inline constexpr float RotundaHole = 4.0f;
+	inline constexpr float RotundaWallDepth = 1.0f;
+	inline constexpr float RotundaDoorHalf = 1.2f;
+	inline constexpr float RotundaBayDegrees = 17.2f;
+	inline constexpr float RotundaDoorAngle = 12.6f;
+	inline constexpr float RotundaSouthBalcony = -42.0f;
+	inline constexpr int32_t RotundaBaysPerSide = 7;
+	inline constexpr int32_t RotundaNicheBayA = 1;
+	inline constexpr int32_t RotundaNicheBayB = 3;
+	inline constexpr int32_t RotundaDoorBay = 4;
+	inline constexpr int32_t RotundaStepBay = 6;
+
+	inline float RotundaBayAngle(int32_t bay, float side)
+	{
+		return (90.0f - side * (float(bay) + 0.5f) * RotundaBayDegrees) * 3.14159265f / 180.0f;
+	}
+
+	struct Rotunda
+	{
+		struct Balcony
+		{
+			Vec2 Center;
+			float Radius = 2.4f;
+			float Angle = 0.0f;
+		};
+
+		Plateau Outline;
+		std::vector<Balcony> Balconies;
+		Vec2 Center;
+		float Radius = RotundaRadius;
+		float HoleRadius = RotundaHole;
+
+		bool IsEmpty() const { return Outline.IsEmpty(); }
+	};
+
 	inline Vec2 ChessSquareCenter(const ChessSpot& spot, int32_t file, int32_t rank)
 	{
 		const Vec2 ranks = FromAngle(spot.Yaw);
@@ -387,8 +413,8 @@ namespace Game
 		std::vector<TileRect> Railings;
 		std::optional<ChessSpot> ChessTable;
 		std::vector<Boundary> Boundaries;
-		std::vector<DriftIsland> Islands;
 		Plateau Peak;
+		Rotunda Hall;
 		bool Rounded = false;
 		bool Floating = false;
 		bool Bouncy = false;

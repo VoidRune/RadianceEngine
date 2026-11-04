@@ -968,7 +968,7 @@ namespace Game
 		m_FocusHeight = focusHeight;
 		m_Constants.ViewProjection = camera.ViewProjection;
 		m_Constants.Focus = glm::vec4(fadeBelowFocus ? focusHeight : -1e4f, 0.0f, 0.0f, 0.0f);
-		m_Constants.Eye = glm::vec4(camera.Eye, 0.0f);
+		m_Constants.Eye = glm::vec4(camera.Eye, lighting.Rain);
 	}
 
 	void WorldRenderer::DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw)

@@ -152,6 +152,9 @@ namespace Game
 				set(Fx::WindStreak, {
 					{ .Kind = K::Wind, .Count = 1.0f, .Shape = SpawnShape::Disc, .Aimed = true, .Radius = 13.0f, .Cone = 0.06f, .Speed = { 6.0f, 9.5f }, .Life = { 0.7f, 1.2f }, .Size = { 0.025f, 0.045f } },
 				});
+				set(Fx::SunDust, {
+					{ .Kind = K::Mote, .Count = 1.0f, .Shape = SpawnShape::Disc, .Aimed = true, .Radius = 7.0f, .Cone = 1.1f, .Speed = { 0.05f, 0.22f }, .Life = { 2.5f, 5.0f }, .Size = { 0.012f, 0.028f }, .Tint = { 0.95f, 0.8f, 0.5f } },
+				});
 				set(Fx::StormCrackle, {
 					{ .Kind = K::Lightning, .Count = 55.0f, .Radius = 0.42f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = FullSphere, .Speed = { 1.5f, 4.0f }, .Life = { 0.08f, 0.2f }, .Size = { 0.02f, 0.035f } },
 					{ .Kind = K::Spark, .Count = 10.0f, .Radius = 0.3f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.9f, .Speed = { 1.0f, 3.0f }, .Life = { 0.2f, 0.45f }, .Size = { 0.015f, 0.025f }, .Tint = { 0.55f, 0.7f, 1.0f } },

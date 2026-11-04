@@ -23,7 +23,8 @@ namespace Game
 		constexpr float SeamWidth = 0.2f;
 		constexpr float SeamDepth = 0.035f;
 		constexpr float ShelfInner = 4.0f;
-		constexpr float ShelfRiser = 0.12f;
+		constexpr float ShelfRiser = 0.34f;
+		constexpr float PlateBlend = 0.34f;
 		constexpr float ShelfRim = 1.8f;
 		constexpr float ShelfClear = 1.1f;
 		constexpr float ShelfWobble = 0.14f;
@@ -106,7 +107,10 @@ namespace Game
 			float second = 1e9f;
 			int32_t ox = cx;
 			int32_t oy = cy;
+			int32_t px = cx;
+			int32_t py = cy;
 			Vec2 feature = scaled;
+			Vec2 other = scaled;
 			for (int32_t dy = -1; dy <= 1; dy++)
 				for (int32_t dx = -1; dx <= 1; dx++)
 				{
@@ -114,19 +118,33 @@ namespace Game
 					if (const float distance = LengthSquared(scaled - spot); distance < nearest)
 					{
 						second = nearest;
+						px = ox;
+						py = oy;
+						other = feature;
 						nearest = distance;
 						ox = cx + dx;
 						oy = cy + dy;
 						feature = spot;
 					}
 					else if (distance < second)
+					{
 						second = distance;
+						px = cx + dx;
+						py = cy + dy;
+						other = spot;
+					}
 				}
 			const float d = Length(point - peak.Center);
 			const float calm = Smooth((d - 4.1f) / 0.8f) * Smooth((peak.RimDistance(point) - 0.6f * PeakRelief::LevelLip) / 0.6f);
 			seam = (1.0f - Smooth((std::sqrt(second) - std::sqrt(nearest)) * PlateSize / SeamWidth)) * calm * Smooth((Fbm(point * 0.3f, salt ^ 0x6666u) - 0.32f) / 0.14f);
-			const Vec2 tilt(Corner(ox, oy, salt ^ 0x3333u) - 0.5f, Corner(ox, oy, salt ^ 0x4444u) - 0.5f);
-			return (PlateLift * (2.0f * Corner(ox, oy, salt ^ 0x5555u) - 1.0f) + 2.0f * PlateTilt * Dot(tilt, point - feature * PlateSize)) * calm - SeamDepth * seam;
+			const auto plate = [&](int32_t x, int32_t y, Vec2 spot)
+			{
+				const Vec2 tilt(Corner(x, y, salt ^ 0x3333u) - 0.5f, Corner(x, y, salt ^ 0x4444u) - 0.5f);
+				return PlateLift * (2.0f * Corner(x, y, salt ^ 0x5555u) - 1.0f) + 2.0f * PlateTilt * Dot(tilt, point - spot * PlateSize);
+			};
+			const float own = plate(ox, oy, feature);
+			const float shared = 0.5f * (own + plate(px, py, other));
+			return std::lerp(shared, own, Smooth((std::sqrt(second) - std::sqrt(nearest)) * PlateSize / PlateBlend)) * calm - SeamDepth * seam;
 		}
 
 		float Down(const PeakRelief::Shelf& shelf)
@@ -296,37 +314,52 @@ namespace Game
 				m_Craters.push_back(crater);
 		}
 
+		const auto detail = [&](Vec2 point, float start, float& seam)
+		{
+			const Vec2 offset = point - peak.Center;
+			float height = start;
+			float near = 0.0f;
+			for (const Shelf& shelf : m_Shelves)
+			{
+				float fade = 0.0f;
+				const float lift = Lift(shelf, offset, near, fade);
+				if (fade <= 0.0f)
+					continue;
+				if (shelf.Outer)
+					height += lift * fade;
+				else
+					height = std::max(height, std::lerp(height, ground(peak.Center + Normalize(offset) * (shelf.Radius + 0.4f)) + lift, fade));
+			}
+			for (const Crater& crater : m_Craters)
+			{
+				const float d = Length(point - crater.Center) / crater.Radius;
+				if (d < 2.0f)
+				{
+					height += (d < 1.0f ? -CraterDepth * (1.0f - d * d) : 0.0f) + CraterBerm * std::exp(-std::pow((d - 1.0f) * crater.Radius / 0.3f, 2.0f));
+					near = std::max(near, 1.0f - Smooth((d - 1.2f) / 0.5f));
+				}
+			}
+			const float plates = Plates(peak, point, salt, seam) * (1.0f - near);
+			seam *= 1.0f - near;
+			return height + plates;
+		};
 		for (int32_t j = 0; j < peak.Rows; j++)
 			for (int32_t i = 0; i < peak.Columns; i++)
 			{
 				const size_t k = size_t(j) * size_t(peak.Columns) + size_t(i);
-				const Vec2 point = place(i, j);
-				const Vec2 offset = point - peak.Center;
-				float height = base[k];
-				float near = 0.0f;
-				for (const Shelf& shelf : m_Shelves)
-				{
-					float fade = 0.0f;
-					const float lift = Lift(shelf, offset, near, fade);
-					if (fade <= 0.0f)
-						continue;
-					if (shelf.Outer)
-						height += lift * fade;
-					else
-						height = std::max(height, std::lerp(height, ground(peak.Center + Normalize(offset) * (shelf.Radius + 0.4f)) + lift, fade));
-				}
-				for (const Crater& crater : m_Craters)
-				{
-					const float d = Length(point - crater.Center) / crater.Radius;
-					if (d < 2.0f)
-					{
-						height += (d < 1.0f ? -CraterDepth * (1.0f - d * d) : 0.0f) + CraterBerm * std::exp(-std::pow((d - 1.0f) * crater.Radius / 0.3f, 2.0f));
-						near = std::max(near, 1.0f - Smooth((d - 1.2f) / 0.5f));
-					}
-				}
 				float seam = 0.0f;
-				m_Heights[k] = height + Plates(peak, point, salt, seam) * (1.0f - near);
-				m_Seams[k] = seam * (1.0f - near);
+				m_Heights[k] = detail(place(i, j), base[k], seam);
+				m_Seams[k] = seam;
+			}
+		m_FineColumns = (peak.Columns - 1) * 2 + 1;
+		m_FineRows = (peak.Rows - 1) * 2 + 1;
+		m_Fine.resize(size_t(m_FineColumns) * size_t(m_FineRows));
+		for (int32_t j = 0; j < m_FineRows; j++)
+			for (int32_t i = 0; i < m_FineColumns; i++)
+			{
+				const Vec2 point = peak.Origin + Vec2(float(i), float(j)) * (0.5f * peak.Spacing);
+				float seam = 0.0f;
+				m_Fine[size_t(j) * size_t(m_FineColumns) + size_t(i)] = peak.RimDistance(point) < -1.0f ? ground(point) : detail(point, ground(point), seam);
 			}
 		survey(false);
 	}
@@ -335,6 +368,7 @@ namespace Game
 	{
 		m_Peak = nullptr;
 		m_Heights.clear();
+		m_Fine.clear();
 		m_Hollows.clear();
 		m_Screes.clear();
 		m_Seams.clear();
@@ -347,7 +381,17 @@ namespace Game
 
 	float PeakRelief::Height(Vec2 position) const
 	{
-		return m_Peak ? m_Peak->Read(m_Heights, m_Peak->Locate(position)) : 0.0f;
+		if (!m_Peak)
+			return 0.0f;
+		const float step = 0.5f * m_Peak->Spacing;
+		const float gx = std::clamp((position.x - m_Peak->Origin.x) / step, 0.0f, float(m_FineColumns - 1) - 1e-3f);
+		const float gy = std::clamp((position.y - m_Peak->Origin.y) / step, 0.0f, float(m_FineRows - 1) - 1e-3f);
+		const int32_t i = int32_t(gx);
+		const int32_t j = int32_t(gy);
+		const float* row = m_Fine.data() + size_t(j) * size_t(m_FineColumns) + size_t(i);
+		const float* next = row + m_FineColumns;
+		const float u = gx - float(i);
+		return std::lerp(std::lerp(row[0], row[1], u), std::lerp(next[0], next[1], u), gy - float(j));
 	}
 
 	Vec2 PeakRelief::Slope(Vec2 position) const

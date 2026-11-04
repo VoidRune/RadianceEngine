@@ -19,6 +19,8 @@ layout(std140, set = 0, binding = 0) uniform CascadeFrame
 	vec4 SkyMaskTransform;
 	vec4 Lattice;
 	vec4 PastLattice;
+	vec4 SkyGlow;
+	vec4 ToSun;
 } Rc;
 
 const int LevelCount = 6;
@@ -186,5 +188,5 @@ float ProbeTent(vec3 position, vec2 coordinate, float spacing)
 
 vec3 EnvironmentRadiance(vec3 direction)
 {
-	return HemisphereRadiance(Rc.Sky.rgb, Rc.Ground.rgb, direction.y, 8.0);
+	return OpenSkyRadiance(Rc.Sky.rgb, Rc.Ground.rgb, direction, 8.0, Rc.ToSun.xyz, Rc.SkyGlow);
 }

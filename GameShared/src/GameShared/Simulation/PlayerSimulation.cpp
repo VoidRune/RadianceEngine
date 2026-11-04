@@ -43,22 +43,6 @@ namespace Game
 			return depth;
 		}
 
-		Vec2 Carry(const Level& level, const ArenaState& arena, Vec2 position, float dt)
-		{
-			if (level.Islands.empty() || !arena.Plan)
-				return position;
-			const int32_t island = IslandAt(level, *arena.Plan, arena.Clock, position);
-			if (island < 0)
-				return position;
-			const DriftIsland& drift = level.Islands[size_t(island)];
-			return position + IslandOffset(drift, arena.Clock + dt) - IslandOffset(drift, arena.Clock);
-		}
-
-		Vec2 WindOf(const Level& level, const ArenaState& arena)
-		{
-			return level.Skyborne && arena.Plan ? GustAt(*arena.Plan, arena.Clock).Velocity : Vec2{};
-		}
-
 		void Strike(const ArenaState& arena, float dt, const Transform& transform, PlayerState& state)
 		{
 			if (!arena.Deadly || !arena.Plan || arena.Plan->Shape != BrawlShape::Peak || !state.Alive || state.IsFalling() || state.Invulnerable > 0.0f)
@@ -631,9 +615,6 @@ namespace Game
 
 		ArenaState next = arena;
 		next.Clock += dt;
-		const Vec2 wind = WindOf(level, arena);
-		if (level.Skyborne && state.DashDistance <= 0.0f)
-			transform.Position = Carry(level, arena, transform.Position, dt);
 		const Vec2 aim = FromAngle(input.Aim);
 		const Vec2 move = ClampLength(input.Move, 1.0f);
 		actions.Direction = aim;
@@ -653,8 +634,6 @@ namespace Game
 			{
 				if (LengthSquared(state.Push) > 0.0f)
 					transform.Position = Move(level, next, state, transform.Position, state.Push * dt, {});
-				if (LengthSquared(wind) > 0.0f)
-					transform.Position = MoveCircle(level, transform.Position, PlayerRadius, wind * dt, {}, true);
 			}
 			DecayPush(level, transform.Position, state, dt);
 			Footing(level, next, transform, state, actions, dashed);
@@ -797,8 +776,6 @@ namespace Game
 		else
 		{
 			transform.Position = Move(level, next, state, transform.Position, delta, bodies);
-			if (LengthSquared(wind) > 0.0f)
-				transform.Position = MoveCircle(level, transform.Position, PlayerRadius, wind * dt, bodies, true);
 		}
 		DecayPush(level, transform.Position, state, dt);
 		Footing(level, next, transform, state, actions, dashed || dashing);

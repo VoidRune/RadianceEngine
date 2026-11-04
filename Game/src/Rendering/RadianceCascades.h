@@ -58,6 +58,8 @@ namespace Game
 			glm::vec4 SkyMaskTransform;
 			glm::vec4 Lattice;
 			glm::vec4 PastLattice;
+			glm::vec4 SkyGlow;
+			glm::vec4 ToSun;
 		};
 
 		struct PlaceConstants

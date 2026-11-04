@@ -131,6 +131,7 @@ namespace Game
 		{ .Path = "Original/Glacier", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
 		{ .Path = "Original/Ruins", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
 		{ .Path = "Original/Summit", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
+		{ .Path = "Original/Citadel", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true, .KeepOrigin = true },
 		{ .Path = "Original/Crawler", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true, .KeepOrigin = true },
 		{ .Path = "Original/Materials/PavingStone", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
 		{ .Path = "Original/Materials/PavingBed", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
@@ -143,6 +144,14 @@ namespace Game
 		{ .Path = "Original/Materials/GroundCliff", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 3.0f },
 		{ .Path = "Original/Materials/GroundScree", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
 		{ .Path = "Original/Materials/GroundAlpine", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
+		{ .Path = "Original/Materials/CitadelMoss", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 1.8f },
+		{ .Path = "Original/Materials/ObservatoryFloor", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 4.4f },
+		{ .Path = "Original/Materials/ObservatoryBlock", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 3.0f },
+		{ .Path = "Original/Materials/ObservatoryAshlar", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.2f },
+		{ .Path = "Original/Materials/ObservatoryBlue", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
+		{ .Path = "Original/Materials/ObservatoryGold", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
+		{ .Path = "Original/Materials/ObservatoryBronze", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
+		{ .Path = "Original/Materials/ObservatoryMural", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 4.2f },
 	};
 
 	inline constexpr ModelPack ModelPacks[] = {

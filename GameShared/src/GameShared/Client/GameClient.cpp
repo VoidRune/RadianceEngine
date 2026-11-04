@@ -1041,22 +1041,10 @@ namespace Game
 		const uint32_t playerId = m_Welcome.PlayerId;
 		m_PresentTick = double(GetLatestTick()) + double(m_PendingInputs.size()) - 1.0 + double(alpha);
 		const double lead = std::clamp(m_PresentTick - m_RenderTick, 0.0, MaxProjectileLeadSeconds * double(m_Welcome.TickRate));
-		const ArenaState arena = ArenaFor(0);
-		const float then = GetArenaClock(m_RenderTick);
-		const float now = GetArenaClock(m_PresentTick);
 		for (const EntityState& entity : m_Entities)
 		{
 			if (m_HasPrediction && entity.NetId == m_Welcome.PlayerNetId)
 				continue;
-			if (entity.Kind == EntityKind::Player && arena.Plan && !m_Level->Islands.empty())
-				if (const int32_t island = IslandAt(*m_Level, *arena.Plan, then, entity.Position); island >= 0)
-				{
-					const DriftIsland& drift = m_Level->Islands[size_t(island)];
-					EntityState carried = entity;
-					carried.Position += IslandOffset(drift, now) - IslandOffset(drift, then);
-					m_View.push_back(carried);
-					continue;
-				}
 			if ((entity.Kind == EntityKind::Projectile || entity.Kind == EntityKind::Effect) && entity.Owner == playerId && IsPredictedTag(entity.Tag))
 				continue;
 			if (entity.Kind == EntityKind::Projectile && entity.Owner == NoPlayer)

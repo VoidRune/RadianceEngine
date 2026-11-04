@@ -192,6 +192,15 @@ float Luminance(vec3 color)
 	return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
+float RainNoise(vec2 p)
+{
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	f = f * f * (3.0 - 2.0 * f);
+	vec4 h = fract(sin(vec4(dot(i, vec2(127.1, 311.7)), dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7)), dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7)), dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7)))) * 43758.547);
+	return mix(mix(h.x, h.y, f.x), mix(h.z, h.w, f.x), f.y);
+}
+
 float FilterRoughness(vec3 n, float roughness)
 {
 	vec3 dx = dFdx(n);
@@ -360,6 +369,22 @@ void main()
 		roughness = mix(roughness, 0.03, puddle);
 		metallic *= 1.0 - puddle;
 		n = normalize(mix(n, geometric, puddle));
+	}
+	if (pc.Eye.w > 0.0 && !water && (flags & (MeshSkinned | MeshBright)) == 0u)
+	{
+		float rain = pc.Eye.w;
+		float open = smoothstep(0.1, 0.7, geometric.y);
+		float bright = smoothstep(0.3, 0.52, Luminance(albedo));
+		float film = rain * mix(0.4, 1.0, open) * (1.0 - bright);
+		float patches = smoothstep(0.62, 0.8, 0.7 * RainNoise(inWorld.xz * 0.32) + 0.3 * RainNoise(inWorld.xz * 1.1 + 7.3));
+		float flat4 = open * open;
+		float puddle = flat4 * flat4 * patches * rain * (1.0 - bright);
+		albedo *= mix(1.0, 0.7, film * (1.0 - metallic));
+		albedo *= mix(1.0, 0.82, puddle);
+		roughness = mix(roughness, max(roughness * 0.55, 0.33), film);
+		roughness = mix(roughness, 0.22, puddle);
+		roughness = mix(roughness, roughness * 0.65, rain * bright);
+		n = normalize(mix(n, geometric, max(puddle, film * 0.2)));
 	}
 	if (backFacing)
 		n = -n;

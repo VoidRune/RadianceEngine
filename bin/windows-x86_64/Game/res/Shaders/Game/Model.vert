@@ -91,6 +91,8 @@ void main()
 	outTangent = vec4(dot(instance.Row0.xyz, tangent.xyz), dot(instance.Row1.xyz, tangent.xyz), dot(instance.Row2.xyz, tangent.xyz), mirrored ? -tangent.w : tangent.w);
 	outUv = vec2(vertex.PositionU.w, vertex.NormalV.w);
 	outMaterial = instance.Info.yzw;
+	if (instance.Info.x != NoPalette)
+		outMaterial.z |= 262144u;
 	outTint = instance.Tint;
 	outShading = vec3(instance.Shading.x, world.y - instance.Shading.y, world.y);
 	outCut = instance.Shading.zw;

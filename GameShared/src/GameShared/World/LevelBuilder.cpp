@@ -282,6 +282,11 @@ namespace Game
 		m_Level.Map.RoundCorners();
 	}
 
+	void LevelBuilder::SetRotunda(Rotunda hall)
+	{
+		m_Level.Hall = std::move(hall);
+	}
+
 	Level LevelBuilder::Finish()
 	{
 		m_Level.Finalize();

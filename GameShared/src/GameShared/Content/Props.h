@@ -142,6 +142,13 @@ namespace Game
 		RuinWallShort,
 		RuinPedestal,
 		RuinRubble,
+		RuinFallenColumn,
+		ObservatoryWall,
+		ObservatoryJamb,
+		ObservatoryPier,
+		ObservatoryDais,
+		ObservatoryStatue,
+		ObservatoryInstrument,
 		StormSpire,
 		Monolith,
 		SummitBoulder,
@@ -914,6 +921,25 @@ namespace Game
 			Box({ 0.25f, -0.15f }, 0.0f, { 0.16f, 0.14f }, 0.16f, LimestoneShade, 1.1f),
 		};
 
+		inline constexpr PropCollider RuinFallenColumnColliders[] = { Rect({ 1.95f, 0.42f }, Block::Movement) };
+		inline constexpr PropPart RuinFallenColumnParts[] = {
+			CylinderX({}, 0.0f, { 1.9f, 0.4f }, 0.8f, Limestone),
+		};
+
+		inline constexpr PropCollider ObservatoryWallColliders[] = { Rect({ 2.05f, 0.5f }) };
+		inline constexpr PropCollider ObservatoryJambColliders[] = { Rect({ 0.45f, 0.5f }) };
+		inline constexpr PropCollider ObservatoryPierColliders[] = { Circle(0.42f) };
+		inline constexpr PropCollider ObservatoryDaisColliders[] = { Circle(2.6f) };
+		inline constexpr PropCollider ObservatoryStatueColliders[] = { Circle(0.62f) };
+		inline constexpr PropPart ObservatoryStatueParts[] = {
+			Box({}, 0.0f, { 0.55f, 0.55f }, 0.8f, LimestoneShade),
+			Cylinder({}, 0.8f, { 0.36f, 0.36f }, 1.9f, Limestone),
+		};
+		inline constexpr PropCollider ObservatoryInstrumentColliders[] = { Rect({ 0.45f, 0.45f }) };
+		inline constexpr PropPart ObservatoryInstrumentParts[] = {
+			Box({}, 0.0f, { 0.45f, 0.45f }, 0.9f, LimestoneShade),
+		};
+
 		inline constexpr uint32_t StormGlow = 0x9FD8FF;
 
 		inline constexpr PropCollider StormSpireColliders[] = { Circle(0.62f) };
@@ -1039,6 +1065,13 @@ namespace Game
 		{ PropId::RuinWallShort, "Ruined wall fragment", PropData::RuinWallShortColliders, PropData::RuinWallShortParts },
 		{ PropId::RuinPedestal, "Ruined pedestal", PropData::RuinPedestalColliders, PropData::RuinPedestalParts },
 		{ PropId::RuinRubble, "Ruin rubble", {}, PropData::RuinRubbleParts },
+		{ PropId::RuinFallenColumn, "Fallen column", PropData::RuinFallenColumnColliders, PropData::RuinFallenColumnParts },
+		{ PropId::ObservatoryWall, "Observatory wall", PropData::ObservatoryWallColliders, {} },
+		{ PropId::ObservatoryJamb, "Observatory door jamb", PropData::ObservatoryJambColliders, {} },
+		{ PropId::ObservatoryPier, "Observatory pier", PropData::ObservatoryPierColliders, {} },
+		{ PropId::ObservatoryDais, "Telescope dais", PropData::ObservatoryDaisColliders, {} },
+		{ PropId::ObservatoryStatue, "Astronomer statue", PropData::ObservatoryStatueColliders, PropData::ObservatoryStatueParts, true },
+		{ PropId::ObservatoryInstrument, "Star instrument", PropData::ObservatoryInstrumentColliders, PropData::ObservatoryInstrumentParts },
 		{ PropId::StormSpire, "Storm spire", PropData::StormSpireColliders, PropData::StormSpireParts, true },
 		{ PropId::Monolith, "Ritual monolith", PropData::MonolithColliders, PropData::MonolithParts, true },
 		{ PropId::SummitBoulder, "Summit boulder", PropData::SummitBoulderColliders, PropData::SummitBoulderParts },

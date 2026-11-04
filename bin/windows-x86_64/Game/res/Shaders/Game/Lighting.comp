@@ -31,6 +31,9 @@ layout(std140, set = 0, binding = 5) uniform LightingFrame
 	vec4 Haze;
 	vec4 Eye;
 	vec4 Translucent;
+	vec4 SkyGlow;
+	vec4 Contact;
+	mat4 ViewProjection;
 } Frame;
 layout(set = 0, binding = 6) uniform sampler2D ShadowMap;
 layout(set = 0, binding = 11) uniform sampler2D EnvironmentMap;
@@ -84,6 +87,31 @@ vec3 LinearToSrgb(vec3 color)
 vec4 GatherLit(vec2 corner, vec2 size, float depth)
 {
 	return step(vec4(depth), textureGather(ShadowMap, corner / size, 0));
+}
+
+float ContactShadow(vec3 position, vec3 normal, vec3 toSun)
+{
+	const int Steps = 10;
+	const float Thickness = 0.35;
+	vec3 start = position + normal * 0.012;
+	vec2 size = vec2(textureSize(DepthBuffer, 0));
+	float near = Frame.Contact.x;
+	float far = Frame.Contact.y;
+	for (int k = 0; k < Steps; k++)
+	{
+		float t = (float(k) + 0.5) / float(Steps);
+		t *= t;
+		vec4 clip = Frame.ViewProjection * vec4(start + toSun * (Frame.Contact.z * t), 1.0);
+		vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+		if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
+			return 1.0;
+		float depth = texelFetch(DepthBuffer, ivec2(uv * size), 0).r;
+		float scene = near * far / (far - depth * (far - near));
+		float gap = clip.w - scene;
+		if (gap > 0.01 && gap < Thickness)
+			return mix(0.0, 1.0, t * t);
+	}
+	return 1.0;
 }
 
 float SunShadow(vec3 position, vec3 normal, float cosI)
@@ -204,7 +232,7 @@ void main()
 		if (Frame.Backdrop.x > 2.5)
 			result = StormSky(Frame.CameraPosition.xyz, direction, Frame.Backdrop.z, Frame.SunDirection.xyz, Frame.Eye, Frame.Haze.w);
 		else if (Frame.Backdrop.x > 1.5)
-			result = DaySky(Frame.CameraPosition.xyz, direction, Frame.Backdrop.z, Frame.SunDirection.xyz);
+			result = DaySky(Frame.CameraPosition.xyz, direction, Frame.Backdrop.z, Frame.SunDirection.xyz, Frame.Haze.w);
 		else
 			result = Backdrop(Frame.CameraPosition.xyz, direction, Frame.Backdrop.z, Frame.SunDirection.xyz, SkyMask, Frame.SkyMaskTransform, Frame.Backdrop.w);
 	}
@@ -231,6 +259,8 @@ void main()
 		vec3 l = Frame.SunDirection.xyz;
 		float cosI = dot(n, l);
 		float shadow = cosI > 0.0 ? SunShadow(position, n, cosI) : 0.0;
+		if (shadow > 0.0 && Frame.Contact.z > 0.0 && Frame.Options.w > ShadowsLow)
+			shadow *= ContactShadow(position, n, l);
 		vec3 sunIrradiance = Frame.SunRadiance.rgb * (max(cosI, 0.0) * shadow);
 		if (Frame.Eye.w > 0.0)
 			sunIrradiance *= mix(Frame.Eye.w, 1.0, 1.0 - smoothstep(Frame.Eye.z - 0.6, Frame.Eye.z + 1.6, length(position.xz - Frame.Eye.xy)));
@@ -270,7 +300,10 @@ void main()
 			ambient = CombineAmbient(albedo.rgb, metallic, roughness, n, v, environmentIrradiance * floorOpen, reflected) * albedo.a;
 		}
 		else
-			ambient = EvaluateAmbient(albedo.rgb, metallic, roughness, albedo.a, n, v, Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb);
+			{
+			vec3 reflected = OpenSkyRadiance(Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb, DominantDirection(n, v, roughness), 1.0 / max(roughness, 0.05), Frame.SunDirection.xyz, Frame.SkyGlow);
+			ambient = CombineAmbient(albedo.rgb, metallic, roughness, n, v, HemisphereRadiance(Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb, n.y, 1.0), reflected) * albedo.a;
+		}
 #endif
 		vec3 lit = mix(sun + lightDirect + ambient + transmitted, DepthColor, fade);
 

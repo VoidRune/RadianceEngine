@@ -249,6 +249,29 @@ namespace Game
 			return std::all_of(inventory.Pack.begin(), inventory.Pack.end(), [](const Item& item) { return item.IsValid(); });
 		}
 
+		void ApplyHallDusk(SceneLighting& lighting, float dusk)
+		{
+			const float path = dusk * dusk * (3.0f - 2.0f * dusk);
+			const float azimuth = std::lerp(0.85f, -1.45f, path);
+			const float elevation = std::lerp(1.0f, 0.44f, dusk);
+			lighting.SunDirection = -glm::vec3(std::sin(azimuth) * std::cos(elevation), std::sin(elevation), std::cos(azimuth) * std::cos(elevation));
+			const float warm = glm::smoothstep(0.3f, 1.0f, dusk);
+			const float dark = glm::smoothstep(0.15f, 1.0f, dusk);
+			lighting.Dusk = dark;
+			lighting.SunColor = glm::mix(glm::vec3(1.0f, 0.94f, 0.82f), glm::vec3(1.0f, 0.6f, 0.34f), warm);
+			lighting.SunIntensity = std::lerp(2.5f, 2.3f, warm);
+			lighting.SkyColor = glm::mix(glm::vec3(0.22f, 0.33f, 0.52f), glm::vec3(0.07f, 0.08f, 0.19f), dark);
+			lighting.GroundColor = glm::mix(glm::vec3(0.22f, 0.24f, 0.28f), glm::vec3(0.09f, 0.065f, 0.09f), dark);
+			lighting.Haze = glm::mix(glm::vec3(0.56f, 0.68f, 0.86f), glm::vec3(0.16f, 0.12f, 0.24f), dark);
+			lighting.SkyGlow = glm::vec4(glm::mix(glm::vec3(1.0f, 0.93f, 0.8f), glm::vec3(1.0f, 0.46f, 0.2f), warm), std::lerp(2.2f, 3.0f, warm));
+			lighting.Grade = {
+				.Saturation = std::lerp(1.08f, 1.14f, dark),
+				.MidSaturation = 0.16f,
+				.Shadows = glm::mix(glm::vec3(0.92f, 0.97f, 1.08f), glm::vec3(0.86f, 0.92f, 1.2f), dark),
+				.Highlights = glm::mix(glm::vec3(1.04f, 1.01f, 0.95f), glm::vec3(1.1f, 1.0f, 0.88f), dark),
+			};
+		}
+
 		SceneLighting MapLighting(MapKind map, const WorldRenderer& renderer)
 		{
 			SceneLighting lighting;
@@ -285,22 +308,18 @@ namespace Game
 			}
 			else if (map == MapKind::SkyRuins)
 			{
-				lighting.SunDirection = { -0.38f, -1.0f, 0.55f };
-				lighting.SunColor = { 1.0f, 0.96f, 0.88f };
-				lighting.SunIntensity = 2.3f;
-				lighting.SkyColor = { 0.34f, 0.46f, 0.64f };
-				lighting.GroundColor = { 0.3f, 0.32f, 0.36f };
 				lighting.EmissionGi = 2.5f;
 				lighting.Floating = true;
 				lighting.Daylight = true;
-				lighting.Haze = { 0.56f, 0.68f, 0.86f };
-				lighting.Grade = { .Saturation = 1.04f, .MidSaturation = 0.12f, .Shadows = { 0.93f, 0.97f, 1.07f }, .Highlights = { 1.03f, 1.01f, 0.97f } };
+				lighting.ContactShadow = 0.45f;
+				ApplyHallDusk(lighting, 0.0f);
 			}
 			else if (map == MapKind::StormPeak)
 			{
-				lighting.SunDirection = { 0.62f, -0.66f, 0.42f };
-				lighting.SunColor = { 0.94f, 0.9f, 0.96f };
-				lighting.SunIntensity = 2.6f;
+				lighting.SunDirection = { 0.612f, -0.659f, -0.437f };
+				lighting.SunColor = { 0.84f, 0.81f, 1.0f };
+				lighting.SunIntensity = 3.0f;
+				lighting.ContactShadow = 0.45f;
 				lighting.SkyColor = { 0.27f, 0.29f, 0.48f };
 				lighting.GroundColor = { 0.15f, 0.15f, 0.17f };
 				lighting.EmissionGi = 3.0f;
@@ -715,12 +734,25 @@ namespace Game
 			return false;
 		if (!level->Peak.IsEmpty() && level->Peak.RimDistance(position) < 0.0f)
 			return true;
+		if (!level->Hall.IsEmpty())
+			return level->Hall.Outline.RimDistance(position) < 0.0f;
 		return !level->Map.IsInside(int32_t(std::floor(position.x)), int32_t(std::floor(position.y))) || level->Map.IsAbyssAt(position);
+	}
+
+	bool SessionState::OverGap(Vec2 position) const
+	{
+		const Level* level = m_Client.GetLevel();
+		return level && !level->Peak.IsEmpty() && level->Peak.RimDistance(position) < 0.0f;
 	}
 
 	bool SessionState::InStorm() const
 	{
 		return m_Client.GetSession().Map == MapKind::StormPeak;
+	}
+
+	Fx SessionState::BurnBurst() const
+	{
+		return InStorm() ? Fx::LightningBurst : m_Client.GetSession().Map == MapKind::SkyRuins ? Fx::FrostBurst : Fx::FireBurst;
 	}
 
 	float SessionState::LaunchHeight(const EntityState& entity) const
@@ -1022,7 +1054,7 @@ namespace Game
 	std::optional<glm::vec3> SessionState::MouseAimPoint() const
 	{
 		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
-		return MouseOnPlane((self ? GroundHeight(self->Position) : 0.0f) + ProjectileHeight);
+		return MouseOnPlane((self ? (OverGap(self->Position) ? m_CameraTarget.y : GroundHeight(self->Position)) : 0.0f) + ProjectileHeight);
 	}
 
 	std::optional<glm::vec2> SessionState::ProjectToScreen(const glm::vec3& position) const
@@ -1046,7 +1078,11 @@ namespace Game
 		bool falling = false;
 		bool aloft = false;
 		if (watched)
+		{
 			target = Ground(watched->Position);
+			if (m_CameraPlaced && OverGap(watched->Position))
+				target.y = m_CameraTarget.y;
+		}
 		else if (const EntityState* player = m_Client.FindEntity(m_Client.GetPlayerNetId()))
 		{
 			target = Ground(player->Position);
@@ -1058,7 +1094,7 @@ namespace Game
 				target.x = ledge.x;
 				target.z = ledge.y;
 			}
-			if (m_CameraPlaced && aloft)
+			if (m_CameraPlaced && (aloft || OverGap(player->Position)))
 				target.y = m_CameraTarget.y;
 		}
 		else if (level)
@@ -1225,10 +1261,10 @@ namespace Game
 				if (entity.Has(EntityFlags::Flung) && !fx.Last.Has(EntityFlags::Flung))
 					m_Effects->Burst(Fx::Dodge, Ground(entity.Position, 0.2f), glm::vec3(0.0f, 1.0f, 0.0f), 1.4f);
 				if (entity.Has(EntityFlags::Burning) && !fx.Last.Has(EntityFlags::Burning))
-					m_Effects->Burst(InStorm() ? Fx::LightningBurst : Fx::FireBurst, Ground(entity.Position, InStorm() ? 0.9f : 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.7f);
+					m_Effects->Burst(BurnBurst(), Ground(entity.Position, InStorm() ? 0.9f : 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.7f);
 			}
 			if (!inserted && entity.Kind == EntityKind::Dummy && entity.Has(EntityFlags::Burning) && !fx.Last.Has(EntityFlags::Burning))
-				m_Effects->Burst(InStorm() ? Fx::LightningBurst : Fx::FireBurst, Ground(entity.Position, InStorm() ? 0.6f : 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.8f);
+				m_Effects->Burst(BurnBurst(), Ground(entity.Position, InStorm() ? 0.6f : 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), 0.8f);
 			if (entity.Has(EntityFlags::Falling) || entity.Has(EntityFlags::Lifted))
 			{
 				if (fx.FallAge < 0.0f)
@@ -1340,7 +1376,7 @@ namespace Game
 				const glm::vec3 splash = Ground(fx.Last.Position, 0.15f);
 				const float size = DummyKind(fx.Last.Variant) == DummyKind::Golden ? 1.6f : 1.0f;
 				if (fx.Last.Has(EntityFlags::Burning))
-					m_Effects->Burst(InStorm() ? Fx::LightningBurst : Fx::FireBurst, splash, glm::vec3(0.0f, 1.0f, 0.0f), size);
+					m_Effects->Burst(BurnBurst(), splash, glm::vec3(0.0f, 1.0f, 0.0f), size);
 				else
 					m_Effects->Burst(Fx::Dodge, splash, glm::vec3(0.0f, 1.0f, 0.0f), 1.4f * size);
 				m_Effects->Burst(Fx::Debris, splash, glm::vec3(0.0f, 1.0f, 0.0f), 0.8f * size);
@@ -1403,10 +1439,12 @@ namespace Game
 			if (entity.Kind != EntityKind::Player)
 				continue;
 			const bool abyss = m_Client.GetSession().Mode == GameMode::Brawl && (entity.Has(EntityFlags::Falling) || entity.Has(EntityFlags::Dead)) && m_LevelRenderer.IsOverSky(&m_Client.GetStatus().Brawl, entity.Position, m_Client.GetArenaClock(m_Client.GetPresentTick()));
-			const float target = abyss ? SkyAbyss : GroundHeight(entity.Position);
+			float target = abyss ? SkyAbyss : GroundHeight(entity.Position);
 			const auto [it, inserted] = m_BodyHeights.try_emplace(entity.NetId, Body{ target, 0.0f, true });
 			Body& body = it->second;
 			body.Seen = true;
+			if (!abyss && OverGap(entity.Position))
+				target = body.Height;
 			if (entity.Has(EntityFlags::Falling))
 			{
 				body.Speed += FallGravity * dt;
@@ -1841,11 +1879,11 @@ namespace Game
 		}
 		else if (const Level* level = m_Client.GetLevel(); level && level->Skyborne && m_Client.GetSession().Mode == GameMode::Brawl)
 		{
-			const Gust gust = GustAt(m_Client.GetStatus().Brawl.Plan, m_Client.GetArenaClock(m_Client.GetPresentTick()));
-			const Vec2 direction = gust.Warning > 0.0f ? gust.Direction : FromAngle(0.6f);
-			const float rate = 7.0f + 45.0f * gust.Warning * (1.0f - gust.Strength) + 150.0f * gust.Strength;
-			const float lift = 0.3f + 1.9f * (0.5f + 0.5f * std::sin(m_Time * 53.7f));
-			m_Effects->Stream(Fx::WindStreak, m_CameraTarget + glm::vec3(-direction.x * 6.0f, lift, -direction.y * 6.0f), glm::vec3(direction.x, 0.0f, direction.y), rate, dt);
+			if (!level->Hall.IsEmpty())
+			{
+				const float angle = m_Time * 29.3f;
+				m_Effects->Stream(Fx::SunDust, m_CameraTarget + glm::vec3(5.0f * std::sin(angle), 1.2f + 1.0f * std::sin(angle * 1.7f), 5.0f * std::cos(angle * 0.7f)), glm::vec3(0.2f, 0.25f, 0.1f), 9.0f, dt);
+			}
 		}
 		if (const Level* level = m_Client.GetLevel(); level && m_Client.GetSession().Mode == GameMode::Brawl && level->Kind != MapKind::FrozenLake && !level->Skyborne)
 		{
@@ -1971,7 +2009,7 @@ namespace Game
 						m_Effects->Converge(uint64_t(entity.NetId) | (15ull << 40), BodyBase(entity, ObsidianHoldHeight) + Heading(entity.Facing) * 0.3f, 0.75f, 70.0f, 0.12f, dt, 0.7f, ParticleKind::Streak, ObsidianSheen * 0.55f, 0.35f, 0.9f);
 				}
 				if (entity.Has(EntityFlags::Burning) && !entity.Has(EntityFlags::Dead))
-					m_Effects->Trail(InStorm() ? Fx::StormCrackle : Fx::Campfire, uint64_t(entity.NetId) | (3ull << 40), Ground(entity.Position, InStorm() ? 0.85f : 0.05f), dt, 0.55f);
+					m_Effects->Trail(InStorm() ? Fx::StormCrackle : m_Client.GetSession().Map == MapKind::SkyRuins ? Fx::FrostTrail : Fx::Campfire, uint64_t(entity.NetId) | (3ull << 40), Ground(entity.Position, InStorm() ? 0.85f : 0.05f), dt, 0.55f);
 				if (entity.AimsFromPoint() && !entity.Has(EntityFlags::Dead))
 				{
 					const auto fx = m_Fx.find(entity.NetId);
@@ -2205,7 +2243,7 @@ namespace Game
 		if (entity.Has(EntityFlags::Burning))
 		{
 			const MapKind map = m_Client.GetSession().Map;
-			return map == MapKind::FrozenLake ? ElementColor(Element::Cold) : map == MapKind::StormPeak ? StormDeath : ElementColor(Element::Fire);
+			return map == MapKind::FrozenLake ? ElementColor(Element::Cold) : map == MapKind::StormPeak ? StormDeath : map == MapKind::SkyRuins ? glm::vec3(0.2f, 0.85f, 0.72f) : ElementColor(Element::Fire);
 		}
 		if (fx.SinceHit < KillWindow && fx.HitElement != Element::Physical)
 			return ElementColor(fx.HitElement);
@@ -2242,7 +2280,7 @@ namespace Game
 		if (entity.Has(EntityFlags::Chilled))
 			color = glm::mix(color, glm::vec3(0.6f, 0.85f, 1.0f), 0.5f);
 		if (entity.Has(EntityFlags::Burning))
-			color = InStorm() ? glm::mix(color, glm::vec3(0.62f, 0.76f, 1.0f), 0.35f + (std::fmod(std::floor(m_Time * 14.0f) * 0.618f + float(entity.NetId) * 0.37f, 1.0f) > 0.5f ? 0.3f : 0.0f)) : glm::mix(color, glm::vec3(1.0f, 0.5f, 0.28f), 0.45f + 0.15f * std::sin(m_Time * 11.0f + float(entity.NetId)));
+			color = InStorm() ? glm::mix(color, glm::vec3(0.62f, 0.76f, 1.0f), 0.35f + (std::fmod(std::floor(m_Time * 14.0f) * 0.618f + float(entity.NetId) * 0.37f, 1.0f) > 0.5f ? 0.3f : 0.0f)) : glm::mix(color, m_Client.GetSession().Map == MapKind::SkyRuins ? glm::vec3(0.45f, 1.0f, 0.88f) : glm::vec3(1.0f, 0.5f, 0.28f), 0.45f + 0.15f * std::sin(m_Time * 11.0f + float(entity.NetId)));
 		return glm::vec4(color, 0.0f);
 	}
 
@@ -2293,6 +2331,15 @@ namespace Game
 
 		m_Lighting = MapLighting(level->Kind, renderer);
 		m_Lighting.Time = m_Time;
+		if (m_Lighting.Daylight)
+		{
+			const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+			const bool live = brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over;
+			const float target = live ? HallDusk(brawl.Plan, m_Client.GetArenaClock(m_Client.GetPresentTick())) : 0.0f;
+			m_Dusk += (target - m_Dusk) * (1.0f - std::exp(-2.0f * std::max(m_Time - m_DuskTime, 0.0f)));
+			m_DuskTime = m_Time;
+			ApplyHallDusk(m_Lighting, m_Dusk);
+		}
 		if (m_Lighting.Storm)
 		{
 			const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
@@ -2304,11 +2351,13 @@ namespace Game
 			m_Lighting.Eye = ring.Active ? glm::vec4(ring.Center.x, ring.Center.y, ring.Radius, StormSunlight) : glm::vec4(0.0f);
 			m_Lighting.SunIntensity *= 1.0f - 0.5f * storm * storm;
 			m_Lighting.SunColor = glm::mix(m_Lighting.SunColor, glm::vec3(0.82f, 0.86f, 1.0f), storm * storm);
-			m_Lighting.SkyColor = glm::mix(m_Lighting.SkyColor, glm::vec3(0.13f, 0.13f, 0.25f), storm);
-			m_Lighting.GroundColor = glm::mix(m_Lighting.GroundColor, glm::vec3(0.06f, 0.06f, 0.1f), storm);
+			m_Lighting.SkyColor = glm::mix(m_Lighting.SkyColor, glm::vec3(0.085f, 0.085f, 0.19f), storm);
+			m_Lighting.GroundColor = glm::mix(m_Lighting.GroundColor, glm::vec3(0.045f, 0.045f, 0.08f), storm);
 			m_Lighting.Haze = glm::mix(m_Lighting.Haze, glm::vec3(0.055f, 0.052f, 0.11f), storm);
 			m_Lighting.SkyColor += glm::vec3(0.5f, 0.6f, 0.9f) * (1.4f * m_Flash);
 			m_Lighting.GroundColor += glm::vec3(0.25f, 0.3f, 0.45f) * m_Flash;
+			m_Lighting.SkyGlow = glm::vec4(glm::mix(glm::vec3(0.78f, 0.82f, 1.0f), glm::vec3(0.62f, 0.76f, 1.0f), m_Flash), 2.2f + 8.0f * m_Flash);
+			m_Lighting.Rain = 0.6f + 0.4f * (live ? StormBuild(brawl.Plan, clock) : 0.0f);
 		}
 		if (m_Lighting.Floating)
 			m_Lighting.Leviathan = LeviathanPass();
@@ -2363,6 +2412,7 @@ namespace Game
 			if (const Station* rift = level->FindStation(StationKind::ShardRift))
 				m_Crawlers->DrawRift(renderer, Ground(rift->Position), m_Time, m_Station == StationKind::ShardRift);
 		DrawStorm(renderer);
+		DrawHallRing(renderer);
 		DrawPeak(renderer);
 		DrawWonders(renderer);
 		DrawChessTable(renderer);

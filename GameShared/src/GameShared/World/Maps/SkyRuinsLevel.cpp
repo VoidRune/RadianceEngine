@@ -1,6 +1,7 @@
 #include "GameShared/Content/Brawl.h"
 #include "GameShared/World/Level.h"
 #include "GameShared/World/LevelBuilder.h"
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -8,46 +9,82 @@ namespace Game
 {
 	namespace
 	{
-		constexpr int32_t RuinsWidth = 84;
-		constexpr int32_t RuinsHeight = 72;
-		constexpr Vec2 Center = { 42.0f, 36.0f };
-		constexpr float TempleRadius = 11.5f;
-		constexpr float IsletDistance = 20.0f;
-		constexpr float IsletRadius = 4.2f;
-		constexpr float IslandRadius = 3.1f;
-		constexpr float IslandReach = 4.6f;
-		constexpr float IslandOverlap = 0.35f;
-		constexpr float CausewayHalfWidth = 1.25f;
-		constexpr uint32_t Islets = 3;
+		constexpr int32_t RuinsWidth = 64;
+		constexpr int32_t RuinsHeight = 56;
+		constexpr Vec2 Center = { 32.0f, 28.0f };
+		constexpr float GridSpacing = 0.25f;
+		constexpr float PropLane = 3.8f;
+		constexpr float PropInner = 6.6f;
+		constexpr float PropOuter = 11.2f;
 
-		template<typename Inside>
-		void Paint(LevelBuilder& builder, Inside&& inside)
+		float Wobble(Random& random, float amount)
 		{
-			TileMap& map = builder.GetMap();
-			for (int32_t y = 1; y < map.GetHeight() - 1; y++)
-				for (int32_t x = 1; x < map.GetWidth() - 1; x++)
-					if (inside(CellSeed({ x, y })))
-						builder.Fill({ x, y, 1, 1 }, TerrainId::Skystone);
+			return (random.Float() - 0.5f) * 2.0f * amount;
 		}
 
-		bool OnStone(const TileMap& map, Vec2 point, float margin)
+		float SegmentDistanceTo(Vec2 point, Vec2 a, Vec2 b)
 		{
-			const auto stone = [&](Vec2 sample)
+			const Vec2 along = b - a;
+			const float t = std::clamp(Dot(point - a, along) / std::max(LengthSquared(along), 1e-8f), 0.0f, 1.0f);
+			return Length(point - a - along * t);
+		}
+
+		Rotunda MakeHall(Random& random)
+		{
+			Rotunda hall;
+			hall.Center = Center;
+			hall.Radius = RotundaRadius;
+			hall.HoleRadius = RotundaHole;
+			const float phases[4] = { random.Float() * 6.28f, random.Float() * 6.28f, random.Float() * 6.28f, random.Float() * 6.28f };
+			const auto holeAt = [&](float angle)
 			{
-				const CellCoord cell = CellAt(sample);
-				return map.GetTerrain(cell.X, cell.Y) == TerrainId::Skystone;
+				const float smooth = 0.34f * std::sin(angle * 3.0f + phases[0]) + 0.24f * std::sin(angle * 5.0f + phases[1]);
+				const float jag = 0.16f * std::sin(angle * 11.0f + phases[2]) + 0.12f * std::sin(angle * 23.0f + phases[3]);
+				return RotundaHole + smooth + jag;
 			};
-			if (!stone(point))
+			for (const float degrees : { RotundaDoorAngle, 180.0f - RotundaDoorAngle, RotundaSouthBalcony + Wobble(random, 3.0f), 180.0f - RotundaSouthBalcony + Wobble(random, 3.0f) })
+			{
+				const float angle = degrees * Pi / 180.0f;
+				const float radius = 2.4f + 0.35f * random.Float();
+				hall.Balconies.push_back({ Center + FromAngle(angle) * (RotundaRadius + RotundaWallDepth + radius - 0.1f), radius, angle });
+			}
+
+			Plateau& plate = hall.Outline;
+			plate.Origin = { 0.0f, 0.0f };
+			plate.Spacing = GridSpacing;
+			plate.Columns = int32_t(float(RuinsWidth) / GridSpacing) + 1;
+			plate.Rows = int32_t(float(RuinsHeight) / GridSpacing) + 1;
+			plate.Center = Center;
+			plate.Rim.resize(size_t(plate.Columns) * size_t(plate.Rows));
+			for (int32_t j = 0; j < plate.Rows; j++)
+				for (int32_t i = 0; i < plate.Columns; i++)
+				{
+					const Vec2 point = plate.Origin + Vec2(float(i), float(j)) * GridSpacing;
+					const Vec2 offset = point - Center;
+					const float distance = Length(offset);
+					float rim = std::min(RotundaRadius - distance, distance - holeAt(AngleOf(offset)));
+					for (size_t b = 0; b < hall.Balconies.size(); b++)
+					{
+						const Rotunda::Balcony& balcony = hall.Balconies[b];
+						const Vec2 door = Center + FromAngle(balcony.Angle) * (RotundaRadius - 0.3f);
+						const float path = RotundaDoorHalf - SegmentDistanceTo(point, door, balcony.Center);
+						const float own = std::max(balcony.Radius - Length(point - balcony.Center), path);
+						rim = std::max(rim, own);
+					}
+					plate.Rim[size_t(j) * size_t(plate.Columns) + size_t(i)] = rim;
+				}
+
+			return hall;
+		}
+
+		bool OpenFloor(const Rotunda& hall, Vec2 point, float margin)
+		{
+			if (hall.Outline.RimDistance(point) < margin || Length(point - hall.Center) > RotundaRadius - margin)
 				return false;
-			for (int32_t i = 0; i < 8; i++)
-				if (!stone(point + FromAngle(float(i) * (Pi * 0.25f)) * margin))
+			for (const Rotunda::Balcony& balcony : hall.Balconies)
+				if (SegmentDistanceTo(point, hall.Center + FromAngle(balcony.Angle) * RotundaRadius, balcony.Center) < RotundaDoorHalf + margin + 0.6f)
 					return false;
 			return true;
-		}
-
-		bool Place(LevelBuilder& builder, PropId id, Vec2 position, float yaw, float margin, float spacing = 0.3f)
-		{
-			return OnStone(builder.GetMap(), position, margin) && builder.TryProp(id, position, yaw, spacing);
 		}
 	}
 
@@ -55,108 +92,75 @@ namespace Game
 	{
 		LevelBuilder builder(MapKind::SkyRuins, seed, RuinsWidth, RuinsHeight, TerrainId::Sky);
 		Random& random = builder.GetRandom();
-		const Lobe temple = MakeLobe(random, Center, TempleRadius, 0.07f);
-		Paint(builder, [&](Vec2 seedPoint) { return temple.Contains(seedPoint); });
+		Rotunda hall = MakeHall(random);
+		TileMap& map = builder.GetMap();
+		for (int32_t y = 1; y < map.GetHeight() - 1; y++)
+			for (int32_t x = 1; x < map.GetWidth() - 1; x++)
+				if (hall.Outline.RimDistance(CellSeed({ x, y })) >= 0.0f)
+					builder.Fill({ x, y, 1, 1 }, TerrainId::Skystone);
 
-		const float turn = random.Float() * 2.0f * Pi;
-		std::vector<Lobe> islets;
-		std::vector<float> isletAngles;
-		for (uint32_t i = 0; i < Islets; i++)
-		{
-			const float angle = turn + float(i) * 2.0f * Pi / float(Islets) + (random.Float() - 0.5f) * 0.3f;
-			const Vec2 direction = FromAngle(angle);
-			const Lobe islet = MakeLobe(random, Center + direction * IsletDistance, IsletRadius * (0.9f + 0.2f * random.Float()), 0.12f);
-			const Vec2 from = Center + direction * (temple.Reach(angle) - 1.0f);
-			const Vec2 to = islet.Middle - direction * (islet.Radius - 1.0f);
-			const float sway = (random.Float() - 0.5f) * 0.6f;
-			Paint(builder, [&](Vec2 seedPoint)
+		const float wallRadius = RotundaRadius + 0.5f;
+		const float halfBay = RotundaBayDegrees * 0.5f * Pi / 180.0f;
+		const float chordHalf = RotundaRadius * std::tan(halfBay);
+		for (int32_t k = 0; k < RotundaBaysPerSide; k++)
+			for (const float side : { -1.0f, 1.0f })
 			{
-				const float along = std::clamp(Dot(seedPoint - from, to - from) / LengthSquared(to - from), 0.0f, 1.0f);
-				const Vec2 axis = Lerp(from, to, along) + Perpendicular(direction) * (sway * std::sin(along * Pi));
-				return islet.Contains(seedPoint) || Length(seedPoint - axis) < CausewayHalfWidth;
-			});
-			islets.push_back(islet);
-			isletAngles.push_back(angle);
-		}
-
-		const TileMap& map = builder.GetMap();
-		std::vector<DriftIsland> islands;
-		for (uint32_t i = 0; i < Islets; i++)
-		{
-			const float angle = turn + (float(i) + 0.5f) * 2.0f * Pi / float(Islets) + (random.Float() - 0.5f) * 0.2f;
-			const Vec2 direction = FromAngle(angle);
-			float rim = temple.Reach(angle) - 1.0f;
-			while (rim < TempleRadius * 2.0f)
-			{
-				const CellCoord cell = CellAt(Center + direction * rim);
-				if (map.GetTerrain(cell.X, cell.Y) != TerrainId::Skystone)
-					break;
-				rim += 0.1f;
+				const float angle = RotundaBayAngle(k, side);
+				const Vec2 direction = FromAngle(angle);
+				const Vec2 middle = Center + direction * wallRadius;
+				const float yaw = angle + Pi * 0.5f;
+				if (k == RotundaDoorBay)
+				{
+					const float jamb = 0.5f * (chordHalf + RotundaDoorHalf);
+					const Vec2 along = FromAngle(yaw);
+					builder.Prop(PropId::ObservatoryJamb, middle + along * jamb, yaw);
+					builder.Prop(PropId::ObservatoryJamb, middle - along * jamb, yaw);
+				}
+				else
+					builder.Prop(PropId::ObservatoryWall, middle, yaw);
+				if (k > 0)
+					builder.Prop(PropId::ObservatoryPier, Center + FromAngle(angle + side * halfBay) * (RotundaRadius + 0.1f));
+				if (k == RotundaNicheBayA || k == RotundaNicheBayB)
+					builder.Prop(PropId::ObservatoryStatue, Center + direction * (RotundaRadius - 0.5f), yaw + Pi);
 			}
-			const float radius = IslandRadius * (0.92f + 0.16f * random.Float());
-			const Lobe shape = MakeLobe(random, Center + direction * (rim + radius - IslandOverlap), radius, 0.1f);
-			DriftIsland island;
-			island.Center = shape.Middle;
-			island.Axis = direction;
-			island.Reach = IslandReach * (0.9f + 0.2f * random.Float());
-			island.Period = 18.0f + 8.0f * random.Float();
-			island.Phase = random.Float();
-			for (int32_t y = int32_t(shape.Middle.y - radius) - 2; y <= int32_t(shape.Middle.y + radius) + 2; y++)
-				for (int32_t x = int32_t(shape.Middle.x - radius) - 2; x <= int32_t(shape.Middle.x + radius) + 2; x++)
-					if (map.GetTerrain(x, y) == TerrainId::Sky && shape.Contains(CellSeed({ x, y })))
-						island.Cells.push_back({ x, y });
-			islands.push_back(std::move(island));
-		}
+		builder.Prop(PropId::ObservatoryDais, Center + Vec2(0.0f, RotundaRadius - 0.3f));
 
-		for (uint32_t i = 0; i < Islets; i++)
+		std::vector<Vec2> placed;
+		const auto place = [&](PropId id, float yaw)
 		{
-			const Vec2 direction = FromAngle(isletAngles[i]);
-			for (float inset = 1.6f; inset < 3.5f; inset += 0.3f)
-				if (builder.TryProp(PropId::RuinArch, Center + direction * (temple.Reach(isletAngles[i]) - inset), AngleOf(Perpendicular(direction)), 0.1f))
-					break;
-		}
-		const float colonnade = 6.6f;
-		for (uint32_t i = 0; i < 10; i++)
-		{
-			const float angle = turn + float(i) * 2.0f * Pi / 10.0f;
-			const PropId kind = i % 5 == 1 ? PropId::RuinStump : i % 3 == 0 ? PropId::RuinBrokenColumn : PropId::RuinColumn;
-			if (i % 5 != 3)
-				Place(builder, kind, Center + FromAngle(angle) * colonnade, random.Float() * 2.0f * Pi, 0.6f);
-			else
-				Place(builder, PropId::RuinDrum, Center + FromAngle(angle) * colonnade, angle + Pi * 0.5f + (random.Float() - 0.5f) * 0.6f, 0.7f);
-		}
-		Place(builder, PropId::RuinPedestal, Center, turn, 0.8f);
-		for (uint32_t i = 0; i < 4; i++)
-		{
-			const float angle = turn + Pi / 3.0f + float(i) * Pi * 0.5f + (random.Float() - 0.5f) * 0.4f;
-			const Vec2 spot = Center + FromAngle(angle) * (9.0f + random.Float() * 0.6f);
-			Place(builder, i % 2 == 0 ? PropId::RuinWall : PropId::RuinWallShort, spot, angle + Pi * 0.5f, 0.9f);
-		}
-		for (uint32_t i = 0; i < Islets; i++)
-		{
-			const Vec2 direction = FromAngle(isletAngles[i]);
-			const Lobe& islet = islets[i];
-			const PropId feature[] = { PropId::RuinPedestal, PropId::RuinWall, PropId::RuinColumn };
-			Place(builder, feature[i % std::size(feature)], islet.Middle + direction * 0.6f, isletAngles[i] + Pi * 0.5f, 0.9f);
-			for (uint32_t k = 0; k < 3; k++)
+			for (uint32_t attempt = 0; attempt < 60; attempt++)
 			{
-				const float around = isletAngles[i] + Pi * 0.5f + float(k) * Pi * 0.5f + (random.Float() - 0.5f) * 0.5f;
-				const PropId kind = k == 1 ? PropId::RuinCapital : k == 2 ? PropId::RuinStump : PropId::RuinBrokenColumn;
-				Place(builder, kind, islet.Middle + FromAngle(around) * (islet.Radius * 0.55f), random.Float() * 2.0f * Pi, 0.6f);
+				const float angle = random.Float() * 2.0f * Pi;
+				const float radius = PropInner + (PropOuter - PropInner) * random.Float();
+				const Vec2 spot = Center + FromAngle(angle) * radius;
+				bool crowded = !OpenFloor(hall, spot, 1.3f);
+				for (const Vec2 other : placed)
+					crowded = crowded || LengthSquared(other - spot) < PropLane * PropLane;
+				if (!crowded && builder.TryProp(id, spot, yaw < 0.0f ? angle + Pi * 0.5f + Wobble(random, 0.45f) : yaw, 0.4f))
+				{
+					placed.push_back(spot);
+					return;
+				}
 			}
-		}
-		for (uint32_t attempt = 0, placed = 0; attempt < 300 && placed < 26; attempt++)
+		};
+		place(PropId::RuinFallenColumn, -1.0f);
+		place(PropId::RuinFallenColumn, -1.0f);
+		place(PropId::ObservatoryInstrument, random.Float() * 2.0f * Pi);
+		place(PropId::ObservatoryInstrument, random.Float() * 2.0f * Pi);
+		place(random.Float() < 0.5f ? PropId::RuinStump : PropId::RuinBrokenColumn, random.Float() * 2.0f * Pi);
+
+		for (uint32_t attempt = 0, debris = 0; attempt < 200 && debris < 8; attempt++)
 		{
-			const Vec2 spot = Center + FromAngle(random.Float() * 2.0f * Pi) * (3.0f + random.Float() * 20.0f);
-			if (Place(builder, PropId::RuinRubble, spot, random.Float() * 2.0f * Pi, 0.5f, 0.8f))
-				placed++;
+			const Vec2 spot = Center + FromAngle(random.Float() * 2.0f * Pi) * (5.6f + 7.0f * random.Float());
+			if (OpenFloor(hall, spot, 0.9f) && builder.TryProp(PropId::RuinRubble, spot, random.Float() * 2.0f * Pi, 1.2f))
+				debris++;
 		}
 
-		builder.SetPlayerSpawn(Center);
-		builder.Region("The Sky Ruins", { 0, 0, RuinsWidth, RuinsHeight }, false);
+		builder.SetPlayerSpawn(Center + Vec2(0.0f, -9.0f));
+		builder.Region("The Sky Observatory", { 0, 0, RuinsWidth, RuinsHeight }, false);
+		builder.SetRotunda(std::move(hall));
 		Level level = builder.Finish();
 		level.Skyborne = true;
-		level.Islands = std::move(islands);
 		return level;
 	}
 }

@@ -40,6 +40,7 @@ namespace Game
 		void Pad(Vec2 position, PadKind kind);
 		void Roof(const TileRect& area, float height);
 		void SetRounded();
+		void SetRotunda(Rotunda hall);
 		const Level& GetLevel() const { return m_Level; }
 		Level Finish();
 

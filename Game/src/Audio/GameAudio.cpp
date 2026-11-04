@@ -308,7 +308,7 @@ namespace Game
 			if (const auto it = m_Tracked.find(hit.Target); it != m_Tracked.end())
 				it->second.SinceHit = 0.0f;
 
-		m_Storm = client.GetSession().Map == MapKind::StormPeak;
+		m_Storm = client.GetSession().Map == MapKind::StormPeak || client.GetSession().Map == MapKind::SkyRuins;
 		for (const EntityState& entity : client.GetEntities())
 		{
 			const auto [it, inserted] = m_Tracked.try_emplace(entity.NetId);
@@ -398,11 +398,6 @@ namespace Game
 				PlayAt(Cue::Thunder, m_Focus + FromAngle(angle) * 14.0f, 0.65f, 0.8f + 0.25f * m_Random.Float(), 0.0f, 10.0f);
 				m_NextThunder = 5.0f + 7.0f * m_Random.Float();
 			}
-		}
-		if (session.Mode == GameMode::Brawl && session.Map == MapKind::SkyRuins && status.Brawl.Phase == BrawlPhase::Fight)
-		{
-			const Gust gust = GustAt(status.Brawl.Plan, client.GetArenaClock(client.GetPresentTick()));
-			storm = 0.3f * gust.Warning * (1.0f - gust.Strength) + 0.85f * gust.Strength;
 		}
 		if (session.Mode == GameMode::Brawl && session.Map == MapKind::StormPeak)
 		{

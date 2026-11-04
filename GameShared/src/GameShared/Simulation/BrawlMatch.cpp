@@ -68,7 +68,7 @@ namespace Game
 		Random& random = world.GetRandom();
 		m_Brawl.Plan.Shape = ShapeOf(world.GetLevel().Kind);
 		const Vec2 wander = FromAngle(random.Float() * 2.0f * Pi) * (ArenaWander * std::sqrt(random.Float()));
-		m_Brawl.Plan.Center = world.GetLevel().PlayerSpawn + (m_Brawl.Plan.Shape == BrawlShape::Peak ? Vec2{} : wander);
+		m_Brawl.Plan.Center = !world.GetLevel().Hall.IsEmpty() ? world.GetLevel().Hall.Center : world.GetLevel().PlayerSpawn + (m_Brawl.Plan.Shape == BrawlShape::Peak ? Vec2{} : wander);
 		m_Brawl.Plan.Seed = random.Next() | 1u;
 		m_Brawl.Plan.CraterCount = 0;
 		m_Brawl.Plan.BoltCount = 0;
@@ -528,7 +528,7 @@ namespace Game
 
 	void MatchDirector::UpdateLava(World& world, float dt)
 	{
-		const bool peak = m_Brawl.Plan.Shape == BrawlShape::Peak;
+		const bool peak = m_Brawl.Plan.Shape == BrawlShape::Peak || m_Brawl.Plan.Shape == BrawlShape::Ruins;
 		if (world.GetLevel().Skyborne)
 		{
 			UpdateFalls(world, dt);

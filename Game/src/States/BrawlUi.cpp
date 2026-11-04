@@ -45,11 +45,13 @@ namespace Game
 		constexpr float PeakBoltScale = 1.3f;
 		constexpr float SpireBoltScale = 1.5f;
 		constexpr glm::vec3 PeakLight{ 5.9f, 4.2f, 14.0f };
-		constexpr float ScorchSeconds = 3.0f;
+		constexpr float ScorchSeconds = 7.0f;
+		constexpr float ScorchHeatSeconds = 4.5f;
 		constexpr float RingSegment = 0.9f;
 		constexpr glm::vec3 BoltBlue{ 0.55f, 0.78f, 1.0f };
 		constexpr glm::vec3 RitualBlue{ 0.42f, 0.62f, 1.0f };
 		constexpr glm::vec3 StormViolet{ 0.46f, 0.38f, 1.0f };
+		constexpr glm::vec3 HallFieldGlow{ 0.12f, 0.6f, 0.5f };
 
 		std::vector<float> SpireStrikes(const CollapsePlan& plan, float from, float to)
 		{
@@ -72,7 +74,7 @@ namespace Game
 		constexpr glm::vec3 StarlightPale{ 0.55f, 0.66f, 1.0f };
 		constexpr float SigilScale = 1.05f;
 		constexpr const char* BotLevelNames[] = { "Easy", "Normal", "Hard" };
-		constexpr const char* ArenaNames[] = { "Random", "Caldera", "Frozen Lake", "Sky Ruins", "Storm Peak" };
+		constexpr const char* ArenaNames[] = { "Random", "Caldera", "Frozen Lake", "Sky Observatory", "Storm Peak" };
 		constexpr const char* ModeNames[] = { "Damage", "Knockback" };
 		constexpr const char* GateTabs[] = { "Match", "Custom", "Teams" };
 		constexpr const char* RunOnlyNames[] = { "Every kind", "Quartz", "Jade", "Sapphire", "Ruby", "Amethyst", "Prismatic" };
@@ -251,6 +253,8 @@ namespace Game
 
 		float FinalCollapse(const CollapsePlan& plan)
 		{
+			if (plan.Shape == BrawlShape::Ruins)
+				return HallRingClose;
 			if (plan.Shape == BrawlShape::Peak)
 				return RingClose;
 			return std::max(CollapseGrace + (plan.StartRadius - CollapseMinRadius) / CollapseRate, FinalCollapseStart);
@@ -564,9 +568,6 @@ namespace Game
 					for (int32_t x = 0; x < map.GetWidth(); x++)
 						if (IsBrawlFloor(map.GetTerrain(x, y)) && TileCollapseTime(m_SeenPlan, x, y) <= m_SeenClock && TileCollapseTime(brawl.Plan, x, y) > brawl.Clock)
 							m_Risen[size_t(y) * size_t(map.GetWidth()) + size_t(x)] = 1;
-				for (const DriftIsland& island : level->Islands)
-					if (!island.Cells.empty() && IslandCollapseTime(m_SeenPlan, island) <= m_SeenClock && IslandCollapseTime(brawl.Plan, island) > brawl.Clock)
-						m_Risen[size_t(island.Cells.front().Y) * size_t(map.GetWidth()) + size_t(island.Cells.front().X)] = 1;
 				m_RestoreAge = 0.0f;
 			}
 			m_SeenPlan = brawl.Plan;
@@ -574,6 +575,8 @@ namespace Game
 		}
 		m_SeenClock = brawl.Clock;
 		if (brawl.Clock < 0.0f)
+			return;
+		if (!level->Hall.IsEmpty())
 			return;
 		const Vec2 focus = { m_CameraTarget.x, m_CameraTarget.z };
 		const int32_t minX = std::max(int32_t(focus.x - CrumbleRange), 0);
@@ -621,9 +624,34 @@ namespace Game
 			}
 	}
 
+	void SessionState::DrawHallRing(WorldRenderer& renderer) const
+	{
+		const Level* level = m_Client.GetLevel();
+		if (!level || level->Hall.IsEmpty() || m_Client.GetSession().Mode != GameMode::Brawl)
+			return;
+		const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+		if (brawl.Phase != BrawlPhase::Fight && brawl.Phase != BrawlPhase::Over)
+			return;
+		const float clock = m_Client.GetArenaClock(m_Client.GetPresentTick());
+		const StormRing ring = RingAt(brawl.Plan, clock);
+		if (!ring.Active || ring.Radius <= 0.05f)
+			return;
+		GroundDecal edge;
+		edge.Center = glm::vec3(ring.Center.x, -1.2f, ring.Center.y);
+		edge.Extent = glm::vec2(ring.Radius + 0.6f);
+		edge.Depth = 4.0f;
+		edge.Shape = DecalShape::Ring;
+		edge.Color = glm::vec4(0.1f, 0.5f, 0.42f, 1.0f);
+		edge.Tint = glm::vec4(0.0f);
+		edge.Params = glm::vec4(0.12f, 0.0f, 0.0f, ring.Radius / (ring.Radius + 0.6f));
+		edge.Seed = 2;
+		renderer.DrawDecal(edge);
+	}
+
 	void SessionState::UpdateStorm(const BrawlStatus& brawl)
 	{
 		const float clock = m_Client.GetArenaClock(m_Client.GetPresentTick());
+		std::erase_if(m_BoltMarks, [clock](const BoltMark& mark) { return clock < mark.Time || clock - mark.Time >= ScorchSeconds; });
 		const Level* level = m_Client.GetLevel();
 		if (level && clock > m_StormClock && clock - m_StormClock < 0.5f && (brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over))
 		{
@@ -641,7 +669,10 @@ namespace Game
 			};
 			for (const LightningBolt& bolt : BoltsOf(brawl.Plan))
 				if (bolt.Time > m_StormClock && bolt.Time <= clock)
+				{
 					thunder(Ground(bolt.Center), 1.0f);
+					m_BoltMarks.push_back({ bolt.Center, bolt.Time, BoltSeed(bolt) });
+				}
 			for (const float strike : SpireStrikes(brawl.Plan, m_StormClock, clock))
 			{
 				thunder(Ground(level->Peak.Center, SpireTop), 0.8f);
@@ -721,21 +752,23 @@ namespace Game
 				if (light > 0.02f)
 					renderer.DrawLight({ .Position = point + glm::vec3(0.0f, 1.4f, 0.0f), .Radius = 7.0f, .Color = PeakLight * light });
 			}
-			if (until <= 0.0f && until > -ScorchSeconds)
-			{
-				const float heat = 1.0f + until / ScorchSeconds;
-				GroundDecal scorch;
-				scorch.Center = point;
-				scorch.Extent = glm::vec2(BoltRadius * 0.85f);
-				scorch.Depth = 1.2f;
-				scorch.Shape = DecalShape::Scorch;
-				scorch.Color = glm::vec4(BoltBlue * 1.4f, 1.0f);
-				scorch.Tint = glm::vec4(0.03f, 0.03f, 0.035f, 0.75f * heat);
-				scorch.Roughness = 0.85f;
-				scorch.Params = glm::vec4(heat * heat, 0.0f, 0.0f, 0.0f);
-				scorch.Seed = seed;
-				renderer.DrawDecal(scorch);
-			}
+		}
+		for (const BoltMark& mark : m_BoltMarks)
+		{
+			const float age = std::max(clock - mark.Time, 0.0f);
+			const float fade = 1.0f - age / ScorchSeconds;
+			const float heat = std::max(1.0f - age / ScorchHeatSeconds, 0.0f);
+			GroundDecal scorch;
+			scorch.Center = Ground(mark.Center);
+			scorch.Extent = glm::vec2(BoltRadius * 0.85f);
+			scorch.Depth = 1.2f;
+			scorch.Shape = DecalShape::Scorch;
+			scorch.Color = glm::vec4(BoltBlue * 1.4f, 1.0f);
+			scorch.Tint = glm::vec4(0.012f, 0.012f, 0.016f, std::min(1.25f * fade * (2.0f - fade), 1.0f));
+			scorch.Roughness = 0.98f;
+			scorch.Params = glm::vec4(heat * (2.0f - heat) * heat, 0.0f, 0.0f, 0.0f);
+			scorch.Seed = mark.Seed;
+			renderer.DrawDecal(scorch);
 		}
 		const StormRing ring = RingAt(brawl.Plan, clock);
 		if (!ring.Active || ring.Radius <= 0.05f)
@@ -785,7 +818,8 @@ namespace Game
 		else if (entity.Has(EntityFlags::Burning))
 		{
 			const float flicker = 0.7f + 0.3f * std::sin(m_Time * 17.0f + float(entity.NetId) * 1.3f);
-			const glm::vec3 glow = m_Client.GetSession().Map == MapKind::FrozenLake ? FrostGlow : LavaGlow;
+			const MapKind map = m_Client.GetSession().Map;
+			const glm::vec3 glow = map == MapKind::FrozenLake ? FrostGlow : map == MapKind::SkyRuins ? HallFieldGlow : LavaGlow;
 			DrawGroundGlow(renderer, base, 0.9f, glow, 0.9f * flicker);
 			DrawGlow(renderer, base + glm::vec3(0.0f, 0.35f, 0.0f), 0.7f, glow * (0.6f * flicker));
 		}
@@ -834,31 +868,11 @@ namespace Game
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
 		const float clock = m_Client.GetArenaClock(m_Client.GetPresentTick());
-		const Gust gust = GustAt(brawl.Plan, clock);
-		if (gust.Warning > 0.0f)
-		{
-			const glm::vec3 from = Ground(Vec2(m_CameraTarget.x, m_CameraTarget.z));
-			const std::optional<glm::vec2> a = ProjectToScreen(from);
-			const std::optional<glm::vec2> b = ProjectToScreen(from + glm::vec3(gust.Direction.x, 0.0f, gust.Direction.y));
-			const float fade = std::min(gust.Warning * 2.0f, 1.0f) * (gust.Strength > 0.0f ? 0.55f + 0.45f * gust.Strength : 1.0f);
-			const char* label = gust.Strength > 0.0f ? "Gust!" : "A gust is coming";
-			const float y = ui.GetSize().y * 0.15f;
-			draw.TextAligned({ 0.0f, y - 12.0f, ui.GetSize().x * 0.5f - 6.0f, 24.0f }, label, Theme::Bold(18.0f, Hex(0xEAF5FF, fade)), { 1.0f, 0.5f });
-			if (a && b && glm::length(*b - *a) > 1.0f)
-			{
-				const glm::vec2 heading = glm::normalize(ui.ToLogical(*b) - ui.ToLogical(*a));
-				const float pulse = gust.Strength > 0.0f ? 1.0f : 0.75f + 0.25f * std::sin(m_Time * 9.0f);
-				const glm::vec2 middle = { ui.GetSize().x * 0.5f + 40.0f, y };
-				draw.Circle(middle, 26.0f, Rgba(0.05f, 0.08f, 0.16f, 0.35f * fade));
-				for (int32_t i = -1; i <= 1; i++)
-					draw.Triangle(middle + heading * (float(i) * 12.0f), { 14.0f, 11.0f }, std::atan2(heading.x, -heading.y), Hex(0xEAF5FF, fade * pulse * (0.45f + 0.25f * float(i + 1))));
-			}
-		}
 		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
 		if (!self || !m_Client.GetPredictedState().Alive || m_Client.GetPredictedState().IsFalling())
 			return;
 		const float throb = 0.7f + 0.3f * std::sin(m_Time * 7.0f);
-		const bool peak = level->Kind == MapKind::StormPeak;
+		const bool peak = level->Kind == MapKind::StormPeak || level->Kind == MapKind::SkyRuins;
 		if (peak && brawl.Phase == BrawlPhase::Fight)
 		{
 			const StormRing ring = RingAt(brawl.Plan, clock + RingLead);
@@ -904,6 +918,8 @@ namespace Game
 		const MapKind map = m_Client.GetSession().Map;
 		if (map == MapKind::FrozenLake)
 			draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.0f, 0.08f, 0.2f, 0.08f), .Glow = Rgba(0.35f, 0.75f, 1.0f, 0.5f * throb), .GlowSize = 160.0f });
+		else if (map == MapKind::SkyRuins)
+			draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.0f, 0.1f, 0.1f, 0.04f), .Glow = Rgba(0.15f, 0.8f, 0.68f, 0.45f * throb), .GlowSize = 160.0f });
 		else if (map == MapKind::StormPeak)
 			draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.05f, 0.04f, 0.18f, 0.12f), .Glow = Rgba(0.45f, 0.5f, 1.0f, 0.55f * throb), .GlowSize = 160.0f });
 		else
@@ -1071,19 +1087,20 @@ namespace Game
 			color = Theme::AccentLight;
 		}
 		else if (brawl.Phase == BrawlPhase::Fight && brawl.Plan.Steady)
-			line = brawl.Plan.Shape == BrawlShape::Peak ? "The storm holds off this match" : std::string("The ") + TermsFor(status.Map).Floor + " holds this match";
+			line = brawl.Plan.Shape == BrawlShape::Peak ? "The storm holds off this match" : brawl.Plan.Shape == BrawlShape::Ruins ? "The core's field holds off this match" : std::string("The ") + TermsFor(status.Map).Floor + " holds this match";
 		else if (brawl.Phase == BrawlPhase::Fight)
 		{
 			const float final = FinalCollapse(brawl.Plan);
 			const BrawlTerms& terms = TermsFor(status.Map);
 			const bool peak = brawl.Plan.Shape == BrawlShape::Peak;
-			const float grace = peak ? RingStart : CollapseGrace;
+			const bool hallRing = brawl.Plan.Shape == BrawlShape::Ruins;
+			const float grace = hallRing ? HallRingStart : peak ? RingStart : CollapseGrace;
 			if (peak && brawl.Clock < RingStart - RingWarning)
 				line = "Lightning strikes where the ground crackles";
 			else if (brawl.Clock < grace)
 			{
 				const std::string left = Seconds(grace - brawl.Clock);
-				line = peak ? "The storm closes in " + left + (left == "1" ? " second" : " seconds") : std::string("The ") + terms.Floor + " holds for " + left + (left == "1" ? " more second" : " more seconds");
+				line = hallRing ? "The core's field closes in " + left + (left == "1" ? " second" : " seconds") : peak ? "The storm closes in " + left + (left == "1" ? " second" : " seconds") : std::string("The ") + terms.Floor + " holds for " + left + (left == "1" ? " more second" : " more seconds");
 			}
 			else if (brawl.Clock < final)
 				line = terms.Breaking;
@@ -1849,7 +1866,7 @@ namespace Game
 		draw.TextAligned(row.CutLeft(170.0f), "Arena", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
 		ui.Choice(Ui::MakeId("brawlarena"), row.CutLeft(std::min(300.0f, row.W)), m_BrawlArena, ArenaNames);
 		const MapKind arena = ChosenArena();
-		const char* blurb = arena == MapKind::Caldera ? "A crumbling island of basalt on a lake of lava." : arena == MapKind::FrozenLake ? "Slippery ice, bouncing pillars and growing air holes." : arena == MapKind::SkyRuins ? "Ruins over open sky: drifting islands, gusts, and a long way down." : arena == MapKind::StormPeak ? "A summit plateau in a lightning storm, ringed by a long fall." : "A different arena every match.";
+		const char* blurb = arena == MapKind::Caldera ? "A crumbling island of basalt on a lake of lava." : arena == MapKind::FrozenLake ? "Slippery ice, bouncing pillars and growing air holes." : arena == MapKind::SkyRuins ? "A domed observatory above the clouds. A burning field closes in around the hole in its floor." : arena == MapKind::StormPeak ? "A summit plateau in a lightning storm, ringed by a long fall." : "A different arena every match.";
 		draw.TextFit(area.CutTop(22.0f), blurb, Theme::Body(13.5f, Theme::Muted));
 		area.CutTop(6.0f);
 	}

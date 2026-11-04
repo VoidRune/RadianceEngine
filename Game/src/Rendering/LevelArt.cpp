@@ -299,6 +299,12 @@ namespace Game
 				return { { { { .Mesh = "Ruins/Column_A" } } } };
 			case PropId::RuinBrokenColumn:
 				return { { { { .Mesh = "Ruins/Column_B" } } } };
+			case PropId::ObservatoryStatue:
+				return { { { { .Mesh = "Citadel/Statue_A" } } } };
+			case PropId::ObservatoryInstrument:
+				return { { { { .Mesh = "Citadel/Instrument_A" } } } };
+			case PropId::RuinFallenColumn:
+				return { { { { .Mesh = "Citadel/FallenColumn_A" } } } };
 			case PropId::RuinStump:
 				return { { { { .Mesh = "Ruins/Column_C" } } } };
 			case PropId::RuinDrum:
@@ -1006,24 +1012,45 @@ namespace Game
 			const int32_t cx = int32_t(std::floor(scaled.x));
 			const int32_t cy = int32_t(std::floor(scaled.y));
 			float nearest = 1e9f;
+			float second = 1e9f;
 			int32_t ox = cx;
 			int32_t oy = cy;
+			int32_t px = cx;
+			int32_t py = cy;
 			Vec2 feature = scaled;
+			Vec2 other = scaled;
 			for (int32_t dy = -1; dy <= 1; dy++)
 				for (int32_t dx = -1; dx <= 1; dx++)
 				{
 					const Vec2 spot(float(cx + dx) + Unit(cx + dx, cy + dy, 1541u), float(cy + dy) + Unit(cx + dx, cy + dy, 1542u));
 					if (const float distance = LengthSquared(scaled - spot); distance < nearest)
 					{
+						second = nearest;
+						px = ox;
+						py = oy;
+						other = feature;
 						nearest = distance;
 						ox = cx + dx;
 						oy = cy + dy;
 						feature = spot;
 					}
+					else if (distance < second)
+					{
+						second = distance;
+						px = cx + dx;
+						py = cy + dy;
+						other = spot;
+					}
 				}
 			const Vec2 bedding = FromAngle(TwoPi * ValueNoise(point * 0.05f, 1543u)) * 0.085f;
-			const Vec2 jitter = Vec2(Unit(ox, oy, 1544u) - 0.5f, Unit(ox, oy, 1545u) - 0.5f) * 0.12f;
-			return Dot(bedding + jitter, point - feature * Cell) + 0.03f * (Unit(ox, oy, 1546u) - 0.5f);
+			const auto plate = [&](int32_t x, int32_t y, Vec2 spot)
+			{
+				const Vec2 jitter = Vec2(Unit(x, y, 1544u) - 0.5f, Unit(x, y, 1545u) - 0.5f) * 0.12f;
+				return Dot(bedding + jitter, point - spot * Cell) + 0.03f * (Unit(x, y, 1546u) - 0.5f);
+			};
+			const float own = plate(ox, oy, feature);
+			const float shared = 0.5f * (own + plate(px, py, other));
+			return std::lerp(shared, own, Ease((std::sqrt(second) - std::sqrt(nearest)) * Cell / 0.3f));
 		}
 
 		float CliffRelief(const glm::vec3& point)
@@ -3605,7 +3632,7 @@ namespace Game
 				const auto rock = [&](const glm::vec3& centroid, float facet)
 				{
 					const float band = 0.5f + 0.5f * std::sin(centroid.y * 3.3f + 5.0f * Fbm(Vec2(centroid.x, centroid.z) * 0.27f, 733u, 2));
-					return glm::mix(ToColor(0x9A7F5E), ToColor(0xC2A783), band) * (0.84f + 0.24f * facet);
+					return glm::mix(ToColor(0x5E5548), ToColor(0x8F8169), band) * (0.8f + 0.3f * facet);
 				};
 				for (int32_t n = 0; n < Count; n++)
 				{
@@ -3630,7 +3657,7 @@ namespace Game
 					const glm::vec3 below(center.x, top - 20.0f, center.y);
 					const glm::vec3 apex(center.x, top - 5.0f * depth * 1.5f, center.y);
 					const uint32_t firstIndex = uint32_t(indices.size());
-					const glm::vec3 paving = glm::mix(ToColor(0xC4AB84), ToColor(0xD6C6A6), Unit(n, 10, 911u));
+					const glm::vec3 paving = glm::mix(ToColor(0x6F8440), ToColor(0x8C8F58), Unit(n, 10, 911u));
 					for (int32_t s = 0; s < Segments; s++)
 					{
 						const int32_t t = (s + 1) % Segments;
@@ -3641,7 +3668,7 @@ namespace Game
 							const glm::vec3& b = ring[size_t(r) * size_t(Segments) + size_t(t)];
 							const glm::vec3& c = ring[size_t(r + 1) * size_t(Segments) + size_t(t)];
 							const glm::vec3& d = ring[size_t(r + 1) * size_t(Segments) + size_t(s)];
-							const glm::vec3 color = r == 0 ? ToColor(0xB89F7A) : rock((a + b + c + d) * 0.25f, Unit(n * 64 + s, r, 929u));
+							const glm::vec3 color = r == 0 ? ToColor(0x5E7036) : rock((a + b + c + d) * 0.25f, Unit(n * 64 + s, r, 929u));
 							triangle(a, b, c, axis, color, piece);
 							triangle(a, c, d, axis, color, piece);
 						}
@@ -3655,7 +3682,7 @@ namespace Game
 					if (art.Variants.empty() || radius < 1.6f)
 						continue;
 					const std::vector<ResolvedPart>& variant = art.Variants[Hash(n, 12, 911u) % art.Variants.size()];
-					const glm::mat4 place = Translation({ center.x, top, center.y }) * RotationY(TwoPi * Unit(n, 15, 911u)) * Scaling(Uniform(0.85f + 0.3f * Unit(n, 16, 911u)));
+					const glm::mat4 place = Translation({ center.x, top, center.y }) * RotationY(TwoPi * Unit(n, 15, 911u)) * Scaling(Uniform(1.3f + 0.7f * Unit(n, 16, 911u)));
 					for (const ResolvedPart& decoration : variant)
 						if (decoration.Glow <= 0.0f && decoration.Fire < 0)
 							AddFloating(decoration.Mesh, place * decoration.Local, decoration.Tint, piece.Bob, piece.Phase);
@@ -5261,7 +5288,7 @@ namespace Game
 							continue;
 						}
 						const ModelInstance instance = m_Renderer.MakeModelInstance(part.Mesh, place * part.Local, NoPalette, part.Tint, 0.0f, base);
-						if ((m_Level.Skyborne && m_Level.Peak.IsEmpty()) || (m_Level.Kind == MapKind::FrozenLake && prop.Id == PropId::IcePillar))
+						if (m_Level.Kind == MapKind::FrozenLake && prop.Id == PropId::IcePillar)
 							m_Scene.Loose.push_back({ MakeItem(part.Mesh, instance, low, high, tall, base), prop.Position });
 						else
 							Insert(part.Mesh, instance, low, high, tall, base);

@@ -59,6 +59,9 @@ namespace Game
 
 		const Plateau* m_Peak = nullptr;
 		std::vector<float> m_Heights;
+		std::vector<float> m_Fine;
+		int32_t m_FineColumns = 0;
+		int32_t m_FineRows = 0;
 		std::vector<float> m_Hollows;
 		std::vector<float> m_Screes;
 		std::vector<float> m_Seams;

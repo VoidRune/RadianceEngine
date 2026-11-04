@@ -99,25 +99,66 @@ vec4 Leviathan(vec3 origin, vec3 direction, float time, float progress)
 const float CloudSea = -95.0;
 const float CloudWisps = -30.0;
 
-vec3 DaySky(vec3 origin, vec3 direction, float time, vec3 toLight)
+float SkyHash(vec2 cell)
+{
+	uvec2 q = uvec2(ivec2(cell) + ivec2(1 << 20));
+	q = q * uvec2(1597334677u, 3812015801u);
+	uint h = (q.x ^ q.y) * 1597334677u;
+	h ^= h >> 15;
+	h *= 2246822519u;
+	h ^= h >> 13;
+	return float(h) / 4294967295.0;
+}
+
+float SkyNoise(vec2 p)
+{
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	return mix(mix(SkyHash(i), SkyHash(i + vec2(1.0, 0.0)), u.x), mix(SkyHash(i + vec2(0.0, 1.0)), SkyHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float SkyFbm(vec2 p)
+{
+	const mat2 turn = mat2(1.6, 1.2, -1.2, 1.6);
+	float sum = 0.0;
+	float amplitude = 0.5;
+	for (int octave = 0; octave < 4; octave++)
+	{
+		sum += amplitude * SkyNoise(p);
+		p = turn * p + vec2(17.3, -9.1);
+		amplitude *= 0.5;
+	}
+	return sum / 0.9375;
+}
+
+vec3 DaySky(vec3 origin, vec3 direction, float time, vec3 toLight, float dusk)
 {
 	float down = max(-direction.y, 1e-3);
-	vec3 color = mix(vec3(0.5, 0.66, 0.88), vec3(0.25, 0.44, 0.76), smoothstep(0.15, 0.9, down));
+	vec2 sunward = normalize(toLight.xz + vec2(1e-4));
+	float facing = clamp(dot(normalize(direction.xz + vec2(1e-4)), sunward) * 0.5 + 0.5, 0.0, 1.0);
+	float sunSide = facing * facing * facing;
+	vec3 high = mix(vec3(0.42, 0.64, 0.92), mix(vec3(0.17, 0.12, 0.3), vec3(0.95, 0.42, 0.24), sunSide), dusk);
+	vec3 deep = mix(vec3(0.14, 0.36, 0.74), mix(vec3(0.035, 0.05, 0.16), vec3(0.28, 0.14, 0.26), sunSide), dusk);
+	vec3 color = mix(high, deep, smoothstep(0.15, 0.9, down));
 
 	vec2 sea = PlaneHit(origin, direction, CloudSea);
 	vec2 flow = vec2(0.0035, 0.0012) * time;
-	float shape = BackdropFbm(sea * 0.011 + flow);
-	vec2 sunward = normalize(toLight.xz + vec2(1e-4));
-	float toward = BackdropFbm((sea + sunward * 16.0) * 0.011 + flow);
-	float shade = clamp(0.62 + (shape - toward) * 2.4, 0.38, 1.0);
-	vec3 cloud = mix(vec3(0.56, 0.65, 0.8), vec3(1.0, 0.98, 0.94), smoothstep(0.5, 0.95, shape)) * shade;
-	color = mix(color, cloud, smoothstep(0.34, 0.7, shape) * 0.96);
+	float billow = SkyFbm(sea * 0.062 + flow * 3.0);
+	float shape = SkyFbm(sea * 0.017 + flow) * 0.78 + billow * 0.22;
+	float toward = SkyFbm((sea + sunward * 11.0) * 0.017 + flow) * 0.78 + SkyFbm((sea + sunward * 3.5) * 0.062 + flow * 3.0) * 0.22;
+	float shade = clamp(0.8 + (shape - toward) * mix(3.4, 6.0, dusk), mix(0.56, 0.32, dusk), mix(1.0, 1.25, dusk));
+	vec3 cloudLow = mix(vec3(0.6, 0.68, 0.82), mix(vec3(0.075, 0.08, 0.19), vec3(0.4, 0.17, 0.25), sunSide), dusk);
+	vec3 cloudTop = mix(vec3(0.9, 0.9, 0.9), mix(vec3(0.24, 0.17, 0.33), vec3(1.2, 0.58, 0.3), sunSide), dusk);
+	vec3 cloud = mix(cloudLow, cloudTop, smoothstep(0.44, 0.66, shape)) * shade;
+	color = mix(color, cloud, smoothstep(0.4, 0.56, shape) * 0.97);
 
 	vec2 wisp = PlaneHit(origin, direction, CloudWisps);
-	float streak = BackdropFbm(vec2(wisp.x * 0.03, wisp.y * 0.045) + vec2(time * 0.012, 0.0));
-	color = mix(color, vec3(0.92, 0.95, 1.0), smoothstep(0.62, 0.9, streak) * 0.3);
+	float streak = SkyFbm(vec2(wisp.x * 0.03, wisp.y * 0.045) + vec2(time * 0.012, 0.0));
+	color = mix(color, mix(vec3(0.92, 0.95, 1.0), mix(vec3(0.3, 0.22, 0.4), vec3(1.2, 0.62, 0.36), sunSide), dusk), smoothstep(0.66, 0.9, streak) * 0.12);
 
-	return mix(color, vec3(0.72, 0.82, 0.94), pow(1.0 - down, 3.0) * 0.55);
+	vec3 horizon = mix(vec3(0.72, 0.82, 0.94), mix(vec3(0.2, 0.14, 0.3), vec3(1.25, 0.56, 0.26), sunSide), dusk);
+	return mix(color, horizon, pow(1.0 - down, 3.0) * 0.55);
 }
 
 const float StormSea = -58.0;
@@ -126,8 +167,8 @@ const float StormDeck = -13.0;
 float DeckDensity(vec2 p, float time)
 {
 	vec2 flow = vec2(0.014, 0.006) * time;
-	float shape = BackdropFbm(p * 0.032 + flow);
-	float wisp = BackdropNoise(p * 0.12 + flow * 2.4 + 5.7);
+	float shape = SkyFbm(p * 0.032 + flow);
+	float wisp = SkyNoise(p * 0.12 + flow * 2.4 + 5.7);
 	return smoothstep(0.52, 0.8, shape * 0.82 + wisp * 0.26);
 }
 
@@ -152,22 +193,22 @@ vec3 StormSky(vec3 origin, vec3 direction, float time, vec3 toLight, vec4 eye, f
 	float down = max(-direction.y, 1e-3);
 	vec2 sea = PlaneHit(origin, direction, StormSea);
 	vec2 flow = vec2(0.004, 0.0016) * time;
-	float shape = BackdropFbm(sea * 0.012 + flow);
+	float shape = SkyFbm(sea * 0.012 + flow);
 	vec2 sunward = normalize(toLight.xz + vec2(1e-4));
-	float toward = BackdropFbm((sea + sunward * 14.0) * 0.012 + flow);
+	float toward = SkyFbm((sea + sunward * 14.0) * 0.012 + flow);
 	float relief = clamp(0.64 + (shape - toward) * 2.6, 0.38, 1.12);
 	vec3 bright = mix(vec3(0.5, 0.58, 0.74), vec3(1.0, 0.96, 0.9), smoothstep(0.45, 0.92, shape)) * relief;
 	vec3 day = mix(vec3(0.24, 0.35, 0.52), bright, smoothstep(0.3, 0.62, shape));
 
-	float churn = BackdropFbm(sea * 0.017 + flow * 2.5 + 7.3);
+	float churn = SkyFbm(sea * 0.017 + flow * 2.5 + 7.3);
 	vec3 dark = mix(vec3(0.034, 0.03, 0.068), vec3(0.14, 0.13, 0.23), smoothstep(0.4, 0.92, churn)) * relief;
-	float cover = clamp(storm * 1.5 - 0.35 + (BackdropFbm(sea * 0.005 + 3.1) - 0.5) * 0.9, 0.0, 1.0);
+	float cover = clamp(storm * 1.5 - 0.35 + (SkyFbm(sea * 0.005 + 3.1) - 0.5) * 0.9, 0.0, 1.0);
 	cover = cover * cover * (3.0 - 2.0 * cover);
 	vec3 color = mix(day, dark, cover);
 
 	vec2 cell = floor(sea / 30.0);
 	float beat = time * 1.3;
-	float lit = BackdropHash(cell + vec2(floor(beat) * 7.31, 3.7));
+	float lit = SkyHash(cell + vec2(floor(beat) * 7.0, 3.0));
 	float pulse = step(0.86, lit) * (1.0 - smoothstep(0.0, 0.3, fract(beat))) * (0.6 + 0.4 * sin(time * 47.0 + lit * 30.0));
 	float spot = 1.0 - smoothstep(2.5, 13.0, length(sea - (cell + 0.5) * 30.0));
 	color += vec3(0.45, 0.55, 0.95) * (pulse * spot * cover * smoothstep(0.35, 0.75, churn));

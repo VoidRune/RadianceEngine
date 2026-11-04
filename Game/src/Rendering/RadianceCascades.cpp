@@ -304,6 +304,8 @@ namespace Game
 			.SkyMaskTransform = environment.SkyMaskTransform,
 			.Lattice = lattice,
 			.PastLattice = continuous ? m_PastLattice : lattice,
+			.SkyGlow = lighting.SkyGlow,
+			.ToSun = glm::vec4(-glm::normalize(lighting.SunDirection), 0.0f),
 		};
 		m_Frame->Write(frameIndex, frame);
 		m_PastLattice = lattice;

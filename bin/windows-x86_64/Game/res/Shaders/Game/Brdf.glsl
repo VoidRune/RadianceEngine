@@ -112,6 +112,19 @@ vec3 HemisphereRadiance(vec3 sky, vec3 ground, float up, float sharpness)
 	return mix(ground, sky, clamp(0.5 + 0.5 * up * sharpness, 0.0, 1.0));
 }
 
+vec3 OpenSkyRadiance(vec3 sky, vec3 ground, vec3 direction, float sharpness, vec3 toSun, vec4 glow)
+{
+	vec3 base = HemisphereRadiance(sky, ground, direction.y, sharpness);
+	if (glow.a <= 0.0)
+		return base;
+	float toward = max(dot(direction, toSun), 0.0);
+	float wide = toward * toward * toward;
+	float tight = wide * wide * wide;
+	tight *= tight;
+	float above = clamp((direction.y + 0.25) * 2.8, 0.0, 1.0);
+	return base + glow.rgb * (glow.a * above * (0.06 * wide + tight));
+}
+
 vec3 DominantDirection(vec3 n, vec3 v, float roughness)
 {
 	float a = roughness * roughness;

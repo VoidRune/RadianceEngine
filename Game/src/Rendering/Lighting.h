@@ -128,6 +128,10 @@ namespace Game
 		float Leviathan = -1.0f;
 		glm::vec3 Haze{ 0.07f, 0.055f, 0.13f };
 		float StormBuild = 0.0f;
+		float Dusk = 0.0f;
+		glm::vec4 SkyGlow{ 0.0f };
+		float ContactShadow = 0.0f;
+		float Rain = 0.0f;
 		ColorGrade Grade;
 	};
 
@@ -175,6 +179,9 @@ namespace Game
 			glm::vec4 Haze;
 			glm::vec4 Eye;
 			glm::vec4 Translucent;
+			glm::vec4 SkyGlow;
+			glm::vec4 Contact;
+			glm::mat4 ViewProjection;
 		};
 
 		struct CullGpu

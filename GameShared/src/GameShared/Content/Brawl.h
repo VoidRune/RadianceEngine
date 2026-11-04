@@ -255,19 +255,10 @@ namespace Game
 	inline constexpr float HoleSpawnClearance = 2.6f;
 	inline constexpr float WaterDamagePerSecond = 13.0f;
 	inline constexpr float RuinsScale = 2.0f;
-	inline constexpr float RuinsStartRadius = 13.2f;
+	inline constexpr float RuinsStartRadius = 10.6f;
 	inline constexpr float RuinsSpawnRank = 4.0f;
 	inline constexpr float SkyFallSeconds = 0.9f;
 	inline constexpr float SkyCatchSeconds = 0.25f;
-	inline constexpr float GustFirst = 10.0f;
-	inline constexpr float GustInterval = 16.0f;
-	inline constexpr float GustJitter = 5.0f;
-	inline constexpr float GustWarning = 2.0f;
-	inline constexpr float GustDuration = 3.2f;
-	inline constexpr float GustRamp = 0.45f;
-	inline constexpr float GustSpeed = 0.5f;
-	inline constexpr float IslandDwell = 0.3f;
-	inline constexpr float IslandTravel = 0.2f;
 	inline constexpr float PeakScale = 2.0f;
 	inline constexpr float PeakStartRadius = 8.2f;
 	inline constexpr float PeakSpawnRank = 4.3f;
@@ -289,6 +280,12 @@ namespace Game
 	inline constexpr float RingInner = 4.4f;
 	inline constexpr float RingDamageEarly = 7.0f;
 	inline constexpr float RingDamageLate = 16.0f;
+	inline constexpr float HallRingStart = 22.0f;
+	inline constexpr float HallRingSettle = 64.0f;
+	inline constexpr float HallRingClose = 74.0f;
+	inline constexpr float HallRingClosing = 8.0f;
+	inline constexpr float HallRingOuter = 20.0f;
+	inline constexpr float HallRingInner = 6.4f;
 
 	inline float BrawlStartRadius(uint32_t players, BrawlShape shape = BrawlShape::Disc)
 	{
@@ -335,8 +332,8 @@ namespace Game
 			"Spells hurt and cost mana, and they still nudge. Lava burns, and the stone crumbles from the edge inward." };
 		static constexpr BrawlTerms Lake{ "freezing water", "ice", "The ice is breaking up", "Sudden death, the last floe is sinking", "Through the Ice", "went through the ice", "You are freezing! Get back onto the ice", "lake", "the Frozen Lake", "Spells don't hurt, they shove, and on the ice every shove slides far. Snow drifts grip, ice pillars bounce you back, and the ice breaks up from the shore and around the air holes.",
 			"Spells hurt and cost mana, and on the ice even a nudge slides far. Snow drifts grip, ice pillars bounce you back, and the ice breaks up from the shore and around the air holes." };
-		static constexpr BrawlTerms Ruins{ "abyss", "stone", "The ruins are crumbling", "Sudden death, the last stones are falling", "Lost to the Sky", "fell from the ruins", "The ground is giving way! Move", "ruins", "the Sky Ruins", "Spells don't hurt, they shove, and there is no lava: whoever falls off is out. Drifting islands carry you out and back, gusts push everyone one way, and the ruins crumble from the edge inward.",
-			"Spells hurt and cost mana, and they still nudge. Whoever falls off is out. Drifting islands carry you out and back, gusts push everyone one way, and the ruins crumble from the edge inward." };
+		static constexpr BrawlTerms Ruins{ "abyss", "stone", "The core's field is closing in", "Sudden death, the field has closed", "Lost to the Sky", "fell from the ruins", "The field is burning you! Get inside the circle", "ruins", "the Sky Ruins", "Spells don't hurt, they shove, and there is no lava: whoever falls off is out. A hole gapes in the middle of the observatory, and the old core's burning field closes in around it, driving everyone toward the drop.",
+			"Spells hurt and cost mana, and they still nudge. Whoever falls off is out. A hole gapes in the middle of the observatory, and the old core's burning field closes in around it, driving everyone toward the drop." };
 		static constexpr BrawlTerms Peak{ "abyss", "rock", "The storm is closing in", "Sudden death, the storm has closed over the circle", "Lost to the Storm", "fell from the peak", "The storm is tearing at you! Get inside the circle", "peak", "the Storm Peak", "Spells don't hurt, they shove, and off the edge you're out. Lightning falls at random where the ground crackles. Later the storm closes in on the old ritual circle at the summit, and outside it the storm tears at you.",
 			"Spells hurt and cost mana, and they still nudge. Off the edge you're out. Lightning falls at random where the ground crackles, and later the storm closes in on the ritual circle at the summit." };
 		switch (map)
@@ -461,7 +458,7 @@ namespace Game
 
 	inline float PlannedCollapseTime(const CollapsePlan& plan, Vec2 seed, CellCoord chunk)
 	{
-		if (plan.Shape == BrawlShape::Peak)
+		if (plan.Shape == BrawlShape::Peak || plan.Shape == BrawlShape::Ruins)
 			return 1e6f;
 		const float rank = ArenaRank(plan, seed) + (CollapseNoise(chunk.X, chunk.Y, plan.Seed) - 0.5f) * CollapseJitter;
 		if (rank >= plan.StartRadius)
@@ -501,59 +498,12 @@ namespace Game
 		return IsBrawlHazard(level.Map.GetTerrain(int32_t(std::floor(position.x)), int32_t(std::floor(position.y))));
 	}
 
-	inline float IslandDrift(const DriftIsland& island, float clock)
-	{
-		const float cycle = std::max(clock, 0.0f) / island.Period + island.Phase;
-		const float t = cycle - std::floor(cycle);
-		const auto ease = [](float x)
-		{
-			x = std::clamp(x, 0.0f, 1.0f);
-			return x * x * (3.0f - 2.0f * x);
-		};
-		return t < 0.5f ? ease((t - IslandDwell) / IslandTravel) : 1.0f - ease((t - 0.5f - IslandDwell) / IslandTravel);
-	}
-
-	inline Vec2 IslandOffset(const DriftIsland& island, float clock)
-	{
-		return island.Axis * (island.Reach * IslandDrift(island, clock));
-	}
-
-	inline float IslandCollapseTime(const CollapsePlan& plan, const DriftIsland& island)
-	{
-		const TileCoord anchor = island.Cells.empty() ? TileCoord{} : island.Cells.front();
-		return PlannedCollapseTime(plan, island.Center + island.Axis * (island.Reach * 0.5f), { anchor.X, anchor.Y });
-	}
-
-	inline bool HoldsCell(const DriftIsland& island, CellCoord cell)
-	{
-		return std::any_of(island.Cells.begin(), island.Cells.end(), [&](TileCoord own) { return own.X == cell.X && own.Y == cell.Y; });
-	}
-
-	inline int32_t IslandAt(const std::vector<DriftIsland>& islands, const CollapsePlan& plan, float clock, Vec2 position)
-	{
-		for (size_t i = 0; i < islands.size(); i++)
-		{
-			const DriftIsland& island = islands[i];
-			const Vec2 local = position - IslandOffset(island, clock);
-			if (LengthSquared(local - island.Center) > 64.0f || IslandCollapseTime(plan, island) <= clock)
-				continue;
-			if (HoldsCell(island, CellAt(local)))
-				return int32_t(i);
-		}
-		return -1;
-	}
-
-	inline int32_t IslandAt(const Level& level, const CollapsePlan& plan, float clock, Vec2 position)
-	{
-		return IslandAt(level.Islands, plan, clock, position);
-	}
-
 	inline bool IsBrawlLava(const Level& level, const CollapsePlan& plan, float clock, Vec2 position)
 	{
 		if (!level.Peak.IsEmpty())
 			return level.Peak.RimDistance(position) < 0.0f;
-		if (!level.Islands.empty() && IslandAt(level, plan, clock, position) >= 0)
-			return false;
+		if (!level.Hall.IsEmpty())
+			return level.Hall.Outline.RimDistance(position) < 0.0f;
 		const CellCoord cell = CellAt(position);
 		const TerrainId terrain = level.Map.GetTerrain(cell.X, cell.Y);
 		if (IsBrawlHazard(terrain))
@@ -572,8 +522,8 @@ namespace Game
 	{
 		if (!level.Peak.IsEmpty())
 			return level.Peak.RimDistance(position) < 0.0f ? 0.0f : 1e6f;
-		if (const int32_t island = IslandAt(level, plan, clock, position); island >= 0)
-			return IslandCollapseTime(plan, level.Islands[size_t(island)]) - clock;
+		if (!level.Hall.IsEmpty())
+			return level.Hall.Outline.RimDistance(position) < 0.0f ? 0.0f : 1e6f;
 		const CellCoord cell = CellAt(position);
 		if (!IsBrawlFloor(level.Map.GetTerrain(cell.X, cell.Y)))
 			return 0.0f;
@@ -582,11 +532,13 @@ namespace Game
 
 	inline bool SinksProps(const Level& level)
 	{
-		return level.Skyborne || level.Kind == MapKind::FrozenLake;
+		return (level.Skyborne && level.Hall.IsEmpty()) || level.Kind == MapKind::FrozenLake;
 	}
 
 	inline bool PropFallen(const Level& level, const CollapsePlan& plan, float clock, const PlacedProp& prop)
 	{
+		if (!level.Hall.IsEmpty())
+			return false;
 		const CellCoord cell = CellAt(prop.Position);
 		if (level.Kind == MapKind::FrozenLake)
 			return prop.Id == PropId::IcePillar && TileCollapseTime(plan, cell.X, cell.Y) <= clock;
@@ -611,37 +563,6 @@ namespace Game
 		}
 	}
 
-	struct Gust
-	{
-		Vec2 Velocity;
-		Vec2 Direction;
-		float Warning = 0.0f;
-		float Strength = 0.0f;
-	};
-
-	inline Gust GustAt(const CollapsePlan& plan, float clock)
-	{
-		Gust gust;
-		if (plan.Shape != BrawlShape::Ruins || clock < 0.0f)
-			return gust;
-		const int32_t nearest = int32_t(std::floor((clock - GustFirst) / GustInterval));
-		for (int32_t k = std::max(nearest - 1, 0); k <= nearest + 1; k++)
-		{
-			const float since = clock - (GustFirst + float(k) * GustInterval + (CollapseNoise(k, 0x6057, plan.Seed) - 0.5f) * GustJitter);
-			if (since < -GustWarning || since > GustDuration)
-				continue;
-			gust.Direction = FromAngle(2.0f * Pi * CollapseNoise(k, 0x61AD, plan.Seed));
-			gust.Warning = std::min(1.0f + since / GustWarning, 1.0f);
-			if (since >= 0.0f)
-			{
-				gust.Strength = std::clamp(std::min(since, GustDuration - since) / GustRamp, 0.0f, 1.0f);
-				gust.Velocity = gust.Direction * (GustSpeed * gust.Strength);
-			}
-			return gust;
-		}
-		return gust;
-	}
-
 	struct StormRing
 	{
 		Vec2 Center;
@@ -656,14 +577,28 @@ namespace Game
 	{
 		StormRing ring;
 		ring.Center = plan.Center;
-		if (plan.Shape != BrawlShape::Peak || plan.Steady || clock < RingStart)
+		const bool hall = plan.Shape == BrawlShape::Ruins;
+		const float start = hall ? HallRingStart : RingStart;
+		const float settle = hall ? HallRingSettle : RingSettle;
+		const float close = hall ? HallRingClose : RingClose;
+		const float closing = hall ? HallRingClosing : RingClosing;
+		const float outer = hall ? HallRingOuter : RingOuter;
+		const float inner = hall ? HallRingInner : RingInner;
+		if ((plan.Shape != BrawlShape::Peak && !hall) || plan.Steady || clock < start)
 			return ring;
 		ring.Active = true;
-		ring.Radius = RingOuter + (RingInner - RingOuter) * std::clamp((clock - RingStart) / (RingSettle - RingStart), 0.0f, 1.0f);
-		if (clock > RingClose)
-			ring.Radius *= std::max(1.0f - (clock - RingClose) / RingClosing, 0.0f);
-		ring.Damage = RingDamageEarly + (RingDamageLate - RingDamageEarly) * std::clamp((clock - RingStart) / (RingClose + RingClosing - RingStart), 0.0f, 1.0f);
+		ring.Radius = outer + (inner - outer) * std::clamp((clock - start) / (settle - start), 0.0f, 1.0f);
+		if (clock > close)
+			ring.Radius *= std::max(1.0f - (clock - close) / closing, 0.0f);
+		ring.Damage = RingDamageEarly + (RingDamageLate - RingDamageEarly) * std::clamp((clock - start) / (close + closing - start), 0.0f, 1.0f);
 		return ring;
+	}
+
+	inline float HallDusk(const CollapsePlan& plan, float clock)
+	{
+		if (plan.Shape != BrawlShape::Ruins || plan.Steady)
+			return 0.0f;
+		return std::clamp(clock / (HallRingClose + HallRingClosing), 0.0f, 1.0f);
 	}
 
 	inline float StormBuild(const CollapsePlan& plan, float clock)

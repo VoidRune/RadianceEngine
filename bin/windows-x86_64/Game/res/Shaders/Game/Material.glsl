@@ -35,6 +35,7 @@ const uint MeshIce = 16384u;
 const uint MeshCliff = 32768u;
 const uint MeshTwoTone = 65536u;
 const uint MeshBright = 131072u;
+const uint MeshSkinned = 262144u;
 const uint MaterialTranslucent = 256u;
 
 vec4 SampleAlbedo(Material m, vec2 uv)

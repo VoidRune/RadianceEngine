@@ -75,7 +75,6 @@ namespace Game
 		std::vector<float> m_ToDanger;
 		std::vector<float> m_ToSafety;
 		std::vector<float> m_Slide;
-		std::vector<uint8_t> m_Cover;
 		uint32_t m_LevelSeed = 0;
 		MapKind m_LevelKind = MapKind::Count;
 		uint32_t m_PlanSeed = 0;
@@ -173,7 +172,7 @@ namespace Game
 		float Harm(float damage, const Rival& rival, AbilityId spell = AbilityId::Count) const;
 		float HitChance(float travel, float distance, const Rival& rival) const;
 		Vec2 Lead(const Rival& rival, float delay, float speed) const;
-		Vec2 SafePoint(const BotArena& arena, float reach, float minimum, Vec2 drift = {}) const;
+		Vec2 SafePoint(const BotArena& arena, float reach, float minimum) const;
 		Vec2 SafeDirection(const BotArena& arena, Vec2 from, float step) const;
 		int32_t ComboSlot(uint32_t slot, float castTime) const;
 		bool Planted(const BotArena& arena) const;
@@ -194,7 +193,6 @@ namespace Game
 
 		Vec2 m_Position;
 		Vec2 m_Push;
-		Vec2 m_Wind;
 		float m_Health = 1.0f;
 		int32_t m_Life = 0;
 		float m_SelfFling = 1.0f;

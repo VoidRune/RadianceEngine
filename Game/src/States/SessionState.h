@@ -297,6 +297,8 @@ namespace Game
 		float GroundHeight(Vec2 position) const;
 		bool IsOpenAir(Vec2 position) const;
 		bool InStorm() const;
+		bool OverGap(Vec2 position) const;
+		Fx BurnBurst() const;
 		float LaunchHeight(const EntityState& entity) const;
 		glm::vec3 Ground(Vec2 position, float lift = 0.0f) const { return { position.x, GroundHeight(position) + lift, position.y }; }
 		void UpdateCamera(float dt);
@@ -471,6 +473,7 @@ namespace Game
 		void DrawLavaWarning();
 		void DrawSkyWarnings();
 		void UpdateStorm(const BrawlStatus& brawl);
+		void DrawHallRing(WorldRenderer& renderer) const;
 		bool DescribeOutcome(std::string& title, std::string& text) const;
 		bool BrawlRanksAbove(const PlayerInfo& a, const PlayerInfo& b) const;
 		void SortStandings(std::vector<PlayerInfo>& players) const;
@@ -623,6 +626,8 @@ namespace Game
 		std::vector<uint8_t> m_Fallen;
 		float m_CrumbleCooldown = 0.0f;
 		float m_Flash = 0.0f;
+		float m_Dusk = 0.0f;
+		float m_DuskTime = 0.0f;
 		float m_Trauma = 0.0f;
 		float m_ShakeClock = 0.0f;
 		glm::vec2 m_Kick{ 0.0f };
@@ -633,6 +638,13 @@ namespace Game
 		float m_StormClock = -1e9f;
 		float m_RitualPulse = 0.0f;
 		float m_LastSpireStrike = 0.0f;
+		struct BoltMark
+		{
+			Vec2 Center;
+			float Time = 0.0f;
+			uint32_t Seed = 0;
+		};
+		std::vector<BoltMark> m_BoltMarks;
 		BrawlPhase m_SeenBrawlPhase = BrawlPhase::Draft;
 		uint8_t m_SeenRound = 0;
 		uint8_t m_FoughtRound = 0;

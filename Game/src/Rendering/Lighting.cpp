@@ -175,8 +175,11 @@ namespace Game
 			.EnvironmentParams = environment.Params,
 			.SkyMaskTransform = environment.SkyMaskTransform,
 			.Backdrop = glm::vec4(lighting.Floating ? (lighting.Storm ? 3.0f : lighting.Daylight ? 2.0f : 1.0f) : 0.0f, lighting.FocusHeight, lighting.Time, lighting.Leviathan),
-			.Haze = glm::vec4(lighting.Haze, lighting.StormBuild),
+			.Haze = glm::vec4(lighting.Haze, lighting.Storm ? lighting.StormBuild : lighting.Dusk),
 			.Eye = lighting.Eye,
+			.SkyGlow = lighting.SkyGlow,
+			.Contact = glm::vec4(camera.Near, camera.Far, lighting.ContactShadow, 0.0f),
+			.ViewProjection = camera.ViewProjection,
 		};
 		const uint32_t lightCount = m_CullPipeline ? uint32_t(std::min<size_t>(lights.size(), MaxSceneLights)) : 0;
 		frame.Translucent = glm::vec4(translucency ? 1.0f : 0.0f, float(lightCount), PointLightGain, 0.0f);

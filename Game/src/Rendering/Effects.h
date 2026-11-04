@@ -98,6 +98,7 @@ namespace Game
 		Snowfall,
 		Crumble,
 		WindStreak,
+		SunDust,
 		Rain,
 		SpearAura,
 		SpearReady,
