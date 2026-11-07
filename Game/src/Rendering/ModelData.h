@@ -9,7 +9,7 @@
 namespace Game
 {
 	inline constexpr uint32_t NoTexture = UINT32_MAX;
-	inline constexpr uint32_t MaxModelJoints = 32;
+	inline constexpr uint32_t MaxModelJoints = 64;
 	inline constexpr uint32_t NoSkeleton = UINT32_MAX;
 	inline constexpr const char* SharedSkeletonName = "Rig_Medium";
 

@@ -63,6 +63,10 @@ namespace Game
 		{
 			if (skeleton == m_Shared)
 				continue;
+			const std::vector<std::string>& names = m_Data.Skeletons[skeleton].Names;
+			const std::vector<std::string>& source = m_Data.Skeletons[m_Shared].Names;
+			if (std::find_first_of(names.begin(), names.end(), source.begin(), source.end()) == names.end())
+				continue;
 			uint32_t added = 0;
 			for (uint32_t i = 0; i < count; i++)
 			{

@@ -106,6 +106,20 @@ namespace Game
 		glm::vec3 Color{ 0.0f };
 	};
 
+	struct LakeLook
+	{
+		bool Active = false;
+		float Plane = 0.06f;
+		float Aurora = 0.5f;
+		float IceMirror = 0.34f;
+		float WaterMirror = 0.1f;
+		float PoolFloor = 0.2f;
+		float Caustics = 1.0f;
+		float WaterFog = 0.1f;
+		float WaterDepth = 0.32f;
+		glm::vec3 WaterColor{ 0.03f, 0.26f, 0.27f };
+	};
+
 	struct SceneLighting
 	{
 		glm::vec3 SunDirection{ 0.45f, -1.0f, 0.3f };
@@ -132,6 +146,12 @@ namespace Game
 		glm::vec4 SkyGlow{ 0.0f };
 		float ContactShadow = 0.0f;
 		float Rain = 0.0f;
+		float Pulse = 0.0f;
+		float Fury = 0.0f;
+		float LavaLight = 0.0f;
+		float LavaCrust = 0.0f;
+		float LavaLine = -0.3f;
+		LakeLook Lake;
 		ColorGrade Grade;
 	};
 
@@ -139,10 +159,12 @@ namespace Game
 	{
 		const Rdn::GpuImage* Image = nullptr;
 		const Rdn::GpuImage* SkyMask = nullptr;
+		const Rdn::GpuImage* LavaLight = nullptr;
 		const Rdn::Sampler* Sampler = nullptr;
 		std::array<glm::vec4, 9> Irradiance{};
 		glm::vec4 Params{ 0.0f };
 		glm::vec4 SkyMaskTransform{ 0.0f };
+		glm::vec4 LavaTransform{ 0.0f };
 	};
 
 	class DeferredLighting
@@ -182,6 +204,8 @@ namespace Game
 			glm::vec4 SkyGlow;
 			glm::vec4 Contact;
 			glm::mat4 ViewProjection;
+			glm::vec4 LavaTransform;
+			glm::vec4 LavaParams;
 		};
 
 		struct CullGpu

@@ -497,6 +497,19 @@ namespace Game
 			}
 			else if (argument == "--leviathan")
 				options.Leviathan = true;
+			else if (argument == "--shot-camera" && hasValue)
+			{
+				std::array<float, 6> camera{};
+				std::string_view rest = value;
+				for (size_t k = 0; k < camera.size() && valid; k++)
+				{
+					const size_t comma = rest.find(',');
+					valid = ParseNumber(rest.substr(0, comma), camera[k]) && (comma != std::string_view::npos) == (k + 1 < camera.size());
+					rest = comma == std::string_view::npos ? std::string_view() : rest.substr(comma + 1);
+				}
+				options.ShotCamera = camera;
+				i++;
+			}
 			else if (argument == "--profile-gpu")
 				options.ProfileGpu = true;
 			else if (argument == "--no-steam")

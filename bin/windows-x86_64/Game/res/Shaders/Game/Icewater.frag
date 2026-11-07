@@ -1,5 +1,6 @@
 #version 450
 #include "GBuffer.glsl"
+#include "Lake.glsl"
 
 layout(set = 0, binding = 1) uniform sampler2D Crust;
 
@@ -16,34 +17,24 @@ layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outSurface;
 layout(location = 2) out vec4 outEmission;
 
-const float Period = 11.0;
-const float BakedPeriod = 16.0;
-const vec3 Deep = vec3(0.006, 0.02, 0.05);
-const vec3 Shallow = vec3(0.016, 0.06, 0.11);
-const vec3 Slush = vec3(0.5, 0.66, 0.76);
-const vec3 Chill = vec3(0.05, 0.16, 0.26);
+const vec3 Deep = vec3(0.002, 0.006, 0.009);
+
+vec2 Ripple(vec2 p, vec2 flow, float time)
+{
+	return texture(Crust, p + flow * time).ab - 0.5;
+}
 
 void main()
 {
 	vec2 p = inWorld.xz;
-	float time = inTime;
-	float pixel = max(length(dFdx(p)), length(dFdy(p)));
-	vec2 warp = texture(Crust, p / (Period * 1.9) + time * vec2(0.0011, 0.0008)).ab - 0.5;
-	vec2 drift = time * vec2(0.045, 0.018) + warp * 1.6;
-	vec2 cells = texture(Crust, (p - drift) / Period).rg;
-	float border = cells.x * (Period / BakedPeriod);
-	float density = texture(Crust, (p - drift * 0.5) / (Period * 2.4) + vec2(0.37, 0.11)).b;
-	float present = step(0.52, fract(cells.y * 7.13)) * smoothstep(0.4, 0.66, density);
-	float inset = 0.15 + 0.14 * fract(cells.y * 13.7) + 0.04 * (fract(cells.y * 31.3) - 0.5);
-	float floe = smoothstep(inset - pixel - 0.02, inset + pixel + 0.02, border) * present;
-	float rim = (1.0 - smoothstep(inset, inset + 0.08 + pixel, border)) * smoothstep(inset - 0.06 - pixel, inset, border) * present;
-	vec2 slope = 0.035 * vec2(sin(p.x * 2.1 + p.y * 0.7 + time * 1.3) + 0.6 * sin(p.x * 3.7 - p.y * 2.3 - time * 1.7), cos(p.y * 1.9 - p.x * 0.6 + time * 1.1) + 0.6 * cos(p.y * 3.1 + p.x * 2.6 + time * 1.5)) + warp * 0.1;
-	vec3 normal = normalize(vec3(slope.x, 1.0, slope.y));
-	vec3 water = mix(Deep, Shallow, clamp(warp.x * 1.4 + 0.5, 0.0, 1.0));
-	vec3 albedo = mix(water, Slush * (0.55 + 0.45 * fract(cells.y * 3.1)), floe);
-	float roughness = mix(0.05, 0.8, floe);
-	float fade = DepthFade(pc.Params.x, inWorld.y);
-	outAlbedo = vec4(albedo, GroundOcclusion(0.0));
-	outSurface = PackSurface(normalize(mix(normal, vec3(0.0, 1.0, 0.0), floe)), roughness, 0.0);
-	outEmission = vec4(Chill * (0.012 + 0.05 * rim) * (1.0 - fade), 0.0);
+	vec2 turned = vec2(p.x * 0.8 - p.y * 0.6, p.x * 0.6 + p.y * 0.8);
+	vec2 skew = vec2(p.x * 0.28 + p.y * 0.96, p.y * 0.28 - p.x * 0.96);
+	float gust = smoothstep(-0.28, 0.3, Ripple(p / 61.0, vec2(0.0023, 0.0011), inTime).x + 0.5 * Ripple(skew / 23.0, vec2(-0.0031, 0.0026), inTime).y);
+	vec2 slope = Ripple(turned / 7.3, vec2(0.009, 0.004), inTime) * 0.05;
+	slope += Ripple(skew / 3.1, vec2(-0.018, 0.012), inTime) * 0.09;
+	slope += Ripple(p / 1.37, vec2(0.031, -0.027), inTime) * 0.13;
+	slope *= 0.28 + 0.72 * gust;
+	outAlbedo = vec4(Deep, 1.0);
+	outSurface = PackSurface(normalize(vec3(slope.x, 1.0, slope.y)), 0.07, 0.0);
+	outEmission = vec4(vec3(0.0), TagWater);
 }

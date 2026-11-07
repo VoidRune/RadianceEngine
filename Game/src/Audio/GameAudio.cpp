@@ -569,6 +569,43 @@ namespace Game
 		PlayAt(Cue::FireImpact, position, 0.2f, 0.55f + 0.15f * m_Random.Float(), 0.05f);
 	}
 
+	void GameAudio::PlayEruption(Vec2 position, float distance, bool geyser)
+	{
+		if (geyser)
+		{
+			PlayAt(Cue::WhooshHeavy, position, 0.5f, 0.5f + 0.12f * m_Random.Float());
+			PlayAt(Cue::FireBuildup, position, 0.25f, 0.45f + 0.1f * m_Random.Float(), 0.05f);
+			return;
+		}
+		PlayAt(Cue::Explosion, position, std::clamp(1.0f - distance / 30.0f, 0.2f, 0.75f), 0.7f + 0.15f * m_Random.Float());
+		PlayAt(Cue::Rock, position, 0.4f, 0.6f + 0.2f * m_Random.Float(), 0.03f);
+	}
+
+	void GameAudio::PlayHeartbeat(Vec2 position, float strength)
+	{
+		PlayAt(Cue::Rumble, position, 0.18f + 0.32f * strength, 0.42f + 0.08f * strength, 0.0f, 4.0f);
+	}
+
+	void GameAudio::PlayPour(Vec2 position, float distance)
+	{
+		PlayAt(Cue::FireLaunch, position, std::clamp(1.0f - distance / 30.0f, 0.25f, 0.7f), 0.45f + 0.08f * m_Random.Float());
+		PlayAt(Cue::Rumble, position, 0.45f, 0.5f + 0.1f * m_Random.Float(), 0.05f, 4.0f);
+		PlayAt(Cue::Explosion, position, 0.25f, 0.55f + 0.1f * m_Random.Float(), 0.1f);
+	}
+
+	void GameAudio::PlaySizzle(Vec2 position, float strength)
+	{
+		PlayAt(Cue::FireImpact, position, 0.12f + 0.2f * strength, 1.35f + 0.3f * m_Random.Float());
+		PlayAt(Cue::WhooshLight, position, 0.08f + 0.1f * strength, 1.6f + 0.3f * m_Random.Float(), 0.04f);
+	}
+
+	void GameAudio::PlayLeviathan(Vec2 position)
+	{
+		PlayAt(Cue::Thunder, position, 0.32f, 0.3f + 0.05f * m_Random.Float());
+		PlayAt(Cue::GlassLight, position, 0.42f, 0.24f + 0.05f * m_Random.Float(), 0.35f);
+		PlayAt(Cue::Glass, position, 0.2f, 0.34f + 0.06f * m_Random.Float(), 1.1f);
+	}
+
 	void GameAudio::PlayNovaRipe(Vec2 position, bool own)
 	{
 		const float loud = own ? 1.0f : 0.7f;

@@ -132,7 +132,9 @@ namespace Game
 
 		constexpr float IceTop = 0.06f;
 		constexpr float SnowRise = 0.24f;
-		constexpr float IceBottom = -0.75f;
+		constexpr float IceBottom = -1.1f;
+		constexpr float IceBreakSeconds = 2.6f;
+		constexpr float IceOpenDelay = 0.4f;
 
 
 		float SnowAmount(const TileMap& map, Vec2 p)
@@ -186,6 +188,53 @@ namespace Game
 						continue;
 					const CellCoord other{ cell.X + dx, cell.Y + dy };
 					const Vec2 neighbour = CellSeed(other);
+					const double nx = double(neighbour.x) - double(seed.x);
+					const double ny = double(neighbour.y) - double(seed.y);
+					const double mx = 0.5 * (double(neighbour.x) + double(seed.x));
+					const double my = 0.5 * (double(neighbour.y) + double(seed.y));
+					clipped.clear();
+					for (size_t i = 0; i < polygon.size(); i++)
+					{
+						const PolygonVertex& a = polygon[i];
+						const PolygonVertex& b = polygon[(i + 1) % polygon.size()];
+						const double da = (a.X - mx) * nx + (a.Y - my) * ny;
+						const double db = (b.X - mx) * nx + (b.Y - my) * ny;
+						if (da <= 0.0)
+							clipped.push_back(a);
+						if ((da <= 0.0) == (db <= 0.0))
+							continue;
+						const double t = da / (da - db);
+						PolygonVertex cut{ a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, a.Edge, a.Frame };
+						if (da <= 0.0)
+						{
+							cut.Edge = other;
+							cut.Frame = false;
+						}
+						clipped.push_back(cut);
+					}
+					polygon.swap(clipped);
+				}
+			return polygon;
+		}
+
+		std::vector<PolygonVertex> ChunkPolygon(CellCoord chunk)
+		{
+			const Vec2 seed = ChunkSeed(chunk);
+			const double size = double(ChunkSize);
+			std::vector<PolygonVertex> polygon = {
+				{ double(chunk.X - 1) * size, double(chunk.Y - 1) * size, {}, true },
+				{ double(chunk.X + 2) * size, double(chunk.Y - 1) * size, {}, true },
+				{ double(chunk.X + 2) * size, double(chunk.Y + 2) * size, {}, true },
+				{ double(chunk.X - 1) * size, double(chunk.Y + 2) * size, {}, true },
+			};
+			std::vector<PolygonVertex> clipped;
+			for (int32_t dy = -2; dy <= 2; dy++)
+				for (int32_t dx = -2; dx <= 2; dx++)
+				{
+					if (dx == 0 && dy == 0)
+						continue;
+					const CellCoord other{ chunk.X + dx, chunk.Y + dy };
+					const Vec2 neighbour = ChunkSeed(other);
 					const double nx = double(neighbour.x) - double(seed.x);
 					const double ny = double(neighbour.y) - double(seed.y);
 					const double mx = 0.5 * (double(neighbour.x) + double(seed.x));
@@ -294,6 +343,15 @@ namespace Game
 				}
 			}
 
+			void Rounded(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& d, const glm::vec3& na, const glm::vec3& nb, const glm::vec3& nc, const glm::vec3& nd, const glm::vec3& color)
+			{
+				const uint32_t first = uint32_t(Vertices.size());
+				for (const auto& [point, normal] : { std::pair(a, na), std::pair(b, nb), std::pair(c, nc), std::pair(d, nd) })
+					Vertices.push_back({ .Position = point, .Normal = normal, .Color = PackColor(color, Snow ? SnowAmount(*Snow, Vec2(point.x, point.z)) : 0.0f) });
+				for (const uint32_t index : { 0u, 1u, 2u, 0u, 2u, 3u })
+					Indices.push_back(first + index);
+			}
+
 			void Quad(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& d, const glm::vec3& facing, const glm::vec3& color)
 			{
 				Triangle(a, b, c, facing, color);
@@ -323,7 +381,7 @@ namespace Game
 		const Vec2 center = { float(m_Width) * 0.5f, float(m_Height) * 0.5f };
 		const auto surface = [&](Vec2 position, float jitter)
 		{
-			return m_Frozen ? IceHeight(map, position) + 0.012f * jitter : IslandSurface(position, center) + 0.1f * jitter;
+			return m_Frozen ? IceHeight(map, position) : IslandSurface(position, center) + 0.1f * jitter;
 		};
 		std::map<std::pair<int32_t, int32_t>, uint32_t> chunks;
 		for (int32_t y = 0; y < m_Height; y++)
@@ -370,23 +428,26 @@ namespace Game
 			uint32_t A = 0;
 			uint32_t B = 0;
 			Vec2 Outward;
+			uint32_t Neighbour = UINT32_MAX;
 		};
 		std::vector<ModelVertex> vertices;
 		std::vector<uint32_t> indices;
 		std::vector<LevelMeshDesc> meshes;
 		IslandMesh mesh{ vertices, indices, m_Frozen ? &map : nullptr };
-		const uint32_t material = renderer.GetPlainMaterial();
+		const uint32_t material = m_Frozen ? renderer.FindMaterialSlot("GroundSnow").value_or(renderer.GetPlainMaterial()) : renderer.GetPlainMaterial();
 		const uint32_t flags = m_Frozen ? MeshVertexTint | MeshIce : MeshVertexTint | MeshLavaGlow | MeshCrystal;
 		std::vector<WallEdge> walls;
 		std::map<std::pair<int64_t, int64_t>, Vec2> flare;
 		for (Chunk& chunk : m_Chunks)
 		{
+			std::vector<uint32_t> cellFirst;
 			const uint32_t firstIndex = uint32_t(indices.size());
 			walls.clear();
 			flare.clear();
 			glm::vec3 pivot(0.0f);
 			for (const uint32_t index : chunk.Cells)
 			{
+				cellFirst.push_back(uint32_t(indices.size()));
 				const Cell& cell = m_Cells[index];
 				const glm::vec3 peak(cell.Seed.x, cell.Peak, cell.Seed.y);
 				pivot += peak;
@@ -417,7 +478,7 @@ namespace Game
 					Vec2 outward = Normalize(Vec2(b.Position.y - a.Position.y, a.Position.x - b.Position.x));
 					if (Dot(outward, (a.Position + b.Position) * 0.5f - cell.Seed) < 0.0f)
 						outward = -outward;
-					walls.push_back({ ia, ib, outward });
+					walls.push_back({ ia, ib, outward, neighbour ? neighbour->Chunk : UINT32_MAX });
 					flare[CornerKey(a.Position)] += outward;
 					flare[CornerKey(b.Position)] += outward;
 				}
@@ -431,6 +492,117 @@ namespace Game
 				const float amount = spread * (0.6f + 0.8f * ValueNoise(position * 1.7f, 0x5EA5u));
 				return glm::vec3(position.x + direction.x * amount, height, position.y + direction.y * amount);
 			};
+			if (m_Frozen)
+			{
+				chunk.Mesh = uint32_t(meshes.size());
+				meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = wallIndex - firstIndex, .Material = material, .Layer = material, .Flags = flags });
+				for (size_t c = 0; c < chunk.Cells.size(); c++)
+				{
+					Cell& cell = m_Cells[chunk.Cells[c]];
+					const uint32_t topEnd = c + 1 < chunk.Cells.size() ? cellFirst[c + 1] : wallIndex;
+					cell.TopMesh = uint32_t(meshes.size());
+					meshes.push_back({ .FirstIndex = cellFirst[c], .IndexCount = topEnd - cellFirst[c], .Material = material, .Layer = material, .Flags = flags });
+					const uint32_t skirtFirst = uint32_t(indices.size());
+					for (uint32_t k = 0; k < cell.CornerCount; k++)
+					{
+						const Corner& a = m_Corners[cell.FirstCorner + k];
+						const Corner& b = m_Corners[cell.FirstCorner + (k + 1) % cell.CornerCount];
+						Vec2 out = Normalize(Vec2(b.Position.y - a.Position.y, a.Position.x - b.Position.x));
+						if (Dot(out, (a.Position + b.Position) * 0.5f - cell.Seed) < 0.0f)
+							out = -out;
+						const glm::vec3 facing(out.x, 0.0f, out.y);
+						const glm::vec3 topA(a.Position.x, a.Height, a.Position.y);
+						const glm::vec3 topB(b.Position.x, b.Height, b.Position.y);
+						const float depthA = IceBottom * (0.72f + 0.5f * ValueNoise(a.Position * 2.3f, 0x71C3u));
+						const float depthB = IceBottom * (0.72f + 0.5f * ValueNoise(b.Position * 2.3f, 0x71C3u));
+						const glm::vec3 lowA(a.Position.x + (cell.Seed.x - a.Position.x) * 0.16f, depthA, a.Position.y + (cell.Seed.y - a.Position.y) * 0.16f);
+						const glm::vec3 lowB(b.Position.x + (cell.Seed.x - b.Position.x) * 0.16f, depthB, b.Position.y + (cell.Seed.y - b.Position.y) * 0.16f);
+						mesh.Quad(topA, topB, lowB, lowA, facing, glm::vec3(0.72f + 0.28f * CollapseNoise(int32_t(k), cell.Coord.X * 31 + cell.Coord.Y, 0x51C1u)));
+					}
+					cell.SkirtMesh = uint32_t(meshes.size());
+					meshes.push_back({ .FirstIndex = skirtFirst, .IndexCount = uint32_t(indices.size()) - skirtFirst, .Material = material, .Layer = material, .Flags = flags });
+				}
+				std::stable_sort(walls.begin(), walls.end(), [](const WallEdge& a, const WallEdge& b) { return a.Neighbour < b.Neighbour; });
+				const auto bearing = [&](Vec2 position) { return Normalize(flare[CornerKey(position)]); };
+				const auto profile = [&](Vec2 p, Vec2 out, Vec2 shift, float top, std::array<glm::vec3, 7>& rows, std::array<glm::vec3, 7>& normals)
+				{
+					const float broad = ValueNoise(p / 2.7f, 0xA3C1u);
+					const float mid = ValueNoise(p * 1.13f, 0xA1C7u);
+					const float fine = ValueNoise(p * 3.7f, 0xA2D3u);
+					const float deep = ValueNoise(p / 1.3f, 0xA4E9u);
+					const float thick = SmoothStep(0.26f, 0.7f, broad * 0.68f + mid * 0.32f);
+					const float jut = 0.03f + 0.3f * mid * mid * (0.35f + broad) + 0.08f * fine;
+					const float round = SmoothStep(0.3f, 0.7f, ValueNoise(p * 0.38f, 0xA5F1u) * 0.6f + ValueNoise(p * 1.3f, 0xA6B3u) * 0.4f);
+					const float bevel = 0.1f + 0.22f * round;
+					const float sweep = glm::mix(1.2f, 1.5708f, thick);
+					const Vec2 start = p + shift * jut;
+					const glm::vec3 up(0.0f, 1.0f, 0.0f);
+					const glm::vec3 side(out.x, 0.0f, out.y);
+					rows[0] = { p.x, top, p.y };
+					normals[0] = up;
+					rows[1] = { start.x, top, start.y };
+					normals[1] = up;
+					for (size_t k = 1; k <= 3; k++)
+					{
+						const float angle = sweep * float(k) / 3.0f;
+						const Vec2 at = start + shift * (bevel * std::sin(angle));
+						rows[1 + k] = { at.x, top - bevel * (1.0f - std::cos(angle)), at.y };
+						normals[1 + k] = up * std::cos(angle) + side * std::sin(angle);
+					}
+					const float drop = std::max(rows[4].y - (LakeWaterLine - 0.04f), 0.02f);
+					const float run = drop * std::cos(sweep) / std::sin(sweep) + 0.01f + 0.05f * fine;
+					const Vec2 foot = Vec2(rows[4].x, rows[4].z) + shift * run;
+					const Vec2 shelf = foot + shift * (0.1f + 1.05f * deep * deep);
+					rows[5] = { foot.x, LakeWaterLine - 0.04f, foot.y };
+					rows[6] = { shelf.x, -1.0f - 0.8f * deep, shelf.y };
+					normals[5] = normals[4];
+					normals[6] = side;
+				};
+				for (size_t w = 0; w < walls.size();)
+				{
+					const uint32_t neighbour = walls[w].Neighbour;
+					const uint32_t lipFirst = uint32_t(indices.size());
+					for (; w < walls.size() && walls[w].Neighbour == neighbour; w++)
+					{
+						const WallEdge& wall = walls[w];
+						const Vec2 a = m_Corners[wall.A].Position;
+						const Vec2 b = m_Corners[wall.B].Position;
+						const int32_t steps = std::max(1, int32_t(std::ceil(Length(b - a) / 0.24f)));
+						std::array<glm::vec3, 7> previous;
+						std::array<glm::vec3, 7> current;
+						std::array<glm::vec3, 7> normalsBefore;
+						std::array<glm::vec3, 7> normalsNow;
+						const Vec2 outA = bearing(a);
+						const Vec2 outB = bearing(b);
+						const Vec2 shiftA = outA / std::max(Dot(outA, wall.Outward), 0.35f);
+						const Vec2 shiftB = outB / std::max(Dot(outB, wall.Outward), 0.35f);
+						const float heightA = m_Corners[wall.A].Height;
+						const float heightB = m_Corners[wall.B].Height;
+						for (int32_t k = 0; k <= steps; k++)
+						{
+							const float t = float(k) / float(steps);
+							const Vec2 out = Normalize(outA * (1.0f - t) + outB * t);
+							profile(a + (b - a) * t, out, shiftA * (1.0f - t) + shiftB * t, glm::mix(heightA, heightB, t), current, normalsNow);
+							if (k > 0)
+							{
+								const glm::vec3 facing(wall.Outward.x, 0.4f, wall.Outward.y);
+								const float facet = 0.7f + 0.3f * CollapseNoise(int32_t(a.x * 64.0f) + k * 3, int32_t(a.y * 64.0f), 0x51D7u);
+								const glm::vec3 tone(facet);
+								mesh.Quad(previous[0], current[0], current[1], previous[1], glm::vec3(0.0f, 1.0f, 0.0f), tone);
+								for (size_t row = 1; row < 4; row++)
+									mesh.Quad(previous[row], current[row], current[row + 1], previous[row + 1], normalsNow[row] + normalsNow[row + 1], glm::vec3(1.0f));
+								mesh.Rounded(previous[4], current[4], current[5], previous[5], normalsBefore[4], normalsNow[4], normalsNow[5], normalsBefore[5], glm::vec3(1.0f));
+								mesh.Quad(previous[5], current[5], current[6], previous[6], facing, tone);
+							}
+							previous = current;
+							normalsBefore = normalsNow;
+						}
+					}
+					chunk.Lips.push_back({ neighbour, uint32_t(meshes.size()) });
+					meshes.push_back({ .FirstIndex = lipFirst, .IndexCount = uint32_t(indices.size()) - lipFirst, .Material = material, .Layer = material, .Flags = flags });
+				}
+				continue;
+			}
 			for (const WallEdge& wall : walls)
 			{
 				const Corner& a = m_Corners[wall.A];
@@ -438,8 +610,9 @@ namespace Game
 				const glm::vec3 facing(wall.Outward.x, 0.0f, wall.Outward.y);
 				const glm::vec3 topA(a.Position.x, a.Height, a.Position.y);
 				const glm::vec3 topB(b.Position.x, b.Height, b.Position.y);
-				const glm::vec3 shoreA = ring(wall.A, LavaSurface - ShoreDrop, m_Frozen ? 0.02f : ShoreFlare);
-				const glm::vec3 shoreB = ring(wall.B, LavaSurface - ShoreDrop, m_Frozen ? 0.02f : ShoreFlare);
+				const float shoreLine = m_Frozen ? LakeWaterLine - 0.02f : LavaSurface - ShoreDrop;
+				const glm::vec3 shoreA = ring(wall.A, shoreLine, m_Frozen ? 0.05f : ShoreFlare);
+				const glm::vec3 shoreB = ring(wall.B, shoreLine, m_Frozen ? 0.05f : ShoreFlare);
 				const float shade = ValueNoise((a.Position + b.Position) * 1.3f, 0xD1CEu);
 				const glm::vec3 edge = m_Frozen ? glm::mix(ToColor(0x7DB5D3), ToColor(0xB0D6E8), shade) : glm::mix(ToColor(0x1F2430), ToColor(0x343C4C), shade);
 				mesh.Quad(topA, topB, shoreB, shoreA, facing, edge);
@@ -447,12 +620,23 @@ namespace Game
 				const float flare = m_Frozen ? 0.06f : BaseFlare;
 				mesh.Quad(shoreA, shoreB, ring(wall.B, bottom, flare), ring(wall.A, bottom, flare), facing, m_Frozen ? ToColor(0x2A5B7C) : edge * 0.7f);
 			}
+			chunk.Mesh = uint32_t(meshes.size());
 			meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = wallIndex - firstIndex, .Material = material, .Layer = material, .Flags = flags });
 			meshes.push_back({ .FirstIndex = wallIndex, .IndexCount = uint32_t(indices.size()) - wallIndex, .Material = material, .Layer = material, .Flags = flags });
 		}
 		const uint32_t base = renderer.AddLevelGeometry(vertices, indices, meshes);
-		for (size_t i = 0; i < m_Chunks.size(); i++)
-			m_Chunks[i].Mesh = base + 2 * uint32_t(i);
+		for (Chunk& chunk : m_Chunks)
+		{
+			chunk.Mesh += base;
+			if (m_Frozen)
+				for (const uint32_t index : chunk.Cells)
+				{
+					m_Cells[index].TopMesh += base;
+					m_Cells[index].SkirtMesh += base;
+				}
+			for (Lip& lip : chunk.Lips)
+				lip.Mesh += base;
+		}
 	}
 
 	const IslandArt::Cell* IslandArt::FindCell(CellCoord coord) const
@@ -499,18 +683,20 @@ namespace Game
 		if (since <= 0.0f)
 			return surface;
 		const float fall = std::min(since / CollapseFallSeconds, 1.0f);
-		return std::max(surface - fall * fall * SinkDepth, LavaWading);
+		return std::max(surface - fall * fall * m_Sink, m_Frozen ? LakeWading : LavaWading);
 	}
 
 	void IslandArt::Draw(WorldRenderer& renderer, const LevelView& view) const
 	{
 		m_Solid.assign(m_Chunks.size(), 1);
+		m_Open.assign(m_Chunks.size(), 0);
 		if (view.Brawl)
 			for (size_t i = 0; i < m_Chunks.size(); i++)
 			{
 				const Chunk& chunk = m_Chunks[i];
 				const bool rising = view.Risen && chunk.Tile < view.Risen->size() && (*view.Risen)[chunk.Tile] != 0 && view.Restore < 1.0f;
 				m_Solid[i] = !rising && view.Brawl->Clock < ChunkCollapseTime(view.Brawl->Plan, chunk.Coord) ? 1 : 0;
+				m_Open[i] = rising || view.Brawl->Clock > ChunkCollapseTime(view.Brawl->Plan, chunk.Coord) + IceOpenDelay ? 1 : 0;
 			}
 		for (size_t i = 0; i < m_Chunks.size(); i++)
 		{
@@ -519,21 +705,76 @@ namespace Game
 				continue;
 			float warn = 0.0f;
 			float fall = 0.0f;
+			float broken = -1e6f;
 			Vec2 outward;
 			if (view.Brawl)
 			{
 				const float since = view.Brawl->Clock - ChunkCollapseTime(view.Brawl->Plan, chunk.Coord);
-				if (since >= CollapseFallSeconds)
+				if (since >= (m_Frozen ? IceBreakSeconds : CollapseFallSeconds))
 					continue;
+				broken = since;
 				warn = std::clamp((since + CollapseWarning) / CollapseWarning, 0.0f, 1.0f);
 				fall = std::max(since, 0.0f) / CollapseFallSeconds;
 				outward = Normalize(Vec2(chunk.Pivot.x, chunk.Pivot.z) - view.Brawl->Plan.Center);
 			}
-			float drop = fall * fall * SinkDepth;
+			if (m_Frozen)
+			{
+				const glm::vec4 white(1.0f, 1.0f, 1.0f, 0.0f);
+				if (warn <= 0.0f)
+					renderer.DrawModel(chunk.Mesh, glm::mat4(1.0f), NoPalette, white, 0.0f, LavaSurface);
+				else
+				{
+					const float crack = SmoothStep(0.22f, 1.0f, warn);
+					const float beats = crack * 5.0f;
+					const float settled = (std::floor(beats) + SmoothStep(0.0f, 0.3f, beats - std::floor(beats))) / 5.0f;
+					for (const uint32_t index : chunk.Cells)
+					{
+						const Cell& cell = m_Cells[index];
+						const float h1 = CollapseNoise(cell.Coord.X, cell.Coord.Y, 0x1A31u);
+						const float h2 = CollapseNoise(cell.Coord.X, cell.Coord.Y, 0x1A47u);
+						const float h3 = CollapseNoise(cell.Coord.X, cell.Coord.Y, 0x1A53u);
+						Vec2 away = Vec2(cell.Seed.x - chunk.Pivot.x, cell.Seed.y - chunk.Pivot.z);
+						if (LengthSquared(away) < 0.01f)
+							away = FromAngle(h2 * 6.28f);
+						away = Normalize(away);
+						const glm::vec3 axis = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(away.x, 0.0f, away.y)));
+						float tilt = settled * (0.012f + 0.03f * h1);
+						glm::vec3 shift(away.x * (0.05f * settled), -settled * (0.012f + 0.03f * h2), away.y * (0.05f * settled));
+						if (broken > 0.0f)
+						{
+							const float delay = h3 * 0.55f;
+							const float f = std::clamp((broken - delay) / (IceBreakSeconds - 0.55f), 0.0f, 1.0f);
+							const float eased = f * f * (3.0f - 2.0f * f);
+							tilt += eased * (0.34f + 0.9f * h1);
+							shift += glm::vec3(away.x * (0.28f + 0.6f * h2) * eased, -std::pow(f, 1.5f) * 2.5f + 0.05f * std::sin(f * 9.0f + h1 * 6.28f) * (1.0f - f), away.y * (0.28f + 0.6f * h2) * eased);
+						}
+						const glm::vec3 centre(cell.Seed.x, cell.Peak, cell.Seed.y);
+						glm::mat4 plate = glm::translate(glm::mat4(1.0f), centre + shift);
+						plate = glm::rotate(plate, tilt, axis);
+						plate = glm::translate(plate, -centre);
+						renderer.DrawModel(cell.TopMesh, plate, NoPalette, white, 0.0f, LavaSurface);
+						renderer.DrawModel(cell.SkirtMesh, plate, NoPalette, white, 0.0f, LavaSurface);
+						if (broken > 0.0f)
+						{
+							renderer.SubmitUnder(cell.TopMesh, renderer.MakeModelInstance(cell.TopMesh, plate));
+							renderer.SubmitUnder(cell.SkirtMesh, renderer.MakeModelInstance(cell.SkirtMesh, plate));
+						}
+					}
+				}
+				if (broken <= 0.0f)
+					for (const Lip& lip : chunk.Lips)
+						if (lip.Neighbour == UINT32_MAX || m_Open[lip.Neighbour] != 0)
+						{
+							renderer.DrawModel(lip.Mesh, glm::mat4(1.0f), NoPalette, white, 0.0f, LavaSurface);
+							renderer.SubmitUnder(lip.Mesh, renderer.MakeModelInstance(lip.Mesh, glm::mat4(1.0f)));
+						}
+				continue;
+			}
+			float drop = fall * fall * m_Sink;
 			if (view.Risen && chunk.Tile < view.Risen->size() && (*view.Risen)[chunk.Tile] != 0 && view.Restore < 1.0f)
 			{
 				const float rise = 1.0f - (1.0f - view.Restore) * (1.0f - view.Restore);
-				drop += (1.0f - rise) * SinkDepth;
+				drop += (1.0f - rise) * m_Sink;
 			}
 			const float shake = fall <= 0.0f && warn > 0.0f ? warn * warn * 0.035f : 0.0f;
 			const float phase = float(chunk.Coord.X) * 3.1f + float(chunk.Coord.Y) * 1.7f;
@@ -546,7 +787,7 @@ namespace Game
 			renderer.DrawModel(chunk.Mesh, transform, NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), heat, LavaSurface);
 			if (!m_Solid[i] || chunk.Coast || std::any_of(chunk.Neighbours.begin(), chunk.Neighbours.end(), [this](uint32_t other) { return m_Solid[other] == 0; }))
 				renderer.DrawModel(chunk.Mesh + 1, transform, NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), heat, LavaSurface);
-			if (warn <= 0.0f || fall > 0.0f)
+			if (warn <= 0.0f || fall > 0.0f || m_Frozen)
 				continue;
 			for (const uint32_t index : chunk.Cells)
 			{
@@ -571,13 +812,17 @@ namespace Game
 			return m_Hall.GroundHeight();
 		if (const PeakRelief& relief = m_Scene.Relief; !relief.IsEmpty())
 			return relief.GetPlateau().RimDistance(position) >= 0.0f ? relief.Height(position) : SampleGround(m_Scene, position).value_or(-60.0f);
+		if (m_Forge.IsBuilt())
+			return m_Forge.GroundHeight(brawl, clock, position);
 		if (m_Island.IsBuilt())
 			if (const std::optional<float> height = m_Island.GroundHeight(brawl, clock, position))
 				return *height;
+		if (brawl && OnCrust(brawl->Plan, clock, position))
+			return LavaSurface + 0.03f;
 		if (!m_LavaRuns.empty() && IsLavaTerrain(level, position))
-			return LavaWading;
+			return m_Lake.IsBuilt() ? LakeWading : LavaWading;
 		if (brawl)
-			return LavaWading;
+			return m_Lake.IsBuilt() ? LakeWading : LavaWading;
 		return SampleGround(m_Scene, position).value_or(level.Map.GetHeight(position));
 	}
 
@@ -600,6 +845,8 @@ namespace Game
 		if (!m_Hall.IsBuilt())
 			DrawTerrain(renderer, level, view);
 		m_Island.Draw(renderer, view);
+		m_Lake.Draw(renderer, view);
+		m_Forge.Draw(renderer, view);
 		if (m_Hall.IsBuilt())
 			m_Hall.Draw(renderer, view);
 		DrawLoose(renderer, view);
@@ -623,17 +870,29 @@ namespace Game
 			m_Scene = BuildLevelScene(level, renderer);
 		}
 		m_Hall.Clear();
-		if (!m_Scene.Relief.IsEmpty() || !level.Hall.IsEmpty())
+		if (!m_Scene.Relief.IsEmpty() || !level.Hall.IsEmpty() || level.Kind == MapKind::Caldera)
 			m_Island.Clear();
 		else
 			m_Island.Build(renderer, level);
 		if (!level.Hall.IsEmpty())
 			m_Hall.Build(renderer, level);
+		renderer.SetLavaLight(0, 0, {}, {}, {});
+		m_Forge.Clear();
+		if (level.Kind == MapKind::Caldera)
+			m_Forge.Build(renderer, level);
+		m_LiquidLevel = level.Kind == MapKind::FrozenLake ? LakeWaterLine : level.Kind == MapKind::Caldera ? ForgePitSurface : LavaSurface;
+		m_Lake.Clear();
+		if (level.Kind == MapKind::FrozenLake)
+			m_Lake.Build(renderer, level);
 		renderer.SetFrozenLiquid(level.Kind == MapKind::FrozenLake);
 		const TileMap& map = level.Map;
 		m_LavaRuns.clear();
 		m_LavaHaze = level.Kind != MapKind::FrozenLake;
-		for (int32_t y = 0; y < map.GetHeight() && !level.Skyborne; y++)
+		if (level.Kind == MapKind::FrozenLake)
+			m_LavaRuns.push_back({ -60.0f, -60.0f, float(map.GetWidth()) + 60.0f, float(map.GetHeight()) + 60.0f });
+		else if (level.Kind == MapKind::Caldera)
+			m_LavaRuns.push_back({ -30.0f, -30.0f, float(map.GetWidth()) + 30.0f, float(map.GetHeight()) + 30.0f });
+		for (int32_t y = 0; y < map.GetHeight() && !level.Skyborne && level.Kind != MapKind::FrozenLake && level.Kind != MapKind::Caldera; y++)
 		{
 			int32_t start = -1;
 			for (int32_t x = 0; x <= map.GetWidth(); x++)
@@ -671,14 +930,14 @@ namespace Game
 		for (const glm::vec4& run : m_LavaRuns)
 			if (run.z >= view.Min.x && run.x <= view.Max.x && run.w >= view.Min.y && run.y <= view.Max.y)
 			{
-				renderer.DrawLava(run, LavaSurface, view.Time);
+				renderer.DrawLava(run, m_LiquidLevel, view.Time);
 				bounds = glm::vec4(glm::min(glm::vec2(bounds), glm::vec2(run)), glm::max(glm::vec2(bounds.z, bounds.w), glm::vec2(run.z, run.w)));
 			}
 		if (!m_LavaHaze || bounds.x > bounds.z)
 			return;
 		bounds = glm::vec4(glm::max(glm::vec2(bounds), glm::vec2(view.Min.x, view.Min.y) - 1.0f), glm::min(glm::vec2(bounds.z, bounds.w), glm::vec2(view.Max.x, view.Max.y) + 1.0f));
 		Distorter haze;
-		haze.Center = glm::vec3((bounds.x + bounds.z) * 0.5f, LavaSurface + LavaHazeLift, (bounds.y + bounds.w) * 0.5f);
+		haze.Center = glm::vec3((bounds.x + bounds.z) * 0.5f, m_LiquidLevel + LavaHazeLift, (bounds.y + bounds.w) * 0.5f);
 		haze.Shape = DistortionShape::Haze;
 		haze.Align = DistortionAlign::Ground;
 		haze.Extent = glm::vec2(bounds.z - bounds.x, bounds.w - bounds.y) * 0.5f;
@@ -715,6 +974,8 @@ namespace Game
 					}
 				}
 				renderer.SubmitModel(item.Mesh, instance);
+				if (m_Lake.IsBuilt())
+					renderer.SubmitUnder(item.Mesh, instance);
 		}
 	}
 

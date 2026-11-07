@@ -17,6 +17,8 @@ namespace Game
 		constexpr float AlwaysLava = -1e9f;
 		constexpr int32_t LavaSample = -2;
 		constexpr int32_t SolidSample = -1;
+		constexpr int32_t ForgeSample = -3;
+		constexpr float MetalHorizon = 2.2f;
 		constexpr float FieldInterval = 0.1f;
 		constexpr float FieldLimit = 12.0f;
 		constexpr float LandingDrag = 0.92f;
@@ -384,6 +386,8 @@ namespace Game
 					const int32_t tileY = std::clamp(int32_t(sample.y), 0, map.GetHeight() - 1);
 					code = peak.RimDistance(sample) < 0.0f ? LavaSample : !map.IsWalkable(tileX, tileY) ? SolidSample : tileY * map.GetWidth() + tileX;
 				}
+				else if (UsesForge(world.GetLevel()))
+					code = OnForgePlate(sample) ? ForgeSample : LavaSample;
 				else if (IsBrawlHazard(terrain))
 					code = LavaSample;
 				else if (IsBrawlFloor(terrain))
@@ -408,6 +412,12 @@ namespace Game
 		for (size_t i = 0; i < m_SampleCell.size(); i++)
 		{
 			const int32_t code = m_SampleCell[i];
+			if (code == ForgeSample)
+			{
+				const Vec2 sample((float(i % size_t(m_Width)) + 0.5f) * GridStep, (float(i / size_t(m_Width)) + 0.5f) * GridStep);
+				m_Collapse[i] = PositionCollapseTime(world.GetLevel(), plan, sample);
+				continue;
+			}
 			m_Collapse[i] = code >= 0 ? m_CellTime[size_t(code)] : code == LavaSample ? AlwaysLava : NeverLava;
 		}
 		if (const Rotunda& hall = world.GetLevel().Hall; !hall.IsEmpty())
@@ -425,7 +435,7 @@ namespace Game
 		const CollapsePlan& plan = world.GetMatch().GetBrawl().Plan;
 		m_Strike.assign(m_Collapse.size(), NeverLava);
 		m_Storm.assign(m_Collapse.size(), 0);
-		if ((plan.Shape == BrawlShape::Peak || plan.Shape == BrawlShape::Ruins) && world.GetMatch().GetBrawl().Phase == BrawlPhase::Fight)
+		if ((plan.Shape == BrawlShape::Peak || plan.Shape == BrawlShape::Ruins || plan.Shape == BrawlShape::Caldera) && world.GetMatch().GetBrawl().Phase == BrawlPhase::Fight)
 		{
 			for (const LightningBolt& bolt : BoltsOf(plan))
 			{
@@ -437,6 +447,15 @@ namespace Game
 						if (const size_t i = size_t(Index(x, y)); LengthSquared(Vec2((float(x) + 0.5f) * GridStep, (float(y) + 0.5f) * GridStep) - bolt.Center) <= reach * reach)
 							m_Strike[i] = std::min(m_Strike[i], bolt.Time);
 			}
+			if (plan.Shape == BrawlShape::Caldera)
+				for (size_t i = 0; i < m_SampleCell.size(); i++)
+				{
+					if (m_SampleCell[i] != ForgeSample)
+						continue;
+					const Vec2 local = ForgeLocal(Vec2((float(i % size_t(m_Width)) + 0.5f) * GridStep, (float(i / size_t(m_Width)) + 0.5f) * GridStep));
+					if (TrenchDistance(local) < StrikeMargin && !OnBridge(local))
+						m_Strike[i] = std::min(m_Strike[i], NextMetalTime(local, m_Clock, MetalHorizon));
+				}
 			if (const StormRing ring = RingAt(plan, m_Clock + RingLook); ring.Active)
 				for (int32_t y = 0; y < m_Height; y++)
 					for (int32_t x = 0; x < m_Width; x++)

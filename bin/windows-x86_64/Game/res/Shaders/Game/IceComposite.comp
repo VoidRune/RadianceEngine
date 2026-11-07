@@ -1,0 +1,83 @@
+#version 450
+#include "GBuffer.glsl"
+#include "Lake.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer FrameBuffer { LakeFrame Frame; };
+layout(set = 0, binding = 1, rgba16f) uniform image2D SceneColor;
+layout(set = 0, binding = 2, rgba16f) uniform image2D Emission;
+layout(set = 0, binding = 3) uniform sampler2D SurfaceBuffer;
+layout(set = 0, binding = 4) uniform sampler2D DepthBuffer;
+layout(set = 0, binding = 5) uniform sampler2D UnderColor;
+layout(set = 0, binding = 6) uniform sampler2D MirrorColor;
+layout(set = 0, binding = 7) uniform sampler2D Noise;
+
+const float Eta = 1.31;
+const float BendRefract = 0.11;
+const float BendReflect = 0.16;
+const float SkyBend = 0.22;
+const float BloomFrom = 0.9;
+const float BloomShare = 0.4;
+
+float Fresnel(float cosine)
+{
+	float f0 = (Eta - 1.0) / (Eta + 1.0);
+	f0 *= f0;
+	float m = 1.0 - clamp(cosine, 0.0, 1.0);
+	float m2 = m * m;
+	return f0 + (1.0 - f0) * m2 * m2 * m;
+}
+
+void main()
+{
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = ivec2(Frame.Screen.xy);
+	if (any(greaterThanEqual(pixel, size)))
+		return;
+	vec4 emitted = imageLoad(Emission, pixel);
+	if (emitted.a < 0.55 || emitted.a > 0.85)
+		return;
+	float depth = texelFetch(DepthBuffer, pixel, 0).r;
+	if (depth >= 1.0)
+		return;
+	vec4 surface = texelFetch(SurfaceBuffer, pixel, 0);
+	float roughness = surface.z;
+	bool water = emitted.a < 0.62;
+	bool wall = !water && emitted.a < 0.67;
+	float clarity = wall ? 0.0 : 1.0 - smoothstep(0.22, 0.68, roughness);
+	if (clarity <= 0.0)
+		return;
+	vec2 screen = (vec2(pixel) + 0.5) * Frame.Screen.zw;
+	vec4 world4 = Frame.InverseViewProjection * vec4(screen * 2.0 - 1.0, depth, 1.0);
+	vec3 position = world4.xyz / world4.w;
+	vec3 n = DecodeNormal(surface.xy);
+	vec3 v = normalize(Frame.Eye.xyz - position);
+	vec2 bend = n.xz * vec2(1.0, Frame.Screen.x * Frame.Screen.w);
+	vec3 through = textureLod(UnderColor, screen - bend * (water ? BendRefract * 0.3 : BendRefract), 0.0).rgb * (water ? Frame.Plane.w : 1.0);
+	float fresnel = Fresnel(dot(n, v));
+	float polish = (1.0 - smoothstep(0.03, 0.34, roughness)) * (water ? Frame.Plane.z : Frame.Plane.y);
+	float reflectance = clamp(max(fresnel, polish) * clarity, 0.0, 1.0);
+	vec2 tilt = n.xz * SkyBend;
+	vec2 shift = bend * BendReflect;
+	if (water)
+	{
+		float slow = Frame.Eye.w;
+		vec2 swell = vec2(textureLod(Noise, position.xz * 0.011 + vec2(0.13, 0.71) + vec2(0.0041, 0.0023) * slow, 0.0).r, textureLod(Noise, position.xz * 0.0083 + vec2(0.57, 0.29) - vec2(0.0027, 0.0036) * slow, 0.0).r) - 0.5;
+		swell += 0.45 * (vec2(textureLod(Noise, position.zx * 0.037 + vec2(0.31, 0.11) + vec2(0.006, -0.004) * slow, 0.0).r, textureLod(Noise, position.xz * 0.029 + vec2(0.83, 0.47) - vec2(0.005, 0.007) * slow, 0.0).r) - 0.5);
+		tilt = n.xz * 0.035 + swell * 0.2;
+		shift = (n.xz * 0.004 + swell * 0.03) * vec2(1.0, Frame.Screen.x * Frame.Screen.w);
+	}
+	vec3 calm = normalize(vec3(tilt.x, 1.0, tilt.y));
+	vec3 r = reflect(-v, calm);
+	r.y = abs(r.y);
+	vec3 sky = AuroraSky(Noise, position, r, Frame.Eye.w, Frame.Aurora.x);
+	vec4 mirrored = textureLod(MirrorColor, screen + shift, 0.0);
+	vec3 reflected = mix(sky, mirrored.rgb, mirrored.a);
+	vec3 added = through * (clarity * (1.0 - reflectance)) + reflected * reflectance;
+	vec4 scene = imageLoad(SceneColor, pixel);
+	scene.rgb += added;
+	imageStore(SceneColor, pixel, scene);
+	vec3 bright = max(through - vec3(BloomFrom), vec3(0.0)) * (clarity * BloomShare);
+	imageStore(Emission, pixel, vec4(emitted.rgb + bright, emitted.a));
+}

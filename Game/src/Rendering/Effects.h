@@ -42,6 +42,7 @@ namespace Game
 		HexShard,
 		DiamondShard,
 		Obsidian,
+		SulfurFire,
 		Count,
 	};
 
@@ -96,6 +97,8 @@ namespace Game
 		CoinToss,
 		BombBurst,
 		Snowfall,
+		SeaSmoke,
+		IceBreak,
 		Crumble,
 		WindStreak,
 		SunDust,
@@ -141,6 +144,15 @@ namespace Game
 		VoidBurst,
 		Spindrift,
 		StormCrackle,
+		SulfurFlame,
+		VentSteam,
+		GeyserBlast,
+		LavaFountain,
+		AshFall,
+		EmberDrift,
+		LavaSplash,
+		ForgeSmoke,
+		FallSpray,
 		Count,
 	};
 

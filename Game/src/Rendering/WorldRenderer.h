@@ -2,6 +2,7 @@
 #include "Rendering/Animation.h"
 #include "Rendering/Distortion.h"
 #include "Rendering/Glass.h"
+#include "Rendering/Lake.h"
 #include "Rendering/Lightning.h"
 #include "Rendering/Void.h"
 #include "Rendering/Lighting.h"
@@ -42,6 +43,14 @@ namespace Game
 	inline constexpr uint32_t MeshCliff = 32768;
 	inline constexpr uint32_t MeshTwoTone = 65536;
 	inline constexpr uint32_t MeshBright = 131072;
+	inline constexpr uint32_t MeshUnderGlow = 524288;
+	inline constexpr uint32_t MeshRock = 1048576;
+	inline constexpr uint32_t MeshSeam = 2097152;
+	inline constexpr uint32_t MeshFlow = 4194304;
+	inline constexpr uint32_t MeshObsidian = 8388608;
+	inline constexpr uint32_t MeshMetal = 16777216;
+	inline constexpr uint32_t MeshHeated = 33554432;
+	inline constexpr uint32_t MeshPolished = 67108864;
 	inline constexpr uint32_t MaterialTranslucent = 256;
 
 	struct LevelMeshDesc
@@ -117,9 +126,25 @@ namespace Game
 		uint32_t AddLevelGeometry(const std::vector<ModelVertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<LevelMeshDesc>& meshes);
 		void ClearLevelGeometry();
 		void SetSkyMask(uint32_t width, uint32_t height, const std::vector<uint8_t>& openness, glm::vec2 origin, glm::vec2 size);
+		void SetLavaLight(uint32_t width, uint32_t height, const std::vector<uint8_t>& coverage, glm::vec2 origin, glm::vec2 size);
 		std::optional<uint32_t> FindMaterialSlot(std::string_view name) const;
 		uint32_t GetPlainMaterial() const { return m_PlainMaterial; }
+		void AddMeshFlags(uint32_t mesh, uint32_t flags)
+		{
+			if (mesh < m_DrawMeshes.size())
+				m_DrawMeshes[mesh].Flags |= flags;
+		}
+		void SetMeshMaterial(uint32_t mesh, uint32_t material)
+		{
+			if (mesh < m_DrawMeshes.size())
+				m_DrawMeshes[mesh].Material = m_DrawMeshes[mesh].Layer = material;
+		}
 		void SetFrozenLiquid(bool frozen) { m_FrozenLiquid = frozen; }
+		void SubmitUnder(uint32_t mesh, const ModelInstance& instance);
+		void SetIceField(int32_t width, int32_t height, std::span<const glm::vec4> field, float wallLow, float wallHigh);
+		void DrawLakeLight(const LakeLight& light) { if (m_Lake) m_Lake->AddLight(light); }
+		void SetLakeBeast(const glm::vec4& beast) { if (m_Lake) m_Lake->SetBeast(beast); }
+		void SetLakeFullResolution(bool full) { m_LakeFullResolution = full; }
 		void SetGroundRelief(const PeakRelief* relief) { m_Relief = relief; }
 		std::optional<int32_t> FindEnvironment(std::string_view name) const;
 		ParticleSystem& GetParticles() { return *m_Particles; }
@@ -268,6 +293,14 @@ namespace Game
 		std::unique_ptr<Rdn::Pipeline> m_LavaPipeline;
 		std::unique_ptr<Rdn::Shader> m_IcewaterFragmentShader;
 		std::unique_ptr<Rdn::Pipeline> m_IcewaterPipeline;
+		std::unique_ptr<Rdn::Shader> m_IceSheetShader;
+		std::unique_ptr<Rdn::Pipeline> m_IceSheetPipeline;
+		std::unique_ptr<Rdn::GpuRingBuffer> m_IceFieldBuffer;
+		std::vector<glm::vec4> m_IceField;
+		glm::vec4 m_IceFieldSize{ 1.0f, 1.0f, 0.0f, 1.0f };
+		std::unique_ptr<LakeRenderer> m_Lake;
+		LakeDraws m_LakeDraws;
+		bool m_LakeFullResolution = true;
 		bool m_FrozenLiquid = false;
 		std::unique_ptr<Rdn::GpuImage> m_LavaTexture;
 		std::vector<BoxInstance> m_LavaQuads;
@@ -309,6 +342,8 @@ namespace Game
 		std::unique_ptr<Rdn::GpuImage> m_BlackEnvironment;
 		std::unique_ptr<Rdn::GpuImage> m_SkyMask;
 		glm::vec4 m_SkyMaskTransform{ 0.0f, 0.0f, 0.0f, 0.0f };
+		std::unique_ptr<Rdn::GpuImage> m_LavaLight;
+		glm::vec4 m_LavaLightTransform{ 0.0f };
 		std::unique_ptr<Rdn::Sampler> m_ModelSampler;
 		std::unique_ptr<Rdn::Sampler> m_NearestSampler;
 		std::unique_ptr<Rdn::Sampler> m_RepeatSampler;
@@ -321,6 +356,7 @@ namespace Game
 		std::vector<std::vector<ModelInstance>> m_ModelShadowDraws;
 		std::vector<std::vector<ModelInstance>> m_ModelDissolveDraws;
 		std::vector<std::vector<ModelInstance>> m_ModelGlassDraws;
+		std::vector<std::vector<ModelInstance>> m_ModelUnderDraws;
 		std::vector<GlassSurface> m_GlassSurfaces;
 		std::vector<ModelInstance> m_PackedModels;
 		std::vector<glm::mat4> m_Palettes;
@@ -336,6 +372,7 @@ namespace Game
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelShadowRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelDissolveRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelGlassRanges;
+		std::vector<std::pair<uint32_t, uint32_t>> m_ModelUnderRanges;
 		bool m_GlassModels = true;
 		std::vector<SpellLight> m_Lights;
 		bool m_Translucency = true;

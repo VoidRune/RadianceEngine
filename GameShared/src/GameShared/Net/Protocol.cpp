@@ -146,6 +146,14 @@ namespace Game
 				writer.Write(brawl.Plan.Bolts[i].Center);
 				writer.Write(brawl.Plan.Bolts[i].Time);
 			}
+			const uint8_t crusts = uint8_t(std::min<size_t>(brawl.Plan.CrustCount, MaxCrusts));
+			writer.Write(crusts);
+			for (uint32_t i = 0; i < crusts; i++)
+			{
+				writer.Write(brawl.Plan.Crusts[i].Center);
+				writer.Write(brawl.Plan.Crusts[i].Radius);
+				writer.Write(brawl.Plan.Crusts[i].Time);
+			}
 			writer.Write(uint8_t(brawl.Plan.Steady ? 1 : 0));
 			writer.Write(QuantizeOwner(brawl.RoundWinner));
 			writer.Write(brawl.RoundTeam);
@@ -182,6 +190,15 @@ namespace Game
 			{
 				brawl.Plan.Bolts[i].Center = reader.ReadVec2();
 				brawl.Plan.Bolts[i].Time = reader.Read<float>();
+			}
+			brawl.Plan.CrustCount = reader.Read<uint8_t>();
+			if (brawl.Plan.CrustCount > MaxCrusts)
+				return false;
+			for (uint32_t i = 0; i < brawl.Plan.CrustCount; i++)
+			{
+				brawl.Plan.Crusts[i].Center = reader.ReadVec2();
+				brawl.Plan.Crusts[i].Radius = reader.Read<float>();
+				brawl.Plan.Crusts[i].Time = reader.Read<float>();
 			}
 			brawl.Plan.Steady = reader.Read<uint8_t>() != 0;
 			brawl.RoundWinner = DequantizeOwner(reader.Read<uint8_t>());

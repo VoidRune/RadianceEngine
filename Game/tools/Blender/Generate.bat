@@ -21,3 +21,8 @@ set "ASSETS=%~dp0..\..\assets\Original"
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0citadel.py" -- --out "%ASSETS%\Citadel" || exit /b 1
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0summit.py" -- --out "%ASSETS%\Summit" || exit /b 1
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0crawler.py" -- --out "%ASSETS%\Crawler" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0abyss.py" -- --out "%ASSETS%\Abyss" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0leviathan.py" -- --out "%ASSETS%\Leviathan" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0harbor.py" -- --out "%ASSETS%\Harbor" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0abyssal.py" -- --out "%ASSETS%\Abyssal" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0forge.py" -- --out "%ASSETS%\Forge" || exit /b 1

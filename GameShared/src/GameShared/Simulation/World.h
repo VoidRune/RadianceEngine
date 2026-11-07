@@ -118,6 +118,7 @@ namespace Game
 		Entity SpawnPendingStrike(const AbilityDef& ability, Vec2 position, int32_t damage, const AbilityContext& context);
 		Entity SpawnCardStrike(AbilityId visual, Vec2 position, float facing, float delay, float radius, float push, uint8_t perks, bool visible, const AbilityContext& context);
 		void AddCrater(Vec2 center, float radius) { m_Match.AddCrater(center, radius); }
+		void AddCrust(Vec2 center, float radius) { m_Match.AddCrust(m_Level, center, radius); }
 		void RecordDamage(uint32_t victim, uint32_t attacker, int32_t amount, uint8_t ability) { m_Match.RecordDamage(victim, attacker, amount, ability); }
 		int32_t ShapeBrawlDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount) { return m_Match.ShapeDamage(state, victim, attacker, ability, unmitigated, chilled, amount); }
 		void AfterBrawlDamage(Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt) { m_Match.AfterDamage(*this, target, victim, attacker, ability, dealt); }

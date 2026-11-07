@@ -45,14 +45,15 @@ namespace Game
 
 		void Strike(const ArenaState& arena, float dt, const Transform& transform, PlayerState& state)
 		{
-			if (!arena.Deadly || !arena.Plan || arena.Plan->Shape != BrawlShape::Peak || !state.Alive || state.IsFalling() || state.Invulnerable > 0.0f)
+			const CollapsePlan* plan = arena.Plan ? arena.Plan : arena.Field;
+			if (!arena.Deadly || !plan || plan->Shape != BrawlShape::Peak || !state.Alive || state.IsFalling() || state.Invulnerable > 0.0f)
 				return;
-			const LightningBolt* bolt = BoltStriking(*arena.Plan, transform.Position, arena.Clock, arena.Clock + dt);
+			const LightningBolt* bolt = BoltStriking(*plan, transform.Position, arena.Clock, arena.Clock + dt);
 			if (!bolt)
 				return;
 			Vec2 away = transform.Position - bolt->Center;
 			if (LengthSquared(away) < 0.04f)
-				away = FromAngle(2.0f * Pi * CollapseNoise(int32_t(bolt->Time * 64.0f), 0x7A7B, arena.Plan->Seed));
+				away = FromAngle(2.0f * Pi * CollapseNoise(int32_t(bolt->Time * 64.0f), 0x7A7B, plan->Seed));
 			state.Push += Normalize(away) * BoltPush;
 			state.Stun = std::max(state.Stun, BoltStun);
 			state.CastSlot = -1;
@@ -123,15 +124,29 @@ namespace Game
 			return moved;
 		}
 
+		Vec2 StayInPit(const Level& level, Vec2 from, Vec2 to)
+		{
+			return UsesForge(level) && !OnForgePlate(from) ? KeepInPit(to) : to;
+		}
+
+		bool ClimbsOutOfPit(const PlayerState& state)
+		{
+			return state.DashSpeed <= 0.0f || state.DashSpeed == HookYankSpeed;
+		}
+
 		Vec2 Move(const Level& level, const ArenaState& next, PlayerState& state, Vec2 position, Vec2 delta, std::span<const BodyCircle> bodies)
 		{
-			return level.Skyborne ? MoveOnSky(level, next, state, position, delta, bodies) : MoveAndBrake(level, state, position, delta, bodies);
+			if (level.Skyborne)
+				return MoveOnSky(level, next, state, position, delta, bodies);
+			return StayInPit(level, position, MoveAndBrake(level, state, position, delta, bodies));
 		}
 
 		void DashStep(const Level& level, Transform& transform, PlayerState& state, Vec2 delta)
 		{
 			const Vec2 from = transform.Position;
 			transform.Position = MoveCircle(level, from, PlayerRadius, delta, {}, level.Floating);
+			if (!ClimbsOutOfPit(state))
+				transform.Position = StayInPit(level, from, transform.Position);
 			if (CrossesVoid(level, from, transform.Position))
 				state.Airborne = true;
 		}

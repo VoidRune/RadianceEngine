@@ -50,6 +50,37 @@ layout(location = 14) flat out vec4 outBurn;
 #endif
 
 const uint NoPalette = 0xFFFFFFFFu;
+const uint MetalFlag = 16777216u;
+const float MetalFresh = -0.4;
+const float MetalHot = -0.12;
+const float MetalCooled = -0.3;
+const float MetalRise = 0.4;
+const float MetalCoolSpan = 1.5;
+const float MetalLead = 0.4;
+const float MetalHidden = -0.5;
+const float FloodHidden = -0.1;
+const float FloodLead = 0.3;
+const float HiltLead = 0.3;
+const float ForgeHiltLine = 6.2;
+const vec2 ForgeCenter = vec2(24.0, 24.0);
+
+float MetalLift(float meters, vec4 pour, vec4 shape, vec3 world)
+{
+	if (shape.z > 2.5)
+		return 0.0;
+	bool sheet = shape.z < 0.5;
+	float hidden = sheet ? FloodHidden : MetalHidden;
+	if (shape.z > 1.5)
+		return abs(world.x - ForgeCenter.x) + abs(world.z - ForgeCenter.y) >= shape.w - FloodLead ? MetalHot : hidden;
+	float age = pour.w - (pour.x + meters * shape.x);
+	if (age < -MetalLead || meters > abs(pour.y) || (pour.y < 0.0 && world.z - ForgeCenter.y < ForgeHiltLine - HiltLead))
+		return hidden;
+	age = max(age, 0.0);
+	if (sheet)
+		return 0.0;
+	float level = mix(MetalFresh, MetalHot, smoothstep(0.0, MetalRise, age));
+	return mix(level, MetalCooled, smoothstep(shape.y - MetalCoolSpan, shape.y, age));
+}
 
 vec4 UnpackTangent(uint packed)
 {
@@ -86,6 +117,8 @@ void main()
 
 	vec4 local = vec4(position, 1.0);
 	vec3 world = vec3(dot(instance.Row0, local), dot(instance.Row1, local), dot(instance.Row2, local));
+	if ((instance.Info.w & MetalFlag) != 0u)
+		world.y += MetalLift(vertex.PositionU.w, instance.Accent, instance.Tint, world);
 	bool mirrored = determinant(mat3(instance.Row0.xyz, instance.Row1.xyz, instance.Row2.xyz)) < 0.0;
 	outNormal = vec3(dot(instance.Row0.xyz, normal), dot(instance.Row1.xyz, normal), dot(instance.Row2.xyz, normal));
 	outTangent = vec4(dot(instance.Row0.xyz, tangent.xyz), dot(instance.Row1.xyz, tangent.xyz), dot(instance.Row2.xyz, tangent.xyz), mirrored ? -tangent.w : tangent.w);

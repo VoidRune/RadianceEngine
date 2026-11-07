@@ -1,4 +1,5 @@
 #include "Level.h"
+#include "GameShared/Content/Forge.h"
 #include <cmath>
 
 namespace Game
@@ -151,6 +152,13 @@ namespace Game
 		}
 		for (const WallSegment& wall : Walls)
 			Shapes.push_back(MakeWallShape(wall));
+		if (Kind == MapKind::Caldera)
+		{
+			const Vec2 gate = ForgeCenter + Vec2(0.0f, ForgeHiltLine - 0.5f * SluiceThickness);
+			Shapes.push_back(MakeBox(gate, { SluiceHalfWidth, 0.5f * SluiceThickness }, 0.0f, Block::Movement));
+			for (const float side : { -1.0f, 1.0f })
+				Shapes.push_back(MakeBox(gate + Vec2(side * SluicePostX, 0.0f), SluicePostHalf, 0.0f, Block::Movement));
+		}
 		Boundaries.clear();
 		if (Rounded)
 		{

@@ -180,6 +180,8 @@ namespace Game
 			.SkyGlow = lighting.SkyGlow,
 			.Contact = glm::vec4(camera.Near, camera.Far, lighting.ContactShadow, 0.0f),
 			.ViewProjection = camera.ViewProjection,
+			.LavaTransform = environment.LavaTransform,
+			.LavaParams = glm::vec4(environment.LavaLight ? lighting.LavaLight : 0.0f, lighting.LavaLine, lighting.Pulse, lighting.Fury),
 		};
 		const uint32_t lightCount = m_CullPipeline ? uint32_t(std::min<size_t>(lights.size(), MaxSceneLights)) : 0;
 		frame.Translucent = glm::vec4(translucency ? 1.0f : 0.0f, float(lightCount), PointLightGain, 0.0f);
@@ -196,6 +198,7 @@ namespace Game
 		const Rdn::BufferWrite lightWrite(13, Rdn::DescriptorType::StorageBuffer, m_Lights->GetHandle(), m_Lights->GetOffset(frameIndex), MaxSceneLights * 2 * sizeof(glm::vec4));
 		const Rdn::ImageWrite environmentWrite(11, Rdn::DescriptorType::CombinedImageSampler, environment.Image->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, environment.Sampler->GetHandle());
 		const Rdn::ImageWrite skyMaskWrite(12, Rdn::DescriptorType::CombinedImageSampler, environment.SkyMask->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_LinearSampler->GetHandle());
+		const Rdn::ImageWrite lavaWrite(15, Rdn::DescriptorType::CombinedImageSampler, environment.LavaLight->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_LinearSampler->GetHandle());
 		m_Frame->Write(frameIndex, frame);
 		if (lightCount > 0)
 		{
@@ -224,8 +227,7 @@ namespace Game
 				for (const Rdn::RGImage image : { gbuffer.Albedo, gbuffer.Surface, gbuffer.Emission, gbuffer.Depth, shadowMap })
 					builder.UseImage(image, Rdn::RGImageUsage::Sampled);
 				builder.UseImage(scene, Rdn::RGImageUsage::StorageWrite);
-				if (lightCount > 0)
-					builder.UseBuffer(tiles, Rdn::RGBufferUsage::StorageRead);
+				builder.UseBuffer(tiles, Rdn::RGBufferUsage::StorageRead);
 				if (!gi)
 					return;
 				builder.UseImage(emitters, Rdn::RGImageUsage::Sampled);
@@ -240,7 +242,7 @@ namespace Game
 					.AddWrite(storage(4, scene))
 					.AddWrite(Rdn::BufferWrite(5, Rdn::DescriptorType::UniformBuffer, m_Frame->GetHandle(), m_Frame->GetOffset(frameIndex), sizeof(FrameGpu)))
 					.AddWrite(sampled(6, shadowMap))
-					.AddWrite(environmentWrite).AddWrite(skyMaskWrite)
+					.AddWrite(environmentWrite).AddWrite(skyMaskWrite).AddWrite(lavaWrite)
 					.AddWrite(lightWrite)
 					.AddWrite(Rdn::BufferWrite(14, Rdn::DescriptorType::StorageBuffer, m_Tiles->GetHandle(), 0, m_Tiles->GetSize()));
 				if (gi)

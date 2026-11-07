@@ -1,5 +1,6 @@
 #include "GameShared/World/Level.h"
 #include "GameShared/World/LevelBuilder.h"
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -43,8 +44,35 @@ namespace Game
 		}
 	}
 
+	LakeLayout MakeLakeLayout(uint32_t seed)
+	{
+		Random random(uint64_t(seed) * 0x9E3779B97F4A7C15ull ^ 0x7A3E1ull);
+		LakeLayout layout;
+		layout.Side = random.Float() < 0.5f ? -1.0f : 1.0f;
+		layout.Mouth = -7.0f + 6.5f * random.Float();
+		const float s = layout.Side;
+		const float middle = -6.0f + 9.5f * random.Float();
+		const float c = -s;
+		float z = -6.0f + 11.0f * random.Float();
+		const float xs[] = { 42.0f, 35.0f, 27.5f, 18.5f, 9.5f };
+		for (size_t i = 0; i < layout.Trench.size(); i++)
+		{
+			layout.Trench[i] = { c * xs[i], z };
+			z = std::clamp(z + (random.Float() - 0.5f) * 5.0f, -7.0f, 6.0f);
+		}
+		for (size_t i = 0; i < layout.Trench.size(); i++)
+			layout.Route[i] = layout.Trench[i];
+		layout.Route[5] = { 0.0f, middle };
+		layout.Route[6] = { s * 11.0f, 0.5f * (layout.Mouth + middle) + (random.Float() - 0.5f) * 3.0f };
+		layout.Route[7] = { s * 22.0f, layout.Channel(s * 22.0f) };
+		layout.Route[8] = { s * 34.0f, layout.Channel(s * 34.0f) };
+		layout.Route[9] = { s * 52.0f, layout.Channel(s * 52.0f) };
+		return layout;
+	}
+
 	Level BuildFrozenLakeLevel(uint32_t seed)
 	{
+		const LakeLayout layout = MakeLakeLayout(seed);
 		LevelBuilder builder(MapKind::FrozenLake, seed, LakeWidth, LakeHeight, TerrainId::Rock);
 		Random& random = builder.GetRandom();
 		const Outline water = MakeOutline(random, WaterAxes, 0.07f);
@@ -55,7 +83,7 @@ namespace Game
 				const Vec2 point(float(x) + 0.5f, float(y) + 0.5f);
 				if (ice.Measure(point) < 1.0f)
 					builder.Fill({ x, y, 1, 1 }, TerrainId::Ice);
-				else if (water.Measure(point) < 1.0f)
+				else if (water.Measure(point) < 1.0f || layout.InChannel(point - Center))
 					builder.Fill({ x, y, 1, 1 }, TerrainId::Icewater);
 			}
 
@@ -84,26 +112,59 @@ namespace Game
 			builder.Prop(PropId::IcePillar, spot, random.Float() * 2.0f * Pi);
 		}
 
+		const float side = random.Float() < 0.5f ? -1.0f : 1.0f;
+		const Vec2 grave = Center + Vec2(side * LakeGraveX, LakeGraveZ);
+		const Vec2 bankCentre = Center + Vec2(side * LakeBankX, LakeBankZ);
+		for (int32_t row = -5; row <= 5; row++)
+			for (int32_t column = -11; column <= 11; column++)
+			{
+				const Vec2 offset(1.65f * (float(column) + (row % 2 != 0 ? 0.5f : 0.0f)), 1.43f * float(row));
+				if (offset.x * offset.x / (LakeBankHalfX * LakeBankHalfX) + offset.y * offset.y / (LakeBankHalfZ * LakeBankHalfZ) < 0.78f)
+					builder.Prop(PropId::GraveBank, bankCentre + offset, 0.0f);
+			}
+		const Vec2 skull = grave + Vec2(-side * 9.0f, LakeSkullZ);
+		const float skullYaw = side > 0.0f ? 2.55f : -2.55f;
+		const Vec2 snout(std::sin(skullYaw), std::cos(skullYaw));
+		builder.Prop(PropId::GraveSkull, skull - snout * (0.3f * LakeSkullScale), skullYaw);
+		builder.Prop(PropId::GraveSnout, skull + snout * (1.7f * LakeSkullScale), skullYaw);
+		for (int32_t i = 0; i < 12; i++)
+		{
+			const float angle = Pi * (1.05f + 0.9f * (float(i) + random.Float()) / 12.0f);
+			const Vec2 rim(std::cos(angle) * LakeBankHalfX * 1.0f, std::sin(angle) * LakeBankHalfZ * 1.0f);
+			builder.Prop(i % 3 == 2 ? PropId::GraveShard : PropId::GraveSlab, bankCentre + rim, random.Float() * 2.0f * Pi);
+		}
+
 		for (int32_t i = 0; i < 14; i++)
 		{
 			const float angle = float(i) * 2.0f * Pi / 14.0f + (random.Float() - 0.5f) * 0.3f;
 			const Vec2 shore = OnEllipse(WaterAxes, angle, 1.04f + 0.04f * random.Float());
-			builder.Prop(PropId::SnowRock, shore, random.Float() * 2.0f * Pi);
+			const float yaw = random.Float() * 2.0f * Pi;
+			if (!layout.InChannel(shore - Center, 2.5f) && layout.TrenchDistance(shore - Center) > 6.0f)
+				builder.Prop(PropId::SnowRock, shore, yaw);
 		}
 		for (int32_t i = 0; i < 8; i++)
 		{
 			const float angle = float(i) * 2.0f * Pi / 8.0f + Pi / 8.0f;
-			builder.Prop(i % 2 == 0 ? PropId::Brazier : PropId::FireBowl, OnEllipse(WaterAxes, angle, 1.09f), angle);
+			if (!layout.InChannel(OnEllipse(WaterAxes, angle, 1.09f) - Center, 2.5f) && layout.TrenchDistance(OnEllipse(WaterAxes, angle, 1.09f) - Center) > 6.0f)
+				builder.Prop(i % 2 == 0 ? PropId::Brazier : PropId::FireBowl, OnEllipse(WaterAxes, angle, 1.09f), angle);
 		}
 		for (int32_t y = 1; y < LakeHeight - 1; y += 2)
 			for (int32_t x = 1; x < LakeWidth - 1; x += 2)
 			{
 				const Vec2 point(float(x) + random.Float(), float(y) + random.Float());
 				const float distance = water.Measure(point);
-				if (distance < 1.18f || random.Float() > 0.42f)
+				if (distance < 1.18f || random.Float() > 0.42f || layout.InChannel(point - Center, 3.0f) || layout.TrenchDistance(point - Center) < 9.0f)
 					continue;
 				builder.Prop(PropId::PineTree, point, random.Float() * 2.0f * Pi);
 			}
+
+		const Vec2 pier = layout.PierRoot();
+		for (int32_t k = 0; k < 3; k++)
+			builder.Prop(PropId::HarborPier, Center + pier + Vec2(0.0f, -1.8f * float(k) - 0.9f), 0.0f);
+		builder.Prop(PropId::HarborPost, Center + pier + Vec2(-0.95f, -5.4f), 0.0f);
+		builder.Prop(PropId::HarborPost, Center + pier + Vec2(0.95f, -5.4f), 0.0f);
+		builder.Prop(PropId::HarborPost, Center + pier + Vec2(-0.95f, -7.2f), 0.0f);
+		builder.Prop(PropId::HarborBoat, Center + layout.Boat(), 0.0f);
 
 		builder.SetPlayerSpawn(Center);
 		builder.Region("The Frozen Lake", { 0, 0, LakeWidth, LakeHeight }, false);

@@ -17,31 +17,108 @@ layout(location = 1) out vec4 outSurface;
 layout(location = 2) out vec4 outEmission;
 
 const float Period = 16.0;
-const vec3 CrustColor = vec3(0.034, 0.037, 0.046);
-const vec3 Glow = vec3(1.7, 0.5, 0.1);
-const vec3 ThinCrust = vec3(0.15, 0.045, 0.02);
+const vec2 Drift = vec2(0.025, -0.055);
+const vec3 CrustColor = vec3(0.028, 0.024, 0.026);
+const vec3 BasaltRed = vec3(0.07, 0.03, 0.022);
+const vec3 SkinColor = vec3(0.16, 0.05, 0.02);
+const vec3 Deep = vec3(0.7, 0.15, 0.02);
+const vec3 Gold = vec3(1.1, 0.46, 0.08);
+const vec3 WhiteHot = vec3(1.8, 1.15, 0.42);
+const vec3 SkinGlow = vec3(0.24, 0.042, 0.007);
+const vec3 Fissure = vec3(1.5, 0.42, 0.07);
 const float CrustTranslucency = 0.75;
+const float FuryMelt = 0.08;
+const float MoltenLine = 0.62;
+const float SkinLine = 0.47;
+const float BubbleScale = 3.0;
+const float BubbleRate = 0.45;
+const float BubbleSize = 0.3;
+const float CrustRelief = 0.22;
+
+float Smooth(vec2 uv)
+{
+	return texture(Crust, uv).a;
+}
 
 void main()
 {
 	vec2 p = inWorld.xz;
 	float time = inTime;
+	float pulse = pc.Params.y;
+	float fury = pc.Params.z;
 	float pixel = max(length(dFdx(p)), length(dFdy(p)));
-	vec2 warp = texture(Crust, p / (Period * 1.63) + time * vec2(0.0021, 0.0016)).ab - 0.5;
-	float flow = texture(Crust, p / (Period * 0.95) + warp * 0.16 + time * vec2(-0.0012, 0.0019)).b;
-	vec2 cells = texture(Crust, p / Period + warp * 0.035).rg;
-	float open = 1.0 - smoothstep(0.22, 0.26, flow);
-	float near = 1.0 - smoothstep(0.22, 0.42, flow);
-	float border = cells.x;
-	float width = mix(0.02, 0.075, near);
-	float crack = 1.0 - smoothstep(width - pixel * 0.5, width + pixel * 0.5, border);
-	float pulse = 0.8 + 0.2 * sin(time * 1.1 + cells.y * 6.2832 + flow * 7.0);
-	float crust = (0.0015 + 0.003 * cells.y + 0.1 * near * near) * (1.0 - crack) + exp(-border * 15.0) * (0.014 + 0.08 * near) + crack * (0.28 + 0.2 * near) * pulse;
-	float river = 0.26 + 0.36 * (1.0 - smoothstep(0.04, 0.2, flow)) + 0.05 * sin(time * 0.9 + flow * 23.0);
-	float coverage = (1.0 - open) * (1.0 - crack) * (0.8 + 0.2 * cells.y);
+
+	vec2 bend = vec2(Smooth(p / 160.0 + 0.13), Smooth(p / 160.0 + 0.57)) - 0.5;
+	vec2 q = p + bend * 34.0;
+	float basin = Smooth(q / 120.0 + 0.29) * 0.65 + Smooth(q / 47.0 + 0.83) * 0.35;
+	float ridge = 1.0 - abs(2.0 * Smooth(q / 72.0 + 0.71) - 1.0);
+	float width = mix(0.03, 0.16, Smooth(p / 140.0 + 0.42));
+	float river = smoothstep(1.0 - width * 3.2, 1.0 - width * 0.25, ridge);
+	float pool = smoothstep(0.6, 0.72, basin);
+	float edge = (Smooth(p / 9.0 + 0.17) - 0.5) * 0.16 + (texture(Crust, p / 3.1 + 0.47).b - 0.5) * 0.06;
+	float heat = clamp(max(river, pool * 0.56 + smoothstep(0.76, 0.86, basin) * 0.44) + edge + FuryMelt * fury - pc.Params.w, 0.0, 1.0);
+	float aa = max(pixel * 0.08, 0.004);
+	float molten = smoothstep(MoltenLine - aa, MoltenLine + aa, heat);
+	float skin = smoothstep(SkinLine - aa, SkinLine + aa, heat) * (1.0 - molten);
+	float crust = 1.0 - molten - skin;
+
+	vec2 moved = p - Drift * time;
+	vec2 warp = texture(Crust, moved / (Period * 1.9) + time * vec2(0.0011, 0.0008)).ab - 0.5;
+	vec2 along = normalize(Drift);
+	vec2 flowPoint = vec2(dot(p, along), dot(p, vec2(-along.y, along.x)));
+	float streak = texture(Crust, vec2((flowPoint.x - time * 0.16) / (Period * 0.55), flowPoint.y / (Period * 0.45)) + warp * 0.08).b;
+	float swirl = texture(Crust, (moved + warp * 3.2) / (Period * 0.38) + time * vec2(-0.0021, 0.0017)).a;
+	float churn = streak * 0.35 + swirl * 0.65;
+	float core = smoothstep(MoltenLine, 1.0, heat);
+	float heart = 0.86 + 0.28 * pulse;
+	vec3 liquid = mix(Deep, Gold, smoothstep(0.35, 0.8, churn) * (0.4 + 0.6 * core));
+	liquid = mix(liquid, WhiteHot, smoothstep(0.82, 0.97, churn) * core * 0.7);
+	float film = smoothstep(0.6, 0.85, swirl) * (1.0 - core) * 0.45;
+	liquid *= (1.0 - film) * heart;
+
+	vec2 cellPoint = (moved + warp * 3.2) / BubbleScale;
+	vec2 cellId = floor(cellPoint);
+	vec3 random = fract(sin(vec3(dot(cellId, vec2(127.1, 311.7)), dot(cellId, vec2(269.5, 183.3)), dot(cellId, vec2(419.2, 371.9)))) * 43758.5453);
+	float bubbleAge = fract(time * BubbleRate + random.z * 7.0);
+	float bubbleRadius = BubbleSize * bubbleAge * (0.6 + 0.8 * random.x);
+	float bubbleDistance = length(fract(cellPoint) - (0.3 + 0.4 * random.xy)) * BubbleScale;
+	float popping = step(0.62, random.y) * molten;
+	float bubble = (1.0 - smoothstep(bubbleRadius - pixel, bubbleRadius + pixel, bubbleDistance)) * popping * (1.0 - bubbleAge * 0.7);
+	float ringLine = exp(-abs(bubbleDistance - bubbleRadius) / max(pixel, 0.015)) * popping * (1.0 - bubbleAge);
+	liquid = mix(liquid, liquid * 0.4, bubble) + Gold * (ringLine * 0.6);
+	vec4 raft = texture(Crust, (moved + warp * 3.2) / (Period * 0.8) + 0.27);
+	float floating = molten * step(0.74, raft.g) * smoothstep(0.03, 0.09, raft.r) * (1.0 - core * 0.6);
+	float raftRim = molten * step(0.74, raft.g) * (1.0 - smoothstep(0.0, 0.05, abs(raft.r - 0.06)));
+	liquid = mix(liquid, Fissure * 0.015, floating) + Gold * raftRim * 0.35;
+
+	vec2 cq = p + bend * 34.0 + (vec2(Smooth(p / 11.0 + 0.3), Smooth(p / 11.0 + 0.9)) - 0.5) * 5.0;
+	float scale = mix(0.75, 1.6, Smooth(p / 60.0 + 0.66));
+	vec4 plates = texture(Crust, cq / (Period * scale));
+	float border = plates.r * scale;
+	float joint = 1.0 - smoothstep(0.02 + pixel * 0.4, 0.06 + pixel * 0.8, border);
+	float breakup = smoothstep(0.35, 0.6, Smooth(cq / 13.0 + plates.g));
+	joint *= breakup;
+	float crackDistance = texture(Crust, cq / (Period * 0.55) + 0.61).r * 0.55;
+	float crack = (1.0 - smoothstep(0.008 - pixel * 0.5, 0.008 + pixel * 0.5, crackDistance)) * smoothstep(0.62, 0.78, Smooth(cq / 7.0 + 0.13));
+	float shore = smoothstep(0.15, SkinLine, heat);
+	float fissure = max(joint * (0.08 + 0.92 * shore), crack * 0.7) * (0.5 + 0.5 * smoothstep(0.55, 0.85, plates.b));
+
+	float tone = 0.7 + 0.6 * plates.b;
+	vec3 rock = mix(CrustColor, BasaltRed, smoothstep(0.4, 0.8, plates.g) * 0.7 + shore * 0.3) * tone;
+	vec3 skinTone = SkinColor * (0.7 + 0.6 * plates.b);
+	float lift = crust * (1.0 - joint) * CrustRelief * (0.6 + 0.4 * plates.b) + skin * 0.04 * swirl;
+	mat2 footprint = mat2(dFdx(p), dFdy(p));
+	vec2 slope = abs(determinant(footprint)) > 1e-8 ? inverse(transpose(footprint)) * vec2(dFdx(lift), dFdy(lift)) : vec2(0.0);
+	vec2 ripple = abs(determinant(footprint)) > 1e-8 ? inverse(transpose(footprint)) * vec2(dFdx(churn), dFdy(churn)) * 0.04 * molten : vec2(0.0);
+	vec3 normal = normalize(vec3(-slope.x - ripple.x, 1.0, -slope.y - ripple.y));
+
+	vec3 emission = liquid * molten;
+	emission += (SkinGlow * (0.5 + 0.8 * swirl) + Fissure * crack * 0.6) * skin * heart;
+	emission += Fissure * (fissure * crust * (0.14 + 0.1 * pulse));
 	float fade = DepthFade(pc.Params.x, inWorld.y);
-	float thin = near * near * (1.0 - crack) * (1.0 - open);
-	outAlbedo = vec4(mix(CrustColor, ThinCrust, thin) * coverage, GroundOcclusion(0.0));
-	outSurface = PackSurface(vec3(0.0, 1.0, 0.0), 0.85, 0.0);
-	outEmission = vec4(Glow * (mix(crust, river, open) * (1.0 - fade)), PackEmissionTag(false, CrustTranslucency * thin));
+	vec3 albedo = rock * crust + skinTone * skin + CrustColor * floating;
+	float roughness = molten * mix(0.14, 0.85, floating) + skin * 0.62 + crust * mix(0.78, 0.94, plates.b);
+	outAlbedo = vec4(albedo, GroundOcclusion(0.0));
+	outSurface = PackSurface(normal, roughness, molten * 0.6);
+	outEmission = vec4(emission * (1.0 - fade), PackEmissionTag(false, CrustTranslucency * skin * 0.5));
 }

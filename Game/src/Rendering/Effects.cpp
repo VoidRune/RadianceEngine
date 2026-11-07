@@ -142,8 +142,50 @@ namespace Game
 					{ .Kind = K::Ember, .Count = 20.0f, .Outward = true, .Radius = 0.2f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 3.5f, 7.0f }, .Life = { 0.4f, 0.9f }, .Size = { 0.03f, 0.045f } },
 					{ .Kind = K::Smoke, .Count = 10.0f, .Outward = true, .Radius = 0.35f, .Direction = { 0.0f, 0.5f, 0.0f }, .Cone = 0.5f, .Speed = { 0.4f, 1.2f }, .Life = { 0.8f, 1.4f }, .Size = { 0.4f, 0.65f } },
 				});
+				set(Fx::SulfurFlame, {
+					{ .Kind = K::SulfurFire, .Count = 70.0f, .Radius = 0.3f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.28f, .Speed = { 0.7f, 1.5f }, .Life = { 0.45f, 0.85f }, .Size = { 0.3f, 0.55f } },
+					{ .Kind = K::Dust, .Count = 3.0f, .Radius = 0.3f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 0.2f, 0.5f }, .Life = { 2.0f, 3.5f }, .Size = { 0.4f, 0.9f }, .Tint = { 1.5f, 1.45f, 1.05f } },
+				});
+				set(Fx::VentSteam, {
+					{ .Kind = K::Dust, .Count = 22.0f, .Radius = 0.4f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 0.6f, 1.4f }, .Life = { 0.8f, 1.4f }, .Size = { 0.3f, 0.6f }, .Tint = { 2.2f, 2.2f, 2.3f } },
+				});
+				set(Fx::GeyserBlast, {
+					{ .Kind = K::Dust, .Count = 46.0f, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.22f, .Speed = { 4.0f, 9.0f }, .Life = { 0.9f, 1.6f }, .Size = { 0.5f, 1.2f }, .Tint = { 2.4f, 2.4f, 2.5f } },
+					{ .Kind = K::Dust, .Count = 18.0f, .Outward = true, .Radius = 0.8f, .Direction = { 0.0f, 0.25f, 0.0f }, .Cone = 0.6f, .Speed = { 1.5f, 3.5f }, .Life = { 0.6f, 1.2f }, .Size = { 0.4f, 0.8f }, .Tint = { 2.0f, 2.0f, 2.1f } },
+				});
+				set(Fx::LavaFountain, {
+					{ .Kind = K::Fire, .Count = 70.0f, .Radius = 0.5f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.22f, .Speed = { 4.0f, 8.0f }, .Life = { 0.6f, 1.0f }, .Size = { 0.35f, 0.6f } },
+					{ .Kind = K::Ember, .Count = 40.0f, .Radius = 0.4f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.35f, .Speed = { 6.0f, 12.0f }, .Life = { 1.0f, 2.0f }, .Size = { 0.04f, 0.07f } },
+					{ .Kind = K::Smoke, .Count = 6.0f, .Radius = 0.6f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.2f, .Speed = { 1.5f, 3.0f }, .Life = { 2.5f, 4.0f }, .Size = { 1.2f, 2.2f }, .Tint = { 0.5f, 0.45f, 0.45f } },
+				});
+				set(Fx::AshFall, {
+					{ .Kind = K::Snow, .Count = 110.0f, .Shape = SpawnShape::Disc, .Radius = 16.0f, .Direction = { 0.15f, -1.0f, 0.05f }, .Cone = 0.25f, .Speed = { 0.3f, 0.6f }, .Life = { 6.0f, 8.0f }, .Size = { 0.025f, 0.045f }, .Tint = { 0.34f, 0.32f, 0.32f } },
+				});
+				set(Fx::EmberDrift, {
+					{ .Kind = K::Ember, .Count = 40.0f, .Shape = SpawnShape::Disc, .Radius = 14.0f, .Direction = { 0.05f, 1.0f, -0.08f }, .Cone = 0.35f, .Speed = { 0.5f, 1.4f }, .Life = { 2.0f, 4.0f }, .Size = { 0.015f, 0.03f } },
+				});
+				set(Fx::LavaSplash, {
+					{ .Kind = K::Fire, .Count = 10.0f, .Outward = true, .Radius = 0.15f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.8f, 2.0f }, .Life = { 0.25f, 0.45f }, .Size = { 0.14f, 0.24f } },
+					{ .Kind = K::Ember, .Count = 14.0f, .Outward = true, .Radius = 0.12f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.55f, .Speed = { 2.0f, 4.5f }, .Life = { 0.5f, 1.0f }, .Size = { 0.025f, 0.045f } },
+				});
+				set(Fx::ForgeSmoke, {
+					{ .Kind = K::Smoke, .Count = 2.2f, .Shape = SpawnShape::Disc, .Radius = 1.4f, .Direction = { 0.08f, 1.0f, 0.04f }, .Cone = 0.3f, .Speed = { 0.5f, 1.1f }, .Life = { 4.0f, 6.5f }, .Size = { 1.6f, 3.2f }, .Tint = { 0.32f, 0.27f, 0.27f } },
+					{ .Kind = K::Ember, .Count = 3.0f, .Shape = SpawnShape::Disc, .Radius = 1.2f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 1.0f, 2.6f }, .Life = { 1.2f, 2.4f }, .Size = { 0.03f, 0.05f } },
+				});
+				set(Fx::FallSpray, {
+					{ .Kind = K::Ember, .Count = 22.0f, .Shape = SpawnShape::Disc, .Outward = true, .Radius = 0.6f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.7f, .Speed = { 1.5f, 4.0f }, .Life = { 0.5f, 1.1f }, .Size = { 0.025f, 0.05f } },
+					{ .Kind = K::Fire, .Count = 8.0f, .Shape = SpawnShape::Disc, .Radius = 0.5f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.4f, .Speed = { 0.4f, 1.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.25f, 0.45f } },
+					{ .Kind = K::Smoke, .Count = 1.6f, .Shape = SpawnShape::Disc, .Radius = 0.8f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 0.6f, 1.2f }, .Life = { 3.0f, 5.0f }, .Size = { 1.2f, 2.4f }, .Tint = { 0.35f, 0.29f, 0.28f } },
+				});
 				set(Fx::Snowfall, {
 					{ .Kind = K::Snow, .Count = 150.0f, .Shape = SpawnShape::Disc, .Radius = 16.0f, .Direction = { 0.3f, -1.0f, 0.12f }, .Cone = 0.2f, .Speed = { 0.4f, 0.8f }, .Life = { 6.0f, 8.0f }, .Size = { 0.025f, 0.05f } },
+				});
+				set(Fx::IceBreak, {
+					{ .Kind = K::IceShard, .Count = 7.0f, .Outward = true, .Radius = 0.35f, .Direction = { 0.0f, 0.7f, 0.0f }, .Cone = 0.75f, .Speed = { 0.9f, 2.6f }, .Life = { 0.45f, 0.95f }, .Size = { 0.04f, 0.11f } },
+					{ .Kind = K::Dust, .Count = 5.0f, .Shape = SpawnShape::Disc, .Outward = true, .Radius = 0.45f, .Direction = { 0.0f, 0.35f, 0.0f }, .Cone = 0.55f, .Speed = { 0.25f, 0.8f }, .Life = { 0.9f, 1.8f }, .Size = { 0.3f, 0.65f }, .Tint = { 0.85f, 1.12f, 1.35f } },
+				});
+				set(Fx::SeaSmoke, {
+					{ .Kind = K::Dust, .Count = 3.0f, .Shape = SpawnShape::Disc, .Radius = 0.9f, .Direction = { 0.12f, 1.0f, 0.05f }, .Cone = 0.35f, .Speed = { 0.12f, 0.34f }, .Life = { 3.2f, 5.5f }, .Size = { 0.6f, 1.35f }, .Tint = { 0.55f, 1.02f, 1.42f } },
 				});
 				set(Fx::Crumble, {
 					{ .Kind = K::Dust, .Count = 18.0f, .Shape = SpawnShape::Disc, .Outward = true, .Radius = 0.7f, .Direction = { 0.0f, 0.4f, 0.0f }, .Cone = 0.5f, .Speed = { 0.8f, 2.5f }, .Life = { 0.8f, 1.5f }, .Size = { 0.35f, 0.65f }, .Tint = { 1.5f, 1.45f, 1.38f } },
@@ -645,6 +687,13 @@ namespace Game
 		violetFire.SizeTimes = { 0.0f, 0.25f, 0.6f, 1.0f };
 		violetFire.Physics = { 3.0f, 2.5f, 4.0f, 1.4f };
 		violetFire.Motion.y = 0.3f;
+
+		ParticleMaterial& sulfurFire = define(ParticleKind::SulfurFire, ParticleShape::Flame, ParticleAlign::Billboard, 0.5f, 0.8f);
+		SetColors(sulfurFire, { 0.25f, 0.9f, 3.0f, 0.0f }, { 0.15f, 0.65f, 2.7f, 0.9f }, { 0.08f, 0.3f, 1.6f, 0.6f }, { 0.03f, 0.06f, 0.4f, 0.0f }, { 0.0f, 0.12f, 0.5f, 1.0f });
+		sulfurFire.Sizes = { 0.5f, 1.0f, 0.85f, 0.4f };
+		sulfurFire.SizeTimes = { 0.0f, 0.25f, 0.6f, 1.0f };
+		sulfurFire.Physics = { 3.0f, 2.5f, 4.0f, 1.4f };
+		sulfurFire.Motion.y = 0.3f;
 
 		ParticleMaterial& violetEmber = define(ParticleKind::VioletEmber, ParticleShape::Spark, ParticleAlign::Velocity, 1.0f, 1.6f);
 		SetColors(violetEmber, { 3.0f, 1.2f, 4.0f, 1.0f }, { 2.4f, 0.6f, 3.6f, 1.0f }, { 1.0f, 0.15f, 2.0f, 0.8f }, { 0.25f, 0.02f, 0.6f, 0.0f }, { 0.0f, 0.4f, 0.8f, 1.0f });

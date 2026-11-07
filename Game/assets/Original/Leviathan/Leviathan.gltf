@@ -1,0 +1,827 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v4.5.49",
+  "version": "2.0"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "name": "Scene",
+   "nodes": [
+    0,
+    1,
+    2,
+    3
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "Ribcage"
+  },
+  {
+   "mesh": 1,
+   "name": "Skull",
+   "translation": [
+    40,
+    0,
+    0
+   ]
+  },
+  {
+   "mesh": 2,
+   "name": "RibIce",
+   "translation": [
+    80,
+    0,
+    0
+   ]
+  },
+  {
+   "mesh": 3,
+   "name": "SkullIce",
+   "translation": [
+    120,
+    0,
+    0
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "LeviBone",
+   "normalTexture": {
+    "index": 0
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 1
+    },
+    "metallicRoughnessTexture": {
+     "index": 2
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 2
+   }
+  },
+  {
+   "emissiveFactor": [
+    0.08,
+    0.42,
+    0.5
+   ],
+   "emissiveTexture": {
+    "index": 3
+   },
+   "name": "LeviIcicle",
+   "normalTexture": {
+    "index": 4
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 5
+    },
+    "metallicRoughnessTexture": {
+     "index": 6
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 6
+   },
+   "extensions": {
+    "KHR_materials_emissive_strength": {
+     "emissiveStrength": 0.35
+    }
+   }
+  },
+  {
+   "name": "LeviTooth",
+   "normalTexture": {
+    "index": 7
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 8
+    },
+    "metallicRoughnessTexture": {
+     "index": 9
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 9
+   }
+  },
+  {
+   "emissiveFactor": [
+    0.3,
+    0.7,
+    1.0
+   ],
+   "emissiveTexture": {
+    "index": 10
+   },
+   "name": "LeviIce",
+   "normalTexture": {
+    "index": 11
+   },
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 12
+    },
+    "metallicRoughnessTexture": {
+     "index": 13
+    },
+    "roughnessFactor": 1.0,
+    "metallicFactor": 1.0
+   },
+   "occlusionTexture": {
+    "index": 13
+   },
+   "extensions": {
+    "KHR_materials_emissive_strength": {
+     "emissiveStrength": 0.5
+    },
+    "KHR_materials_diffuse_transmission": {
+     "diffuseTransmissionFactor": 0.5,
+     "diffuseTransmissionTexture": {
+      "index": 14
+     }
+    },
+    "KHR_materials_transmission": {
+     "transmissionFactor": 1.0
+    },
+    "KHR_materials_ior": {
+     "ior": 1.31
+    },
+    "KHR_materials_volume": {
+     "thicknessFactor": 0.1,
+     "attenuationColor": [
+      0.66,
+      0.86,
+      0.96
+     ],
+     "attenuationDistance": 0.9
+    }
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "Ribcage",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    },
+    {
+     "attributes": {
+      "POSITION": 4,
+      "NORMAL": 5,
+      "TEXCOORD_0": 6
+     },
+     "indices": 7,
+     "material": 1
+    }
+   ]
+  },
+  {
+   "name": "Skull",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 8,
+      "NORMAL": 9,
+      "TEXCOORD_0": 10
+     },
+     "indices": 11,
+     "material": 0
+    },
+    {
+     "attributes": {
+      "POSITION": 12,
+      "NORMAL": 13,
+      "TEXCOORD_0": 14
+     },
+     "indices": 15,
+     "material": 2
+    },
+    {
+     "attributes": {
+      "POSITION": 16,
+      "NORMAL": 17,
+      "TEXCOORD_0": 18
+     },
+     "indices": 19,
+     "material": 1
+    }
+   ]
+  },
+  {
+   "name": "RibIce",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 20,
+      "NORMAL": 21,
+      "TEXCOORD_0": 22
+     },
+     "indices": 23,
+     "material": 3
+    }
+   ]
+  },
+  {
+   "name": "SkullIce",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 24,
+      "NORMAL": 25,
+      "TEXCOORD_0": 26
+     },
+     "indices": 27,
+     "material": 3
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  },
+  {
+   "sampler": 0,
+   "source": 1
+  },
+  {
+   "sampler": 0,
+   "source": 2
+  },
+  {
+   "sampler": 0,
+   "source": 3
+  },
+  {
+   "sampler": 0,
+   "source": 4
+  },
+  {
+   "sampler": 0,
+   "source": 5
+  },
+  {
+   "sampler": 0,
+   "source": 6
+  },
+  {
+   "sampler": 0,
+   "source": 7
+  },
+  {
+   "sampler": 0,
+   "source": 8
+  },
+  {
+   "sampler": 0,
+   "source": 9
+  },
+  {
+   "sampler": 0,
+   "source": 10
+  },
+  {
+   "sampler": 0,
+   "source": 11
+  },
+  {
+   "sampler": 0,
+   "source": 12
+  },
+  {
+   "sampler": 0,
+   "source": 13
+  },
+  {
+   "source": 14,
+   "sampler": 0
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviBone_normal.png",
+   "uri": "Leviathan_LeviBone_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviBone_albedo.png",
+   "uri": "Leviathan_LeviBone_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviBone_orm.png",
+   "uri": "Leviathan_LeviBone_orm.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviIcicle_emit.png",
+   "uri": "Leviathan_LeviIcicle_emit.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviIcicle_normal.png",
+   "uri": "Leviathan_LeviIcicle_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviIcicle_albedo.png",
+   "uri": "Leviathan_LeviIcicle_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviIcicle_orm.png",
+   "uri": "Leviathan_LeviIcicle_orm.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviTooth_normal.png",
+   "uri": "Leviathan_LeviTooth_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviTooth_albedo.png",
+   "uri": "Leviathan_LeviTooth_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviTooth_orm.png",
+   "uri": "Leviathan_LeviTooth_orm.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviIce_emit.png",
+   "uri": "Leviathan_LeviIce_emit.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviIce_normal.png",
+   "uri": "Leviathan_LeviIce_normal.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviIce_albedo.png",
+   "uri": "Leviathan_LeviIce_albedo.png"
+  },
+  {
+   "mimeType": "image/png",
+   "name": "Leviathan_LeviIce_orm.png",
+   "uri": "Leviathan_LeviIce_orm.png"
+  },
+  {
+   "uri": "Leviathan_LeviIce_thin.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 128122,
+   "max": [
+    5.343344211578369,
+    6.584425449371338,
+    7.594226360321045
+   ],
+   "min": [
+    -6.069497585296631,
+    -2.0171420574188232,
+    -14.731559753417969
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 128122,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 128122,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5125,
+   "count": 407211,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5126,
+   "count": 1056,
+   "max": [
+    2.729532241821289,
+    3.3249576091766357,
+    5.242778778076172
+   ],
+   "min": [
+    -2.891789436340332,
+    0.2692262530326843,
+    -4.950204372406006
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 1056,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 1056,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5123,
+   "count": 1320,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 104958,
+   "max": [
+    1.5595802068710327,
+    1.8329706192016602,
+    3.160918712615967
+   ],
+   "min": [
+    -1.5572482347488403,
+    -2.53657865524292,
+    -2.6379828453063965
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5126,
+   "count": 104958,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 10,
+   "componentType": 5126,
+   "count": 104958,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 11,
+   "componentType": 5125,
+   "count": 455994,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 12,
+   "componentType": 5126,
+   "count": 5074,
+   "max": [
+    1.074835181236267,
+    -0.08295641839504242,
+    2.755059242248535
+   ],
+   "min": [
+    -1.0778231620788574,
+    -2.246056079864502,
+    -0.6826898455619812
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 13,
+   "componentType": 5126,
+   "count": 5074,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 14,
+   "componentType": 5126,
+   "count": 5074,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 15,
+   "componentType": 5123,
+   "count": 13536,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 16,
+   "componentType": 5126,
+   "count": 336,
+   "max": [
+    1.2888295650482178,
+    -0.15947549045085907,
+    1.766109824180603
+   ],
+   "min": [
+    -1.1512775421142578,
+    -0.5553005933761597,
+    -0.9534088969230652
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 17,
+   "componentType": 5126,
+   "count": 336,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 18,
+   "componentType": 5126,
+   "count": 336,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 19,
+   "componentType": 5123,
+   "count": 420,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 20,
+   "componentType": 5126,
+   "count": 2226,
+   "max": [
+    4.476691246032715,
+    1.1724786758422852,
+    4.503130912780762
+   ],
+   "min": [
+    -4.843323230743408,
+    -0.3132992088794708,
+    -13.45176887512207
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 21,
+   "componentType": 5126,
+   "count": 2226,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 22,
+   "componentType": 5126,
+   "count": 2226,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 23,
+   "componentType": 5123,
+   "count": 6096,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 24,
+   "componentType": 5126,
+   "count": 535,
+   "max": [
+    2.3304316997528076,
+    -0.6618701219558716,
+    3.1911861896514893
+   ],
+   "min": [
+    -1.0946344137191772,
+    -2.036879777908325,
+    -1.3381257057189941
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 25,
+   "componentType": 5126,
+   "count": 535,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 26,
+   "componentType": 5126,
+   "count": 535,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 27,
+   "componentType": 5123,
+   "count": 1482,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 1537464,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1537464,
+   "byteOffset": 1537464,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1024976,
+   "byteOffset": 3074928,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1628844,
+   "byteOffset": 4099904,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 12672,
+   "byteOffset": 5728748,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 12672,
+   "byteOffset": 5741420,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 8448,
+   "byteOffset": 5754092,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 2640,
+   "byteOffset": 5762540,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1259496,
+   "byteOffset": 5765180,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1259496,
+   "byteOffset": 7024676,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 839664,
+   "byteOffset": 8284172,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1823976,
+   "byteOffset": 9123836,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 60888,
+   "byteOffset": 10947812,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 60888,
+   "byteOffset": 11008700,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 40592,
+   "byteOffset": 11069588,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 27072,
+   "byteOffset": 11110180,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 4032,
+   "byteOffset": 11137252,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 4032,
+   "byteOffset": 11141284,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 2688,
+   "byteOffset": 11145316,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 840,
+   "byteOffset": 11148004,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 26712,
+   "byteOffset": 11148844,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 26712,
+   "byteOffset": 11175556,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 17808,
+   "byteOffset": 11202268,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 12192,
+   "byteOffset": 11220076,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 6420,
+   "byteOffset": 11232268,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 6420,
+   "byteOffset": 11238688,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 4280,
+   "byteOffset": 11245108,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 2964,
+   "byteOffset": 11249388,
+   "target": 34963
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 11252352,
+   "uri": "Leviathan.bin"
+  }
+ ],
+ "extensionsUsed": [
+  "KHR_materials_diffuse_transmission",
+  "KHR_materials_emissive_strength",
+  "KHR_materials_ior",
+  "KHR_materials_transmission",
+  "KHR_materials_volume"
+ ]
+}

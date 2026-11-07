@@ -222,6 +222,7 @@ namespace Game
 		m_Settings.FirstWave = options.FirstWave;
 		m_Settings.Peaceful = options.Peaceful;
 		m_Settings.Leviathan = options.Leviathan;
+		m_Settings.ShotCamera = options.ShotCamera;
 		m_Settings.Distortion = options.Distortion;
 		m_Settings.Trails = options.Trails;
 		m_Settings.DistortionStage = options.DistortionStage;
@@ -342,6 +343,7 @@ namespace Game
 		}
 		RegisterSpellMeshes(*m_WorldRenderer);
 		RegisterPeakMeshes(*m_WorldRenderer);
+		RegisterLakeMeshes(*m_WorldRenderer);
 		m_MenuBackdrop = std::make_unique<MenuBackdrop>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
 		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
 		m_WorldRenderer->GetDistortion().Enabled = m_Settings.Distortion;
@@ -356,6 +358,7 @@ namespace Game
 			m_Settings.Gi = GiQuality(*options.Gi);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
 		m_WorldRenderer->SetRenderScale(float(m_Settings.RenderScale) / 100.0f);
+		m_WorldRenderer->SetLakeFullResolution(m_RecommendedGraphics != GraphicsTier::Low);
 		PostProcess& post = m_WorldRenderer->GetPost();
 		if (options.Tonemap)
 			post.Tonemap = Tonemapper(*options.Tonemap);
@@ -458,6 +461,7 @@ namespace Game
 		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
 		m_WorldRenderer->SetRenderScale(float(m_Settings.RenderScale) / 100.0f);
+		m_WorldRenderer->SetLakeFullResolution(m_RecommendedGraphics != GraphicsTier::Low);
 		m_Window->SetFullscreen(m_Settings.Fullscreen);
 		m_PresentQueue->SetPresentMode(PresentModeFor(m_Settings.Vsync));
 	}

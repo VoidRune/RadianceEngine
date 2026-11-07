@@ -109,7 +109,7 @@ def crack_field(size, rng, count, steps, step_px, wander=0.55):
     return field
 
 
-def flagstones(folder, name, seed, light, dark, accent, size=2048, rows=8, per_row=(4, 7)):
+def flagstones(folder, name, seed, light, dark, accent, size=2048, rows=8, per_row=(4, 7), lichen_amount=0.3):
     rng = np.random.default_rng(seed)
     wobble_x = fbm(size, rng, 6, 3) - 0.5
     wobble_y = fbm(size, rng, 6, 3) - 0.5
@@ -167,7 +167,7 @@ def flagstones(folder, name, seed, light, dark, accent, size=2048, rows=8, per_r
     base = base * (1.0 - 0.28 * pits[..., None])
     base = base * (0.82 + 0.36 * mid[..., None])
     lichen = smooth(0.66, 0.74, fbm(size, rng, 24, 3)) * smooth(0.5, 0.7, large)
-    base = lerp(base, np.array((0.5, 0.46, 0.3), dtype=np.float32), lichen * 0.3)
+    base = lerp(base, np.array((0.5, 0.46, 0.3), dtype=np.float32), lichen * lichen_amount)
     wear = 1.0 - smooth(4.0, 12.0, edge)
     base = base * (1.0 - 0.3 * wear[..., None] * face[..., None])
     joint = np.array((0.045, 0.036, 0.026), dtype=np.float32) * (0.7 + 0.6 * mid[..., None])
@@ -348,6 +348,7 @@ def main():
     inlay_blue(output, 'ObservatoryBlue', 73)
     metal(output, 'ObservatoryGold', 79, (0.72, 0.51, 0.22), (0.44, 0.29, 0.1), (0.26, 0.38, 0.3), 0.78, roughness=(0.3, 0.52))
     metal(output, 'ObservatoryBronze', 83, (0.46, 0.34, 0.2), (0.24, 0.17, 0.1), (0.2, 0.42, 0.36), 0.62, size=1024, roughness=(0.22, 0.5))
+    metal(output, 'ForgeJointSilver', 101, (0.93, 0.93, 0.95), (0.7, 0.71, 0.74), (0.2, 0.42, 0.36), 2.0, roughness=(0.05, 0.16))
     mural(output, 'ObservatoryMural', 89)
 
 

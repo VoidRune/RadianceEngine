@@ -42,15 +42,12 @@ const vec3 CrystalViolet = vec3(0.5, 0.26, 1.0);
 const float CrystalGlow = 0.45;
 const uint CrystalTexture = 1u;
 const float CrystalPeriod = 20.0;
-const float IcePeriod = 18.0;
-const vec3 IceCrack = vec3(0.86, 0.95, 1.0);
 const float DyeGain = 5.2;
 const float DyeFloor = 0.014;
 const float TrimLight = 0.3;
 const float TrimGlow = 0.12;
 const float RimPower = 3.5;
 const float CrystalTranslucency = 0.85;
-const float IceTranslucency = 0.3;
 const float CharDepth = 3.0;
 const float TwoToneLow = 0.1;
 const float TwoToneHigh = 0.25;
@@ -58,6 +55,61 @@ const float TwoToneFacing = 0.35;
 const float TwoToneUp = 0.5;
 const float TwoToneVeins = 1.2;
 const float BrightGain = 3.0;
+const vec3 SeamHeat = vec3(2.3, 0.72, 0.13);
+const float SeamBase = 0.7;
+const float SeamPulse = 0.45;
+const float SeamWarn = 5.0;
+const vec3 ObsidianTint = vec3(0.012, 0.011, 0.017);
+const float ObsidianRoughness = 0.07;
+const float RockRelief = 2.4;
+const vec3 GlassSky = vec3(0.09, 0.09, 0.2);
+const vec3 GlassHorizon = vec3(0.24, 0.1, 0.05);
+const vec3 GlassLava = vec3(0.3, 0.1, 0.03);
+const vec3 PolishHorizon = vec3(0.95, 0.42, 0.14);
+const vec3 PolishSky = vec3(0.12, 0.09, 0.16);
+const float PolishBase = 0.35;
+const float PolishFresnel = 0.9;
+const vec3 PolishGlint = vec3(1.4, 0.9, 0.5);
+const float GlassBase = 0.05;
+const float GlassFresnel = 0.7;
+const float GlassGlint = 1.1;
+const vec3 MarbleVein = vec3(0.05, 0.045, 0.065);
+const vec3 FlowDeep = vec3(1.2, 0.3, 0.05);
+const vec3 FlowHot = vec3(1.1, 0.62, 0.13);
+const vec3 MetalDeep = vec3(1.1, 0.34, 0.04);
+const vec3 MetalBright = vec3(2.1, 1.2, 0.26);
+const vec3 MetalWhite = vec3(3.6, 2.6, 1.1);
+const vec3 MetalLiquidAlbedo = vec3(0.85, 0.55, 0.22);
+const float MetalCoolSpan = 1.5;
+const float FloodGain = 0.5;
+const float SmoulderBlend = 2.0;
+const float SmoulderFlow = 0.35;
+const vec3 SmoulderDeep = vec3(0.55, 0.09, 0.015);
+const vec3 SmoulderBright = vec3(1.3, 0.42, 0.06);
+const float SkinThreshold = 0.5;
+const float SkinRim = 0.015;
+const float RaftContrast = 2.2;
+const float SkinRimGlow = 1.4;
+const float FissureGlow = 0.45;
+const float SkinUnderglow = 0.08;
+const vec3 SkinAlbedo = vec3(0.07, 0.05, 0.04);
+const vec3 HeatGlow = vec3(1.5, 0.3, 0.05);
+const vec2 HeatCenter = vec2(24.0, 24.0);
+const float HeatSeconds = 5.0;
+const float PreHeat = 0.22;
+const float PreHeatSeconds = 3.0;
+const float ForgeHiltLine = 6.2;
+const float FloodFrontAge = 0.15;
+const float FloodAgeRate = 2.0;
+const float MeltRadius = 1.3;
+const float MeltFloor = -0.88;
+const float MeltMargin = 0.06;
+const float MeltRim = 1.1;
+const float MeltSpoutReach = 1.95;
+const float MeltSpoutHalf = 0.32;
+const float MeltSpoutTop = 1.12;
+const float MeltSpoutDepth = 0.07;
+const float MeltAge = 3.0;
 
 struct Layer
 {
@@ -201,6 +253,43 @@ float RainNoise(vec2 p)
 	return mix(mix(h.x, h.y, f.x), mix(h.z, h.w, f.x), f.y);
 }
 
+float CrucibleInnerRadius(float y)
+{
+	if (y < -0.63)
+		return mix(1.036, 1.204, clamp((y + 0.896) / 0.266, 0.0, 1.0));
+	if (y < 0.14)
+		return mix(1.204, 1.302, (y + 0.63) / 0.77);
+	return mix(1.302, 1.372, clamp((y - 0.14) / 0.924, 0.0, 1.0));
+}
+
+vec2 CrackCells(vec2 p)
+{
+	vec2 cell = floor(p);
+	vec2 local = p - cell;
+	float first = 8.0;
+	float second = 8.0;
+	for (int y = -1; y <= 1; y++)
+		for (int x = -1; x <= 1; x++)
+		{
+			vec2 offset = vec2(float(x), float(y));
+			vec2 seed = fract(sin(vec2(dot(cell + offset, vec2(127.1, 311.7)), dot(cell + offset, vec2(269.5, 183.3)))) * 43758.547);
+			float d = length(offset + seed - local);
+			if (d < first)
+			{
+				second = first;
+				first = d;
+			}
+			else if (d < second)
+				second = d;
+		}
+	return vec2(first, second);
+}
+
+float MetalFbm(vec3 p)
+{
+	return VeinNoise(p) * 0.55 + VeinNoise(p * 2.07 + 13.1) * 0.3 + VeinNoise(p * 4.13 + 29.7) * 0.15;
+}
+
 float FilterRoughness(vec3 n, float roughness)
 {
 	vec3 dx = dFdx(n);
@@ -224,6 +313,37 @@ void main()
 	float charred = DissolveEdge(field, threshold, inDissolve.y * CharDepth);
 #endif
 	uint flags = inMaterial.z;
+	bool metal = (flags & MeshMetal) != 0u;
+	float metalAge = 0.0;
+	if (metal)
+	{
+		float forgeL1 = abs(inWorld.x - HeatCenter.x) + abs(inWorld.z - HeatCenter.y);
+		if (inTint.z > 2.5)
+		{
+			vec3 rel = inWorld - inAccent.xyz;
+			float c = cos(inAccent.w);
+			float s = sin(inAccent.w);
+			vec3 cavity = vec3(rel.x, rel.y * c - rel.z * s, rel.y * s + rel.z * c);
+			bool spout = inTint.x > 0.5 && cavity.z < -MeltRadius * 0.85 && cavity.z > -MeltSpoutReach && abs(cavity.x) < MeltSpoutHalf && abs(cavity.y - MeltSpoutTop) < MeltSpoutDepth;
+			if (!spout && (cavity.y < MeltFloor || cavity.y > MeltRim || length(cavity.xz) > CrucibleInnerRadius(cavity.y) - MeltMargin))
+				discard;
+			metalAge = MeltAge;
+		}
+		else if (inTint.z > 1.5)
+		{
+			if (forgeL1 < inTint.w)
+				discard;
+			metalAge = FloodFrontAge + (forgeL1 - inTint.w) * FloodAgeRate;
+		}
+		else
+		{
+			float front = inAccent.x + inUv.x * inTint.x;
+			metalAge = inAccent.w - front;
+			bool hiltOnly = inAccent.y < 0.0;
+			if (metalAge < 0.0 || inUv.x > abs(inAccent.y) || inAccent.w >= inAccent.z + inUv.x * inTint.x || (hiltOnly && inWorld.z - HeatCenter.y < ForgeHiltLine) || (inTint.z > 0.5 && forgeL1 >= inTint.w))
+				discard;
+		}
+	}
 	bool splat = (flags & MeshSplat) != 0u;
 	bool layered = (flags & MeshLayered) != 0u;
 	bool onlyOther = layered && inColor.r > 0.995;
@@ -298,21 +418,36 @@ void main()
 		albedo *= 1.0 - 0.55 * near;
 		heat = LavaHeat * (near * near);
 	}
+	if ((flags & MeshFlow) != 0u)
+	{
+		float across = (inWorld.x + inWorld.z) * 0.7071;
+		float n = VeinNoise(vec3(across * 1.6, inWorld.y * 0.55 + time * 1.9, 3.0)) * 0.6 + VeinNoise(vec3(across * 4.2, inWorld.y * 1.3 + time * 3.1, 11.0)) * 0.4;
+		float hot = smoothstep(0.45, 0.85, n);
+		float crusted = smoothstep(0.58, 0.8, VeinNoise(vec3(across * 2.6, inWorld.y * 0.8 + time * 2.4, 7.0)));
+		float body = inColor.a;
+		albedo *= 1.0 - body;
+		heat += (FlowDeep + FlowHot * hot) * (body * (1.0 - 0.75 * crusted) * (0.86 + 0.28 * max(-pc.Eye.w, 0.0)));
+	}
+	if ((flags & MeshSeam) != 0u)
+	{
+		float seam = inColor.a * inColor.a;
+		albedo *= 1.0 - 0.6 * seam;
+		heat += SeamHeat * (seam * (SeamBase + SeamPulse * max(-pc.Eye.w, 0.0)) * (1.0 + SeamWarn * clamp(inShading.x, 0.0, 1.0)));
+	}
 	if (layered)
 		albedo *= 0.62 + 0.76 * inColor.b;
+	bool rock = (flags & MeshRock) != 0u;
+	float glaze = 0.0;
+	if (rock)
+	{
+		float bare = 1.0 - smoothstep(0.3, 0.75, inColor.r);
+		albedo *= mix(vec3(1.0), mix(vec3(0.9, 0.95, 1.06), vec3(1.08, 1.0, 0.9), inColor.a), bare);
+		float streak = RainNoise(vec2((inWorld.x + inWorld.z) * 1.9, inWorld.y * 0.24)) * 0.65 + RainNoise(vec2((inWorld.x - inWorld.z) * 5.3, inWorld.y * 0.6)) * 0.35;
+		glaze = inColor.g * smoothstep(0.3, 0.62, streak) * bare;
+		layer.Normal = normalize(vec3(layer.Normal.xy * mix(1.5, 0.5, glaze), layer.Normal.z));
+	}
 	float translucency = 0.0;
 #ifdef CRYSTAL
-	float iceRoughness = -1.0;
-	if ((flags & MeshIce) != 0u)
-	{
-		float n = texture(Textures[CrystalTexture], inWorld.xz / IcePeriod + vec2(0.31, 0.17)).r;
-		float reach = texture(Textures[CrystalTexture], inWorld.xz / (IcePeriod * 2.2) + vec2(0.77, 0.41)).r;
-		float crack = (1.0 - smoothstep(0.35, 1.2, abs(n - 0.5) / max(fwidth(n), 1e-5))) * smoothstep(0.42, 0.6, reach);
-		crack *= smoothstep(0.6, 0.9, normalize(inNormal).y) * (1.0 - inColor.a);
-		albedo = mix(albedo, IceCrack, crack * 0.7);
-		iceRoughness = mix(mix(0.16, 0.35, crack), 0.85, inColor.a);
-		translucency = IceTranslucency * (1.0 - inColor.a);
-	}
 	if ((flags & MeshCrystal) != 0u)
 	{
 		float vein;
@@ -343,11 +478,75 @@ void main()
 		translucency = material.Params.w * metallic;
 		metallic = 0.0;
 	}
-#ifdef CRYSTAL
-	if (iceRoughness >= 0.0)
-		roughness = iceRoughness;
-#endif
+	if ((flags & MeshHeated) != 0u)
+	{
+		float l1 = abs(inWorld.x - HeatCenter.x) + abs(inWorld.z - HeatCenter.y);
+		float since = inAccent.z - (inAccent.x + max(inAccent.w - l1, 0.0) * inAccent.y);
+		float hot = max(smoothstep(0.0, HeatSeconds, since), PreHeat * smoothstep(-PreHeatSeconds, 0.0, since));
+		float seams = (1.0 - smoothstep(0.12, 0.62, height)) * 0.7 + (1.0 - occlusion) * 0.8;
+		float mottle = 0.6 + 0.8 * abs(height - 0.5);
+		heat += HeatGlow * (hot * (0.12 + seams) * mottle * max(inTint.a, 1.0));
+		albedo = mix(albedo, albedo * vec3(1.25, 0.75, 0.6), hot);
+	}
+	vec2 metalSlope = vec2(0.0);
+	if (metal)
+	{
+		float clock = inTint.z > 2.5 ? inTint.w : inAccent.w;
+		float hotSeconds = inTint.y;
+		vec2 p = inWorld.xz;
+		float texel = length(fwidth(p));
+		bool flood = inTint.z < 0.5;
+		float seed = fract(inAccent.x * 0.137) * 40.0;
+		float cool = smoothstep(hotSeconds - MetalCoolSpan, hotSeconds + SmoulderBlend, metalAge);
+		float flow = inUv.x * 0.55 - clock * (flood ? 0.25 : mix(1.35, SmoulderFlow, cool));
+		vec2 warp = vec2(VeinNoise(vec3(p * 0.8, flow * 0.6 + 3.0)), VeinNoise(vec3(p * 0.8 + 7.3, flow * 0.6 + 9.0))) - 0.5;
+		float churn = MetalFbm(vec3(p * 1.7 + warp * 2.4, flow));
+		float veins = 0.0;
+		float scum = 0.0;
+		if (!flood)
+		{
+			veins = 1.0 - abs(2.0 * VeinNoise(vec3(p * 2.9 + warp * 3.0, flow * 1.4 + 17.0)) - 1.0);
+			scum = smoothstep(0.55, 0.78, VeinNoise(vec3(p * 1.1 - warp, flow * 0.5 + 31.0)));
+		}
+		vec3 liquid = mix(MetalDeep, MetalBright, smoothstep(0.3, 0.75, churn));
+		liquid = mix(liquid, MetalWhite * 0.7, smoothstep(0.72, 0.95, churn) * 0.6);
+		liquid *= 1.0 - 0.35 * smoothstep(0.88, 0.985, veins);
+		liquid *= 1.0 - 0.6 * scum * smoothstep(0.5, 3.0, metalAge) * (1.0 - cool);
+		vec3 ember = mix(SmoulderDeep, SmoulderBright, smoothstep(0.35, 0.8, churn)) * (0.85 + 0.15 * sin(clock * 1.7 + churn * 6.0));
+		liquid = mix(liquid, ember, cool);
+		liquid = mix(liquid, MetalWhite, 0.85 * exp(-metalAge * 4.0));
+		float skin = 0.0;
+		float edge = 0.0;
+		float fissure = 0.0;
+		if (cool > 0.0)
+		{
+			vec2 drift = vec2(clock * 0.03, -clock * 0.05);
+			vec2 skinWarp = vec2(VeinNoise(vec3(p * 0.6 + drift, seed)), VeinNoise(vec3(p * 0.6 + 5.1 + drift, seed + 3.0))) - 0.5;
+			float raft = (MetalFbm(vec3((p + drift) * 1.25 + skinWarp * 1.8, seed + 7.0)) - 0.5) * RaftContrast + 0.5;
+			float threshold = mix(0.85, SkinThreshold, cool);
+			float aa = max(texel * 2.5, 1e-3);
+			skin = smoothstep(threshold - aa, threshold + 0.03 + aa, raft);
+			edge = exp(-max(raft - threshold, 0.0) / SkinRim) * skin;
+			vec2 cells = CrackCells((p + drift) * 2.2 + skinWarp * 1.2 + seed);
+			fissure = (1.0 - smoothstep(0.02 - texel * 3.0, 0.02 + texel * 3.0, cells.y - cells.x)) * skin * smoothstep(0.5, 0.65, VeinNoise(vec3(p * 0.8, seed + 41.0)));
+		}
+		float tone = 0.7 + 0.6 * VeinNoise(vec3(p * 3.1, seed + 29.0));
+		albedo = mix(MetalLiquidAlbedo, SkinAlbedo * tone, skin);
+		roughness = mix(mix(0.08, 0.3, scum), mix(0.55, 0.85, VeinNoise(vec3(p * 5.0, seed))), skin);
+		metallic = mix(1.0, 0.25, skin);
+		occlusion = 1.0;
+		heat += liquid * ((1.0 - skin) * (flood ? FloodGain : 1.0));
+		heat += SmoulderBright * (edge * SkinRimGlow + fissure * FissureGlow) * (0.85 + 0.15 * sin(clock * 2.3 + seed));
+		heat += SmoulderDeep * (skin * SkinUnderglow);
+		float relief = churn * 0.06 * (1.0 - cool * 0.6) + veins * 0.015 + skin * 0.025 - fissure * 0.015;
+		mat2 footprint = mat2(dFdx(p), dFdy(p));
+		float area = determinant(footprint);
+		if (abs(area) > 1e-8)
+			metalSlope = inverse(transpose(footprint)) * vec2(dFdx(relief), dFdy(relief));
+	}
 
+	if ((flags & MeshObsidian) != 0u)
+		layer.Normal = normalize(vec3(layer.Normal.xy * RockRelief, layer.Normal.z));
 	vec3 geometric = normalize(inNormal);
 	vec3 n = geometric;
 	vec3 t = tangent.xyz - geometric * dot(geometric, tangent.xyz);
@@ -356,6 +555,39 @@ void main()
 		t = normalize(t);
 		vec3 b = cross(geometric, t) * tangent.w;
 		n = normalize(t * layer.Normal.x + b * layer.Normal.y + geometric * layer.Normal.z);
+	}
+	if (metal)
+		n = normalize(geometric - vec3(metalSlope.x, 0.0, metalSlope.y));
+	if ((flags & MeshObsidian) != 0u)
+	{
+		float obsidian = clamp(inUv.x, 0.0, 1.0);
+		float vein = 1.0 - abs(2.0 * VeinNoise(inWorld * 0.9 + vec3(0.0, inWorld.x * 0.35, 0.0)) - 1.0);
+		float marble = smoothstep(0.86, 0.97, vein) * 0.8 + smoothstep(0.55, 0.9, VeinNoise(inWorld * 3.1)) * 0.2;
+		albedo = mix(albedo, ObsidianTint, obsidian);
+		albedo += MarbleVein * (marble * obsidian);
+		roughness = mix(roughness, mix(ObsidianRoughness, 0.26, marble), obsidian);
+		n = normalize(mix(n, geometric, obsidian * 0.85));
+		vec3 toEye = normalize(pc.Eye.xyz - inWorld);
+		vec3 mirror = reflect(-toEye, n);
+		float grazing = pow(1.0 - clamp(dot(n, toEye), 0.0, 1.0), 3.0);
+		vec3 sheen = mirror.y >= 0.0 ? mix(GlassHorizon, GlassSky, smoothstep(0.0, 0.7, mirror.y)) : GlassLava * smoothstep(0.0, -0.5, mirror.y);
+		float glint = smoothstep(0.78, 0.96, VeinNoise(geometric * 11.3 + inWorld * 0.07 + 5.1));
+		heat += sheen * (obsidian * (GlassBase + GlassFresnel * grazing + GlassGlint * glint));
+	}
+	if ((flags & MeshPolished) != 0u)
+	{
+		vec3 toEye = normalize(pc.Eye.xyz - inWorld);
+		vec3 mirror = reflect(-toEye, n);
+		float grazing = pow(1.0 - clamp(dot(n, toEye), 0.0, 1.0), 2.0);
+		vec3 lit = mix(PolishHorizon, PolishSky, smoothstep(0.15, 0.85, mirror.y));
+		float glint = smoothstep(0.82, 0.97, VeinNoise(inWorld * 2.3 + mirror * 6.0));
+		heat += albedo * (lit * (PolishBase + PolishFresnel * grazing) + PolishGlint * glint * (1.0 - roughness));
+	}
+	if (rock && glaze > 0.0)
+	{
+		albedo = mix(albedo, albedo * 0.5 + vec3(0.012, 0.026, 0.034), glaze);
+		roughness = mix(roughness, 0.09, glaze);
+		n = normalize(mix(n, geometric, glaze * 0.5));
 	}
 	if ((flags & MeshWet) != 0u)
 	{
@@ -388,7 +620,7 @@ void main()
 	}
 	if (backFacing)
 		n = -n;
-	if (inAccent.a > 0.0)
+	if (!metal && (flags & MeshHeated) == 0u && inAccent.a > 0.0)
 	{
 		float facing = clamp(dot(n, normalize(pc.Eye.xyz - inWorld)), 0.0, 1.0);
 		heat += inAccent.rgb * (pow(1.0 - facing, RimPower) * inAccent.a);
@@ -398,11 +630,11 @@ void main()
 	else
 		occlusion *= GroundOcclusion(inShading.y);
 
-	vec3 tint = inTint.rgb;
+	vec3 tint = metal ? vec3(1.0) : inTint.rgb;
 	bool twoTone = (flags & MeshTwoTone) != 0u;
 	if (twoTone)
 		tint = mix(inTint.rgb, inAccent.rgb, clamp(smoothstep(TwoToneLow, TwoToneHigh, Luminance(albedo)) + smoothstep(TwoToneFacing, 1.0, geometric.y) * TwoToneUp, 0.0, 1.0));
-	albedo = mix(albedo * tint, vec3(1.0), clamp(inTint.a, 0.0, 1.0));
+	albedo = mix(albedo * tint, vec3(1.0), (metal || (flags & MeshHeated) != 0u) ? 0.0 : clamp(inTint.a, 0.0, 1.0));
 	if (twoTone)
 		albedo = min(albedo, vec3(0.95));
 	float glow = clamp(inShading.x, 0.0, 1.0);

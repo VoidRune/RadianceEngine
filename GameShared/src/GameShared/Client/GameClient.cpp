@@ -678,7 +678,7 @@ namespace Game
 		const BrawlStatus& brawl = m_Status.Brawl;
 		const float clock = GetArenaClock(double(GetLatestTick()) + double(ticksAhead));
 		if (!m_Level->Skyborne)
-			return { .Clock = clock, .Field = &brawl.Plan };
+			return { .Clock = clock, .Deadly = brawl.Phase == BrawlPhase::Fight, .Field = &brawl.Plan };
 		return { &brawl.Plan, clock, brawl.Phase == BrawlPhase::Fight, &brawl.Plan };
 	}
 

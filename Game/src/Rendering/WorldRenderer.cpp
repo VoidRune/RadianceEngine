@@ -227,6 +227,7 @@ namespace Game
 		}
 
 		constexpr uint32_t VeinTextureSize = 1024;
+		constexpr size_t MaxIceField = 64 * 64;
 
 		std::vector<uint16_t> BakeVeinTexture()
 		{
@@ -260,6 +261,8 @@ namespace Game
 		m_Trails = std::make_unique<TrailRenderer>(device, allocator);
 		m_Lightning = std::make_unique<LightningRenderer>(device, allocator);
 		m_Void = std::make_unique<VoidRenderer>(device, allocator);
+		if (m_ModelVertexShader)
+			m_Lake = std::make_unique<LakeRenderer>(device, allocator, m_ModelVertexShader.get());
 		CreateMeshes();
 		EnsureCapacity(16384);
 		EnsureModelCapacity(1024, 4096);
@@ -280,6 +283,8 @@ namespace Game
 		};
 		const uint8_t open = 255;
 		m_SkyMask = create(Rdn::Format::R8_Unorm, &open, 1);
+		const uint8_t none = 0;
+		m_LavaLight = create(Rdn::Format::R8_Unorm, &none, 1);
 		const uint16_t black[4] = { 0, 0, 0, 0x3C00 };
 		m_BlackEnvironment = create(Rdn::Format::R16G16B16A16_Sfloat, black, sizeof(black));
 	}
@@ -296,22 +301,23 @@ namespace Game
 		m_Trails.reset();
 		m_Lightning.reset();
 		m_Void.reset();
+		m_Lake.reset();
 		ReleaseModelData();
-		for (Rdn::GpuRingBuffer* buffer : { m_InstanceBuffer.get(), m_ModelInstanceBuffer.get(), m_PaletteBuffer.get() })
+		for (Rdn::GpuRingBuffer* buffer : { m_InstanceBuffer.get(), m_ModelInstanceBuffer.get(), m_PaletteBuffer.get(), m_IceFieldBuffer.get() })
 			if (buffer)
 				m_Allocator.ReleaseResource(buffer);
 		if (m_MeshBuffer)
 			m_Allocator.ReleaseResource(m_MeshBuffer.get());
-		for (Rdn::GpuImage* image : { m_SkyMask.get(), m_BlackEnvironment.get(), m_LavaTexture.get() })
+		for (Rdn::GpuImage* image : { m_SkyMask.get(), m_LavaLight.get(), m_BlackEnvironment.get(), m_LavaTexture.get() })
 			if (image)
 				m_Allocator.ReleaseResource(image);
 		for (Rdn::Sampler* sampler : { m_ModelSampler.get(), m_NearestSampler.get(), m_RepeatSampler.get(), m_EnvironmentSampler.get() })
 			if (sampler)
 				m_Allocator.ReleaseResource(sampler);
-		for (Rdn::Pipeline* pipeline : { m_ShadowPipeline.get(), m_ModelShadowPipeline.get(), m_ModelAlphaShadowPipeline.get(), m_BackPipeline.get(), m_ModelBackPipeline.get(), m_CrystalPipeline.get(), m_IcewaterPipeline.get(), m_DissolvePipeline.get(), m_DissolveShadowPipeline.get() })
+		for (Rdn::Pipeline* pipeline : { m_ShadowPipeline.get(), m_ModelShadowPipeline.get(), m_ModelAlphaShadowPipeline.get(), m_BackPipeline.get(), m_ModelBackPipeline.get(), m_CrystalPipeline.get(), m_IceSheetPipeline.get(), m_IcewaterPipeline.get(), m_DissolvePipeline.get(), m_DissolveShadowPipeline.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
-		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get(), m_CrystalFragmentShader.get(), m_IcewaterFragmentShader.get(), m_DissolveVertexShader.get(), m_DissolveFragmentShader.get(), m_DissolveShadowShader.get() })
+		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get(), m_CrystalFragmentShader.get(), m_IceSheetShader.get(), m_IcewaterFragmentShader.get(), m_DissolveVertexShader.get(), m_DissolveFragmentShader.get(), m_DissolveShadowShader.get() })
 			if (shader)
 				m_Allocator.ReleaseResource(shader);
 		for (const auto& [pipeline, vertex, fragment] : { std::tuple(m_Pipeline.get(), m_VertexShader.get(), m_FragmentShader.get()), std::tuple(m_ModelPipeline.get(), m_ModelVertexShader.get(), m_ModelFragmentShader.get()), std::tuple(m_LavaPipeline.get(), m_LavaVertexShader.get(), m_LavaFragmentShader.get()) })
@@ -471,6 +477,7 @@ namespace Game
 		m_ModelShadowDraws.assign(m_DrawMeshes.size(), {});
 		m_ModelDissolveDraws.assign(m_DrawMeshes.size(), {});
 		m_ModelGlassDraws.assign(m_DrawMeshes.size(), {});
+		m_ModelUnderDraws.assign(m_DrawMeshes.size(), {});
 		return true;
 	}
 
@@ -583,6 +590,7 @@ namespace Game
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
 		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
 		m_ModelGlassDraws.resize(m_DrawMeshes.size());
+		m_ModelUnderDraws.resize(m_DrawMeshes.size());
 		return mesh;
 	}
 
@@ -621,6 +629,7 @@ namespace Game
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
 		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
 		m_ModelGlassDraws.resize(m_DrawMeshes.size());
+		m_ModelUnderDraws.resize(m_DrawMeshes.size());
 		return first;
 	}
 
@@ -637,6 +646,7 @@ namespace Game
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
 		m_ModelDissolveDraws.resize(m_DrawMeshes.size());
 		m_ModelGlassDraws.resize(m_DrawMeshes.size());
+		m_ModelUnderDraws.resize(m_DrawMeshes.size());
 	}
 
 	void WorldRenderer::SetSkyMask(uint32_t width, uint32_t height, const std::vector<uint8_t>& openness, glm::vec2 origin, glm::vec2 size)
@@ -650,6 +660,18 @@ namespace Game
 		m_Allocator.CreateGpuImage(m_SkyMask.get(), Rdn::GpuImageDesc{ .ImageSize = { valid ? width : 1, valid ? height : 1, 1 }, .Format = Rdn::Format::R8_Unorm, .UsageFlags = Rdn::ImageUsage::Sampled | Rdn::ImageUsage::TransferDst });
 		m_Allocator.SetImageData(m_SkyMask.get(), valid ? openness.data() : &open, valid ? openness.size() : 1, Rdn::ImageLayout::ShaderReadOnlyOptimal);
 		m_SkyMaskTransform = valid ? glm::vec4(1.0f / size.x, 1.0f / size.y, -origin.x / size.x, -origin.y / size.y) : glm::vec4(0.0f);
+	}
+
+	void WorldRenderer::SetLavaLight(uint32_t width, uint32_t height, const std::vector<uint8_t>& coverage, glm::vec2 origin, glm::vec2 size)
+	{
+		const bool valid = width > 0 && height > 0 && coverage.size() == size_t(width) * size_t(height);
+		const uint8_t none = 0;
+		if (m_LavaLight)
+			m_Allocator.ReleaseResource(m_LavaLight.get());
+		m_LavaLight = std::make_unique<Rdn::GpuImage>();
+		m_Allocator.CreateGpuImage(m_LavaLight.get(), Rdn::GpuImageDesc{ .ImageSize = { valid ? width : 1, valid ? height : 1, 1 }, .Format = Rdn::Format::R8_Unorm, .UsageFlags = Rdn::ImageUsage::Sampled | Rdn::ImageUsage::TransferDst });
+		m_Allocator.SetImageData(m_LavaLight.get(), valid ? coverage.data() : &none, valid ? coverage.size() : 1, Rdn::ImageLayout::ShaderReadOnlyOptimal);
+		m_LavaLightTransform = valid ? glm::vec4(1.0f / size.x, 1.0f / size.y, -origin.x / size.x, -origin.y / size.y) : glm::vec4(0.0f);
 	}
 
 	std::optional<uint32_t> WorldRenderer::FindMaterialSlot(std::string_view name) const
@@ -669,6 +691,8 @@ namespace Game
 		EnvironmentView view;
 		view.SkyMask = m_SkyMask.get();
 		view.SkyMaskTransform = m_SkyMaskTransform;
+		view.LavaLight = m_LavaLight.get();
+		view.LavaTransform = m_LavaLightTransform;
 		view.Sampler = m_EnvironmentSampler.get();
 		view.Image = m_BlackEnvironment.get();
 		const int32_t index = m_Lighting.Environment;
@@ -783,6 +807,29 @@ namespace Game
 		}
 		else
 			RDN_LOG_ERROR("The crystal variant of the model shader failed to compile, the Caldera loses its crystal veins");
+		if (Rdn::ShaderDesc iceDesc; Rdn::ShaderCompiler::Compile("res/Shaders/Game/IceSheet.frag", iceDesc))
+		{
+			m_IceSheetShader = std::make_unique<Rdn::Shader>();
+			m_Allocator.CreateShader(m_IceSheetShader.get(), iceDesc);
+			m_IceSheetPipeline = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_IceSheetPipeline.get(), Rdn::PipelineDesc{
+				.ShaderStages = { m_ModelVertexShader.get(), m_IceSheetShader.get() },
+				.CullMode = Rdn::CullMode::None,
+				.ColorAttachmentFormats = { AlbedoFormat, SurfaceFormat, EmissionFormat },
+				.DepthAttachmentFormat = DepthFormat,
+				.PushDescriptorSets = { 0 },
+			});
+			m_IceFieldBuffer = std::make_unique<Rdn::GpuRingBuffer>();
+			m_Allocator.CreateGpuRingBuffer(m_IceFieldBuffer.get(), Rdn::GpuRingBufferDesc{
+				.ElementSize = uint32_t(MaxIceField * sizeof(glm::vec4)),
+				.ElementCount = m_Device.GetFramesInFlightCount(),
+				.UsageFlags = Rdn::BufferUsage::StorageBuffer,
+				.MemoryProperty = Rdn::MemoryProperty::HostVisible | Rdn::MemoryProperty::HostCoherent,
+				.Mapped = true,
+			});
+		}
+		else
+			RDN_LOG_ERROR("The ice sheet shader failed to compile, the Frozen Lake shows plain ice");
 		Rdn::ShaderDesc dissolveVertexDesc;
 		Rdn::ShaderDesc dissolveFragmentDesc;
 		if (CompileVariant("res/Shaders/Game/Model.vert", "DISSOLVE", dissolveVertexDesc, Rdn::ShaderStage::Vertex) && CompileVariant("res/Shaders/Game/Model.frag", "DISSOLVE", dissolveFragmentDesc, Rdn::ShaderStage::Fragment))
@@ -951,6 +998,10 @@ namespace Game
 			draws.clear();
 		for (std::vector<ModelInstance>& draws : m_ModelGlassDraws)
 			draws.clear();
+		for (std::vector<ModelInstance>& draws : m_ModelUnderDraws)
+			draws.clear();
+		if (m_Lake)
+			m_Lake->BeginFrame();
 		m_Lights.clear();
 		m_LavaQuads.clear();
 		m_Palettes.clear();
@@ -968,7 +1019,7 @@ namespace Game
 		m_FocusHeight = focusHeight;
 		m_Constants.ViewProjection = camera.ViewProjection;
 		m_Constants.Focus = glm::vec4(fadeBelowFocus ? focusHeight : -1e4f, 0.0f, 0.0f, 0.0f);
-		m_Constants.Eye = glm::vec4(camera.Eye, lighting.Rain);
+		m_Constants.Eye = glm::vec4(camera.Eye, lighting.Rain > 0.0f ? lighting.Rain : -lighting.Pulse);
 	}
 
 	void WorldRenderer::DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw)
@@ -1041,6 +1092,20 @@ namespace Game
 			(instance.Dissolve.x > 0.0f && m_DissolvePipeline ? m_ModelDissolveDraws : m_ModelDraws)[mesh].push_back(instance);
 	}
 
+	void WorldRenderer::SubmitUnder(uint32_t mesh, const ModelInstance& instance)
+	{
+		if (mesh < m_ModelUnderDraws.size())
+			m_ModelUnderDraws[mesh].push_back(instance);
+	}
+
+	void WorldRenderer::SetIceField(int32_t width, int32_t height, std::span<const glm::vec4> field, float wallLow, float wallHigh)
+	{
+		if (size_t(width) * size_t(height) > MaxIceField || field.size() < size_t(width) * size_t(height))
+			return;
+		m_IceField.assign(field.begin(), field.begin() + ptrdiff_t(size_t(width) * size_t(height)));
+		m_IceFieldSize = glm::vec4(float(width), float(height), wallLow, wallHigh);
+	}
+
 	void WorldRenderer::DrawDecal(const GroundDecal& decal)
 	{
 		if (!m_Relief)
@@ -1109,6 +1174,7 @@ namespace Game
 		m_ModelShadowRanges.resize(m_ModelDraws.size());
 		m_ModelDissolveRanges.resize(m_ModelDraws.size());
 		m_ModelGlassRanges.resize(m_ModelDraws.size());
+		m_ModelUnderRanges.resize(m_ModelDraws.size());
 		m_PackedModels.clear();
 		for (size_t mesh = 0; mesh < m_ModelDraws.size(); mesh++)
 		{
@@ -1129,6 +1195,11 @@ namespace Game
 		{
 			m_ModelGlassRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(m_ModelGlassDraws[mesh].size()) };
 			m_PackedModels.insert(m_PackedModels.end(), m_ModelGlassDraws[mesh].begin(), m_ModelGlassDraws[mesh].end());
+		}
+		for (size_t mesh = 0; mesh < m_ModelUnderDraws.size(); mesh++)
+		{
+			m_ModelUnderRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(m_ModelUnderDraws[mesh].size()) };
+			m_PackedModels.insert(m_PackedModels.end(), m_ModelUnderDraws[mesh].begin(), m_ModelUnderDraws[mesh].end());
 		}
 		const uint32_t modelCount = m_ModelPipeline && m_ModelIndices ? uint32_t(m_PackedModels.size()) : 0;
 		if (m_Palettes.empty())
@@ -1172,6 +1243,8 @@ namespace Game
 			}
 		}
 
+		if (m_IceFieldBuffer && !m_IceField.empty())
+			std::memcpy(static_cast<uint8_t*>(m_IceFieldBuffer->GetMappedPtr()) + m_IceFieldBuffer->GetOffset(frameIndex), m_IceField.data(), m_IceField.size() * sizeof(glm::vec4));
 		const auto image = [&](const char* name, Rdn::Format format) { return graph.CreateImage(name, Rdn::RGImageDesc{ .Size = Rdn::Extent3D(extent), .Format = format }); };
 		const GBuffer gbuffer{
 			.Albedo = image("GBuffer albedo", AlbedoFormat),
@@ -1221,9 +1294,22 @@ namespace Game
 						for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
 						{
 							const DrawMesh& source = m_DrawMeshes[mesh];
-							if (m_ModelRanges[mesh].second > 0 && ((source.Flags & (MeshCrystal | MeshIce)) != 0 && m_CrystalPipeline) == crystal)
+							if (m_ModelRanges[mesh].second > 0 && ((source.Flags & MeshCrystal) != 0 && m_CrystalPipeline) == crystal && ((source.Flags & MeshIce) == 0 || !m_IceSheetPipeline))
 								cmd.DrawIndexed(source.IndexCount, m_ModelRanges[mesh].second, source.FirstIndex, 0, m_ModelRanges[mesh].first);
 						}
+					}
+					if (m_IceSheetPipeline && !m_IceField.empty())
+					{
+						const struct { glm::mat4 ViewProjection; glm::vec4 Focus; glm::vec4 Eye; glm::vec4 FieldSize; } constants{ m_Constants.ViewProjection, m_Constants.Focus, m_Constants.Eye, m_IceFieldSize };
+						Rdn::DescriptorWrite iceWrite = write;
+						iceWrite.AddWrite(Rdn::BufferWrite(4, Rdn::DescriptorType::StorageBuffer, m_IceFieldBuffer->GetHandle(), m_IceFieldBuffer->GetOffset(frameIndex), uint64_t(m_IceField.size()) * sizeof(glm::vec4)));
+						cmd.BindPipeline(m_IceSheetPipeline->GetHandle());
+						cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_IceSheetPipeline->GetLayout(), 0, iceWrite);
+						cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_IceSheetPipeline->GetLayout(), 1, { m_TextureSet->GetHandle() });
+						cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_IceSheetPipeline->GetLayout(), &constants, sizeof(constants));
+						for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
+							if (m_ModelRanges[mesh].second > 0 && (m_DrawMeshes[mesh].Flags & MeshIce) != 0)
+								cmd.DrawIndexed(m_DrawMeshes[mesh].IndexCount, m_ModelRanges[mesh].second, m_DrawMeshes[mesh].FirstIndex, 0, m_ModelRanges[mesh].first);
 					}
 					if (m_DissolvePipeline && std::any_of(m_ModelDissolveRanges.begin(), m_ModelDissolveRanges.end(), [](const auto& range) { return range.second > 0; }))
 					{
@@ -1238,7 +1324,7 @@ namespace Game
 				}
 				if (count > 0 && lava.second > 0 && m_LavaTexture)
 				{
-					const LavaConstants constants{ m_Constants.ViewProjection, glm::vec4(m_Constants.Focus.x, 0.0f, 0.0f, 0.0f) };
+					const LavaConstants constants{ m_Constants.ViewProjection, glm::vec4(m_Constants.Focus.x, m_Lighting.Pulse, m_Lighting.Fury, m_Lighting.LavaCrust) };
 					const Rdn::Pipeline& liquid = m_FrozenLiquid && m_IcewaterPipeline ? *m_IcewaterPipeline : *m_LavaPipeline;
 					cmd.BindPipeline(liquid.GetHandle());
 					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, liquid.GetLayout(), 0, Rdn::DescriptorWrite()
@@ -1284,6 +1370,34 @@ namespace Game
 			m_Gi->Render(graph, gbuffer, giSource, emitters, backDepth, scene, extent, frameIndex, camera, m_Lighting, environment, m_GiQuality, m_Constants.Focus.x, edgeBand, m_View);
 		if (m_View != DebugView::Irradiance && m_View != DebugView::GiSource)
 		{
+			if (m_Lake && m_Lighting.Lake.Active && m_View == DebugView::Lit && modelCount > 0 && m_TextureSet && m_Textures.size() > 1)
+			{
+				m_LakeDraws.Under.clear();
+				m_LakeDraws.Glow.clear();
+				m_LakeDraws.Mirror.clear();
+				for (size_t mesh = 0; mesh < m_ModelUnderRanges.size(); mesh++)
+				{
+					const DrawMesh& source = m_DrawMeshes[mesh];
+					if (const auto [first, instances] = m_ModelUnderRanges[mesh]; instances > 0)
+						((source.Flags & MeshUnderGlow) != 0 ? m_LakeDraws.Glow : m_LakeDraws.Under).push_back({ source.FirstIndex, source.IndexCount, first, instances });
+					if (const auto [first, instances] = m_ModelRanges[mesh]; instances > 0 && (source.Flags & (MeshIce | MeshGround | MeshSplat | MeshWater)) == 0)
+						m_LakeDraws.Mirror.push_back({ source.FirstIndex, source.IndexCount, first, instances });
+				}
+				const LakeModels models{
+					.Instances = m_ModelInstanceBuffer.get(),
+					.InstanceBytes = uint64_t(modelCount) * sizeof(ModelInstance),
+					.Palette = m_PaletteBuffer.get(),
+					.PaletteBytes = uint64_t(paletteCount) * sizeof(glm::mat4),
+					.Vertices = m_ModelVertices.get(),
+					.Indices = m_ModelIndices.get(),
+					.Materials = m_MaterialBuffer.get(),
+					.Textures = m_TextureSet.get(),
+					.RepeatSampler = m_RepeatSampler.get(),
+					.Caustics = m_Particles->GetCausticTexture()->GetImageView(),
+					.Noise = m_Textures[1]->GetImageView(),
+				};
+				m_Lake->Render(graph, scene, gbuffer, extent, frameIndex, camera, m_Lighting, m_Particles->GetTime(), !m_LakeFullResolution, models, m_LakeDraws);
+			}
 			m_Glass->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera, m_Lighting, environment, m_Particles->GetTime(), m_Lights);
 			m_Trails->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
 			m_Lightning->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);

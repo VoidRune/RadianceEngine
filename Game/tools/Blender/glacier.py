@@ -85,7 +85,7 @@ def lump(radius, height, rng, sink=-0.1, wobble=0.12, subdivisions=3):
 
 
 def ice_pillar(key, spec, m, target, rng):
-    parts = [pk.part(f'IcePillar{key}_Mound', lump(spec['mound'], spec['mound'] * 0.32, rng), target, m['snow'], rng=rng, smooth=40.0)]
+    parts = []
     for index, (angle, distance, radius, height, lean) in enumerate(spec['shards']):
         shard = pk.part(f'IcePillar{key}_Shard{index}', stations.crystal_shard(radius, height, sides=rng.choice((5, 6, 7)), tip=rng.uniform(0.18, 0.3), rng=rng), target, m['ice'], rng=rng, bevel=(0.03, 2, 30.0))
         out = Vector((math.cos(angle), math.sin(angle), 0.0))
@@ -116,7 +116,6 @@ def build(target):
     rng = random.Random(61)
     m = {
         'ice': ice_material('GlacierIce'),
-        'snow': snow_material('GlacierSnow'),
         'rock': snowy_rock_material('GlacierRock'),
     }
     pillars = {
@@ -134,7 +133,7 @@ def main():
     kit.reset()
     target = kit.collection('Export')
     objects = build(target)
-    pk.unwrap_all(objects, {'GlacierIce': 0.008, 'GlacierSnow': 0.01})
+    pk.unwrap_all(objects, {'GlacierIce': 0.008})
     for index, obj in enumerate(objects):
         obj.matrix_world = Matrix.Translation((index * 4.0, 0.0, 0.0)) @ obj.matrix_world
     if args.get('--out'):

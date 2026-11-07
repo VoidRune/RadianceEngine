@@ -34,10 +34,13 @@ layout(std140, set = 0, binding = 5) uniform LightingFrame
 	vec4 SkyGlow;
 	vec4 Contact;
 	mat4 ViewProjection;
+	vec4 LavaTransform;
+	vec4 LavaParams;
 } Frame;
 layout(set = 0, binding = 6) uniform sampler2D ShadowMap;
 layout(set = 0, binding = 11) uniform sampler2D EnvironmentMap;
 layout(set = 0, binding = 12) uniform sampler2D SkyMask;
+layout(set = 0, binding = 15) uniform sampler2D LavaLight;
 layout(std430, set = 0, binding = 13) readonly buffer LightList
 {
 	vec4 Lights[];
@@ -78,6 +81,18 @@ const float SkyThrough = 0.45;
 const float SunExtinction = 1.8;
 const uint LightTile = 16u;
 const uint MaskWords = 8u;
+const vec3 LavaGlowColor = vec3(1.0, 0.32, 0.07);
+const float LavaReach = 3.2;
+
+vec3 LavaIrradiance(vec3 position, vec3 n)
+{
+	if (Frame.LavaParams.x <= 0.0)
+		return vec3(0.0);
+	float lava = texture(LavaLight, position.xz * Frame.LavaTransform.xy + Frame.LavaTransform.zw).r;
+	float height = max(position.y - Frame.LavaParams.y, 0.0);
+	float facing = clamp(0.55 - 0.45 * n.y, 0.0, 1.0);
+	return LavaGlowColor * (Frame.LavaParams.x * lava * facing * exp(-height / LavaReach) * (0.85 + 0.3 * Frame.LavaParams.z + 0.35 * Frame.LavaParams.w));
+}
 
 vec3 LinearToSrgb(vec3 color)
 {
@@ -303,6 +318,7 @@ void main()
 			{
 			vec3 reflected = OpenSkyRadiance(Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb, DominantDirection(n, v, roughness), 1.0 / max(roughness, 0.05), Frame.SunDirection.xyz, Frame.SkyGlow);
 			ambient = CombineAmbient(albedo.rgb, metallic, roughness, n, v, HemisphereRadiance(Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb, n.y, 1.0), reflected) * albedo.a;
+			ambient += albedo.rgb * (1.0 - metallic) * LavaIrradiance(position, n) * albedo.a;
 		}
 #endif
 		vec3 lit = mix(sun + lightDirect + ambient + transmitted, DepthColor, fade);

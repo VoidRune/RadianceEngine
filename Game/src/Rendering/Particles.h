@@ -154,6 +154,7 @@ namespace Game
 		ParticleSystem& operator=(const ParticleSystem&) = delete;
 
 		void SetMaterials(std::span<const ParticleMaterial> materials);
+		const Rdn::GpuImage* GetCausticTexture() const { return m_CausticTexture.get(); }
 		void Spawn(const ParticleSpawn& spawn);
 		void BeginFrame();
 		void DrawSprite(const ParticleSprite& sprite);

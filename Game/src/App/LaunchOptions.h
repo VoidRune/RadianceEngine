@@ -5,6 +5,7 @@
 #include <GameShared/Content/Shardfall.h>
 #include <GameShared/Net/Transport.h>
 #include <GameShared/World/Level.h>
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -58,6 +59,7 @@ namespace Game
 		std::string PbrTest;
 		bool ProfileGpu = false;
 		bool Leviathan = false;
+		std::optional<std::array<float, 6>> ShotCamera;
 		bool Distortion = true;
 		bool Trails = true;
 		bool Translucency = true;

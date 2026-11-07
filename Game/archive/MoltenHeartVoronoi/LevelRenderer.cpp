@@ -1,0 +1,1843 @@
+#include "LevelRenderer.h"
+#include "Rendering/Models.h"
+#include "Rendering/SpellVisuals.h"
+#include "Rendering/WorldRenderer.h"
+#include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <map>
+
+namespace Game
+{
+	namespace
+	{
+		constexpr float RockHeight = 1.5f;
+		constexpr float CutHeight = 0.6f;
+		constexpr float VoidDepth = 3.5f;
+		constexpr float StepHeight = 0.125f;
+		constexpr float WallPiece = 1.0f;
+		constexpr glm::vec3 PortalGold = { 1.0f, 0.78f, 0.3f };
+		constexpr float PillarShatterSeconds = 0.9f;
+		constexpr float PillarSink = 0.6f;
+		constexpr glm::vec3 PillarBurn{ 1.1f, 2.8f, 4.6f };
+		constexpr float SightSlope = CameraHeight / (CameraBack + CameraFocusOffset);
+
+		float Hash(int32_t x, int32_t y, int32_t salt = 0)
+		{
+			uint32_t h = uint32_t(x) * 374761393u + uint32_t(y) * 668265263u + uint32_t(salt) * 2246822519u;
+			h = (h ^ (h >> 13)) * 1274126177u;
+			return float((h ^ (h >> 16)) & 0xFFFF) / 65535.0f;
+		}
+
+		float CutFactor(const LevelView& view, Vec2 point, float top)
+		{
+			if (!view.Cutaway)
+				return 0.0f;
+			const float depth = view.Focus.y - point.y;
+			if (depth < -0.3f)
+				return 0.0f;
+			const float width = 1.6f + 0.25f * std::max(depth, 0.0f);
+			const float side = std::clamp((width + 0.6f - std::abs(point.x - view.Focus.x)) / 0.6f, 0.0f, 1.0f);
+			const float sight = 0.5f + SightSlope * std::max(depth, 0.0f);
+			const float above = std::clamp((top - view.FocusHeight - sight) / 0.5f, 0.0f, 1.0f);
+			return side * above;
+		}
+
+		float SurfaceHeight(const TileMap& map, int32_t x, int32_t y, float own)
+		{
+			const Cell& cell = map.Get(x, y);
+			switch (GetTerrain(cell.Terrain).Style)
+			{
+			case TerrainStyle::Void:
+				return own - VoidDepth;
+			case TerrainStyle::Solid:
+				return own;
+			case TerrainStyle::Liquid:
+				return float(cell.Level) * HeightUnit - 0.6f;
+			default:
+				return float(cell.Level) * HeightUnit;
+			}
+		}
+
+		Vec2 SlopeLocal(Direction slope, float along, float across)
+		{
+			switch (slope)
+			{
+			case Direction::North:
+				return { across, along };
+			case Direction::South:
+				return { across, 1.0f - along };
+			case Direction::East:
+				return { along, across };
+			default:
+				return { 1.0f - along, across };
+			}
+		}
+
+		float SlopeYaw(Direction slope)
+		{
+			switch (slope)
+			{
+			case Direction::North:
+				return 0.0f;
+			case Direction::East:
+				return -HalfPi;
+			case Direction::South:
+				return Pi;
+			default:
+				return HalfPi;
+			}
+		}
+
+		void Column(WorldRenderer& renderer, float x, float z, float bottom, float top, glm::vec2 half, const glm::vec3& color, float ground, float yaw = 0.0f)
+		{
+			if (top - bottom < 0.002f)
+				return;
+			renderer.DrawBox({ x, (top + bottom) * 0.5f, z }, { half.x, (top - bottom) * 0.5f, half.y }, color, yaw, 0.0f, ground);
+		}
+
+		constexpr float IslandBottom = -1.6f;
+		constexpr float ShoreDrop = 0.08f;
+		constexpr float ShoreFlare = 0.1f;
+		constexpr float BaseFlare = 0.34f;
+		constexpr float SinkDepth = 1.8f;
+		constexpr float MaxTilt = 0.35f;
+
+		float SmoothStep(float edge0, float edge1, float x)
+		{
+			const float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+			return t * t * (3.0f - 2.0f * t);
+		}
+
+		float ValueNoise(Vec2 p, uint32_t salt)
+		{
+			const float fx = std::floor(p.x);
+			const float fy = std::floor(p.y);
+			const int32_t x = int32_t(fx);
+			const int32_t y = int32_t(fy);
+			const float u = SmoothStep(0.0f, 1.0f, p.x - fx);
+			const float v = SmoothStep(0.0f, 1.0f, p.y - fy);
+			const float bottom = std::lerp(CollapseNoise(x, y, salt), CollapseNoise(x + 1, y, salt), u);
+			const float top = std::lerp(CollapseNoise(x, y + 1, salt), CollapseNoise(x + 1, y + 1, salt), u);
+			return std::lerp(bottom, top, v);
+		}
+
+		float IslandSurface(Vec2 p, Vec2 center)
+		{
+			const float dome = 0.62f * (1.0f - SmoothStep(1.5f, 14.0f, Length(p - center)));
+			const float hills = 0.4f * (ValueNoise(p / 4.5f, 0xA11Cu) - 0.5f) + 0.1f * (ValueNoise(p / 1.6f, 0xB0B5u) - 0.5f);
+			return std::max(0.12f + dome + hills, 0.04f);
+		}
+
+		constexpr float MoltenTop = 1.55f;
+		constexpr float MoltenDome = 0.55f;
+		constexpr float MoltenStep = 0.26f;
+		constexpr float MoltenSink = 3.6f;
+		constexpr float PlateDomeReach = 0.6f;
+
+		float PlateBump(Vec2 p)
+		{
+			return 0.04f * (ValueNoise(p / 1.1f, 0xB1A5u) - 0.5f) + 0.014f * (ValueNoise(p / 0.4f, 0xB1A6u) - 0.5f);
+		}
+
+		constexpr float IceTop = 0.06f;
+		constexpr float SnowRise = 0.24f;
+		constexpr float IceBottom = -1.1f;
+		constexpr float IceBreakSeconds = 2.6f;
+		constexpr float IceOpenDelay = 0.4f;
+
+
+		float SnowAmount(const TileMap& map, Vec2 p)
+		{
+			const Vec2 q = p - Vec2(0.5f, 0.5f);
+			const int32_t x = int32_t(std::floor(q.x));
+			const int32_t y = int32_t(std::floor(q.y));
+			const float u = SmoothStep(0.0f, 1.0f, q.x - float(x));
+			const float v = SmoothStep(0.0f, 1.0f, q.y - float(y));
+			const auto snow = [&](int32_t tx, int32_t ty) { return map.GetTerrain(tx, ty) == TerrainId::Snow ? 1.0f : 0.0f; };
+			return std::lerp(std::lerp(snow(x, y), snow(x + 1, y), u), std::lerp(snow(x, y + 1), snow(x + 1, y + 1), u), v);
+		}
+
+		float IceHeight(const TileMap& map, Vec2 p)
+		{
+			return IceTop + SnowRise * SmoothStep(0.0f, 1.0f, SnowAmount(map, p));
+		}
+
+		glm::vec3 IceColor(const glm::vec3& centroid, float snow, float facet)
+		{
+			const Vec2 p(centroid.x, centroid.z);
+			const float clear = SmoothStep(0.45f, 0.75f, ValueNoise(p / 5.0f, 0x1CE5u));
+			glm::vec3 color = glm::mix(ToColor(0xB4D8EA), ToColor(0x5891B8), clear * 0.85f);
+			color = glm::mix(color, ToColor(0xD2E9F4), SmoothStep(0.55f, 0.8f, ValueNoise(p / 1.7f, 0xF125u)) * 0.5f * (1.0f - clear));
+			color = glm::mix(color, ToColor(0xDDE6EE), snow);
+			return color * (0.92f + 0.16f * facet);
+		}
+
+		struct PolygonVertex
+		{
+			double X = 0.0;
+			double Y = 0.0;
+			CellCoord Edge;
+			bool Frame = false;
+		};
+
+		std::vector<PolygonVertex> VoronoiPolygon(CellCoord cell)
+		{
+			const Vec2 seed = CellSeed(cell);
+			std::vector<PolygonVertex> polygon = {
+				{ double(cell.X - 1), double(cell.Y - 1), {}, true },
+				{ double(cell.X + 2), double(cell.Y - 1), {}, true },
+				{ double(cell.X + 2), double(cell.Y + 2), {}, true },
+				{ double(cell.X - 1), double(cell.Y + 2), {}, true },
+			};
+			std::vector<PolygonVertex> clipped;
+			for (int32_t dy = -2; dy <= 2; dy++)
+				for (int32_t dx = -2; dx <= 2; dx++)
+				{
+					if (dx == 0 && dy == 0)
+						continue;
+					const CellCoord other{ cell.X + dx, cell.Y + dy };
+					const Vec2 neighbour = CellSeed(other);
+					const double nx = double(neighbour.x) - double(seed.x);
+					const double ny = double(neighbour.y) - double(seed.y);
+					const double mx = 0.5 * (double(neighbour.x) + double(seed.x));
+					const double my = 0.5 * (double(neighbour.y) + double(seed.y));
+					clipped.clear();
+					for (size_t i = 0; i < polygon.size(); i++)
+					{
+						const PolygonVertex& a = polygon[i];
+						const PolygonVertex& b = polygon[(i + 1) % polygon.size()];
+						const double da = (a.X - mx) * nx + (a.Y - my) * ny;
+						const double db = (b.X - mx) * nx + (b.Y - my) * ny;
+						if (da <= 0.0)
+							clipped.push_back(a);
+						if ((da <= 0.0) == (db <= 0.0))
+							continue;
+						const double t = da / (da - db);
+						PolygonVertex cut{ a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, a.Edge, a.Frame };
+						if (da <= 0.0)
+						{
+							cut.Edge = other;
+							cut.Frame = false;
+						}
+						clipped.push_back(cut);
+					}
+					polygon.swap(clipped);
+				}
+			return polygon;
+		}
+
+		std::vector<PolygonVertex> ChunkPolygon(CellCoord chunk)
+		{
+			const Vec2 seed = ChunkSeed(chunk);
+			const double size = double(ChunkSize);
+			std::vector<PolygonVertex> polygon = {
+				{ double(chunk.X - 1) * size, double(chunk.Y - 1) * size, {}, true },
+				{ double(chunk.X + 2) * size, double(chunk.Y - 1) * size, {}, true },
+				{ double(chunk.X + 2) * size, double(chunk.Y + 2) * size, {}, true },
+				{ double(chunk.X - 1) * size, double(chunk.Y + 2) * size, {}, true },
+			};
+			std::vector<PolygonVertex> clipped;
+			for (int32_t dy = -2; dy <= 2; dy++)
+				for (int32_t dx = -2; dx <= 2; dx++)
+				{
+					if (dx == 0 && dy == 0)
+						continue;
+					const CellCoord other{ chunk.X + dx, chunk.Y + dy };
+					const Vec2 neighbour = ChunkSeed(other);
+					const double nx = double(neighbour.x) - double(seed.x);
+					const double ny = double(neighbour.y) - double(seed.y);
+					const double mx = 0.5 * (double(neighbour.x) + double(seed.x));
+					const double my = 0.5 * (double(neighbour.y) + double(seed.y));
+					clipped.clear();
+					for (size_t i = 0; i < polygon.size(); i++)
+					{
+						const PolygonVertex& a = polygon[i];
+						const PolygonVertex& b = polygon[(i + 1) % polygon.size()];
+						const double da = (a.X - mx) * nx + (a.Y - my) * ny;
+						const double db = (b.X - mx) * nx + (b.Y - my) * ny;
+						if (da <= 0.0)
+							clipped.push_back(a);
+						if ((da <= 0.0) == (db <= 0.0))
+							continue;
+						const double t = da / (da - db);
+						PolygonVertex cut{ a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, a.Edge, a.Frame };
+						if (da <= 0.0)
+						{
+							cut.Edge = other;
+							cut.Frame = false;
+						}
+						clipped.push_back(cut);
+					}
+					polygon.swap(clipped);
+				}
+			return polygon;
+		}
+
+		std::optional<Vec2> VoronoiCorner(CellCoord a, CellCoord b, CellCoord c)
+		{
+			std::array<CellCoord, 3> cells = { a, b, c };
+			std::sort(cells.begin(), cells.end(), [](CellCoord l, CellCoord r) { return l.X != r.X ? l.X < r.X : l.Y < r.Y; });
+			const Vec2 p = CellSeed(cells[0]);
+			const Vec2 q = CellSeed(cells[1]);
+			const Vec2 r = CellSeed(cells[2]);
+			const double ax = p.x, ay = p.y, bx = q.x, by = q.y, cx = r.x, cy = r.y;
+			const double d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+			if (std::abs(d) < 1e-12)
+				return std::nullopt;
+			const double a2 = ax * ax + ay * ay;
+			const double b2 = bx * bx + by * by;
+			const double c2 = cx * cx + cy * cy;
+			return Vec2(float((a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d), float((a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d));
+		}
+
+		std::pair<int64_t, int64_t> CornerKey(Vec2 position)
+		{
+			return { std::llround(double(position.x) * 8192.0), std::llround(double(position.y) * 8192.0) };
+		}
+
+		uint32_t PackColor(const glm::vec3& color, float alpha = 1.0f)
+		{
+			const glm::uvec3 c(glm::clamp(color, 0.0f, 1.0f) * 255.0f + 0.5f);
+			return c.r | (c.g << 8) | (c.b << 16) | (uint32_t(std::clamp(alpha, 0.0f, 1.0f) * 255.0f + 0.5f) << 24);
+		}
+
+		float VeinField(const glm::vec3& point)
+		{
+			const Vec2 p(point.x, point.z);
+			const float region = SmoothStep(0.45f, 0.7f, ValueNoise(p * 0.16f + Vec2(11.3f, 4.1f), 0x7E1Bu));
+			const float taper = SmoothStep(0.35f, 0.6f, ValueNoise(p * 0.55f + Vec2(19.0f, 2.3f), 0x3A5Fu));
+			return region * taper;
+		}
+
+		float CornerJitter(Vec2 position)
+		{
+			const auto [x, y] = CornerKey(position);
+			return CollapseNoise(int32_t(x), int32_t(y), 0x6A11u) - 0.5f;
+		}
+
+		glm::vec3 TopColor(const glm::vec3& centroid, const glm::vec3& normal, float facet)
+		{
+			const Vec2 p(centroid.x, centroid.z);
+			const float flat = SmoothStep(0.8f, 0.97f, normal.y);
+			glm::vec3 color = glm::mix(ToColor(0x3B4760), ToColor(0x637594), SmoothStep(0.1f, 0.8f, centroid.y));
+			color = glm::mix(color, ToColor(0x8190AA), SmoothStep(0.45f, 0.72f, ValueNoise(p / 2.2f, 0xC0DEu)) * 0.7f * flat);
+			color = glm::mix(color, ToColor(0x4F4C7C), SmoothStep(0.6f, 0.84f, ValueNoise(p / 3.4f, 0xFACEu)) * 0.5f);
+			color = glm::mix(color, ToColor(0x386673), SmoothStep(0.62f, 0.86f, ValueNoise(p / 2.9f, 0x7EA1u)) * 0.5f);
+			return color * (0.8f + 0.4f * facet);
+		}
+
+		struct IslandMesh
+		{
+			std::vector<ModelVertex>& Vertices;
+			std::vector<uint32_t>& Indices;
+			const TileMap* Snow = nullptr;
+			bool Bare = false;
+
+			void Triangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec3& facing, const glm::vec3& color)
+			{
+				glm::vec3 normal = glm::cross(b - a, c - a);
+				const float length = glm::length(normal);
+				if (length < 1e-7f)
+					return;
+				if (glm::dot(normal, facing) < 0.0f)
+				{
+					std::swap(b, c);
+					normal = -normal;
+				}
+				normal /= length;
+				for (const glm::vec3& point : { a, b, c })
+				{
+					Indices.push_back(uint32_t(Vertices.size()));
+					Vertices.push_back({ .Position = point, .Normal = normal, .Color = PackColor(color, Bare ? 0.0f : Snow ? SnowAmount(*Snow, Vec2(point.x, point.z)) : VeinField(point)) });
+				}
+			}
+
+			void Rounded(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& d, const glm::vec3& na, const glm::vec3& nb, const glm::vec3& nc, const glm::vec3& nd, const glm::vec3& color)
+			{
+				const uint32_t first = uint32_t(Vertices.size());
+				for (const auto& [point, normal] : { std::pair(a, na), std::pair(b, nb), std::pair(c, nc), std::pair(d, nd) })
+					Vertices.push_back({ .Position = point, .Normal = normal, .Color = PackColor(color, Snow ? SnowAmount(*Snow, Vec2(point.x, point.z)) : 0.0f) });
+				for (const uint32_t index : { 0u, 1u, 2u, 0u, 2u, 3u })
+					Indices.push_back(first + index);
+			}
+
+			void Quad(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& d, const glm::vec3& facing, const glm::vec3& color)
+			{
+				Triangle(a, b, c, facing, color);
+				Triangle(a, c, d, facing, color);
+			}
+		};
+	}
+
+	void IslandArt::Clear()
+	{
+		m_Cells.clear();
+		m_Corners.clear();
+		m_Chunks.clear();
+		m_Lookup.clear();
+		m_ChunkLookup.clear();
+		m_Width = 0;
+		m_Height = 0;
+	}
+
+	void IslandArt::Build(WorldRenderer& renderer, const Level& level)
+	{
+		Clear();
+		const TileMap& map = level.Map;
+		m_Width = map.GetWidth();
+		m_Height = map.GetHeight();
+		m_Lookup.assign(size_t(m_Width) * size_t(m_Height), -1);
+		m_Frozen = level.Kind == MapKind::FrozenLake;
+		m_Molten = level.Kind == MapKind::Caldera;
+		m_Sink = m_Molten ? MoltenSink : SinkDepth;
+		const Vec2 center = { float(m_Width) * 0.5f, float(m_Height) * 0.5f };
+		if (m_Molten)
+		{
+			m_ChunkColumns = int32_t(std::ceil(float(m_Width) / ChunkSize)) + 1;
+			m_ChunkRows = int32_t(std::ceil(float(m_Height) / ChunkSize)) + 1;
+			m_ChunkLookup.assign(size_t(m_ChunkColumns) * size_t(m_ChunkRows), -1);
+			for (int32_t y = 0; y < m_ChunkRows; y++)
+				for (int32_t x = 0; x < m_ChunkColumns; x++)
+				{
+					const CellCoord coord{ x, y };
+					if (!PlateIsFloor(level, coord))
+						continue;
+					const Vec2 seed = ChunkSeed(coord);
+					m_ChunkLookup[size_t(y) * size_t(m_ChunkColumns) + size_t(x)] = int32_t(m_Chunks.size());
+					m_Chunks.push_back({ .Coord = coord, .Tile = uint32_t(int32_t(seed.y) * m_Width + int32_t(seed.x)) });
+				}
+			BuildMolten(renderer, level);
+			return;
+		}
+		const auto surface = [&](Vec2 position, float jitter)
+		{
+			return m_Frozen ? IceHeight(map, position) : IslandSurface(position, center) + 0.1f * jitter;
+		};
+		std::map<std::pair<int32_t, int32_t>, uint32_t> chunks;
+		for (int32_t y = 0; y < m_Height; y++)
+			for (int32_t x = 0; x < m_Width; x++)
+			{
+				if (!IsBrawlFloor(map.GetTerrain(x, y)))
+					continue;
+				const CellCoord coord{ x, y };
+				const CellCoord chunk = ChunkOf(coord);
+				const auto [found, added] = chunks.try_emplace({ chunk.X, chunk.Y }, uint32_t(m_Chunks.size()));
+				if (added)
+					m_Chunks.push_back({ .Coord = chunk, .Tile = uint32_t(y * m_Width + x) });
+				m_Chunks[found->second].Cells.push_back(uint32_t(m_Cells.size()));
+				m_Lookup[size_t(y) * size_t(m_Width) + size_t(x)] = int32_t(m_Cells.size());
+				const Vec2 seed = CellSeed(coord);
+				const float peak = surface(seed, CollapseNoise(x, y, 0x2D7Fu) - 0.4f);
+				m_Cells.push_back({ .Coord = coord, .Seed = seed, .Peak = peak, .Chunk = found->second });
+			}
+		if (m_Cells.empty())
+			return;
+
+		std::vector<CellCoord> across;
+		std::vector<uint8_t> framed;
+		for (Cell& cell : m_Cells)
+		{
+			const std::vector<PolygonVertex> polygon = VoronoiPolygon(cell.Coord);
+			cell.FirstCorner = uint32_t(m_Corners.size());
+			cell.CornerCount = uint32_t(polygon.size());
+			for (size_t k = 0; k < polygon.size(); k++)
+			{
+				const PolygonVertex& previous = polygon[(k + polygon.size() - 1) % polygon.size()];
+				const PolygonVertex& vertex = polygon[k];
+				Vec2 position(float(vertex.X), float(vertex.Y));
+				if (!previous.Frame && !vertex.Frame)
+					position = VoronoiCorner(cell.Coord, previous.Edge, vertex.Edge).value_or(position);
+				m_Corners.push_back({ position, surface(position, CornerJitter(position)) });
+				across.push_back(vertex.Edge);
+				framed.push_back(vertex.Frame ? 1 : 0);
+			}
+		}
+
+		struct WallEdge
+		{
+			uint32_t A = 0;
+			uint32_t B = 0;
+			Vec2 Outward;
+			uint32_t Neighbour = UINT32_MAX;
+		};
+		std::vector<ModelVertex> vertices;
+		std::vector<uint32_t> indices;
+		std::vector<LevelMeshDesc> meshes;
+		IslandMesh mesh{ vertices, indices, m_Frozen ? &map : nullptr };
+		const uint32_t material = m_Frozen ? renderer.FindMaterialSlot("GroundSnow").value_or(renderer.GetPlainMaterial()) : renderer.GetPlainMaterial();
+		const uint32_t flags = m_Frozen ? MeshVertexTint | MeshIce : MeshVertexTint | MeshLavaGlow | MeshCrystal;
+		std::vector<WallEdge> walls;
+		std::map<std::pair<int64_t, int64_t>, Vec2> flare;
+		for (Chunk& chunk : m_Chunks)
+		{
+			std::vector<uint32_t> cellFirst;
+			const uint32_t firstIndex = uint32_t(indices.size());
+			walls.clear();
+			flare.clear();
+			glm::vec3 pivot(0.0f);
+			for (const uint32_t index : chunk.Cells)
+			{
+				cellFirst.push_back(uint32_t(indices.size()));
+				const Cell& cell = m_Cells[index];
+				const glm::vec3 peak(cell.Seed.x, cell.Peak, cell.Seed.y);
+				pivot += peak;
+				for (uint32_t k = 0; k < cell.CornerCount; k++)
+				{
+					const uint32_t ia = cell.FirstCorner + k;
+					const uint32_t ib = cell.FirstCorner + (k + 1) % cell.CornerCount;
+					const Corner& a = m_Corners[ia];
+					const Corner& b = m_Corners[ib];
+					chunk.Min = { std::min(chunk.Min.x, a.Position.x), std::min(chunk.Min.y, a.Position.y) };
+					chunk.Max = { std::max(chunk.Max.x, a.Position.x), std::max(chunk.Max.y, a.Position.y) };
+					const glm::vec3 pa(a.Position.x, a.Height, a.Position.y);
+					const glm::vec3 pb(b.Position.x, b.Height, b.Position.y);
+					const glm::vec3 up(0.0f, 1.0f, 0.0f);
+					glm::vec3 normal = glm::cross(pa - peak, pb - peak);
+					const float area = glm::length(normal);
+					normal = area > 1e-7f ? normal * (normal.y < 0.0f ? -1.0f : 1.0f) / area : up;
+					const glm::vec3 centroid = (peak + pa + pb) / 3.0f;
+					const float facet = CollapseNoise(cell.Coord.X * 16 + int32_t(k), cell.Coord.Y, 0x51DEu);
+					mesh.Triangle(peak, pa, pb, up, m_Frozen ? IceColor(centroid, SnowAmount(map, Vec2(centroid.x, centroid.z)), facet) : TopColor(centroid, normal, facet));
+					const Cell* neighbour = framed[ia] ? nullptr : FindCell(across[ia]);
+					if (neighbour && neighbour->Chunk == cell.Chunk)
+						continue;
+					if (!neighbour)
+						chunk.Coast = true;
+					else if (std::find(chunk.Neighbours.begin(), chunk.Neighbours.end(), neighbour->Chunk) == chunk.Neighbours.end())
+						chunk.Neighbours.push_back(neighbour->Chunk);
+					Vec2 outward = Normalize(Vec2(b.Position.y - a.Position.y, a.Position.x - b.Position.x));
+					if (Dot(outward, (a.Position + b.Position) * 0.5f - cell.Seed) < 0.0f)
+						outward = -outward;
+					walls.push_back({ ia, ib, outward, neighbour ? neighbour->Chunk : UINT32_MAX });
+					flare[CornerKey(a.Position)] += outward;
+					flare[CornerKey(b.Position)] += outward;
+				}
+			}
+			chunk.Pivot = pivot / float(chunk.Cells.size());
+			const uint32_t wallIndex = uint32_t(indices.size());
+			const auto ring = [&](uint32_t corner, float height, float spread)
+			{
+				const Vec2 position = m_Corners[corner].Position;
+				const Vec2 direction = Normalize(flare[CornerKey(position)]);
+				const float amount = spread * (0.6f + 0.8f * ValueNoise(position * 1.7f, 0x5EA5u));
+				return glm::vec3(position.x + direction.x * amount, height, position.y + direction.y * amount);
+			};
+			if (m_Frozen)
+			{
+				chunk.Mesh = uint32_t(meshes.size());
+				meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = wallIndex - firstIndex, .Material = material, .Layer = material, .Flags = flags });
+				for (size_t c = 0; c < chunk.Cells.size(); c++)
+				{
+					Cell& cell = m_Cells[chunk.Cells[c]];
+					const uint32_t topEnd = c + 1 < chunk.Cells.size() ? cellFirst[c + 1] : wallIndex;
+					cell.TopMesh = uint32_t(meshes.size());
+					meshes.push_back({ .FirstIndex = cellFirst[c], .IndexCount = topEnd - cellFirst[c], .Material = material, .Layer = material, .Flags = flags });
+					const uint32_t skirtFirst = uint32_t(indices.size());
+					for (uint32_t k = 0; k < cell.CornerCount; k++)
+					{
+						const Corner& a = m_Corners[cell.FirstCorner + k];
+						const Corner& b = m_Corners[cell.FirstCorner + (k + 1) % cell.CornerCount];
+						Vec2 out = Normalize(Vec2(b.Position.y - a.Position.y, a.Position.x - b.Position.x));
+						if (Dot(out, (a.Position + b.Position) * 0.5f - cell.Seed) < 0.0f)
+							out = -out;
+						const glm::vec3 facing(out.x, 0.0f, out.y);
+						const glm::vec3 topA(a.Position.x, a.Height, a.Position.y);
+						const glm::vec3 topB(b.Position.x, b.Height, b.Position.y);
+						const float depthA = IceBottom * (0.72f + 0.5f * ValueNoise(a.Position * 2.3f, 0x71C3u));
+						const float depthB = IceBottom * (0.72f + 0.5f * ValueNoise(b.Position * 2.3f, 0x71C3u));
+						const glm::vec3 lowA(a.Position.x + (cell.Seed.x - a.Position.x) * 0.16f, depthA, a.Position.y + (cell.Seed.y - a.Position.y) * 0.16f);
+						const glm::vec3 lowB(b.Position.x + (cell.Seed.x - b.Position.x) * 0.16f, depthB, b.Position.y + (cell.Seed.y - b.Position.y) * 0.16f);
+						mesh.Quad(topA, topB, lowB, lowA, facing, glm::vec3(0.72f + 0.28f * CollapseNoise(int32_t(k), cell.Coord.X * 31 + cell.Coord.Y, 0x51C1u)));
+					}
+					cell.SkirtMesh = uint32_t(meshes.size());
+					meshes.push_back({ .FirstIndex = skirtFirst, .IndexCount = uint32_t(indices.size()) - skirtFirst, .Material = material, .Layer = material, .Flags = flags });
+				}
+				std::stable_sort(walls.begin(), walls.end(), [](const WallEdge& a, const WallEdge& b) { return a.Neighbour < b.Neighbour; });
+				const auto bearing = [&](Vec2 position) { return Normalize(flare[CornerKey(position)]); };
+				const auto profile = [&](Vec2 p, Vec2 out, Vec2 shift, float top, std::array<glm::vec3, 7>& rows, std::array<glm::vec3, 7>& normals)
+				{
+					const float broad = ValueNoise(p / 2.7f, 0xA3C1u);
+					const float mid = ValueNoise(p * 1.13f, 0xA1C7u);
+					const float fine = ValueNoise(p * 3.7f, 0xA2D3u);
+					const float deep = ValueNoise(p / 1.3f, 0xA4E9u);
+					const float thick = SmoothStep(0.26f, 0.7f, broad * 0.68f + mid * 0.32f);
+					const float jut = 0.03f + 0.3f * mid * mid * (0.35f + broad) + 0.08f * fine;
+					const float round = SmoothStep(0.3f, 0.7f, ValueNoise(p * 0.38f, 0xA5F1u) * 0.6f + ValueNoise(p * 1.3f, 0xA6B3u) * 0.4f);
+					const float bevel = 0.1f + 0.22f * round;
+					const float sweep = glm::mix(1.2f, 1.5708f, thick);
+					const Vec2 start = p + shift * jut;
+					const glm::vec3 up(0.0f, 1.0f, 0.0f);
+					const glm::vec3 side(out.x, 0.0f, out.y);
+					rows[0] = { p.x, top, p.y };
+					normals[0] = up;
+					rows[1] = { start.x, top, start.y };
+					normals[1] = up;
+					for (size_t k = 1; k <= 3; k++)
+					{
+						const float angle = sweep * float(k) / 3.0f;
+						const Vec2 at = start + shift * (bevel * std::sin(angle));
+						rows[1 + k] = { at.x, top - bevel * (1.0f - std::cos(angle)), at.y };
+						normals[1 + k] = up * std::cos(angle) + side * std::sin(angle);
+					}
+					const float drop = std::max(rows[4].y - (LakeWaterLine - 0.04f), 0.02f);
+					const float run = drop * std::cos(sweep) / std::sin(sweep) + 0.01f + 0.05f * fine;
+					const Vec2 foot = Vec2(rows[4].x, rows[4].z) + shift * run;
+					const Vec2 shelf = foot + shift * (0.1f + 1.05f * deep * deep);
+					rows[5] = { foot.x, LakeWaterLine - 0.04f, foot.y };
+					rows[6] = { shelf.x, -1.0f - 0.8f * deep, shelf.y };
+					normals[5] = normals[4];
+					normals[6] = side;
+				};
+				for (size_t w = 0; w < walls.size();)
+				{
+					const uint32_t neighbour = walls[w].Neighbour;
+					const uint32_t lipFirst = uint32_t(indices.size());
+					for (; w < walls.size() && walls[w].Neighbour == neighbour; w++)
+					{
+						const WallEdge& wall = walls[w];
+						const Vec2 a = m_Corners[wall.A].Position;
+						const Vec2 b = m_Corners[wall.B].Position;
+						const int32_t steps = std::max(1, int32_t(std::ceil(Length(b - a) / 0.24f)));
+						std::array<glm::vec3, 7> previous;
+						std::array<glm::vec3, 7> current;
+						std::array<glm::vec3, 7> normalsBefore;
+						std::array<glm::vec3, 7> normalsNow;
+						const Vec2 outA = bearing(a);
+						const Vec2 outB = bearing(b);
+						const Vec2 shiftA = outA / std::max(Dot(outA, wall.Outward), 0.35f);
+						const Vec2 shiftB = outB / std::max(Dot(outB, wall.Outward), 0.35f);
+						const float heightA = m_Corners[wall.A].Height;
+						const float heightB = m_Corners[wall.B].Height;
+						for (int32_t k = 0; k <= steps; k++)
+						{
+							const float t = float(k) / float(steps);
+							const Vec2 out = Normalize(outA * (1.0f - t) + outB * t);
+							profile(a + (b - a) * t, out, shiftA * (1.0f - t) + shiftB * t, glm::mix(heightA, heightB, t), current, normalsNow);
+							if (k > 0)
+							{
+								const glm::vec3 facing(wall.Outward.x, 0.4f, wall.Outward.y);
+								const float facet = 0.7f + 0.3f * CollapseNoise(int32_t(a.x * 64.0f) + k * 3, int32_t(a.y * 64.0f), 0x51D7u);
+								const glm::vec3 tone(facet);
+								mesh.Quad(previous[0], current[0], current[1], previous[1], glm::vec3(0.0f, 1.0f, 0.0f), tone);
+								for (size_t row = 1; row < 4; row++)
+									mesh.Quad(previous[row], current[row], current[row + 1], previous[row + 1], normalsNow[row] + normalsNow[row + 1], glm::vec3(1.0f));
+								mesh.Rounded(previous[4], current[4], current[5], previous[5], normalsBefore[4], normalsNow[4], normalsNow[5], normalsBefore[5], glm::vec3(1.0f));
+								mesh.Quad(previous[5], current[5], current[6], previous[6], facing, tone);
+							}
+							previous = current;
+							normalsBefore = normalsNow;
+						}
+					}
+					chunk.Lips.push_back({ neighbour, uint32_t(meshes.size()) });
+					meshes.push_back({ .FirstIndex = lipFirst, .IndexCount = uint32_t(indices.size()) - lipFirst, .Material = material, .Layer = material, .Flags = flags });
+				}
+				continue;
+			}
+			for (const WallEdge& wall : walls)
+			{
+				const Corner& a = m_Corners[wall.A];
+				const Corner& b = m_Corners[wall.B];
+				const glm::vec3 facing(wall.Outward.x, 0.0f, wall.Outward.y);
+				const glm::vec3 topA(a.Position.x, a.Height, a.Position.y);
+				const glm::vec3 topB(b.Position.x, b.Height, b.Position.y);
+				const float shoreLine = m_Frozen ? LakeWaterLine - 0.02f : LavaSurface - ShoreDrop;
+				const glm::vec3 shoreA = ring(wall.A, shoreLine, m_Frozen ? 0.05f : ShoreFlare);
+				const glm::vec3 shoreB = ring(wall.B, shoreLine, m_Frozen ? 0.05f : ShoreFlare);
+				const float shade = ValueNoise((a.Position + b.Position) * 1.3f, 0xD1CEu);
+				const glm::vec3 edge = m_Frozen ? glm::mix(ToColor(0x7DB5D3), ToColor(0xB0D6E8), shade) : glm::mix(ToColor(0x1F2430), ToColor(0x343C4C), shade);
+				mesh.Quad(topA, topB, shoreB, shoreA, facing, edge);
+				const float bottom = m_Frozen ? IceBottom : IslandBottom;
+				const float flare = m_Frozen ? 0.06f : BaseFlare;
+				mesh.Quad(shoreA, shoreB, ring(wall.B, bottom, flare), ring(wall.A, bottom, flare), facing, m_Frozen ? ToColor(0x2A5B7C) : edge * 0.7f);
+			}
+			chunk.Mesh = uint32_t(meshes.size());
+			meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = wallIndex - firstIndex, .Material = material, .Layer = material, .Flags = flags });
+			meshes.push_back({ .FirstIndex = wallIndex, .IndexCount = uint32_t(indices.size()) - wallIndex, .Material = material, .Layer = material, .Flags = flags });
+		}
+		const uint32_t base = renderer.AddLevelGeometry(vertices, indices, meshes);
+		for (Chunk& chunk : m_Chunks)
+		{
+			chunk.Mesh += base;
+			if (m_Frozen)
+				for (const uint32_t index : chunk.Cells)
+				{
+					m_Cells[index].TopMesh += base;
+					m_Cells[index].SkirtMesh += base;
+				}
+			for (Lip& lip : chunk.Lips)
+				lip.Mesh += base;
+		}
+	}
+
+	float IslandArt::PieceHeight(const Chunk& chunk, size_t piece, Vec2 p) const
+	{
+		float rise = 0.0f;
+		if (piece < chunk.Rims.size() && chunk.Rims[piece].size() >= 3)
+		{
+			const std::vector<Vec2>& rim = chunk.Rims[piece];
+			float nearest = 1e9f;
+			bool inside = false;
+			for (size_t i = 0, j = rim.size() - 1; i < rim.size(); j = i++)
+			{
+				const Vec2 a = rim[j];
+				const Vec2 b = rim[i];
+				if ((b.y > p.y) != (a.y > p.y) && p.x < (a.x - b.x) * (p.y - b.y) / (a.y - b.y) + b.x)
+					inside = !inside;
+				const Vec2 ab = b - a;
+				const float t = std::clamp(Dot(p - a, ab) / std::max(Dot(ab, ab), 1e-8f), 0.0f, 1.0f);
+				nearest = std::min(nearest, LengthSquared(p - (a + ab * t)));
+			}
+			if (inside && piece < chunk.Domes.size())
+			{
+				const float d = std::min(std::sqrt(nearest) / std::max(chunk.Reaches[piece], 0.1f), 1.0f);
+				rise = chunk.Domes[piece] * d * (2.0f - d);
+			}
+		}
+		const float lift = piece < chunk.Lifts.size() ? chunk.Lifts[piece] : 0.0f;
+		const Vec2 slant = piece < chunk.PieceTilts.size() ? chunk.PieceTilts[piece] : Vec2();
+		return chunk.Base + lift + Dot(chunk.Tilt + slant, p - Vec2(chunk.Pivot.x, chunk.Pivot.z)) + PlateBump(p) + rise;
+	}
+
+	float IslandArt::PlateHeight(const Chunk& chunk, Vec2 p) const
+	{
+		size_t best = 0;
+		float score = -1e9f;
+		for (size_t piece = 0; piece < chunk.Rims.size(); piece++)
+		{
+			const std::vector<Vec2>& rim = chunk.Rims[piece];
+			float inside = 1e9f;
+			for (size_t i = 0, j = rim.size() - 1; i < rim.size(); j = i++)
+			{
+				const Vec2 edge = rim[i] - rim[j];
+				const Vec2 normal = Normalize(Vec2(edge.y, -edge.x));
+				inside = std::min(inside, -Dot(p - rim[j], normal));
+			}
+			if (inside > score)
+			{
+				score = inside;
+				best = piece;
+			}
+		}
+		return PieceHeight(chunk, best, p);
+	}
+
+	void IslandArt::BuildMolten(WorldRenderer& renderer, const Level& level)
+	{
+		constexpr float Gap = 0.055f;
+		constexpr float UpperDepth = 0.36f;
+		constexpr float Spacing = 0.36f;
+		constexpr float CutGap = 0.05f;
+		constexpr float PieceArea = 0.38f;
+		constexpr float MinPiece = 0.09f;
+		constexpr uint32_t MaxCuts = 16;
+		constexpr float CoastShare = 0.55f;
+		constexpr float StepChance = 0.6f;
+		constexpr float RingArea = 0.7f;
+		constexpr float PieceLift = 0.24f;
+		constexpr float PieceSlant = 0.16f;
+		const Vec2 center = { float(m_Width) * 0.5f, float(m_Height) * 0.5f };
+		const auto noise = [](Vec2 p, uint32_t salt) { const auto [x, y] = CornerKey(p); return CollapseNoise(int32_t(x / 97), int32_t(y / 97), salt); };
+		for (Chunk& chunk : m_Chunks)
+		{
+			const Vec2 middle = ChunkSeed(chunk.Coord);
+			const float r1 = CollapseNoise(chunk.Coord.X, chunk.Coord.Y, 0xB0A1u);
+			const float r2 = CollapseNoise(chunk.Coord.X, chunk.Coord.Y, 0xB0A2u);
+			const float r3 = CollapseNoise(chunk.Coord.X, chunk.Coord.Y, 0xB0A3u);
+			const float r4 = CollapseNoise(chunk.Coord.X, chunk.Coord.Y, 0xB0A4u);
+			chunk.Base = MoltenTop + MoltenDome * IslandSurface(middle, center) + MoltenStep * (r1 - 0.45f);
+			chunk.Tilt = FromAngle(6.2832f * r2) * (0.05f * r3);
+			chunk.Dome = 0.02f + 0.05f * r4;
+			chunk.Pivot = glm::vec3(middle.x, chunk.Base, middle.y);
+		}
+		std::vector<ModelVertex> vertices;
+		std::vector<uint32_t> indices;
+		std::vector<uint32_t> wallIndices;
+		std::vector<LevelMeshDesc> meshes;
+		const uint32_t material = renderer.FindMaterialSlot("GroundBasalt").value_or(renderer.GetPlainMaterial());
+		const uint32_t flags = MeshVertexTint | MeshLavaGlow | MeshCliff | MeshSeam | MeshObsidian;
+		std::vector<uint32_t>* target = &indices;
+		float glass = 0.0f;
+		const auto emit = [&](const glm::vec3& a, glm::vec3 b, glm::vec3 c, const glm::vec3& facing, glm::vec3 color, float sa, float sb, float sc)
+		{
+			glm::vec3 normal = glm::cross(b - a, c - a);
+			const float length = glm::length(normal);
+			if (length < 1e-9f)
+				return;
+			if (glm::dot(normal, facing) < 0.0f)
+			{
+				std::swap(b, c);
+				std::swap(sb, sc);
+				normal = -normal;
+			}
+			normal /= length;
+			const glm::vec3 centroid = (a + b + c) / 3.0f;
+			color *= 0.86f + 0.28f * noise(Vec2(centroid.x, centroid.z) + Vec2(centroid.y * 3.1f, 0.0f), 0xFAC3u);
+			for (const auto& [point, seam] : { std::pair(a, sa), std::pair(b, sb), std::pair(c, sc) })
+			{
+				target->push_back(uint32_t(vertices.size()));
+				vertices.push_back({ .Position = point, .U = glass, .Normal = normal, .Color = PackColor(color, seam) });
+			}
+		};
+		const auto quad = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& d, const glm::vec3& facing, const glm::vec3& color, float sa, float sb, float sc, float sd)
+		{
+			emit(a, b, c, facing, color, sa, sb, sc);
+			emit(a, c, d, facing, color, sa, sc, sd);
+		};
+		const auto at = [](Vec2 p, float y) { return glm::vec3(p.x, y, p.y); };
+		enum class Side : uint8_t { Neighbour, Coast, Cut };
+		using Outline = std::vector<std::pair<Vec2, Side>>;
+		const auto clip = [](const Outline& polygon, Vec2 origin, Vec2 normal)
+		{
+			Outline result;
+			for (size_t i = 0; i < polygon.size(); i++)
+			{
+				const auto& [a, side] = polygon[i];
+				const Vec2 b = polygon[(i + 1) % polygon.size()].first;
+				const float da = Dot(a - origin, normal);
+				const float db = Dot(b - origin, normal);
+				if (da <= 0.0f)
+					result.push_back({ a, side });
+				if ((da <= 0.0f) != (db <= 0.0f))
+				{
+					const Vec2 cut = a + (b - a) * (da / (da - db));
+					result.push_back({ cut, da <= 0.0f ? Side::Cut : side });
+				}
+			}
+			return result;
+		};
+		const auto areaOf = [](const Outline& polygon)
+		{
+			float area = 0.0f;
+			for (size_t i = 0; i < polygon.size(); i++)
+			{
+				const Vec2 a = polygon[i].first;
+				const Vec2 b = polygon[(i + 1) % polygon.size()].first;
+				area += a.x * b.y - b.x * a.y;
+			}
+			return area * 0.5f;
+		};
+		struct Sample
+		{
+			Vec2 P;
+			Vec2 N;
+			Side Kind = Side::Neighbour;
+			float Bevel = 0.0f;
+			float Chip = 0.0f;
+		};
+		const float shoreLine = LavaSurface - ShoreDrop;
+		for (Chunk& chunk : m_Chunks)
+		{
+			const uint32_t firstIndex = uint32_t(indices.size());
+			wallIndices.clear();
+			chunk.Rims.clear();
+			chunk.Lifts.clear();
+			Outline outline;
+			for (const PolygonVertex& vertex : ChunkPolygon(chunk.Coord))
+			{
+				const int32_t other = vertex.Frame ? -1 : ChunkIndexAt(ChunkSeed(vertex.Edge));
+				const bool coast = other < 0;
+				if (coast)
+					chunk.Coast = true;
+				else if (std::find(chunk.Neighbours.begin(), chunk.Neighbours.end(), uint32_t(other)) == chunk.Neighbours.end())
+					chunk.Neighbours.push_back(uint32_t(other));
+				outline.push_back({ Vec2(float(vertex.X), float(vertex.Y)), coast ? Side::Coast : Side::Neighbour });
+			}
+			std::vector<Outline> pieces;
+			std::vector<Outline> pending = { outline };
+			uint32_t cuts = 0;
+			const auto roll = [&](uint32_t index, uint32_t salt) { return CollapseNoise(chunk.Coord.X * 31 + int32_t(index), chunk.Coord.Y * 17 - int32_t(index) * 5, salt); };
+			while (!pending.empty())
+			{
+				Outline current = std::move(pending.back());
+				pending.pop_back();
+				const float area = areaOf(current);
+				const bool shore = std::any_of(current.begin(), current.end(), [](const auto& corner) { return corner.second == Side::Coast; });
+				if (area > PieceArea * (shore ? CoastShare : 1.0f) * (0.5f + roll(cuts, 0xB1C1u)) && cuts < MaxCuts)
+				{
+					Vec2 centroid;
+					for (const auto& [point, side] : current)
+						centroid += point;
+					centroid = centroid / float(current.size());
+					const Vec2 origin = centroid + FromAngle(6.2832f * roll(cuts, 0xB1C2u)) * (0.3f * std::sqrt(area) * roll(cuts, 0xB1C3u));
+					const Vec2 normal = FromAngle(6.2832f * roll(cuts, 0xB1C4u));
+					cuts++;
+					Outline first = clip(current, origin + normal * CutGap, normal);
+					Outline second = clip(current, origin - normal * CutGap, -normal);
+					if (first.size() >= 3 && second.size() >= 3 && areaOf(first) > MinPiece && areaOf(second) > MinPiece)
+					{
+						pending.push_back(std::move(first));
+						pending.push_back(std::move(second));
+						continue;
+					}
+				}
+				pieces.push_back(std::move(current));
+			}
+			std::vector<float> bevels, sharpness, chips;
+			chunk.PieceTilts.clear();
+			chunk.Domes.clear();
+			chunk.Reaches.clear();
+			for (size_t piece = 0; piece < pieces.size(); piece++)
+			{
+				const uint32_t index = uint32_t(piece) + 40u;
+				const float slant = roll(index, 0xB1D3u);
+				float lift = (roll(index, 0xB1D1u) - 0.5f) * PieceLift;
+				const bool shore = std::any_of(pieces[piece].begin(), pieces[piece].end(), [](const auto& corner) { return corner.second == Side::Coast; });
+				if (shore && roll(index, 0xB1D8u) < StepChance)
+				{
+					constexpr float Steps[] = { 0.25f, 0.5f, 0.75f };
+					const float cliff = chunk.Base - LavaSurface;
+					lift -= cliff * Steps[std::min(size_t(roll(index, 0xB1D9u) * 3.0f), size_t(2))];
+				}
+				chunk.Lifts.push_back(lift);
+				chunk.PieceTilts.push_back(FromAngle(6.2832f * roll(index, 0xB1D2u)) * (PieceSlant * slant * slant));
+				chunk.Domes.push_back(0.03f + 0.17f * roll(index, 0xB1D4u));
+				chunk.Reaches.push_back(0.55f * std::sqrt(std::max(areaOf(pieces[piece]), 0.05f)));
+				bevels.push_back(0.03f + 0.1f * roll(index, 0xB1D5u));
+				sharpness.push_back(0.012f + 0.055f * roll(index, 0xB1D6u));
+				chips.push_back(0.1f + 0.28f * roll(index, 0xB1D7u));
+			}
+
+			const float shade = CollapseNoise(chunk.Coord.X, chunk.Coord.Y, 0x70E5u);
+			const float warm = CollapseNoise(chunk.Coord.X, chunk.Coord.Y, 0x70E6u);
+			const glm::vec3 tone = glm::mix(glm::vec3(0.9f, 0.86f, 1.0f), glm::vec3(1.0f, 0.9f, 0.86f), warm) * (0.6f + 0.5f * shade);
+			const float glassy = 0.45f + 0.4f * CollapseNoise(chunk.Coord.X, chunk.Coord.Y, 0x0B5Du);
+
+			for (size_t piece = 0; piece < pieces.size(); piece++)
+			{
+				const Outline& corners = pieces[piece];
+				const size_t n = corners.size();
+				std::vector<Sample> samples;
+				const float baseBevel = bevels[piece];
+				for (size_t i = 0; i < n; i++)
+				{
+					const Vec2 a = corners[i].first;
+					const Vec2 b = corners[(i + 1) % n].first;
+					const Side kind = corners[i].second;
+					const int32_t steps = std::max(1, int32_t(std::round(Length(b - a) / Spacing)));
+					for (int32_t k = 0; k < steps; k++)
+					{
+						const Vec2 p = a + (b - a) * (float(k) / float(steps));
+						const float chipRoll = noise(p, 0xC41Eu);
+						const bool chip = chipRoll < chips[piece];
+						samples.push_back({ p, {}, kind, baseBevel * (0.65f + 0.7f * noise(p, 0xC41Fu)) + (chip ? 0.09f + 0.12f * noise(p, 0xC420u) : 0.0f), chip ? 1.0f : 0.0f });
+					}
+				}
+				const size_t m = samples.size();
+				for (size_t i = 0; i < m; i++)
+				{
+					const Vec2 previous = samples[(i + m - 1) % m].P;
+					const Vec2 next = samples[(i + 1) % m].P;
+					const Vec2 here = samples[i].P;
+					const Vec2 inNormal = Normalize(Vec2((here - previous).y, -(here - previous).x));
+					const Vec2 outNormal = Normalize(Vec2((next - here).y, -(next - here).x));
+					const Vec2 miter = Normalize(inNormal + outNormal);
+					samples[i].N = miter / std::max(Dot(miter, outNormal), 0.5f);
+				}
+				for (Sample& sample : samples)
+				{
+					const float gap = sample.Kind == Side::Cut ? 0.0f : Gap;
+					sample.P += Normalize(sample.N) * (0.035f * (noise(sample.P, 0xD0A2u) - 0.5f)) - sample.N * gap;
+				}
+				std::vector<Vec2> rimTop(m);
+				for (size_t i = 0; i < m; i++)
+					rimTop[i] = samples[i].P - samples[i].N * samples[i].Bevel;
+				chunk.Rims.push_back(rimTop);
+				const auto height = [&](Vec2 p) { return PieceHeight(chunk, piece, p); };
+				const auto facet = [&](Vec2 p, uint32_t salt) { return sharpness[piece] * (noise(p, salt) - 0.5f); };
+				const auto glassAt = [&](Vec2 p) { return std::clamp(glassy * (0.75f + 0.5f * ValueNoise(p / 0.9f, 0x0B5Eu)), 0.0f, 0.95f); };
+				Vec2 middle;
+				for (const Vec2& p : rimTop)
+					middle += p;
+				middle = middle / float(m);
+				constexpr float Rings[] = { 0.52f };
+				std::vector<std::vector<glm::vec3>> rows;
+				rows.push_back(std::vector<glm::vec3>(m, at(middle, height(middle) + facet(middle, 0xFA11u))));
+				const bool small = areaOf(corners) < RingArea;
+				for (const float s : Rings)
+				{
+					if (small)
+						break;
+					std::vector<glm::vec3> row(m);
+					for (size_t i = 0; i < m; i++)
+					{
+						Vec2 p = middle + (rimTop[i] - middle) * s;
+						p += Vec2(noise(p, 0xFA12u) - 0.5f, noise(p, 0xFA13u) - 0.5f) * 0.13f;
+						row[i] = at(p, height(p) + facet(p, 0xFA14u));
+					}
+					rows.push_back(std::move(row));
+				}
+				std::vector<float> tops(m);
+				std::vector<glm::vec3> rimRow(m);
+				for (size_t i = 0; i < m; i++)
+				{
+					tops[i] = height(rimTop[i]) + facet(rimTop[i], 0xFA15u) * 0.6f;
+					rimRow[i] = at(rimTop[i], tops[i]);
+				}
+				rows.push_back(rimRow);
+				glass = 0.0f;
+				target = &indices;
+				for (size_t r = 0; r + 1 < rows.size(); r++)
+					for (size_t i = 0; i < m; i++)
+					{
+						const size_t j = (i + 1) % m;
+						glass = glassAt(Vec2(rows[r + 1][i].x, rows[r + 1][i].z));
+						if (r == 0)
+							emit(rows[0][i], rows[1][i], rows[1][j], glm::vec3(0.0f, 1.0f, 0.0f), tone, 0.0f, 0.0f, 0.0f);
+						else
+						{
+							emit(rows[r][i], rows[r + 1][i], rows[r + 1][j], glm::vec3(0.0f, 1.0f, 0.0f), tone, 0.0f, 0.0f, 0.0f);
+							emit(rows[r][i], rows[r + 1][j], rows[r][j], glm::vec3(0.0f, 1.0f, 0.0f), tone, 0.0f, 0.0f, 0.0f);
+						}
+					}
+				std::vector<glm::vec3> mid(m), edge(m), upper(m), lower(m);
+				for (size_t i = 0; i < m; i++)
+				{
+					const Sample& s = samples[i];
+					const float slope = 0.45f + 0.5f * noise(s.P, 0xBE11u);
+					const Vec2 between = s.P - s.N * (s.Bevel * (0.3f + 0.25f * noise(s.P, 0xBE12u)));
+					mid[i] = at(between, tops[i] - s.Bevel * slope * (s.Chip > 0.0f ? 0.9f : 0.5f));
+					edge[i] = at(s.P, tops[i] - s.Bevel * (0.85f + 0.45f * noise(s.P, 0xBE13u)) - s.Chip * 0.05f);
+					const Vec2 wobble = Normalize(s.N) * (0.035f * (noise(s.P + Vec2(0.0f, 1.0f), 0xBE14u) - 0.5f));
+					upper[i] = at(s.P + wobble, tops[i] - 0.19f);
+					lower[i] = at(s.P - Normalize(s.N) * 0.015f, tops[i] - UpperDepth);
+				}
+				for (size_t i = 0; i < m; i++)
+				{
+					const size_t j = (i + 1) % m;
+					const Sample& sa = samples[i];
+					const Sample& sb = samples[j];
+					const glm::vec3 out(sa.N.x + sb.N.x, 0.0f, sa.N.y + sb.N.y);
+					const bool coast = sa.Kind == Side::Coast;
+					const float upperSeam = coast ? 0.03f : 0.06f;
+					const float lowerSeam = coast ? 0.05f : 0.14f;
+					glass = glassy * 0.8f;
+					quad(rimRow[i], rimRow[j], mid[j], mid[i], out + glm::vec3(0.0f, 1.4f, 0.0f), tone * 1.12f, 0.0f, 0.0f, 0.0f, 0.0f);
+					quad(mid[i], mid[j], edge[j], edge[i], out + glm::vec3(0.0f, 0.6f, 0.0f), tone * 1.02f, 0.0f, 0.0f, 0.04f, 0.04f);
+					glass = glassy * 0.55f;
+					quad(edge[i], edge[j], upper[j], upper[i], out, tone * 0.82f, 0.04f, 0.04f, upperSeam, upperSeam);
+					quad(upper[i], upper[j], lower[j], lower[i], out, tone * 0.7f, upperSeam, upperSeam, lowerSeam, lowerSeam);
+					if (!coast)
+					{
+						const Vec2 a(lower[i].x, lower[i].z);
+						const Vec2 b(lower[j].x, lower[j].z);
+						glass = 0.0f;
+						quad(lower[i], lower[j], at(b + Normalize(sb.N) * (Gap * 1.5f), lower[j].y), at(a + Normalize(sa.N) * (Gap * 1.5f), lower[i].y), glm::vec3(0.0f, 1.0f, 0.0f), tone * 0.3f, 0.16f, 0.16f, 0.16f, 0.16f);
+					}
+				}
+				for (const Sample& s : samples)
+				{
+					chunk.Min = { std::min(chunk.Min.x, s.P.x - 0.35f), std::min(chunk.Min.y, s.P.y - 0.35f) };
+					chunk.Max = { std::max(chunk.Max.x, s.P.x + 0.35f), std::max(chunk.Max.y, s.P.y + 0.35f) };
+				}
+
+				target = &wallIndices;
+				glass = glassy * 0.35f;
+				int32_t group = 0;
+				float groupLeft = 0.0f;
+				float jut = 0.0f;
+				float drop = 0.0f;
+				float previousJut = 0.0f;
+				float previousCap = 0.0f;
+				bool previousCoast = false;
+				for (size_t i = 0; i < m; i++)
+				{
+					const size_t j = (i + 1) % m;
+					const Sample& sa = samples[i];
+					const Sample& sb = samples[j];
+					const Vec2 na = Normalize(sa.N);
+					const Vec2 nb = Normalize(sb.N);
+					const Vec2 a(lower[i].x, lower[i].z);
+					const Vec2 b(lower[j].x, lower[j].z);
+					const glm::vec3 front(na.x + nb.x, 0.0f, na.y + nb.y);
+					const glm::vec3 shade = tone * (0.62f + 0.25f * noise(a, 0xC014u));
+					const float topA = lower[i].y;
+					const float topB = lower[j].y;
+					const auto column = [&](Vec2 pa, Vec2 pb, float ya, float yb, float flare)
+					{
+						const float midA = std::lerp(ya, shoreLine, 0.5f);
+						const float midB = std::lerp(yb, shoreLine, 0.5f);
+						const Vec2 ka = pa + na * (0.05f * (noise(pa + Vec2(3.0f, 0.0f), 0xC015u) - 0.5f));
+						const Vec2 kb = pb + nb * (0.05f * (noise(pb + Vec2(3.0f, 0.0f), 0xC015u) - 0.5f));
+						quad(at(pa, ya), at(pb, yb), at(kb, midB), at(ka, midA), front, shade, 0.03f, 0.03f, 0.0f, 0.0f);
+						quad(at(ka, midA), at(kb, midB), at(pb, shoreLine), at(pa, shoreLine), front, shade * 0.92f, 0.0f, 0.0f, 0.0f, 0.0f);
+						quad(at(pa, shoreLine), at(pb, shoreLine), at(pb + nb * flare, IslandBottom), at(pa + na * flare, IslandBottom), front, shade * 0.7f, 0.0f, 0.0f, 0.0f, 0.0f);
+					};
+					if (sa.Kind != Side::Coast)
+					{
+						column(a, b, topA, topB, BaseFlare * 0.5f);
+						previousCoast = false;
+						continue;
+					}
+					bool fresh = false;
+					if (groupLeft <= 0.0f || !previousCoast)
+					{
+						group++;
+						const float r0 = noise(a + Vec2(float(group) * 0.37f, 0.0f), 0xC011u);
+						const float r1 = noise(a + Vec2(0.0f, float(group) * 0.41f), 0xC012u);
+						const float r2 = noise(a - Vec2(float(group) * 0.29f, 0.0f), 0xC013u);
+						jut = 0.04f + 0.32f * r0 * r0;
+						drop = r1 < 0.42f ? 0.15f + 0.8f * r2 : 0.0f;
+						groupLeft = 0.5f + 0.6f * r2;
+						fresh = true;
+					}
+					groupLeft -= Length(b - a);
+					const float capA = topA - drop;
+					const float capB = topB - drop;
+					const Vec2 fa = a + na * jut;
+					const Vec2 fb = b + nb * jut;
+					if (drop > 0.0f)
+						quad(at(a, topA), at(b, topB), at(b, capB), at(a, capA), front, shade, 0.04f, 0.04f, 0.0f, 0.0f);
+					const Vec2 lip = (fa + fb) * 0.5f - (na + nb) * 0.04f;
+					emit(at(a, capA), at(b, capB), at(lip, std::max(capA, capB) - 0.06f), glm::vec3(0.0f, 1.0f, 0.0f), shade * 1.25f, 0.04f, 0.04f, 0.02f);
+					emit(at(b, capB), at(fb, capB - 0.05f), at(lip, std::max(capA, capB) - 0.06f), glm::vec3(0.0f, 1.0f, 0.0f), shade * 1.15f, 0.04f, 0.02f, 0.02f);
+					emit(at(fa, capA - 0.05f), at(a, capA), at(lip, std::max(capA, capB) - 0.06f), glm::vec3(0.0f, 1.0f, 0.0f), shade * 1.15f, 0.02f, 0.04f, 0.02f);
+					emit(at(fa, capA - 0.05f), at(lip, std::max(capA, capB) - 0.06f), at(fb, capB - 0.05f), glm::vec3(0.0f, 1.0f, 0.0f), shade * 1.05f, 0.05f, 0.05f, 0.05f);
+					column(fa, fb, capA - 0.05f, capB - 0.05f, BaseFlare * (0.5f + 0.7f * noise(fa, 0xC016u)));
+					if (fresh && previousCoast)
+					{
+						const float joint = std::min(capA, previousCap);
+						const glm::vec3 sideFace(na.y, 0.0f, -na.x);
+						quad(at(a + na * previousJut, joint), at(fa, joint), at(fa, shoreLine), at(a + na * previousJut, shoreLine), jut > previousJut ? sideFace : -sideFace, shade * 0.75f, 0.08f, 0.08f, 0.0f, 0.0f);
+						quad(at(a, topA), at(a + na * std::max(jut, previousJut), topA), at(a + na * std::max(jut, previousJut), joint), at(a, joint), jut > previousJut ? sideFace : -sideFace, shade * 0.75f, 0.06f, 0.06f, 0.06f, 0.06f);
+					}
+					previousJut = jut;
+					previousCap = capB;
+					previousCoast = true;
+				}
+				target = &indices;
+			}
+			const uint32_t wallIndex = uint32_t(indices.size());
+			indices.insert(indices.end(), wallIndices.begin(), wallIndices.end());
+			chunk.Mesh = uint32_t(meshes.size());
+			meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = wallIndex - firstIndex, .Material = material, .Layer = material, .Flags = flags });
+			meshes.push_back({ .FirstIndex = wallIndex, .IndexCount = uint32_t(indices.size()) - wallIndex, .Material = material, .Layer = material, .Flags = flags });
+		}
+		const uint32_t base = renderer.AddLevelGeometry(vertices, indices, meshes);
+		for (Chunk& chunk : m_Chunks)
+			chunk.Mesh += base;
+	}
+
+	const IslandArt::Cell* IslandArt::FindCell(CellCoord coord) const
+	{
+		if (coord.X < 0 || coord.Y < 0 || coord.X >= m_Width || coord.Y >= m_Height)
+			return nullptr;
+		const int32_t index = m_Lookup[size_t(coord.Y) * size_t(m_Width) + size_t(coord.X)];
+		return index >= 0 ? &m_Cells[size_t(index)] : nullptr;
+	}
+
+	float IslandArt::SurfaceHeight(const Cell& cell, Vec2 position) const
+	{
+		if (m_Molten)
+			return PlateHeight(m_Chunks[cell.Chunk], position);
+		float best = -1e9f;
+		float height = cell.Peak;
+		const Vec2 p = position - cell.Seed;
+		for (uint32_t k = 0; k < cell.CornerCount; k++)
+		{
+			const Corner& a = m_Corners[cell.FirstCorner + k];
+			const Corner& b = m_Corners[cell.FirstCorner + (k + 1) % cell.CornerCount];
+			const Vec2 e0 = a.Position - cell.Seed;
+			const Vec2 e1 = b.Position - cell.Seed;
+			const float area = e0.x * e1.y - e0.y * e1.x;
+			if (std::abs(area) < 1e-8f)
+				continue;
+			const float u = (p.x * e1.y - p.y * e1.x) / area;
+			const float v = (e0.x * p.y - e0.y * p.x) / area;
+			const float inside = std::min({ u, v, 1.0f - u - v });
+			if (inside > best)
+			{
+				best = inside;
+				height = cell.Peak + u * (a.Height - cell.Peak) + v * (b.Height - cell.Peak);
+			}
+		}
+		return height;
+	}
+
+	std::optional<float> IslandArt::GroundHeight(const BrawlStatus* brawl, float clock, Vec2 position) const
+	{
+		if (m_Molten)
+		{
+			const int32_t index = ChunkIndexAt(position);
+			if (index < 0)
+				return std::nullopt;
+			const Chunk& plate = m_Chunks[size_t(index)];
+			const float top = PlateHeight(plate, position);
+			const float since = brawl ? brawl->Clock - ChunkCollapseTime(brawl->Plan, plate.Coord) : 0.0f;
+			if (since <= 0.0f)
+				return top;
+			const float fall = std::min(since / CollapseFallSeconds, 1.0f);
+			return std::max(top - fall * fall * m_Sink, LavaWading);
+		}
+		const Cell* cell = FindCell(CellAt(position));
+		if (!cell)
+			return std::nullopt;
+		const float surface = SurfaceHeight(*cell, position);
+		const float since = brawl ? brawl->Clock - ChunkCollapseTime(brawl->Plan, m_Chunks[cell->Chunk].Coord) : 0.0f;
+		if (since <= 0.0f)
+			return surface;
+		const float fall = std::min(since / CollapseFallSeconds, 1.0f);
+		return std::max(surface - fall * fall * m_Sink, m_Frozen ? LakeWading : LavaWading);
+	}
+
+	std::optional<IslandCarry> IslandArt::CarryAt(const LevelView& view, Vec2 position) const
+	{
+		const int32_t index = m_Molten ? ChunkIndexAt(position) : -1;
+		const Cell* cell = m_Molten ? nullptr : FindCell(CellAt(position));
+		if (!cell && index < 0)
+			return std::nullopt;
+		const Chunk& chunk = m_Chunks[cell ? cell->Chunk : uint32_t(index)];
+		IslandCarry carry;
+		carry.Ground = cell ? SurfaceHeight(*cell, position) : PlateHeight(chunk, position);
+		Vec2 outward;
+		if (view.Brawl)
+		{
+			const float since = view.Brawl->Clock - ChunkCollapseTime(view.Brawl->Plan, chunk.Coord);
+			if (since >= CollapseFallSeconds)
+				return std::nullopt;
+			carry.Warn = std::clamp((since + CollapseWarning) / CollapseWarning, 0.0f, 1.0f);
+			carry.Fall = std::max(since, 0.0f) / CollapseFallSeconds;
+			outward = Normalize(Vec2(chunk.Pivot.x, chunk.Pivot.z) - view.Brawl->Plan.Center);
+		}
+		float drop = carry.Fall * carry.Fall * m_Sink;
+		if (view.Risen && chunk.Tile < view.Risen->size() && (*view.Risen)[chunk.Tile] != 0 && view.Restore < 1.0f)
+		{
+			const float rise = 1.0f - (1.0f - view.Restore) * (1.0f - view.Restore);
+			drop += (1.0f - rise) * m_Sink;
+		}
+		const float shake = carry.Fall <= 0.0f && carry.Warn > 0.0f ? carry.Warn * carry.Warn * 0.035f : 0.0f;
+		const float phase = float(chunk.Coord.X) * 3.1f + float(chunk.Coord.Y) * 1.7f;
+		const glm::vec3 offset(shake * std::sin(view.Time * 47.0f + phase), -drop, shake * std::cos(view.Time * 41.0f - phase));
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), chunk.Pivot + offset);
+		if (carry.Fall > 0.0f && LengthSquared(outward) > 0.0f)
+			transform = glm::rotate(transform, carry.Fall * MaxTilt, glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(outward.x, 0.0f, outward.y)));
+		carry.Transform = glm::translate(transform, -chunk.Pivot);
+		carry.Heat = std::min(carry.Fall * 0.75f + carry.Warn * carry.Warn * 0.25f, 1.0f);
+		return carry;
+	}
+
+	int32_t IslandArt::ChunkIndexAt(Vec2 position) const
+	{
+		if (m_Molten)
+		{
+			const CellCoord chunk = ChunkAt(position);
+			if (chunk.X < 0 || chunk.Y < 0 || chunk.X >= m_ChunkColumns || chunk.Y >= m_ChunkRows)
+				return -1;
+			return m_ChunkLookup[size_t(chunk.Y) * size_t(m_ChunkColumns) + size_t(chunk.X)];
+		}
+		const Cell* cell = FindCell(CellAt(position));
+		return cell ? int32_t(cell->Chunk) : -1;
+	}
+
+	uint64_t IslandArt::SolidKey() const
+	{
+		uint64_t key = 1469598103934665603ull;
+		for (const uint8_t solid : m_Solid)
+			key = (key ^ solid) * 1099511628211ull;
+		return key ^ m_Solid.size();
+	}
+
+	void IslandArt::Draw(WorldRenderer& renderer, const LevelView& view) const
+	{
+		m_Solid.assign(m_Chunks.size(), 1);
+		m_Open.assign(m_Chunks.size(), 0);
+		if (view.Brawl)
+			for (size_t i = 0; i < m_Chunks.size(); i++)
+			{
+				const Chunk& chunk = m_Chunks[i];
+				const bool rising = view.Risen && chunk.Tile < view.Risen->size() && (*view.Risen)[chunk.Tile] != 0 && view.Restore < 1.0f;
+				m_Solid[i] = !rising && view.Brawl->Clock < ChunkCollapseTime(view.Brawl->Plan, chunk.Coord) ? 1 : 0;
+				m_Open[i] = rising || view.Brawl->Clock > ChunkCollapseTime(view.Brawl->Plan, chunk.Coord) + IceOpenDelay ? 1 : 0;
+			}
+		for (size_t i = 0; i < m_Chunks.size(); i++)
+		{
+			const Chunk& chunk = m_Chunks[i];
+			if (chunk.Max.x < view.Min.x || chunk.Min.x > view.Max.x || chunk.Max.y < view.Min.y || chunk.Min.y > view.Max.y)
+				continue;
+			float warn = 0.0f;
+			float fall = 0.0f;
+			float broken = -1e6f;
+			Vec2 outward;
+			if (view.Brawl)
+			{
+				const float since = view.Brawl->Clock - ChunkCollapseTime(view.Brawl->Plan, chunk.Coord);
+				if (since >= (m_Frozen ? IceBreakSeconds : CollapseFallSeconds))
+					continue;
+				broken = since;
+				warn = std::clamp((since + CollapseWarning) / CollapseWarning, 0.0f, 1.0f);
+				fall = std::max(since, 0.0f) / CollapseFallSeconds;
+				outward = Normalize(Vec2(chunk.Pivot.x, chunk.Pivot.z) - view.Brawl->Plan.Center);
+			}
+			if (m_Frozen)
+			{
+				const glm::vec4 white(1.0f, 1.0f, 1.0f, 0.0f);
+				if (warn <= 0.0f)
+					renderer.DrawModel(chunk.Mesh, glm::mat4(1.0f), NoPalette, white, 0.0f, LavaSurface);
+				else
+				{
+					const float crack = SmoothStep(0.22f, 1.0f, warn);
+					const float beats = crack * 5.0f;
+					const float settled = (std::floor(beats) + SmoothStep(0.0f, 0.3f, beats - std::floor(beats))) / 5.0f;
+					for (const uint32_t index : chunk.Cells)
+					{
+						const Cell& cell = m_Cells[index];
+						const float h1 = CollapseNoise(cell.Coord.X, cell.Coord.Y, 0x1A31u);
+						const float h2 = CollapseNoise(cell.Coord.X, cell.Coord.Y, 0x1A47u);
+						const float h3 = CollapseNoise(cell.Coord.X, cell.Coord.Y, 0x1A53u);
+						Vec2 away = Vec2(cell.Seed.x - chunk.Pivot.x, cell.Seed.y - chunk.Pivot.z);
+						if (LengthSquared(away) < 0.01f)
+							away = FromAngle(h2 * 6.28f);
+						away = Normalize(away);
+						const glm::vec3 axis = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(away.x, 0.0f, away.y)));
+						float tilt = settled * (0.012f + 0.03f * h1);
+						glm::vec3 shift(away.x * (0.05f * settled), -settled * (0.012f + 0.03f * h2), away.y * (0.05f * settled));
+						if (broken > 0.0f)
+						{
+							const float delay = h3 * 0.55f;
+							const float f = std::clamp((broken - delay) / (IceBreakSeconds - 0.55f), 0.0f, 1.0f);
+							const float eased = f * f * (3.0f - 2.0f * f);
+							tilt += eased * (0.34f + 0.9f * h1);
+							shift += glm::vec3(away.x * (0.28f + 0.6f * h2) * eased, -std::pow(f, 1.5f) * 2.5f + 0.05f * std::sin(f * 9.0f + h1 * 6.28f) * (1.0f - f), away.y * (0.28f + 0.6f * h2) * eased);
+						}
+						const glm::vec3 centre(cell.Seed.x, cell.Peak, cell.Seed.y);
+						glm::mat4 plate = glm::translate(glm::mat4(1.0f), centre + shift);
+						plate = glm::rotate(plate, tilt, axis);
+						plate = glm::translate(plate, -centre);
+						renderer.DrawModel(cell.TopMesh, plate, NoPalette, white, 0.0f, LavaSurface);
+						renderer.DrawModel(cell.SkirtMesh, plate, NoPalette, white, 0.0f, LavaSurface);
+						if (broken > 0.0f)
+						{
+							renderer.SubmitUnder(cell.TopMesh, renderer.MakeModelInstance(cell.TopMesh, plate));
+							renderer.SubmitUnder(cell.SkirtMesh, renderer.MakeModelInstance(cell.SkirtMesh, plate));
+						}
+					}
+				}
+				if (broken <= 0.0f)
+					for (const Lip& lip : chunk.Lips)
+						if (lip.Neighbour == UINT32_MAX || m_Open[lip.Neighbour] != 0)
+						{
+							renderer.DrawModel(lip.Mesh, glm::mat4(1.0f), NoPalette, white, 0.0f, LavaSurface);
+							renderer.SubmitUnder(lip.Mesh, renderer.MakeModelInstance(lip.Mesh, glm::mat4(1.0f)));
+						}
+				continue;
+			}
+			float drop = fall * fall * m_Sink;
+			if (view.Risen && chunk.Tile < view.Risen->size() && (*view.Risen)[chunk.Tile] != 0 && view.Restore < 1.0f)
+			{
+				const float rise = 1.0f - (1.0f - view.Restore) * (1.0f - view.Restore);
+				drop += (1.0f - rise) * m_Sink;
+			}
+			const float shake = fall <= 0.0f && warn > 0.0f ? warn * warn * 0.035f : 0.0f;
+			const float phase = float(chunk.Coord.X) * 3.1f + float(chunk.Coord.Y) * 1.7f;
+			const glm::vec3 offset(shake * std::sin(view.Time * 47.0f + phase), -drop, shake * std::cos(view.Time * 41.0f - phase));
+			glm::mat4 transform = glm::translate(glm::mat4(1.0f), chunk.Pivot + offset);
+			if (fall > 0.0f && LengthSquared(outward) > 0.0f)
+				transform = glm::rotate(transform, fall * MaxTilt, glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(outward.x, 0.0f, outward.y)));
+			transform = glm::translate(transform, -chunk.Pivot);
+			const float heat = m_Frozen ? 0.0f : std::min(fall * 0.75f + warn * warn * (m_Molten ? 0.25f : 0.1f), 1.0f);
+			renderer.DrawModel(chunk.Mesh, transform, NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), heat, LavaSurface);
+			if (!m_Solid[i] || chunk.Coast || std::any_of(chunk.Neighbours.begin(), chunk.Neighbours.end(), [this](uint32_t other) { return m_Solid[other] == 0; }))
+				renderer.DrawModel(chunk.Mesh + 1, transform, NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), heat, LavaSurface);
+			if (warn <= 0.0f || fall > 0.0f || m_Frozen || m_Molten)
+				continue;
+			for (const uint32_t index : chunk.Cells)
+			{
+				const Cell& cell = m_Cells[index];
+				GroundDecal cracks;
+				cracks.Center = { cell.Seed.x, cell.Peak, cell.Seed.y };
+				cracks.Extent = glm::vec2(0.6f);
+				cracks.Depth = 0.4f;
+				cracks.Shape = DecalShape::Fracture;
+				cracks.Color = m_Frozen ? glm::vec4(0.25f, 0.55f, 0.9f, 1.0f) : glm::vec4(1.6f, 0.5f, 0.13f, 1.0f);
+				cracks.Tint = m_Frozen ? glm::vec4(0.06f, 0.14f, 0.22f, 1.0f) : glm::vec4(0.02f, 0.016f, 0.014f, 1.0f);
+				cracks.Roughness = 0.9f;
+				cracks.Params = glm::vec4(warn, 0.0f, 0.0f, 0.0f);
+				renderer.DrawDecal(cracks);
+			}
+		}
+	}
+
+	float LevelRenderer::GroundHeight(const Level& level, const BrawlStatus* brawl, Vec2 position, float clock) const
+	{
+		if (m_Hall.IsBuilt())
+			return m_Hall.GroundHeight();
+		if (const PeakRelief& relief = m_Scene.Relief; !relief.IsEmpty())
+			return relief.GetPlateau().RimDistance(position) >= 0.0f ? relief.Height(position) : SampleGround(m_Scene, position).value_or(-60.0f);
+		if (m_Island.IsBuilt())
+			if (const std::optional<float> height = m_Island.GroundHeight(brawl, clock, position))
+				return *height;
+		if (brawl && OnCrust(brawl->Plan, clock, position))
+			return LavaSurface + 0.03f;
+		if (!m_LavaRuns.empty() && IsLavaTerrain(level, position))
+			return m_Lake.IsBuilt() ? LakeWading : LavaWading;
+		if (brawl)
+			return m_Lake.IsBuilt() ? LakeWading : LavaWading;
+		return SampleGround(m_Scene, position).value_or(level.Map.GetHeight(position));
+	}
+
+	bool LevelRenderer::IsOverSky(const BrawlStatus* brawl, Vec2 position, float clock) const
+	{
+		if (!m_Scene.Relief.IsEmpty())
+			return m_Scene.Relief.GetPlateau().RimDistance(position) < 0.0f;
+		return m_Hall.IsBuilt() && m_Hall.IsOverSky(position);
+	}
+
+	glm::vec3 ToColor(uint32_t rgb)
+	{
+		const glm::vec3 srgb = glm::vec3(float((rgb >> 16) & 0xFF), float((rgb >> 8) & 0xFF), float(rgb & 0xFF)) / 255.0f;
+		return glm::pow(srgb, glm::vec3(2.2f));
+	}
+
+	void LevelRenderer::Draw(WorldRenderer& renderer, const Level& level, const LevelView& view)
+	{
+		Prepare(renderer, level);
+		if (!m_Hall.IsBuilt())
+			DrawTerrain(renderer, level, view);
+		m_Island.Draw(renderer, view);
+		m_Lake.Draw(renderer, view);
+		m_Caldera.Draw(renderer, view, m_Island);
+		if (m_Hall.IsBuilt())
+			m_Hall.Draw(renderer, view);
+		DrawLoose(renderer, view);
+		DrawLava(renderer, view);
+		DrawWalls(renderer, level, view);
+		DrawProps(renderer, level, view);
+		DrawScene(renderer, view);
+		DrawPortals(renderer, level, view);
+	}
+
+	void LevelRenderer::Prepare(WorldRenderer& renderer, const Level& level)
+	{
+		const SceneKey key{ &level, level.Kind, level.Seed, level.Props.size(), level.Walls.size() };
+		if (key == m_Key)
+			return;
+		m_Key = key;
+		renderer.ClearLevelGeometry();
+		if (level.Kind != MapKind::Abbey || !BuildAbbeyScene(level, renderer, m_Scene))
+		{
+			renderer.SetSkyMask(0, 0, {}, {}, {});
+			m_Scene = BuildLevelScene(level, renderer);
+		}
+		m_Hall.Clear();
+		if (!m_Scene.Relief.IsEmpty() || !level.Hall.IsEmpty())
+			m_Island.Clear();
+		else
+			m_Island.Build(renderer, level);
+		if (!level.Hall.IsEmpty())
+			m_Hall.Build(renderer, level);
+		m_Caldera.Clear();
+		if (level.Kind == MapKind::Caldera)
+			m_Caldera.Build(renderer, level);
+		else
+			renderer.SetLavaLight(0, 0, {}, {}, {});
+		m_Lake.Clear();
+		if (level.Kind == MapKind::FrozenLake)
+			m_Lake.Build(renderer, level);
+		renderer.SetFrozenLiquid(level.Kind == MapKind::FrozenLake);
+		const TileMap& map = level.Map;
+		m_LavaRuns.clear();
+		m_LavaHaze = level.Kind != MapKind::FrozenLake;
+		if (level.Kind == MapKind::FrozenLake)
+			m_LavaRuns.push_back({ -60.0f, -60.0f, float(map.GetWidth()) + 60.0f, float(map.GetHeight()) + 60.0f });
+		else if (level.Kind == MapKind::Caldera)
+			m_LavaRuns.push_back({ -6.0f, -6.0f, float(map.GetWidth()) + 6.0f, float(map.GetHeight()) + 6.0f });
+		for (int32_t y = 0; y < map.GetHeight() && !level.Skyborne && level.Kind != MapKind::FrozenLake && level.Kind != MapKind::Caldera; y++)
+		{
+			int32_t start = -1;
+			for (int32_t x = 0; x <= map.GetWidth(); x++)
+			{
+				const TerrainId terrain = x < map.GetWidth() ? map.GetTerrain(x, y) : TerrainId::Count;
+				const bool molten = terrain != TerrainId::Count && (IsHazardLiquid(terrain) || IsBrawlFloor(terrain));
+				if (molten && start < 0)
+					start = x;
+				else if (!molten && start >= 0)
+				{
+					m_LavaRuns.push_back({ float(start), float(y), float(x), float(y + 1) });
+					start = -1;
+				}
+			}
+		}
+		m_PropReach.clear();
+		m_PropTop.clear();
+		for (const PlacedProp& prop : level.Props)
+		{
+			float reach = 0.0f;
+			float top = 0.0f;
+			for (const PropPart& part : GetProp(prop.Id).Parts)
+			{
+				reach = std::max(reach, Length(part.Offset) + std::max(part.Half.x, part.Half.y));
+				top = std::max(top, part.Base + part.Height);
+			}
+			m_PropReach.push_back(reach);
+			m_PropTop.push_back(top);
+		}
+	}
+
+	void LevelRenderer::DrawLava(WorldRenderer& renderer, const LevelView& view) const
+	{
+		glm::vec4 bounds(1e9f, 1e9f, -1e9f, -1e9f);
+		for (const glm::vec4& run : m_LavaRuns)
+			if (run.z >= view.Min.x && run.x <= view.Max.x && run.w >= view.Min.y && run.y <= view.Max.y)
+			{
+				renderer.DrawLava(run, m_Lake.IsBuilt() ? LakeWaterLine : LavaSurface, view.Time);
+				bounds = glm::vec4(glm::min(glm::vec2(bounds), glm::vec2(run)), glm::max(glm::vec2(bounds.z, bounds.w), glm::vec2(run.z, run.w)));
+			}
+		if (!m_LavaHaze || bounds.x > bounds.z)
+			return;
+		bounds = glm::vec4(glm::max(glm::vec2(bounds), glm::vec2(view.Min.x, view.Min.y) - 1.0f), glm::min(glm::vec2(bounds.z, bounds.w), glm::vec2(view.Max.x, view.Max.y) + 1.0f));
+		Distorter haze;
+		haze.Center = glm::vec3((bounds.x + bounds.z) * 0.5f, LavaSurface + LavaHazeLift, (bounds.y + bounds.w) * 0.5f);
+		haze.Shape = DistortionShape::Haze;
+		haze.Align = DistortionAlign::Ground;
+		haze.Extent = glm::vec2(bounds.z - bounds.x, bounds.w - bounds.y) * 0.5f;
+		haze.Strength = LavaHazeStrength;
+		haze.Soft = 0.06f;
+		haze.Params = glm::vec4(1.4f, 0.45f, 0.8f, 0.0f);
+		haze.Seed = 0x5A17u;
+		renderer.DrawDistortion(haze);
+	}
+
+	void LevelRenderer::DrawLoose(WorldRenderer& renderer, const LevelView& view) const
+	{
+		for (const LooseItem& loose : m_Scene.Loose)
+		{
+			const SceneItem& item = loose.Item;
+				const CellCoord cell = CellAt(loose.Anchor);
+				const float since = view.Brawl ? view.Clock - TileCollapseTime(view.Brawl->Plan, cell.X, cell.Y) : -1.0f;
+				if (since >= PillarShatterSeconds || item.Center.x + item.Reach < view.Min.x || item.Center.x - item.Reach > view.Max.x || item.Center.y + item.Reach < view.Min.y || item.Center.y - item.Reach > view.Max.y)
+					continue;
+				ModelInstance instance = item.Instance;
+				if (since > 0.0f)
+				{
+					const float t = since / PillarShatterSeconds;
+					instance.Rows[1].w -= PillarSink * t * t;
+					WorldRenderer::SetDissolve(instance, { .Amount = std::sqrt(t), .Edge = PillarBurn, .Width = 0.08f, .Scale = 3.5f, .Sweep = 2.0f, .Seed = item.Center.x * 0.37f + item.Center.y });
+				}
+				else if (item.Cut)
+				{
+					const Vec2 closest = { std::clamp(view.Focus.x, item.Center.x - item.Extent.x, item.Center.x + item.Extent.x), std::clamp(view.Focus.y, item.Center.y - item.Extent.y, item.Center.y + item.Extent.y) };
+					if (const float cut = CutFactor(view, closest, item.Top); cut > 0.0f)
+					{
+						instance.Shading.z = item.Base + CutHeight;
+						instance.Shading.w = 0.85f * cut;
+					}
+				}
+				renderer.SubmitModel(item.Mesh, instance);
+				if (m_Lake.IsBuilt())
+					renderer.SubmitUnder(item.Mesh, instance);
+		}
+	}
+
+	void LevelRenderer::DrawScene(WorldRenderer& renderer, const LevelView& view) const
+	{
+		for (const SceneItem& item : m_Scene.Backdrop)
+			renderer.SubmitModel(item.Mesh, item.Instance);
+		for (const SceneChunk& chunk : m_Scene.Chunks)
+		{
+			if ((chunk.Items.empty() && chunk.Boxes.empty()) || chunk.Max.x < view.Min.x || chunk.Min.x > view.Max.x || chunk.Max.y < view.Min.y || chunk.Min.y > view.Max.y)
+				continue;
+			for (const SceneItem& item : chunk.Items)
+			{
+				if (item.Center.x + item.Reach < view.Min.x || item.Center.x - item.Reach > view.Max.x || item.Center.y + item.Reach < view.Min.y || item.Center.y - item.Reach > view.Max.y)
+					continue;
+				ModelInstance instance = item.Instance;
+				if (item.Bob > 0.0f)
+					instance.Rows[1].w += item.Bob * std::sin(view.Time * 0.55f + item.BobPhase);
+				if (item.Center.x + item.Reach < view.CameraMin.x || item.Center.x - item.Reach > view.CameraMax.x || item.Center.y + item.Reach < view.CameraMin.y || item.Center.y - item.Reach > view.CameraMax.y)
+				{
+					renderer.SubmitModel(item.Mesh, instance, true);
+					continue;
+				}
+				float cut = 0.0f;
+				if (item.Cut)
+				{
+					const Vec2 closest = { std::clamp(view.Focus.x, item.Center.x - item.Extent.x, item.Center.x + item.Extent.x), std::clamp(view.Focus.y, item.Center.y - item.Extent.y, item.Center.y + item.Extent.y) };
+					cut = CutFactor(view, closest, item.Top);
+				}
+				if (cut <= 0.0f && (item.Instance.Info.w & MeshWater) != 0)
+				{
+					instance.Shading.z = view.Time;
+					renderer.SubmitModel(item.Mesh, instance);
+					continue;
+				}
+				if (cut <= 0.0f)
+				{
+					renderer.SubmitModel(item.Mesh, instance);
+					continue;
+				}
+				instance.Shading.z = item.Base + CutHeight;
+				instance.Shading.w = 0.85f * cut;
+				renderer.SubmitModel(item.Mesh, instance);
+			}
+			for (const SceneBox& box : chunk.Boxes)
+			{
+				if (box.Center.x + box.Reach < view.Min.x || box.Center.x - box.Reach > view.Max.x || box.Center.z + box.Reach < view.Min.y || box.Center.z - box.Reach > view.Max.y)
+					continue;
+				const bool outside = box.Center.x + box.Reach < view.CameraMin.x || box.Center.x - box.Reach > view.CameraMax.x || box.Center.z + box.Reach < view.CameraMin.y || box.Center.z - box.Reach > view.CameraMax.y;
+				if (box.ShadowOnly || (outside && box.Emission < 0.9f))
+				{
+					renderer.DrawShadowCaster(box.Mesh, box.Center, box.Half, box.Yaw);
+					continue;
+				}
+				if (outside)
+					continue;
+				const float bottom = box.Center.y - box.Half.y;
+				const float fullTop = box.Center.y + box.Half.y;
+				float top = fullTop;
+				if (box.Cut)
+				{
+					const Vec2 center = { box.Center.x, box.Center.z };
+					const Vec2 toFocus = view.Focus - center;
+					const float distance = Length(toFocus);
+					const Vec2 closest = distance > 1e-4f ? center + toFocus * (std::min(distance, box.Reach) / distance) : center;
+					const float cut = CutFactor(view, closest, top);
+					if (cut > 0.0f)
+						top = std::min(top, box.Base + glm::mix(top - box.Base, CutHeight + 0.05f, cut));
+				}
+				if (top < fullTop && box.Emission < 0.9f)
+					renderer.DrawShadowCaster(box.Mesh, box.Center, box.Half, box.Yaw);
+				if (top - bottom < 0.005f)
+					continue;
+				renderer.Draw(box.Mesh, { box.Center.x, (top + bottom) * 0.5f, box.Center.z }, { box.Half.x, (top - bottom) * 0.5f, box.Half.z }, box.Color, box.Yaw, box.Emission, box.Base);
+			}
+		}
+	}
+
+	void LevelRenderer::DrawTerrain(WorldRenderer& renderer, const Level& level, const LevelView& view) const
+	{
+		const TileMap& map = level.Map;
+		const int32_t minX = std::max(int32_t(std::floor(view.Min.x)), 0);
+		const int32_t maxX = std::min(int32_t(std::floor(view.Max.x)), map.GetWidth() - 1);
+		const int32_t minY = std::max(int32_t(std::floor(view.Min.y)), 0);
+		const int32_t maxY = std::min(int32_t(std::floor(view.Max.y)), map.GetHeight() - 1);
+		for (int32_t y = minY; y <= maxY; y++)
+		{
+			for (int32_t x = minX; x <= maxX; x++)
+			{
+				const Cell& cell = map.Get(x, y);
+				const TerrainDef& def = GetTerrain(cell.Terrain);
+				const size_t index = size_t(y) * size_t(map.GetWidth()) + size_t(x);
+				const uint8_t art = index < m_Scene.Cells.size() ? m_Scene.Cells[index] : 0;
+				if ((art & CellTop) && (art & CellSides))
+					continue;
+				if (def.Style == TerrainStyle::Molten)
+					continue;
+				if (IsBrawlFloor(cell.Terrain))
+					continue;
+				const float height = float(cell.Level) * HeightUnit;
+				const float shade = Hash(x, y);
+				const float cx = float(x) + 0.5f;
+				const float cz = float(y) + 0.5f;
+				const glm::vec3 base = ToColor(def.Color);
+				const glm::vec3 accent = ToColor(def.Accent);
+				switch (def.Style)
+				{
+				case TerrainStyle::Void:
+					break;
+				case TerrainStyle::Solid:
+				{
+					bool deep = true;
+					for (int32_t dy = -1; dy <= 1 && deep; dy++)
+						for (int32_t dx = -1; dx <= 1 && deep; dx++)
+							deep = !map.IsWalkable(x + dx, y + dy) && map.GetTerrain(x + dx, y + dy) != TerrainId::Water;
+					const float top = height + glm::mix(RockHeight, CutHeight, CutFactor(view, { cx, cz }, height + RockHeight));
+					Column(renderer, cx, cz, height - 0.1f, top, { 0.5f, 0.5f }, (deep ? base : accent) * (0.85f + 0.3f * shade), height);
+					if (top < height + RockHeight)
+						renderer.DrawShadowCaster(MeshKind::Box, { cx, height + (RockHeight - 0.1f) * 0.5f, cz }, { 0.5f, (RockHeight + 0.1f) * 0.5f, 0.5f });
+					break;
+				}
+				case TerrainStyle::Liquid:
+				{
+					const float ripple = 0.5f + 0.5f * std::sin(view.Time * 1.7f + shade * 6.28f);
+					renderer.DrawBox({ cx, height - 0.17f, cz }, { 0.5f, 0.03f, 0.5f }, glm::mix(base, accent, ripple * 0.6f), 0.0f, 0.12f, height - 0.2f, { .Roughness = 0.08f });
+					Column(renderer, cx, cz, height - 0.6f, height - 0.2f, { 0.5f, 0.5f }, base * 0.35f, height - 0.6f);
+					break;
+				}
+				default:
+				{
+					float bottom = height - 0.12f;
+					for (const Direction side : { Direction::North, Direction::East, Direction::South, Direction::West })
+					{
+						int32_t nx = x;
+						int32_t ny = y;
+						TileMap::Step(side, nx, ny);
+						bottom = std::min(bottom, SurfaceHeight(map, nx, ny, height) - 0.02f);
+					}
+					if (art & CellSides)
+						bottom = height - 0.1f;
+					const glm::vec3 color = glm::mix(base, accent, shade * 0.5f);
+					if (art & CellTop)
+					{
+						Column(renderer, cx, cz, bottom, height - FloorBottom, { 0.5f, 0.5f }, color * 0.8f, height);
+						break;
+					}
+					if (cell.Slope != Direction::None && cell.Climb > 0)
+					{
+						const float rise = float(cell.Climb) * HeightUnit;
+						Column(renderer, cx, cz, bottom, height, { 0.5f, 0.5f }, accent, height);
+						if (def.Style == TerrainStyle::Ground)
+						{
+							renderer.Draw(MeshKind::Wedge, { cx, height + rise * 0.5f, cz }, { 0.5f, rise * 0.5f, 0.5f }, color, SlopeYaw(cell.Slope), 0.0f, height);
+							break;
+						}
+						const int32_t steps = std::max(2, int32_t(std::lround(rise / StepHeight)));
+						for (int32_t i = 0; i < steps; i++)
+						{
+							const float along = (float(i) + 0.5f) / float(steps);
+							const Vec2 local = SlopeLocal(cell.Slope, along, 0.5f);
+							const bool vertical = cell.Slope == Direction::North || cell.Slope == Direction::South;
+							const glm::vec2 half = vertical ? glm::vec2(0.5f, 0.5f / float(steps)) : glm::vec2(0.5f / float(steps), 0.5f);
+							const float top = height + rise * float(i + 1) / float(steps);
+							Column(renderer, float(x) + local.x, float(y) + local.y, height, top, half, i % 2 == 0 ? color : glm::mix(color, accent, 0.25f), height);
+						}
+						break;
+					}
+					switch (def.Style)
+					{
+					case TerrainStyle::Slabs:
+					{
+						Column(renderer, cx, cz, bottom, height - 0.01f, { 0.5f, 0.5f }, accent * 0.8f, height);
+						if (cell.Terrain == TerrainId::Cobblestone)
+						{
+							for (int32_t i = 0; i < 4; i++)
+							{
+								const float jitter = Hash(x, y, i + 1);
+								const glm::vec3 stone = glm::mix(base, accent, jitter * 0.6f);
+								Column(renderer, cx + (i % 2 == 0 ? -0.25f : 0.25f), cz + (i < 2 ? -0.25f : 0.25f), height - 0.08f, height + 0.01f * jitter, { 0.215f, 0.215f }, stone, height, (jitter - 0.5f) * 0.3f);
+							}
+						}
+						else
+						{
+							const glm::vec3 slab = cell.Terrain == TerrainId::Marble && ((x + y) & 1) ? glm::mix(base, accent, 0.45f) : color;
+							Column(renderer, cx, cz, height - 0.08f, height, { 0.47f, 0.47f }, slab, height);
+						}
+						break;
+					}
+					case TerrainStyle::Planks:
+					{
+						Column(renderer, cx, cz, bottom, height - 0.01f, { 0.5f, 0.5f }, accent, height);
+						for (int32_t i = 0; i < 3; i++)
+						{
+							const float tint = Hash(x + (y % 2) * 7, y, i + 3);
+							Column(renderer, cx, float(y) + (float(i) + 0.5f) / 3.0f, height - 0.06f, height, { 0.5f, 0.155f }, glm::mix(base, accent, 0.15f + tint * 0.3f) * (0.9f + 0.2f * tint), height);
+						}
+						break;
+					}
+					default:
+						Column(renderer, cx, cz, bottom, height, { 0.5f, 0.5f }, color, height);
+						if (cell.Terrain == TerrainId::Grass && shade < 0.35f)
+							renderer.Draw(MeshKind::Cone, { cx + (Hash(x, y, 1) - 0.5f) * 0.6f, height + 0.09f, cz + (Hash(x, y, 2) - 0.5f) * 0.6f }, { 0.07f, 0.09f, 0.07f }, glm::mix(accent, glm::vec3(0.35f, 0.5f, 0.15f), 0.4f), 0.0f, 0.0f, height);
+						break;
+					}
+					break;
+				}
+				}
+			}
+		}
+	}
+
+	void LevelRenderer::DrawWalls(WorldRenderer& renderer, const Level& level, const LevelView& view) const
+	{
+		for (size_t index = 0; index < level.Walls.size(); index++)
+		{
+			const WallSegment& wall = level.Walls[index];
+			if (index < m_Scene.WallDrawn.size() && m_Scene.WallDrawn[index])
+				continue;
+			if (std::max(wall.From.x, wall.To.x) < view.Min.x - 1.0f || std::min(wall.From.x, wall.To.x) > view.Max.x + 1.0f || std::max(wall.From.y, wall.To.y) < view.Min.y - 1.0f || std::min(wall.From.y, wall.To.y) > view.Max.y + 1.0f)
+				continue;
+			const WallDef& def = GetWall(wall.Style);
+			const Vec2 span = wall.To - wall.From;
+			const float length = Length(span);
+			if (length < 1e-4f)
+				continue;
+			const Vec2 direction = span / length;
+			const float yaw = AngleOf(span);
+			const int32_t pieces = std::max(1, int32_t(std::ceil(length / WallPiece)));
+			for (int32_t i = 0; i < pieces; i++)
+			{
+				Vec2 start = Lerp(wall.From, wall.To, float(i) / float(pieces));
+				Vec2 end = Lerp(wall.From, wall.To, float(i + 1) / float(pieces));
+				if (i == 0)
+					start -= direction * (def.Thickness * 0.5f);
+				if (i == pieces - 1)
+					end += direction * (def.Thickness * 0.5f);
+				const Vec2 center = (start + end) * 0.5f;
+				const float halfLength = Length(end - start) * 0.5f;
+				const float cut = CutFactor(view, center, wall.Base + def.Height);
+				const float top = wall.Base + glm::mix(def.Height, CutHeight, cut);
+				const float bottom = wall.Bottom - 0.05f;
+				renderer.DrawBox({ center.x, (top + bottom) * 0.5f, center.y }, { halfLength, (top - bottom) * 0.5f, def.Thickness * 0.5f }, ToColor(def.Color), yaw, 0.0f, wall.Base);
+				if (cut > 0.0f)
+				{
+					const float fullTop = wall.Base + def.Height + 0.06f;
+					renderer.DrawShadowCaster(MeshKind::Box, { center.x, (fullTop + bottom) * 0.5f, center.y }, { halfLength, (fullTop - bottom) * 0.5f, def.Thickness * 0.5f }, yaw);
+				}
+				renderer.DrawBox({ center.x, top + 0.03f, center.y }, { halfLength + 0.005f, 0.03f, def.Thickness * 0.5f + 0.03f }, ToColor(def.Top), yaw, 0.0f, wall.Base);
+			}
+		}
+	}
+
+	void LevelRenderer::DrawProps(WorldRenderer& renderer, const Level& level, const LevelView& view) const
+	{
+		for (size_t i = 0; i < level.Props.size() && i < m_PropReach.size(); i++)
+		{
+			if (i < m_Scene.PropDrawn.size() && m_Scene.PropDrawn[i])
+				continue;
+			const PlacedProp& prop = level.Props[i];
+			const float reach = m_PropReach[i];
+			if (prop.Position.x + reach < view.Min.x || prop.Position.x - reach > view.Max.x || prop.Position.y + reach < view.Min.y || prop.Position.y - reach > view.Max.y)
+				continue;
+			glm::vec3 lift(0.0f);
+			const float seat = m_Scene.Relief.IsEmpty() ? prop.Base : m_Scene.Relief.Footing(prop.Position, reach * 0.7f);
+			const PropDef& def = GetProp(prop.Id);
+			float cutTop = 1e9f;
+			if (def.Tall)
+			{
+				const Vec2 toFocus = view.Focus - prop.Position;
+				const float distance = Length(toFocus);
+				const Vec2 closest = distance > 1e-4f ? prop.Position + toFocus * (std::min(distance, reach) / distance) : prop.Position;
+				const float cut = CutFactor(view, closest, seat + m_PropTop[i]);
+				if (cut > 0.0f)
+					cutTop = glm::mix(m_PropTop[i], CutHeight + 0.05f, cut);
+			}
+			const Vec2 axis = FromAngle(prop.Yaw);
+			for (const PropPart& part : def.Parts)
+			{
+				const float bottom = part.Base;
+				const float fullTop = part.Base + part.Height;
+				const float top = std::min(fullTop, cutTop);
+				const Vec2 center = prop.Position + Rotate(part.Offset, axis) + Vec2(lift.x, lift.z);
+				const float base = seat + lift.y;
+				if (top < fullTop && part.Emission < 0.9f)
+					renderer.DrawShadowCaster(part.Mesh, { center.x, base + (bottom + fullTop) * 0.5f, center.y }, { part.Half.x, part.Height * 0.5f, part.Half.y }, prop.Yaw + part.Yaw);
+				if (top - bottom < 0.005f)
+					continue;
+				renderer.Draw(part.Mesh, { center.x, base + (bottom + top) * 0.5f, center.y }, { part.Half.x, (top - bottom) * 0.5f, part.Half.y }, ToColor(part.Color), prop.Yaw + part.Yaw, part.Emission, base);
+			}
+		}
+	}
+
+	void LevelRenderer::DrawPortals(WorldRenderer& renderer, const Level& level, const LevelView& view) const
+	{
+		for (size_t i = 0; i < level.Portals.size(); i++)
+		{
+			const Portal& portal = level.Portals[i];
+			const float distance = Length(portal.Position - view.Focus);
+			const bool hovered = int32_t(i) == view.HoveredPortal;
+			const bool reachable = int32_t(i) == view.ReachablePortal;
+			if ((!hovered && !reachable && distance > 8.0f) || (portal.Hidden && !reachable))
+				continue;
+			const float ground = level.Map.GetHeight(portal.Position);
+			const float pulse = 0.65f + 0.35f * std::sin(view.Time * 4.0f + float(i));
+			const glm::vec3 center = { portal.Position.x, ground, portal.Position.y };
+			if (hovered)
+			{
+				DrawGroundRing(renderer, center, 0.75f, PortalGold, 1.5f * pulse, 0.05f);
+				DrawGroundRing(renderer, center, 0.45f, PortalGold, 1.2f * pulse, 0.035f, 8.0f, 0.2f);
+			}
+			else
+				DrawGroundRing(renderer, center, 0.6f, PortalGold * (reachable ? 0.9f : 0.5f), reachable ? 1.2f * pulse : 0.6f, 0.035f);
+		}
+	}
+}

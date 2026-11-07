@@ -473,6 +473,7 @@ namespace Game
 		void DrawLavaWarning();
 		void DrawSkyWarnings();
 		void UpdateStorm(const BrawlStatus& brawl);
+		void UpdateCaldera(const BrawlStatus& brawl, float dt);
 		void DrawHallRing(WorldRenderer& renderer) const;
 		bool DescribeOutcome(std::string& title, std::string& text) const;
 		bool BrawlRanksAbove(const PlayerInfo& a, const PlayerInfo& b) const;
@@ -627,6 +628,7 @@ namespace Game
 		float m_CrumbleCooldown = 0.0f;
 		float m_Flash = 0.0f;
 		float m_Dusk = 0.0f;
+		bool m_LeviathanCalled = false;
 		float m_DuskTime = 0.0f;
 		float m_Trauma = 0.0f;
 		float m_ShakeClock = 0.0f;
@@ -645,6 +647,8 @@ namespace Game
 			uint32_t Seed = 0;
 		};
 		std::vector<BoltMark> m_BoltMarks;
+		float m_CalderaClock = -1e9f;
+		float m_HeartPhase = 0.0f;
 		BrawlPhase m_SeenBrawlPhase = BrawlPhase::Draft;
 		uint8_t m_SeenRound = 0;
 		uint8_t m_FoughtRound = 0;

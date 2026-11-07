@@ -36,6 +36,13 @@ const uint MeshCliff = 32768u;
 const uint MeshTwoTone = 65536u;
 const uint MeshBright = 131072u;
 const uint MeshSkinned = 262144u;
+const uint MeshRock = 1048576u;
+const uint MeshSeam = 2097152u;
+const uint MeshFlow = 4194304u;
+const uint MeshObsidian = 8388608u;
+const uint MeshMetal = 16777216u;
+const uint MeshHeated = 33554432u;
+const uint MeshPolished = 67108864u;
 const uint MaterialTranslucent = 256u;
 
 vec4 SampleAlbedo(Material m, vec2 uv)

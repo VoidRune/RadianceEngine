@@ -171,7 +171,7 @@ namespace Game
 			return {};
 		const BrawlStatus& brawl = m_Match.GetBrawl();
 		if (!m_Level.Skyborne)
-			return { .Clock = brawl.Clock, .Field = &brawl.Plan };
+			return { .Clock = brawl.Clock, .Deadly = brawl.Phase == BrawlPhase::Fight, .Field = &brawl.Plan };
 		return { &brawl.Plan, brawl.Clock, brawl.Phase == BrawlPhase::Fight, &brawl.Plan };
 	}
 

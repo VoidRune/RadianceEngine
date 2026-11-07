@@ -264,7 +264,7 @@ namespace Game
 			m_Station.reset();
 		}
 
-		heading(third, UiIcon::Whirlwind, "Spellbrawl", "The Caldera or the Frozen Lake");
+		heading(third, UiIcon::Whirlwind, "Spellbrawl", "Four arenas, from the Molten Heart to Storm Peak");
 		const char* pitch = m_BrawlRules.Mode == BrawlMode::Damage ? "Spells hurt and cost mana. Wear your rivals down, and mind the lava and the ice. The last mage standing takes the round." : "Spells don't hurt here, they shove. Knock your rivals into the lava or through the ice. The last mage standing takes the round.";
 		third.CutTop(draw.TextWrapped(third, pitch, Theme::Body(14.0f, Theme::Text)) + 10.0f);
 		ui.Separator(third.CutTop(20.0f), "RULES");

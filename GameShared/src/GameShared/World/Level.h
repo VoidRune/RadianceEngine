@@ -46,7 +46,7 @@ namespace Game
 		{ MapKind::Crucible, "The Crucible", "A walled fighting pit around a low dais, with broken colonnades, cover walls and pools of black water. Shrines hand out healing and power." },
 		{ MapKind::Ashlands, "The Ashlands", "A burned island: a ruined village, a drowned chapel, a walled graveyard, crystal hollows, a sunken library, farmland and the watchtower hill. Chests everywhere, and the ash storm closes in." },
 		{ MapKind::Abbey, "Vesper Abbey", "A rain-soaked abbey courtyard at dusk, with a walled garden, a storage yard and a candlelit crypt." },
-		{ MapKind::Caldera, "The Caldera", "A disc of basalt floating on a lake of lava inside a volcano. It crumbles from the edge inward every round." },
+		{ MapKind::Caldera, "Molten Heart", "The Forge of the Titans: an iron mold plate chained above a molten pit. The titan's crucible pours molten metal down a sword-shaped trench, and late in the round the forge floods the plate from the edge inward." },
 		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes." },
 		{ MapKind::SkyRuins, "Sky Observatory", "The domed observatory of a vanished sky civilization, high above the clouds. There is no lava, only a long fall: a hole gapes in the middle of its star-chart floor, and the old core's burning field closes in around it." },
 		{ MapKind::StormPeak, "Storm Peak", "A wide summit plateau high above the clouds, crowned by the old Stormcallers' ritual circle and its monoliths. Lightning falls at random, the storm closes in on the circle, and a shove off the edge is a long way down." },
@@ -134,6 +134,54 @@ namespace Game
 		Vec2 Position;
 		float Radius = 2.4f;
 	};
+
+	inline constexpr float LakeGraveX = 5.5f;
+	inline constexpr float LakeGraveZ = 18.9f;
+	inline constexpr float LakeGraveScale = 1.12f;
+	inline constexpr float LakeSkullScale = 1.15f;
+	inline constexpr float LakeBankX = 5.2f;
+	inline constexpr float LakeBankZ = 18.4f;
+	inline constexpr float LakeBankHalfX = 15.0f;
+	inline constexpr float LakeBankHalfZ = 4.1f;
+	inline constexpr float LakeSkullZ = -1.1f;
+	inline constexpr float LakeChannelHalf = 5.4f;
+	inline constexpr float LakeTrenchHalf = 5.6f;
+
+	struct LakeLayout
+	{
+		float Side = 1.0f;
+		float Mouth = 0.0f;
+		std::array<Vec2, 5> Trench{};
+		std::array<Vec2, 10> Route{};
+
+		float Channel(float x) const { return Mouth + 1.6f * std::sin((Side * x - 20.0f) * 0.09f); }
+		float ChannelHalf(float x) const
+		{
+			const float t = std::clamp((Side * x - 18.0f) / 8.0f, 0.0f, 1.0f);
+			return LakeChannelHalf + 3.2f * (1.0f - t * t * (3.0f - 2.0f * t));
+		}
+		bool InChannel(Vec2 local, float margin = 0.0f) const
+		{
+			return Side * local.x > 14.0f && std::abs(local.y - Channel(local.x)) < ChannelHalf(local.x) + margin;
+		}
+		float TrenchDistance(Vec2 local) const
+		{
+			float best = 1e9f;
+			for (size_t i = 0; i + 1 < Trench.size(); i++)
+			{
+				const Vec2 a = Trench[i];
+				const Vec2 ab = Trench[i + 1] - a;
+				const float t = std::clamp(Dot(local - a, ab) / std::max(Dot(ab, ab), 1e-6f), 0.0f, 1.0f);
+				best = std::min(best, Length(local - (a + ab * t)));
+			}
+			return best;
+		}
+		float PierX() const { return Side * 24.5f; }
+		Vec2 PierRoot() const { return { PierX(), Channel(PierX()) + ChannelHalf(PierX()) + 0.4f }; }
+		Vec2 Boat() const { return PierRoot() + Vec2(-Side * 2.7f, -2.6f); }
+	};
+
+	LakeLayout MakeLakeLayout(uint32_t seed);
 
 	struct PlacedProp
 	{

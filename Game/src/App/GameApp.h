@@ -63,6 +63,7 @@ namespace Game
 		bool UnlimitedMaterials = false;
 		bool Peaceful = false;
 		bool Leviathan = false;
+		std::optional<std::array<float, 6>> ShotCamera;
 		bool Distortion = true;
 		bool Trails = true;
 		uint8_t DistortionStage = 0;

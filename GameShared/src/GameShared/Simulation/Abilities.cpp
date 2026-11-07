@@ -116,6 +116,7 @@ namespace Game
 			AbilityContext eruption = context;
 			eruption.Origin = fallback;
 			ExecuteAbility(world, AbilityId::GlacialEruption, eruption);
+			world.AddCrust(eruption.Origin, GetAbility(AbilityId::GlacialEruption).ImpactRadius * eruption.AreaScale * NovaCrustShare);
 			return;
 		}
 		for (const Entity field : fields)
@@ -125,6 +126,7 @@ namespace Game
 			eruption.Tag = entities.TryGet<Replicated>(field)->Tag;
 			world.DestroyEntity(field);
 			ExecuteAbility(world, AbilityId::GlacialEruption, eruption);
+			world.AddCrust(eruption.Origin, GetAbility(AbilityId::GlacialEruption).ImpactRadius * eruption.AreaScale * NovaCrustShare);
 		}
 	}
 }

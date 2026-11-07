@@ -1,4 +1,5 @@
 #include "LevelArt.h"
+#include "Rendering/LakeArt.h"
 #include "Rendering/LevelRenderer.h"
 #include "Rendering/Models.h"
 #include <RadianceEngine/Core/Log.h>
@@ -1516,6 +1517,18 @@ namespace Game
 				m_Scene.WallDrawn.assign(m_Level.Walls.size(), 0);
 				m_Scene.Width = width;
 				ResolveMeshes();
+				if (m_Level.Kind == MapKind::Caldera)
+				{
+					std::fill(m_Scene.Cells.begin(), m_Scene.Cells.end(), uint8_t(CellTop | CellSides));
+					return;
+				}
+				if (m_Level.Kind == MapKind::FrozenLake)
+				{
+					m_LakeLand.Build(m_Level);
+					std::fill(m_Scene.Cells.begin(), m_Scene.Cells.end(), uint8_t(CellTop | CellSides));
+					Props();
+					return;
+				}
 				if (m_Level.Skyborne)
 				{
 					if (!m_Scene.Relief.IsEmpty())
@@ -5266,7 +5279,8 @@ namespace Game
 					const int32_t hy = int32_t(std::floor(prop.Position.y * 16.0f));
 					const std::vector<ResolvedPart>& variant = art.Variants[Hash(hx, hy, uint32_t(i) * 7u + 51u) % art.Variants.size()];
 					const float jitter = art.Natural ? 0.88f + 0.24f * Unit(hx, hy, 53) : 1.0f;
-					const float base = !m_Scene.Relief.IsEmpty() ? m_Scene.Relief.Footing(prop.Position, Footprint(prop.Id)) : art.Natural ? NaturalBase(prop.Position, prop.Base) : prop.Base;
+					const bool onLakeShore = m_Level.Kind == MapKind::FrozenLake && !IsBrawlFloor(m_Map.GetTerrain(int32_t(prop.Position.x), int32_t(prop.Position.y)));
+					const float base = onLakeShore ? m_LakeLand.Height(prop.Position) : !m_Scene.Relief.IsEmpty() ? m_Scene.Relief.Footing(prop.Position, Footprint(prop.Id)) : art.Natural ? NaturalBase(prop.Position, prop.Base) : prop.Base;
 					const glm::mat4 place = Translation({ prop.Position.x, base, prop.Position.y }) * RotationY(prop.Yaw) * Scaling(Uniform(jitter));
 					const bool tall = GetProp(prop.Id).Tall;
 					glm::vec3 low(1e9f);
@@ -5818,6 +5832,7 @@ namespace Game
 			int32_t m_GroundColumns = 0;
 			int32_t m_GroundRows = 0;
 			bool m_Terrain = false;
+			LakeShore m_LakeLand;
 			bool m_Floating = false;
 			std::array<uint32_t, 4> m_Splat{};
 			std::optional<uint32_t> m_TileSmall;

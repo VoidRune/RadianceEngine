@@ -111,6 +111,18 @@ namespace Game
 
 	void TrailRenderer::BeginFrame(float time)
 	{
+		if (time < m_Time)
+		{
+			const float shift = m_Time - time;
+			for (Trail& trail : m_Trails)
+			{
+				for (Point& point : trail.Points)
+					point.Born -= shift;
+				trail.Live.Born -= shift;
+				if (trail.Released >= 0.0f)
+					trail.Released = std::max(trail.Released - shift, 0.0f);
+			}
+		}
 		m_Time = time;
 		for (Trail& trail : m_Trails)
 		{

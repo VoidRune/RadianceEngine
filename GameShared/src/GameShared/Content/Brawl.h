@@ -1,6 +1,7 @@
 #pragma once
 #include "GameShared/Content/Cards.h"
 #include "GameShared/Content/Definitions.h"
+#include "GameShared/Content/Forge.h"
 #include "GameShared/Content/Pvp.h"
 #include "GameShared/Content/Traits.h"
 #include "GameShared/Core/Random.h"
@@ -102,12 +103,22 @@ namespace Game
 
 	inline constexpr size_t MaxBolts = 8;
 
+	struct Crust
+	{
+		Vec2 Center;
+		float Radius = 0.0f;
+		float Time = 0.0f;
+	};
+
+	inline constexpr size_t MaxCrusts = 12;
+
 	enum class BrawlShape : uint8_t
 	{
 		Disc,
 		Lake,
 		Ruins,
 		Peak,
+		Caldera,
 		Count,
 	};
 
@@ -121,6 +132,8 @@ namespace Game
 		uint8_t CraterCount = 0;
 		std::array<LightningBolt, MaxBolts> Bolts{};
 		uint8_t BoltCount = 0;
+		std::array<Crust, MaxCrusts> Crusts{};
+		uint8_t CrustCount = 0;
 		bool Steady = false;
 	};
 
@@ -247,6 +260,7 @@ namespace Game
 	inline constexpr float AssistShare = 0.3f;
 	inline constexpr float LakeScale = 1.4f;
 	inline constexpr float LakeAspect = 1.8f;
+	inline constexpr float LakeBays = 0.14f;
 	inline constexpr float IceFriction = 0.625f;
 	inline constexpr float IceBounce = 0.8f;
 	inline constexpr float BounceSpeed = 2.0f;
@@ -271,6 +285,18 @@ namespace Game
 	inline constexpr float BoltPush = 7.0f;
 	inline constexpr float BoltStun = 0.35f;
 	inline constexpr int32_t BoltDamage = 14;
+	inline constexpr float FuryFull = 46.0f;
+	inline constexpr float MetalDamagePerSecond = 20.0f;
+	inline constexpr float SmoulderDamagePerSecond = 8.0f;
+	inline constexpr int32_t FrontDamage = 15;
+	inline constexpr float FrontPush = 6.0f;
+	inline constexpr float ForgeLookAhead = 30.0f;
+	inline constexpr float CrustSeconds = 4.2f;
+	inline constexpr float CrustMelt = 1.0f;
+	inline constexpr float NovaCrustShare = 0.8f;
+	inline constexpr float SpearCrustRadius = 1.15f;
+	inline constexpr float SpearCrustCharged = 1.6f;
+	inline constexpr float SteadyFury = 0.3f;
 	inline constexpr float RingStart = 30.0f;
 	inline constexpr float RingWarning = 6.0f;
 	inline constexpr float RingSettle = 66.0f;
@@ -306,6 +332,8 @@ namespace Game
 			return BrawlShape::Ruins;
 		case MapKind::StormPeak:
 			return BrawlShape::Peak;
+		case MapKind::Caldera:
+			return BrawlShape::Caldera;
 		default:
 			return BrawlShape::Disc;
 		}
@@ -328,8 +356,8 @@ namespace Game
 
 	inline const BrawlTerms& TermsFor(MapKind map)
 	{
-		static constexpr BrawlTerms Caldera{ "lava", "stone", "The caldera is crumbling", "Sudden death, the last stone is sinking", "Burned Away", "burned in the lava", "You are burning! Get back onto the stone", "caldera", "the Caldera", "Spells don't hurt, they shove. Lava burns, and the stone crumbles from the edge inward. The lower your health, the further you fly.",
-			"Spells hurt and cost mana, and they still nudge. Lava burns, and the stone crumbles from the edge inward." };
+		static constexpr BrawlTerms Caldera{ "molten metal", "iron", "The forge is overflowing", "Sudden death, the heart floods", "Burned Away", "burned in the molten metal", "You are burning! Get out of the metal", "Molten Heart", "the Molten Heart", "Spells don't hurt, they shove. The titan's crucible pours molten metal down the sword-shaped trench. It burns fiercely while fresh and keeps smouldering after, so cross on the bridges. Fall off the plate and you burn in the pit below. Late in the round the forge overflows and floods the plate from the edge inward. The lower your health, the further you fly.",
+			"Spells hurt and cost mana, and they still nudge. The titan's crucible pours molten metal down the sword-shaped trench, the pit below the plate burns, and late in the round the forge floods the plate from the edge inward." };
 		static constexpr BrawlTerms Lake{ "freezing water", "ice", "The ice is breaking up", "Sudden death, the last floe is sinking", "Through the Ice", "went through the ice", "You are freezing! Get back onto the ice", "lake", "the Frozen Lake", "Spells don't hurt, they shove, and on the ice every shove slides far. Snow drifts grip, ice pillars bounce you back, and the ice breaks up from the shore and around the air holes.",
 			"Spells hurt and cost mana, and on the ice even a nudge slides far. Snow drifts grip, ice pillars bounce you back, and the ice breaks up from the shore and around the air holes." };
 		static constexpr BrawlTerms Ruins{ "abyss", "stone", "The core's field is closing in", "Sudden death, the field has closed", "Lost to the Sky", "fell from the ruins", "The field is burning you! Get inside the circle", "ruins", "the Sky Ruins", "Spells don't hurt, they shove, and there is no lava: whoever falls off is out. A hole gapes in the middle of the observatory, and the old core's burning field closes in around it, driving everyone toward the drop.",
@@ -456,11 +484,25 @@ namespace Game
 		return time;
 	}
 
+	inline float LakeOutline(const CollapsePlan& plan, Vec2 seed)
+	{
+		if (plan.Shape != BrawlShape::Lake)
+			return 1.0f;
+		const Vec2 offset = seed - plan.Center;
+		const float angle = std::atan2(offset.y * LakeAspect, offset.x);
+		const float first = 6.2832f * CollapseNoise(1, 0x4E, plan.Seed);
+		const float second = 6.2832f * CollapseNoise(2, 0x4E, plan.Seed);
+		const float third = 6.2832f * CollapseNoise(3, 0x4E, plan.Seed);
+		const float fourth = 6.2832f * CollapseNoise(4, 0x4E, plan.Seed);
+		return 1.0f + LakeBays * (0.55f * std::sin(3.0f * angle + first) + 0.5f * std::sin(5.0f * angle + second) + 0.4f * std::sin(7.0f * angle + third) + 0.32f * std::sin(11.0f * angle + fourth));
+	}
+
 	inline float PlannedCollapseTime(const CollapsePlan& plan, Vec2 seed, CellCoord chunk)
 	{
 		if (plan.Shape == BrawlShape::Peak || plan.Shape == BrawlShape::Ruins)
 			return 1e6f;
-		const float rank = ArenaRank(plan, seed) + (CollapseNoise(chunk.X, chunk.Y, plan.Seed) - 0.5f) * CollapseJitter;
+		const float shaped = ArenaRank(plan, seed) * LakeOutline(plan, seed);
+		const float rank = shaped + (CollapseNoise(chunk.X, chunk.Y, plan.Seed) - 0.5f) * CollapseJitter;
 		if (rank >= plan.StartRadius)
 			return -1e6f;
 		const float hole = HoleCollapseTime(plan, seed);
@@ -487,6 +529,19 @@ namespace Game
 		return ChunkCollapseTime(plan, ChunkOf({ x, y }));
 	}
 
+	inline bool UsesForge(const Level& level)
+	{
+		return level.Kind == MapKind::Caldera;
+	}
+
+	inline float PositionCollapseTime(const Level& level, const CollapsePlan& plan, Vec2 position)
+	{
+		if (UsesForge(level))
+			return !OnForgePlate(position) ? -1e6f : plan.Steady ? 1e6f : FloodTimeAt(ForgeLocal(position));
+		const CellCoord cell = CellAt(position);
+		return TileCollapseTime(plan, cell.X, cell.Y);
+	}
+
 	inline bool IsLavaTerrain(const Level& level, Vec2 position)
 	{
 		const CellCoord cell = CellAt(position);
@@ -498,8 +553,27 @@ namespace Game
 		return IsBrawlHazard(level.Map.GetTerrain(int32_t(std::floor(position.x)), int32_t(std::floor(position.y))));
 	}
 
+	inline std::span<const Crust> CrustsOf(const CollapsePlan& plan)
+	{
+		return { plan.Crusts.data(), std::min<size_t>(plan.CrustCount, MaxCrusts) };
+	}
+
+	inline bool OnCrust(const CollapsePlan& plan, float clock, Vec2 position)
+	{
+		if (plan.Shape != BrawlShape::Caldera)
+			return false;
+		for (const Crust& crust : CrustsOf(plan))
+			if (clock >= crust.Time && clock < crust.Time + CrustSeconds && LengthSquared(position - crust.Center) <= crust.Radius * crust.Radius)
+				return true;
+		return false;
+	}
+
 	inline bool IsBrawlLava(const Level& level, const CollapsePlan& plan, float clock, Vec2 position)
 	{
+		if (OnCrust(plan, clock, position))
+			return false;
+		if (UsesForge(level))
+			return ForgeHazardAt(position, clock, plan.Steady) != ForgeHazard::None;
 		if (!level.Peak.IsEmpty())
 			return level.Peak.RimDistance(position) < 0.0f;
 		if (!level.Hall.IsEmpty())
@@ -524,6 +598,14 @@ namespace Game
 			return level.Peak.RimDistance(position) < 0.0f ? 0.0f : 1e6f;
 		if (!level.Hall.IsEmpty())
 			return level.Hall.Outline.RimDistance(position) < 0.0f ? 0.0f : 1e6f;
+		if (UsesForge(level))
+		{
+			if (ForgeHazardAt(position, clock, plan.Steady) != ForgeHazard::None)
+				return 0.0f;
+			const Vec2 local = ForgeLocal(position);
+			const float metal = InTrench(local) && !OnBridge(local) ? NextMetalTime(local, clock, ForgeLookAhead) : 1e9f;
+			return std::min(metal, PositionCollapseTime(level, plan, position)) - clock;
+		}
 		const CellCoord cell = CellAt(position);
 		if (!IsBrawlFloor(level.Map.GetTerrain(cell.X, cell.Y)))
 			return 0.0f;
@@ -637,6 +719,13 @@ namespace Game
 			if (bolt.Time > clock && LengthSquared(position - bolt.Center) <= (BoltRadius + margin) * (BoltRadius + margin) && (!first || bolt.Time < *first))
 				first = bolt.Time;
 		return first;
+	}
+
+	inline float CalderaFury(const CollapsePlan& plan, float clock)
+	{
+		if (plan.Shape != BrawlShape::Caldera)
+			return 0.0f;
+		return plan.Steady ? SteadyFury : std::clamp(clock / FuryFull, 0.0f, 1.0f);
 	}
 
 	inline float SurfaceFriction(const Level& level, Vec2 position)

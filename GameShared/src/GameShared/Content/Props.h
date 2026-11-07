@@ -153,6 +153,17 @@ namespace Game
 		Monolith,
 		SummitBoulder,
 		SummitCrystal,
+		GraveSkull,
+		GraveSnout,
+		GraveBank,
+		GraveSlab,
+		GraveShard,
+		HarborPier,
+		HarborPost,
+		HarborBoat,
+		SulfurVent,
+		MoltenAnchor,
+		MoltenCone,
 		Count,
 	};
 
@@ -961,6 +972,17 @@ namespace Game
 		inline constexpr PropPart SummitBoulderParts[] = { Sphere({}, -0.1f, { 0.85f, 0.7f }, 1.1f, Granite, 0.3f) };
 
 		inline constexpr PropCollider SummitCrystalColliders[] = { Circle(0.4f, Block::Movement) };
+		inline constexpr PropCollider GraveSkullColliders[] = { Circle(1.55f) };
+		inline constexpr PropCollider GraveSnoutColliders[] = { Circle(0.85f) };
+		inline constexpr PropCollider GraveBankColliders[] = { Circle(1.2f, Block::Movement) };
+		inline constexpr PropCollider GraveSlabColliders[] = { Circle(0.98f, Block::Movement) };
+		inline constexpr PropCollider GraveShardColliders[] = { Circle(0.56f, Block::Movement) };
+		inline constexpr PropCollider HarborPierColliders[] = { Rect({ 1.15f, 0.92f }, Block::Movement) };
+		inline constexpr PropCollider HarborPostColliders[] = { Circle(0.26f, Block::Movement) };
+		inline constexpr PropCollider HarborBoatColliders[] = { Rect({ 0.8f, 1.85f }, Block::Movement) };
+		inline constexpr PropCollider SulfurVentColliders[] = { Circle(0.72f, Block::Movement) };
+		inline constexpr PropCollider MoltenAnchorColliders[] = { Circle(0.5f, Block::Movement) };
+		inline constexpr PropCollider MoltenConeColliders[] = { Circle(2.5f) };
 		inline constexpr PropPart SummitCrystalParts[] = { Box({}, 0.0f, { 0.25f, 0.25f }, 1.2f, StormGlow, 0.4f, 0.6f) };
 	}
 
@@ -1076,6 +1098,17 @@ namespace Game
 		{ PropId::Monolith, "Ritual monolith", PropData::MonolithColliders, PropData::MonolithParts, true },
 		{ PropId::SummitBoulder, "Summit boulder", PropData::SummitBoulderColliders, PropData::SummitBoulderParts },
 		{ PropId::SummitCrystal, "Storm crystal", PropData::SummitCrystalColliders, PropData::SummitCrystalParts },
+		{ PropId::GraveSkull, "Leviathan skull", PropData::GraveSkullColliders, {} },
+		{ PropId::GraveSnout, "Leviathan snout", PropData::GraveSnoutColliders, {} },
+		{ PropId::GraveBank, "Snow bank", PropData::GraveBankColliders, {} },
+		{ PropId::GraveSlab, "Heaved ice slab", PropData::GraveSlabColliders, {} },
+		{ PropId::GraveShard, "Ice shard", PropData::GraveShardColliders, {} },
+		{ PropId::HarborPier, "Old pier", PropData::HarborPierColliders, {} },
+		{ PropId::HarborPost, "Pier post", PropData::HarborPostColliders, {} },
+		{ PropId::HarborBoat, "Frozen rowboat", PropData::HarborBoatColliders, {} },
+		{ PropId::SulfurVent, "Sulfur vent", PropData::SulfurVentColliders, {} },
+		{ PropId::MoltenAnchor, "Chain anchor", PropData::MoltenAnchorColliders, {} },
+		{ PropId::MoltenCone, "Vent cone", PropData::MoltenConeColliders, {} },
 	};
 
 	constexpr bool PropsMatchIds()

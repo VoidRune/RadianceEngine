@@ -51,8 +51,13 @@ namespace Game
 		void PlayUi(Cue cue, float volume = 1.0f, float pitch = 1.0f, float delay = 0.0f);
 		void PlayHover(int index);
 		void PlayCrumble(Vec2 position, bool ice = false);
+		void PlayLeviathan(Vec2 position);
 		void PlayNovaRipe(Vec2 position, bool own);
 		void PlayLightning(Vec2 position, float distance);
+		void PlayEruption(Vec2 position, float distance, bool geyser);
+		void PlayHeartbeat(Vec2 position, float strength);
+		void PlayPour(Vec2 position, float distance);
+		void PlaySizzle(Vec2 position, float strength);
 		uint32_t GetPlayedCount() const { return m_Played; }
 		void SetTrace(bool trace) { m_Trace = trace; }
 

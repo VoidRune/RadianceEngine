@@ -984,6 +984,8 @@ namespace Game
 				bursts.push_back({ projectile, reached, owner });
 			if (hook && !spent && (!clear || projectile.Lifetime <= 0.0f))
 				hooks.push_back({ reached, transform->Facing, owner, tag, projectile.Source, false });
+			if (projectile.Ability == uint8_t(AbilityId::FrostSpear) && (spent || !clear || projectile.Lifetime <= 0.0f))
+				world.AddCrust(last, projectile.Pierce > 0 || projectile.Radius > GetAbility(AbilityId::FrostSpear).ProjectileRadius + 0.05f ? SpearCrustCharged : SpearCrustRadius);
 			if (spent || !clear || projectile.Lifetime <= 0.0f)
 				world.QueueDestroy(entity);
 		});

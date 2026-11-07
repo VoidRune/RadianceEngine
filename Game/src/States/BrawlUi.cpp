@@ -36,6 +36,13 @@ namespace Game
 		constexpr float CrumbleRange = 18.0f;
 		constexpr float StrikeSight = 24.0f;
 		constexpr float StrikeRumble = 0.5f;
+		constexpr float HeartRateCalm = 0.3f;
+		constexpr float HeartRateFury = 0.75f;
+		constexpr float PourRumble = 0.35f;
+		constexpr float FloodRumble = 0.45f;
+		constexpr float GateRumble = 0.2f;
+		constexpr float PourFury = 0.85f;
+		constexpr float SizzleRange = 13.0f;
 		constexpr float CrumbleRumble = 0.22f;
 		constexpr float SpireTop = 4.5f;
 		constexpr float SpireSlot = 1.0f;
@@ -74,7 +81,7 @@ namespace Game
 		constexpr glm::vec3 StarlightPale{ 0.55f, 0.66f, 1.0f };
 		constexpr float SigilScale = 1.05f;
 		constexpr const char* BotLevelNames[] = { "Easy", "Normal", "Hard" };
-		constexpr const char* ArenaNames[] = { "Random", "Caldera", "Frozen Lake", "Sky Observatory", "Storm Peak" };
+		constexpr const char* ArenaNames[] = { "Random", "Molten Heart", "Frozen Lake", "Sky Observatory", "Storm Peak" };
 		constexpr const char* ModeNames[] = { "Damage", "Knockback" };
 		constexpr const char* GateTabs[] = { "Match", "Custom", "Teams" };
 		constexpr const char* RunOnlyNames[] = { "Every kind", "Quartz", "Jade", "Sapphire", "Ruby", "Amethyst", "Prismatic" };
@@ -555,6 +562,8 @@ namespace Game
 		UpdateCardNews(dt);
 		if (level->Kind == MapKind::StormPeak)
 			UpdateStorm(brawl);
+		if (level->Kind == MapKind::Caldera)
+			UpdateCaldera(brawl, dt);
 		const TileMap& map = level->Map;
 		const size_t cells = size_t(map.GetWidth()) * size_t(map.GetHeight());
 		const bool changed = !m_HasPlan || brawl.Plan.Seed != m_SeenPlan.Seed || brawl.Plan.StartRadius != m_SeenPlan.StartRadius || brawl.Plan.Center != m_SeenPlan.Center;
@@ -576,7 +585,7 @@ namespace Game
 		m_SeenClock = brawl.Clock;
 		if (brawl.Clock < 0.0f)
 			return;
-		if (!level->Hall.IsEmpty())
+		if (!level->Hall.IsEmpty() || UsesForge(*level))
 			return;
 		const Vec2 focus = { m_CameraTarget.x, m_CameraTarget.z };
 		const int32_t minX = std::max(int32_t(focus.x - CrumbleRange), 0);
@@ -599,7 +608,7 @@ namespace Game
 				const glm::vec3 center(seed.x, level->Skyborne ? 0.05f : LavaSurface + 0.1f, seed.y);
 				if (level->Kind == MapKind::FrozenLake)
 				{
-					m_Effects->Burst(Fx::FrostBurst, center + glm::vec3(0.0f, 0.2f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0.6f);
+					m_Effects->Burst(Fx::IceBreak, glm::vec3(seed.x, LakeIceTop + 0.05f, seed.y), glm::vec3(0.0f, 1.0f, 0.0f), 0.85f);
 					for (const PlacedProp& prop : level->Props)
 						if (const CellCoord cell = CellAt(prop.Position); prop.Id == PropId::IcePillar && cell.X == x && cell.Y == y)
 						{
@@ -681,6 +690,79 @@ namespace Game
 			}
 		}
 		m_StormClock = clock;
+	}
+
+	void SessionState::UpdateCaldera(const BrawlStatus& brawl, float dt)
+	{
+		const bool live = brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over;
+		const float clock = live ? m_Client.GetArenaClock(m_Client.GetPresentTick()) : 0.0f;
+		const ForgeArt& forge = m_LevelRenderer.GetForge();
+		const float fury = live ? std::max(CalderaFury(brawl.Plan, clock), forge.IsPouring(clock) ? PourFury : 0.0f) : 0.15f;
+		const float rate = HeartRateCalm + (HeartRateFury - HeartRateCalm) * fury;
+		const float before = m_HeartPhase;
+		m_HeartPhase += dt * rate;
+		if (std::floor(m_HeartPhase) > std::floor(before))
+		{
+			m_App.GetGameAudio().PlayHeartbeat(Vec2(m_CameraTarget.x, m_CameraTarget.z), 0.35f + 0.65f * fury);
+			if (fury > 0.55f)
+				m_Trauma = std::max(m_Trauma, 0.12f * (fury - 0.55f) / 0.45f);
+		}
+		if (!live)
+		{
+			m_CalderaClock = clock;
+			return;
+		}
+		const glm::vec3 foot = forge.PourFoot();
+		const Vec2 camera(m_CameraTarget.x, m_CameraTarget.z);
+		if (clock > m_CalderaClock && clock - m_CalderaClock < 0.5f)
+		{
+			for (const Crust& crust : CrustsOf(brawl.Plan))
+				if (crust.Time > m_CalderaClock && crust.Time <= clock)
+				{
+					const glm::vec3 point = Ground(crust.Center) + glm::vec3(0.0f, 0.05f, 0.0f);
+					m_Effects->Burst(Fx::GeyserBlast, point, glm::vec3(0.0f, 1.0f, 0.0f), 0.45f);
+					m_Effects->Burst(Fx::IceBreak, point, glm::vec3(0.0f, 1.0f, 0.0f), 1.0f);
+					m_App.GetGameAudio().PlayCrumble(crust.Center, true);
+					m_App.GetGameAudio().PlaySizzle(crust.Center, 1.0f);
+				}
+			for (uint32_t pour = 0; pour < ForgePourCount(clock); pour++)
+				if (const float landing = PourLanding(pour); landing > m_CalderaClock && landing <= clock)
+				{
+					m_Effects->Burst(Fx::LavaSplash, foot + glm::vec3(0.0f, 0.3f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.6f);
+					Rumble(foot, PourRumble);
+					m_App.GetGameAudio().PlayPour(Vec2(foot.x, foot.z), Length(Vec2(foot.x, foot.z) - camera));
+				}
+			if (const float open = forge.GetGateOpen(); open > m_CalderaClock && open <= clock)
+			{
+				const glm::vec3 gate = forge.GetGatePosition();
+				const Vec2 spot(gate.x, gate.z);
+				Rumble(gate, GateRumble);
+				m_App.GetGameAudio().PlayEruption(spot, Length(spot - camera), true);
+			}
+			if (!brawl.Plan.Steady)
+				for (uint32_t band = 0; band < ForgeBands; band++)
+					if (FloodTimes[band] > m_CalderaClock && FloodTimes[band] <= clock)
+					{
+						const Vec2 rim = ForgeCenter - Vec2(0.0f, 0.5f * (ForgeBandEdges[band] + ForgeBandEdges[band + 1]));
+						Rumble(Ground(rim), FloodRumble);
+						m_App.GetGameAudio().PlayEruption(rim, Length(rim - camera), true);
+					}
+			for (const ForgeAnchor& anchor : forge.GetAnchors())
+			{
+				const Vec2 spot(anchor.Position.x, anchor.Position.z);
+				if (LengthSquared(spot - camera) > SizzleRange * SizzleRange)
+					continue;
+				for (uint32_t pour = 0; pour < ForgePourCount(clock); pour++)
+					if (const float front = PourFrontTime(pour, ForgeLocal(spot), anchor.Meters); front > m_CalderaClock && front <= clock)
+					{
+						m_App.GetGameAudio().PlaySizzle(spot, 1.0f - Length(spot - camera) / SizzleRange);
+						m_Effects->Burst(Fx::FireBurst, anchor.Position, glm::vec3(0.0f, 1.0f, 0.0f), 0.3f);
+					}
+			}
+		}
+		if (forge.IsPouring(clock))
+			m_Effects->Trail(Fx::LavaFountain, 16ull << 40, foot + glm::vec3(0.0f, 0.2f, 0.0f), dt, 0.6f);
+		m_CalderaClock = clock;
 	}
 
 	void SessionState::DrawPeak(WorldRenderer& renderer) const
@@ -902,7 +984,10 @@ namespace Game
 		if (left <= 0.0f || left > CollapseWarning)
 			return;
 		draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.45f, 0.6f, 0.9f, 0.05f), .Glow = Rgba(0.8f, 0.9f, 1.0f, 0.45f * throb), .GlowSize = 160.0f });
-		draw.TextAligned({ 0.0f, ui.GetSize().y * 0.2f, ui.GetSize().x, 24.0f }, peak ? "The ground is giving way! Move" : TermsFor(level->Kind).Danger, Theme::Bold(18.0f, Hex(0xEAF5FF)), { 0.5f, 0.5f });
+		const char* warning = peak ? "The ground is giving way! Move" : TermsFor(level->Kind).Danger;
+		if (UsesForge(*level))
+			warning = InTrench(ForgeLocal(self->Position)) && !OnBridge(ForgeLocal(self->Position)) && ForgeL1(ForgeLocal(self->Position)) < FloodLine(clock + left + 0.05f) ? "Molten metal is coming! Get out of the trench" : "The forge is flooding! Move inward";
+		draw.TextAligned({ 0.0f, ui.GetSize().y * 0.2f, ui.GetSize().x, 24.0f }, warning, Theme::Bold(18.0f, Hex(0xEAF5FF)), { 0.5f, 0.5f });
 	}
 
 	void SessionState::DrawLavaWarning()
@@ -1085,6 +1170,33 @@ namespace Game
 			if (!m_LoadoutOpen)
 				line += "   I opens your spellbook";
 			color = Theme::AccentLight;
+		}
+		else if (brawl.Phase == BrawlPhase::Fight && brawl.Plan.Shape == BrawlShape::Caldera)
+		{
+			const BrawlTerms& terms = TermsFor(status.Map);
+			const bool steady = brawl.Plan.Steady;
+			const uint32_t pours = ForgePourCount(brawl.Clock);
+			const auto seconds = [](float time)
+			{
+				const std::string left = Seconds(time);
+				return left + (left == "1" ? " second" : " seconds");
+			};
+			if (!steady && brawl.Clock >= FloodTimes[ForgeBands - 1])
+			{
+				line = terms.Sudden;
+				color = Hex(0xFF7A5A);
+			}
+			else if (pours > 0 && brawl.Clock < PourLanding(pours - 1))
+			{
+				line = "The crucible tips! Get out of the trench";
+				color = Hex(0xFFB35A);
+			}
+			else if (!steady && brawl.Clock >= FloodTimes[0] - FloodWarning)
+				line = terms.Breaking;
+			else if (pours == 0)
+				line = "The crucible pours in " + seconds(ForgePourAt(0).Tilt + PourTiltSeconds - brawl.Clock);
+			else
+				line = steady ? "The forge holds its level this match" : "The forge overflows in " + seconds(FloodTimes[0] - brawl.Clock);
 		}
 		else if (brawl.Phase == BrawlPhase::Fight && brawl.Plan.Steady)
 			line = brawl.Plan.Shape == BrawlShape::Peak ? "The storm holds off this match" : brawl.Plan.Shape == BrawlShape::Ruins ? "The core's field holds off this match" : std::string("The ") + TermsFor(status.Map).Floor + " holds this match";
@@ -1866,7 +1978,7 @@ namespace Game
 		draw.TextAligned(row.CutLeft(170.0f), "Arena", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
 		ui.Choice(Ui::MakeId("brawlarena"), row.CutLeft(std::min(300.0f, row.W)), m_BrawlArena, ArenaNames);
 		const MapKind arena = ChosenArena();
-		const char* blurb = arena == MapKind::Caldera ? "A crumbling island of basalt on a lake of lava." : arena == MapKind::FrozenLake ? "Slippery ice, bouncing pillars and growing air holes." : arena == MapKind::SkyRuins ? "A domed observatory above the clouds. A burning field closes in around the hole in its floor." : arena == MapKind::StormPeak ? "A summit plateau in a lightning storm, ringed by a long fall." : "A different arena every match.";
+		const char* blurb = arena == MapKind::Caldera ? "An iron mold plate chained above the forge of the titans." : arena == MapKind::FrozenLake ? "Slippery ice, bouncing pillars and growing air holes." : arena == MapKind::SkyRuins ? "A domed observatory above the clouds. A burning field closes in around the hole in its floor." : arena == MapKind::StormPeak ? "A summit plateau in a lightning storm, ringed by a long fall." : "A different arena every match.";
 		draw.TextFit(area.CutTop(22.0f), blurb, Theme::Body(13.5f, Theme::Muted));
 		area.CutTop(6.0f);
 	}

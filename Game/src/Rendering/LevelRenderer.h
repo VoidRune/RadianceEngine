@@ -1,6 +1,8 @@
 #pragma once
 #include "Rendering/ObservatoryArt.h"
 #include "Rendering/LevelArt.h"
+#include "Rendering/LakeArt.h"
+#include "Rendering/ForgeArt.h"
 #include <GameShared/Content/Brawl.h>
 #include <GameShared/World/Level.h>
 #include <glm/glm.hpp>
@@ -39,6 +41,7 @@ namespace Game
 		const std::vector<uint8_t>* Risen = nullptr;
 		float Restore = 1.0f;
 		float Clock = 0.0f;
+		bool ForceLeviathan = false;
 	};
 
 	class IslandArt
@@ -62,9 +65,18 @@ namespace Game
 			CellCoord Coord;
 			Vec2 Seed;
 			float Peak = 0.0f;
+			Vec2 Slope;
 			uint32_t Chunk = 0;
 			uint32_t FirstCorner = 0;
 			uint32_t CornerCount = 0;
+			uint32_t TopMesh = 0;
+			uint32_t SkirtMesh = 0;
+		};
+
+		struct Lip
+		{
+			uint32_t Neighbour = UINT32_MAX;
+			uint32_t Mesh = 0;
 		};
 
 		struct Chunk
@@ -78,6 +90,7 @@ namespace Game
 			bool Coast = false;
 			std::vector<uint32_t> Cells;
 			std::vector<uint32_t> Neighbours;
+			std::vector<Lip> Lips;
 		};
 
 		const Cell* FindCell(CellCoord coord) const;
@@ -88,8 +101,10 @@ namespace Game
 		std::vector<Chunk> m_Chunks;
 		std::vector<int32_t> m_Lookup;
 		mutable std::vector<uint8_t> m_Solid;
+		mutable std::vector<uint8_t> m_Open;
 		int32_t m_Width = 0;
 		bool m_Frozen = false;
+		float m_Sink = 1.8f;
 		int32_t m_Height = 0;
 	};
 
@@ -101,6 +116,8 @@ namespace Game
 		bool IsOverSky(const BrawlStatus* brawl, Vec2 position, float clock) const;
 		const std::vector<LevelFire>& GetFires() const { return m_Scene.Fires; }
 		const PeakRelief* GetRelief() const { return m_Scene.Relief.IsEmpty() ? nullptr : &m_Scene.Relief; }
+		const LakeArt& GetLake() const { return m_Lake; }
+		const ForgeArt& GetForge() const { return m_Forge; }
 
 	private:
 		struct SceneKey
@@ -127,10 +144,13 @@ namespace Game
 		LevelScene m_Scene;
 		IslandArt m_Island;
 		ObservatoryArt m_Hall;
+		LakeArt m_Lake;
+		ForgeArt m_Forge;
 		std::vector<float> m_PropReach;
 		std::vector<float> m_PropTop;
 		std::vector<glm::vec4> m_LavaRuns;
 		bool m_LavaHaze = false;
+		float m_LiquidLevel = LavaSurface;
 	};
 
 	glm::vec3 ToColor(uint32_t rgb);

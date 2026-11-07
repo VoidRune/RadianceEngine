@@ -49,6 +49,7 @@ namespace Game
 		bool GrantCard(World& world, Entity player, uint32_t playerId, CardId card);
 		bool PresentCards(uint32_t playerId, const CardOffer& offer);
 		void AddCrater(Vec2 center, float radius);
+		void AddCrust(const Level& level, Vec2 center, float radius);
 		void ArmEcho(uint32_t playerId);
 		bool ConsumeEcho(uint32_t playerId);
 		bool SetReady(uint32_t playerId, bool ready);
@@ -152,6 +153,7 @@ namespace Game
 			float MarkTime = 0.0f;
 			uint32_t MarkedBy = NoPlayer;
 			bool SecondWindUsed = false;
+			int32_t ScaldedBy = -1;
 			BrawlSpells Arcana{ AbilityId::Count, AbilityId::Count, AbilityId::Count };
 			uint32_t RoundKnockouts = 0;
 			uint32_t RoundCasts = 0;
@@ -198,11 +200,12 @@ namespace Game
 		void UpdateFalls(World& world, float dt);
 		void UpdateBolts(World& world, float dt);
 		std::optional<Vec2> AimBolt(World& world);
+		void UpdateForge(World& world, float dt);
 		bool Catch(World& world, Entity entity, PlayerController& controller);
 		void UpdateCards(World& world, float dt);
 		void Ignite(uint32_t victim, uint32_t attacker, float damage, float seconds);
 		void OfferCards(World& world, uint32_t playerId);
-		bool Featherfall(World& world, PlayerController& controller, Vec2 position);
+		bool Featherfall(World& world, Entity entity, PlayerController& controller, Vec2 position);
 		void OnBrawlerKilled(World& world, Entity player, uint32_t victim, uint32_t killer);
 		void AwardAssists(uint32_t victim, uint32_t killer);
 		void AwardPlacements(uint32_t alive);

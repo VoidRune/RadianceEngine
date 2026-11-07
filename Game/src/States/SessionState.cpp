@@ -40,6 +40,11 @@ namespace Game
 		constexpr float KickDamping = 0.75f;
 		constexpr float KickImpulse = 7.0f;
 		constexpr float RumbleReach = 16.0f;
+		constexpr float DefaultBloom = 0.3f;
+		constexpr float CalderaBloom = 0.14f;
+		constexpr float CalderaLavaLight = 1.2f;
+		constexpr float CalderaLavaCrust = 0.11f;
+		constexpr float ForgeFxRange = 30.0f;
 		constexpr float OwnRumble = 0.7f;
 		constexpr float GuardTrauma = 0.12f;
 		constexpr float HitTrauma = 0.25f;
@@ -106,7 +111,7 @@ namespace Game
 		constexpr glm::vec3 ArcTint{ 0.5f, 0.66f, 1.0f };
 		constexpr float BodyGravity = 26.0f;
 		constexpr float BodyClimb = 16.0f;
-		constexpr float BodySnap = 2.5f;
+		constexpr float BodySnap = 3.5f;
 		constexpr float LiftHover = 1.6f;
 		constexpr float LiftPull = 6.0f;
 		constexpr float SkyAbyss = -60.0f;
@@ -299,10 +304,10 @@ namespace Game
 			else if (map == MapKind::Caldera)
 			{
 				lighting.SunDirection = { -0.35f, -1.0f, 0.55f };
-				lighting.SunColor = { 0.8f, 0.86f, 1.0f };
-				lighting.SunIntensity = 1.0f;
-				lighting.SkyColor = { 0.06f, 0.09f, 0.18f };
-				lighting.GroundColor = { 0.09f, 0.035f, 0.02f };
+				lighting.SunColor = { 0.86f, 0.76f, 1.0f };
+				lighting.SunIntensity = 1.2f;
+				lighting.SkyColor = { 0.13f, 0.1f, 0.24f };
+				lighting.GroundColor = { 0.15f, 0.06f, 0.03f };
 				lighting.EmissionGi = 3.0f;
 				lighting.Grade = { .MidSaturation = 0.15f, .Shadows = { 0.9f, 0.97f, 1.12f }, .Highlights = { 1.04f, 1.0f, 0.95f } };
 			}
@@ -330,13 +335,15 @@ namespace Game
 			}
 			else if (map == MapKind::FrozenLake)
 			{
-				lighting.SunDirection = { -0.3f, -1.0f, 0.62f };
-				lighting.SunColor = { 1.0f, 0.98f, 0.95f };
-				lighting.SunIntensity = 1.25f;
-				lighting.SkyColor = { 0.16f, 0.24f, 0.38f };
-				lighting.GroundColor = { 0.12f, 0.14f, 0.17f };
+				lighting.SunDirection = { -0.72f, -0.66f, -0.2f };
+				lighting.SunColor = { 0.72f, 0.82f, 1.0f };
+				lighting.SunIntensity = 2.0f;
+				lighting.SkyColor = { 0.12f, 0.19f, 0.27f };
+				lighting.GroundColor = { 0.05f, 0.09f, 0.11f };
 				lighting.EmissionGi = 2.5f;
-				lighting.Grade = { .Saturation = 1.05f, .MidSaturation = 0.12f, .Shadows = { 0.9f, 0.98f, 1.12f }, .Highlights = { 1.02f, 1.0f, 0.98f } };
+				lighting.ContactShadow = 0.45f;
+				lighting.Lake.Active = true;
+				lighting.Grade = { .Saturation = 1.1f, .MidSaturation = 0.18f, .Shadows = { 0.9f, 0.99f, 1.1f }, .Highlights = { 1.0f, 1.0f, 1.0f } };
 			}
 			else if (map == MapKind::Abbey)
 			{
@@ -734,6 +741,8 @@ namespace Game
 			return false;
 		if (!level->Peak.IsEmpty() && level->Peak.RimDistance(position) < 0.0f)
 			return true;
+		if (level->Kind == MapKind::Caldera && m_Client.GetSession().Mode == GameMode::Brawl)
+			return IsBrawlLava(*level, m_Client.GetStatus().Brawl.Plan, m_Client.GetArenaClock(m_Client.GetPresentTick()), position);
 		if (!level->Hall.IsEmpty())
 			return level->Hall.Outline.RimDistance(position) < 0.0f;
 		return !level->Map.IsInside(int32_t(std::floor(position.x)), int32_t(std::floor(position.y))) || level->Map.IsAbyssAt(position);
@@ -1121,6 +1130,11 @@ namespace Game
 			focus = { float(level->Map.GetWidth()) * 0.5f, 0.0f, float(level->Map.GetHeight()) * 0.5f };
 			eye = focus + glm::vec3(0.0f, extent * 1.25f, -extent * 0.45f);
 		}
+		if (const auto& shot = m_App.GetSettings().ShotCamera)
+		{
+			eye = { (*shot)[0], (*shot)[1], (*shot)[2] };
+			focus = { (*shot)[3], (*shot)[4], (*shot)[5] };
+		}
 		const float far = m_Overview ? 600.0f : 200.0f;
 		glm::mat4 projection = glm::perspectiveLH_ZO(glm::radians(CameraFov), aspect, CameraNear, far);
 		projection[1][1] *= -1.0f;
@@ -1162,11 +1176,12 @@ namespace Game
 			view.Risen = &m_Risen;
 			view.Restore = std::min(m_RestoreAge / RestoreSeconds, 1.0f);
 			view.Clock = m_Client.GetArenaClock(m_Client.GetPresentTick());
+			view.ForceLeviathan = m_App.GetSettings().Leviathan;
 		}
 		const Level* level = m_Client.GetLevel();
-		if (m_Overview || !level)
+		if (m_Overview || !level || m_App.GetSettings().ShotCamera)
 		{
-			view.Min = { -1.0f, -1.0f };
+			view.Min = { -1e4f, -1e4f };
 			view.Max = { 1e4f, 1e4f };
 			return view;
 		}
@@ -1864,6 +1879,31 @@ namespace Game
 		std::erase_if(m_Flames, [](const Flame& flame) { return flame.Life <= 0.0f; });
 		if (const Level* level = m_Client.GetLevel(); level && level->Kind == MapKind::FrozenLake)
 			m_Effects->Trail(Fx::Snowfall, 7ull << 40, m_CameraTarget + glm::vec3(0.0f, 4.5f, 1.5f), dt, 1.0f);
+		if (const Level* level = m_Client.GetLevel(); level && level->Kind == MapKind::FrozenLake && m_Client.GetSession().Mode == GameMode::Brawl)
+		{
+			const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+			const uint32_t epoch = uint32_t(m_Time / 3.0f);
+			for (uint32_t i = 0; i < 26; i++)
+			{
+				const uint32_t salt = (epoch + i * 11u) * 2654435761u + i * 40503u;
+				const Vec2 spot = Vec2(m_CameraTarget.x, m_CameraTarget.z) + Vec2(float(salt & 0xFFFFu) / 65535.0f - 0.5f, float((salt >> 16) & 0xFFFFu) / 65535.0f - 0.5f) * 30.0f;
+				const Vec2 inward = Normalize(brawl.Plan.Center - spot);
+				if (IsBrawlLava(*level, brawl, spot) && !IsBrawlLava(*level, brawl, spot + inward * 1.7f))
+					m_Effects->Trail(Fx::SeaSmoke, (8ull << 40) | (uint64_t(epoch) << 8) | i, { spot.x, LakeWaterLine + 0.04f, spot.y }, dt, 1.0f);
+			}
+			const LeviathanPose& beast = m_LevelRenderer.GetLake().GetLeviathan();
+			if (beast.Active)
+			{
+				m_Trauma = std::max(m_Trauma, 0.36f * beast.Near);
+				if (!m_LeviathanCalled && beast.Progress > 0.2f)
+				{
+					m_LeviathanCalled = true;
+					m_App.GetGameAudio().PlayLeviathan(Vec2(beast.Head.x, beast.Head.z));
+				}
+			}
+			else
+				m_LeviathanCalled = false;
+		}
 		std::erase_if(m_Lobs, [&](const auto& lob) { return !m_Client.FindEntity(lob.first); });
 		if (const Level* level = m_Client.GetLevel(); level && level->Kind == MapKind::StormPeak)
 		{
@@ -1896,8 +1936,23 @@ namespace Game
 				const float v = float((salt >> 16) & 0xFFFFu) / 65535.0f;
 				const Vec2 spot = Vec2(m_CameraTarget.x, m_CameraTarget.z) + Vec2(u - 0.5f, v - 0.5f) * 28.0f;
 				if (IsBrawlLava(*level, brawl, spot))
-					m_Effects->Trail(Fx::Campfire, (4ull << 40) | (uint64_t(epoch) << 8) | i, { spot.x, LavaSurface + 0.02f, spot.y }, dt, 0.4f + 0.3f * u);
+					m_Effects->Trail(Fx::Campfire, (4ull << 40) | (uint64_t(epoch) << 8) | i, { spot.x, level->Kind == MapKind::Caldera ? Ground(spot).y + 0.3f : LavaSurface + 0.02f, spot.y }, dt, 0.4f + 0.3f * u);
 			}
+		}
+		if (const Level* level = m_Client.GetLevel(); level && level->Kind == MapKind::Caldera)
+		{
+			m_Effects->Trail(Fx::AshFall, 9ull << 40, m_CameraTarget + glm::vec3(0.0f, 6.0f, 1.5f), dt, 1.0f);
+			m_Effects->Trail(Fx::EmberDrift, 10ull << 40, m_CameraTarget + glm::vec3(0.0f, -0.2f, 2.0f), dt, 1.0f);
+			const ForgeArt& forge = m_LevelRenderer.GetForge();
+			const Vec2 camera(m_CameraTarget.x, m_CameraTarget.z);
+			const auto emit = [&](const std::vector<glm::vec3>& spots, Fx fx, uint64_t channel)
+			{
+				for (size_t i = 0; i < spots.size(); i++)
+					if (LengthSquared(Vec2(spots[i].x, spots[i].z) - camera) < ForgeFxRange * ForgeFxRange)
+						m_Effects->Trail(fx, (channel << 40) | uint64_t(i), spots[i], dt, 1.0f);
+			};
+			emit(forge.GetSmokeSpots(), Fx::ForgeSmoke, 13ull);
+			emit(forge.GetFallSpots(), Fx::FallSpray, 14ull);
 		}
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
 		for (size_t i = 0; i < fires.size(); i++)
@@ -2359,13 +2414,35 @@ namespace Game
 			m_Lighting.SkyGlow = glm::vec4(glm::mix(glm::vec3(0.78f, 0.82f, 1.0f), glm::vec3(0.62f, 0.76f, 1.0f), m_Flash), 2.2f + 8.0f * m_Flash);
 			m_Lighting.Rain = 0.6f + 0.4f * (live ? StormBuild(brawl.Plan, clock) : 0.0f);
 		}
+		if (level->Kind == MapKind::Caldera)
+		{
+			const BrawlStatus& brawl = m_Client.GetStatus().Brawl;
+			const bool live = m_Client.GetSession().Mode == GameMode::Brawl && (brawl.Phase == BrawlPhase::Fight || brawl.Phase == BrawlPhase::Over);
+			m_Lighting.Fury = live ? CalderaFury(brawl.Plan, m_Client.GetArenaClock(m_Client.GetPresentTick())) : 0.15f;
+			const float beat = m_HeartPhase - std::floor(m_HeartPhase);
+			const auto lobe = [](float x, float width) { return std::exp(-(x * x) / (width * width)); };
+			m_Lighting.Pulse = std::min(lobe(beat, 0.06f) + 0.65f * lobe(beat - 0.17f, 0.065f) + lobe(beat - 1.0f, 0.06f), 1.0f);
+			m_Lighting.GroundColor *= 0.85f + 0.3f * m_Lighting.Pulse + 0.4f * m_Lighting.Fury;
+			m_Lighting.LavaLight = CalderaLavaLight;
+			m_Lighting.LavaCrust = CalderaLavaCrust;
+			m_Lighting.LavaLine = ForgePitSurface;
+		}
 		if (m_Lighting.Floating)
 			m_Lighting.Leviathan = LeviathanPass();
+		if (m_Lighting.Lake.Active)
+		{
+			const float round = m_Client.GetSession().Mode == GameMode::Brawl ? m_Client.GetArenaClock(m_Client.GetPresentTick()) : 0.0f;
+			const float swell = glm::smoothstep(0.0f, 75.0f, round);
+			const float breath = 0.5f + 0.5f * std::sin(m_Time * 0.13f) * std::sin(m_Time * 0.07f + 1.3f);
+			m_Lighting.Lake.Aurora = std::lerp(0.4f, 0.74f, swell) * (0.82f + 0.3f * breath);
+			m_Lighting.SkyColor += glm::vec3(0.0f, 0.034f, 0.018f) * (m_Lighting.Lake.Aurora * 0.6f);
+		}
 		PostProcess& post = renderer.GetPost();
 		const float beat = std::pow(std::max(std::cos(2.0f * Pi * m_Heartbeat), 0.0f), 6.0f);
 		post.Vignette = m_Danger * DangerVignette * (0.5f + 0.5f * m_DangerLevel) * (0.6f + 0.4f * beat);
 		post.Desaturation = m_Danger * DangerDesaturation * (0.4f + 0.6f * m_DangerLevel);
-		renderer.Begin(m_Camera, m_Lighting, m_Overview ? 0.0f : m_CameraTarget.y, !m_Overview && !m_Lighting.Floating);
+		post.BloomStrength = level->Kind == MapKind::Caldera ? CalderaBloom : DefaultBloom;
+		renderer.Begin(m_Camera, m_Lighting, m_Overview ? 0.0f : m_CameraTarget.y, !m_Overview && !m_Lighting.Floating && level->Kind != MapKind::Caldera);
 		renderer.SetGroundRelief(m_LevelRenderer.GetRelief());
 		m_LevelRenderer.Draw(renderer, *level, ComputeView());
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();

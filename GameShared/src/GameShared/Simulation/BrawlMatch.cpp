@@ -68,7 +68,7 @@ namespace Game
 		Random& random = world.GetRandom();
 		m_Brawl.Plan.Shape = ShapeOf(world.GetLevel().Kind);
 		const Vec2 wander = FromAngle(random.Float() * 2.0f * Pi) * (ArenaWander * std::sqrt(random.Float()));
-		m_Brawl.Plan.Center = !world.GetLevel().Hall.IsEmpty() ? world.GetLevel().Hall.Center : world.GetLevel().PlayerSpawn + (m_Brawl.Plan.Shape == BrawlShape::Peak ? Vec2{} : wander);
+		m_Brawl.Plan.Center = !world.GetLevel().Hall.IsEmpty() ? world.GetLevel().Hall.Center : world.GetLevel().PlayerSpawn + (m_Brawl.Plan.Shape == BrawlShape::Peak || m_Brawl.Plan.Shape == BrawlShape::Caldera ? Vec2{} : wander);
 		m_Brawl.Plan.Seed = random.Next() | 1u;
 		m_Brawl.Plan.CraterCount = 0;
 		m_Brawl.Plan.BoltCount = 0;
@@ -105,8 +105,12 @@ namespace Game
 		const float turn = random.Float() * 2.0f * Pi;
 		const float radius = SpawnRank(m_Brawl.Plan);
 		const Level& level = world.GetLevel();
+		const bool forge = UsesForge(level);
+		const auto ringPoint = [&](float angle, float scale) { return forge ? ForgeRingPoint(angle, ForgeSpawnRing * scale) : ArenaPoint(m_Brawl.Plan, angle, radius * scale); };
 		const auto clearOfHoles = [&](Vec2 point)
 		{
+			if (forge)
+				return TrenchDistance(ForgeLocal(point)) >= ForgeSpawnClearance;
 			for (uint32_t hole = 0; hole < HoleCount(m_Brawl.Plan); hole++)
 				if (LengthSquared(point - HoleCenter(m_Brawl.Plan, hole)) < (HoleStartRadius + HoleSpawnClearance) * (HoleStartRadius + HoleSpawnClearance))
 					return false;
@@ -124,9 +128,9 @@ namespace Game
 			if (!transform || !controller)
 				continue;
 			const float angle = turn + 2.0f * Pi * float(i) / float(players.size());
-			Vec2 wanted = peak ? spawns[(first + i * spawns.size() / players.size()) % spawns.size()] : ArenaPoint(m_Brawl.Plan, angle, radius);
+			Vec2 wanted = peak ? spawns[(first + i * spawns.size() / players.size()) % spawns.size()] : ringPoint(angle, 1.0f);
 			for (int32_t step = 1; step <= 8 && !peak && !clearOfHoles(wanted); step++)
-				wanted = ArenaPoint(m_Brawl.Plan, angle + float(step % 2 == 0 ? step / 2 : -(step + 1) / 2) * 0.16f, radius * (step >= 5 ? 0.8f : 1.0f));
+				wanted = ringPoint(angle + float(step % 2 == 0 ? step / 2 : -(step + 1) / 2) * 0.16f, step >= 5 ? 0.8f : 1.0f);
 			const Vec2 spot = world.FindFreeSpotNear(wanted, PlayerRadius);
 			world.MarkTargetsMoved();
 			transform->Position = spot;
@@ -229,6 +233,7 @@ namespace Game
 		m_LavaTick = 0.0f;
 		m_NextBolt = BoltFirst;
 		m_Brawl.Plan.BoltCount = 0;
+		m_Brawl.Plan.CrustCount = 0;
 		world.GetEntities().Each<PlayerController>([&](Entity, PlayerController& controller)
 		{
 			if (controller.PlayerId >= MaxPlayers)
@@ -259,6 +264,7 @@ namespace Game
 			brawler.MarkTime = 0.0f;
 			brawler.MarkedBy = NoPlayer;
 			brawler.SecondWindUsed = false;
+			brawler.ScaldedBy = -1;
 		}
 		m_Bursts.clear();
 		m_IgniteTick = 0.0f;
@@ -470,6 +476,32 @@ namespace Game
 			plan.Bolts[plan.BoltCount++] = { *spot, clock + BoltWarning + 0.5f * dt };
 	}
 
+	void MatchDirector::UpdateForge(World& world, float dt)
+	{
+		const CollapsePlan& plan = m_Brawl.Plan;
+		const float clock = m_Brawl.Clock;
+		EntityRegistry& entities = world.GetEntities();
+		std::vector<Entity> scalded;
+		entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
+		{
+			const Transform* transform = entities.TryGet<Transform>(entity);
+			if (controller.PlayerId >= MaxPlayers || !controller.State.Alive || !transform || controller.State.Invulnerable > 0.0f || controller.State.DashDistance > 0.0f)
+				return;
+			const Vec2 local = ForgeLocal(transform->Position);
+			if (!InTrench(local) || OnBridge(local) || OnCrust(plan, clock, transform->Position))
+				return;
+			const int32_t pour = MetalFrontCrossing(local, clock - dt, clock);
+			Brawler& brawler = m_Brawlers[controller.PlayerId];
+			if (pour < 0 || brawler.ScaldedBy == pour)
+				return;
+			brawler.ScaldedBy = pour;
+			controller.State.Push = ClampLength(controller.State.Push + TrenchOutward(local) * FrontPush, MaxPush);
+			scalded.push_back(entity);
+		});
+		for (const Entity entity : scalded)
+			ApplyDamage(world, entity, { .Amount = FrontDamage, .Damages = Element::Fire, .Unmitigated = true });
+	}
+
 	std::optional<Vec2> MatchDirector::AimBolt(World& world)
 	{
 		Random& random = world.GetRandom();
@@ -528,6 +560,8 @@ namespace Game
 
 	void MatchDirector::UpdateLava(World& world, float dt)
 	{
+		if (m_Brawl.Plan.Shape == BrawlShape::Caldera && m_Brawl.Phase == BrawlPhase::Fight)
+			UpdateForge(world, dt);
 		const bool peak = m_Brawl.Plan.Shape == BrawlShape::Peak || m_Brawl.Plan.Shape == BrawlShape::Ruins;
 		if (world.GetLevel().Skyborne)
 		{
@@ -559,7 +593,7 @@ namespace Game
 				return;
 			}
 			const bool lava = peak ? !controller.State.IsFalling() && ring.Outside(transform->Position) : controller.State.DashDistance <= 0.0f && IsBrawlLava(level, m_Brawl, transform->Position);
-			if (lava && !peak && !brawler.FeatherUsed && m_Brawl.Phase == BrawlPhase::Fight && HasCard(brawler.Loadout.Cards, CardId::Featherfall) && Featherfall(world, controller, transform->Position))
+			if (lava && !peak && !brawler.FeatherUsed && m_Brawl.Phase == BrawlPhase::Fight && HasCard(brawler.Loadout.Cards, CardId::Featherfall) && Featherfall(world, entity, controller, transform->Position))
 			{
 				brawler.FeatherUsed = true;
 				brawler.FeatherGrace = FeatherfallGrace;
@@ -568,7 +602,14 @@ namespace Game
 			float rate = 0.0f;
 			if (lava)
 			{
-				rate = peak ? ring.Damage : level.Kind == MapKind::FrozenLake ? WaterDamagePerSecond : LavaDamagePerSecond;
+				if (peak)
+					rate = ring.Damage;
+				else if (level.Kind == MapKind::FrozenLake)
+					rate = WaterDamagePerSecond;
+				else if (const ForgeHazard hazard = UsesForge(level) ? ForgeHazardAt(transform->Position, m_Brawl.Clock, m_Brawl.Plan.Steady) : ForgeHazard::Pit; hazard != ForgeHazard::Pit)
+					rate = hazard == ForgeHazard::Smoulder ? SmoulderDamagePerSecond : MetalDamagePerSecond;
+				else
+					rate = LavaDamagePerSecond;
 				brawler.Afterburn = peak ? 0.0f : AfterburnSeconds;
 			}
 			else if (brawler.Afterburn > 0.0f)
@@ -736,13 +777,12 @@ namespace Game
 		world.RefreshTraits(world.FindPlayer(playerId));
 	}
 
-	bool MatchDirector::Featherfall(World& world, PlayerController& controller, Vec2 position)
+	bool MatchDirector::Featherfall(World& world, Entity entity, PlayerController& controller, Vec2 position)
 	{
 		const Level& level = world.GetLevel();
 		const auto safe = [&](Vec2 spot)
 		{
-			const CellCoord cell = CellAt(spot);
-			return level.Map.IsWalkableAt(spot) && !IsBrawlLava(level, m_Brawl, spot) && TileCollapseTime(m_Brawl.Plan, cell.X, cell.Y) > m_Brawl.Clock + FeatherfallFooting;
+			return level.Map.IsWalkableAt(spot) && !IsBrawlLava(level, m_Brawl, spot) && PositionCollapseTime(level, m_Brawl.Plan, spot) > m_Brawl.Clock + FeatherfallFooting;
 		};
 		for (float radius = 0.5f; radius <= FeatherfallSearch; radius += 0.5f)
 		{
@@ -756,14 +796,44 @@ namespace Game
 			if (!best)
 				continue;
 			const Vec2 offset = *best - position;
-			controller.State.Push = ClampLength(Normalize(offset) * ((Length(offset) + FeatherfallMargin) * PushFriction), MaxPush);
 			controller.State.DashDistance = 0.0f;
+			if (Transform* transform = world.GetEntities().TryGet<Transform>(entity); transform && UsesForge(level) && !OnForgePlate(position))
+			{
+				world.MarkTargetsMoved();
+				transform->Position = *best;
+				controller.State.Push = {};
+				if (MotionHistory* history = world.GetEntities().TryGet<MotionHistory>(entity))
+				{
+					history->Positions.fill(*best);
+					history->FirstTick = world.GetTick() + 1;
+				}
+			}
+			else
+				controller.State.Push = ClampLength(Normalize(offset) * ((Length(offset) + FeatherfallMargin) * PushFriction), MaxPush);
 			m_Brawlers[controller.PlayerId].Afterburn = 0.0f;
 			world.SpawnEffect(AbilityId::Gust, position, AngleOf(offset), controller.PlayerId, 0, 0.7f);
 			world.Notify(controller.PlayerId, "Featherfall caught you", true);
 			return true;
 		}
 		return false;
+	}
+
+	void MatchDirector::AddCrust(const Level& level, Vec2 center, float radius)
+	{
+		CollapsePlan& plan = m_Brawl.Plan;
+		if (m_Mode != GameMode::Brawl || m_Brawl.Phase != BrawlPhase::Fight || plan.Shape != BrawlShape::Caldera || !IsBrawlLava(level, plan, m_Brawl.Clock, center))
+			return;
+		uint8_t kept = 0;
+		for (const Crust& crust : CrustsOf(plan))
+			if (crust.Time + CrustSeconds > m_Brawl.Clock)
+				plan.Crusts[kept++] = crust;
+		plan.CrustCount = kept;
+		if (plan.CrustCount >= MaxCrusts)
+		{
+			std::rotate(plan.Crusts.begin(), plan.Crusts.begin() + 1, plan.Crusts.begin() + plan.CrustCount);
+			plan.CrustCount--;
+		}
+		plan.Crusts[plan.CrustCount++] = { center, radius, m_Brawl.Clock };
 	}
 
 	void MatchDirector::AddCrater(Vec2 center, float radius)
