@@ -73,48 +73,6 @@ namespace Game
 		{ "Reference/LightingTest.gltf", ModelSourceKind::Prop },
 	};
 
-	inline constexpr ModelSource AbbeySources[] = {
-		{ .Path = "PolyHaven/Models/large_iron_gate", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
-		{ .Path = "PolyHaven/Models/large_castle_door", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
-		{ .Path = "PolyHaven/Models/stone_fire_pit", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/gothic_statue", .Kind = ModelSourceKind::Scan, .TextureSize = 1024 },
-		{ .Path = "PolyHaven/Models/wine_barrel_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/barrel_03", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/wooden_crate_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/wooden_crate_02", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/wooden_bucket_02", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/treasure_chest", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/wooden_lantern_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/vintage_oil_lamp", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/brass_candleholders", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
-		{ .Path = "PolyHaven/Models/brass_goblets", .Kind = ModelSourceKind::Scan, .TextureSize = 256 },
-		{ .Path = "PolyHaven/Models/brass_vase_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/brass_pot_01", .Kind = ModelSourceKind::Scan, .TextureSize = 256 },
-		{ .Path = "PolyHaven/Models/metal_jug", .Kind = ModelSourceKind::Scan, .TextureSize = 256 },
-		{ .Path = "PolyHaven/Models/antique_ceramic_vase_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/marble_bust_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/kite_shield", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/ornate_war_hammer", .Kind = ModelSourceKind::Scan, .TextureSize = 256 },
-		{ .Path = "PolyHaven/Models/antique_estoc", .Kind = ModelSourceKind::Scan, .TextureSize = 256 },
-		{ .Path = "PolyHaven/Models/WoodenTable_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/folding_wooden_stool", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/rock_moss_set_02", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
-		{ .Path = "PolyHaven/Models/tree_stump_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/dead_tree_trunk", .Kind = ModelSourceKind::Scan, .TextureSize = 512 },
-		{ .Path = "PolyHaven/Models/fern_02", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
-		{ .Path = "PolyHaven/Models/dry_branches_medium_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
-		{ .Path = "PolyHaven/Models/weed_plant_02", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
-		{ .Path = "PolyHaven/Models/grass_medium_01", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
-		{ .Path = "PolyHaven/Textures/cobblestone_floor_08", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.8f },
-		{ .Path = "PolyHaven/Textures/mud_forest", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.35f },
-		{ .Path = "PolyHaven/Textures/forest_leaves_02", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 3.0f },
-		{ .Path = "PolyHaven/Textures/large_floor_tiles_02", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 3.0f },
-		{ .Path = "PolyHaven/Textures/castle_wall_varriation", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
-		{ .Path = "PolyHaven/Textures/old_stone_wall", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
-		{ .Path = "PolyHaven/Textures/weathered_planks", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
-		{ .Path = "PolyHaven/HDRIs/kiara_8_sunset_2k.hdr", .Kind = ModelSourceKind::Environment, .TextureSize = 512 },
-	};
-
 	inline constexpr ModelSource OriginalSources[] = {
 		{ .Path = "Original/ObsidianCluster", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true },
 		{ .Path = "Original/Fountain", .Kind = ModelSourceKind::Scan, .TextureSize = 1024 },
@@ -161,11 +119,11 @@ namespace Game
 		{ .Path = "Original/Materials/ObservatoryBronze", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
 		{ .Path = "Original/Materials/ForgeJointSilver", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.5f },
 		{ .Path = "Original/Materials/ObservatoryMural", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 4.2f },
+		{ .Path = "PolyHaven/Textures/castle_wall_varriation", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
 	};
 
 	inline constexpr ModelPack ModelPacks[] = {
 		{ ModelLibraryPath, CharacterSources },
 		{ "res/Models/Original.bin", OriginalSources },
-		{ "res/Models/Abbey.bin", AbbeySources, false },
 	};
 }

@@ -227,8 +227,6 @@ namespace Game
 			return BuildCrucibleLevel(seed);
 		case MapKind::Ashlands:
 			return BuildAshlandsLevel(seed);
-		case MapKind::Abbey:
-			return BuildAbbeyLevel(seed);
 		case MapKind::Caldera:
 			return BuildCalderaLevel(seed);
 		case MapKind::FrozenLake:

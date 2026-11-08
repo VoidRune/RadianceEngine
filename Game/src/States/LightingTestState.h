@@ -3,7 +3,6 @@
 #include "Rendering/Lighting.h"
 #include <glm/glm.hpp>
 #include <cstdint>
-#include <string>
 #include <vector>
 
 namespace Game
@@ -13,7 +12,7 @@ namespace Game
 	class LightingTestState final : public AppState
 	{
 	public:
-		LightingTestState(GameApp& app, const std::string& model = {});
+		explicit LightingTestState(GameApp& app);
 
 		bool Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex) override;
 

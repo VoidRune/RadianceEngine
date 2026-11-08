@@ -26,6 +26,19 @@ namespace Game
 	static_assert(std::size(TonemapperNames) == size_t(Tonemapper::Count) && std::size(TonemapperExposure) == size_t(Tonemapper::Count));
 	inline constexpr const char* GradingLutPath = "res/Grading/Default.cube";
 
+	enum class AntiAliasing : uint8_t
+	{
+		Off,
+		Smaa,
+		Ssaa15,
+		Ssaa2,
+		Count,
+	};
+
+	inline constexpr const char* AntiAliasingNames[] = { "off", "smaa", "ssaa1.5", "ssaa2" };
+	inline constexpr float SupersampleFactors[] = { 1.0f, 1.0f, 1.5f, 2.0f };
+	static_assert(std::size(AntiAliasingNames) == size_t(AntiAliasing::Count) && std::size(SupersampleFactors) == size_t(AntiAliasing::Count));
+
 	struct ColorGrade
 	{
 		glm::vec3 Slope{ 1.0f };
@@ -63,9 +76,11 @@ namespace Game
 		Tonemapper Tonemap = Tonemapper::SoftClip;
 		bool Grading = true;
 		bool Raw = false;
+		bool Smaa = true;
 
 	private:
 		void UploadGradingLut(uint32_t size, const std::vector<glm::vec3>& colors);
+		void RenderSmaa(Rdn::RenderGraph& graph, Rdn::RGImage color, Rdn::RGImage output, Rdn::Extent2D size);
 
 		Rdn::Device& m_Device;
 		Rdn::ResourceAllocator& m_Allocator;
@@ -74,6 +89,12 @@ namespace Game
 		std::unique_ptr<Rdn::ComputePipeline> m_Up;
 		std::unique_ptr<Rdn::Pipeline> m_Composite;
 		std::unique_ptr<Rdn::Pipeline> m_Upscale;
+		std::unique_ptr<Rdn::Pipeline> m_Downsample;
+		std::unique_ptr<Rdn::Pipeline> m_SmaaEdges;
+		std::unique_ptr<Rdn::Pipeline> m_SmaaWeights;
+		std::unique_ptr<Rdn::Pipeline> m_SmaaBlend;
+		std::unique_ptr<Rdn::GpuImage> m_SmaaArea;
+		std::unique_ptr<Rdn::GpuImage> m_SmaaSearch;
 		Rdn::Format m_TargetFormat = Rdn::Format::Undefined;
 		std::unique_ptr<Rdn::Sampler> m_Sampler;
 		std::unique_ptr<Rdn::Sampler> m_PointSampler;

@@ -91,6 +91,7 @@ namespace Game
 	{
 		std::ifstream file(PreferencesPath);
 		std::string line;
+		bool antiAliasing = false;
 		while (std::getline(file, line))
 		{
 			const size_t equals = line.find('=');
@@ -135,6 +136,8 @@ namespace Game
 				m_Settings.FrameCap = std::clamp(cap, MinFrameCap, MaxFrameCap);
 			else if (uint32_t scale = 0; key == "RenderScale" && ParseNumber(value, scale))
 				m_Settings.RenderScale = std::clamp(scale, MinRenderScale, MaxRenderScale);
+			else if (key == "AntiAliasing")
+				antiAliasing = ParseName(value, AntiAliasingNames, m_Settings.Aa);
 			else if (key == "ScreenShake")
 				ReadVolume(value, m_Settings.ScreenShake);
 			else if (key == "ShowControls")
@@ -144,6 +147,8 @@ namespace Game
 			else if (GraphicsTier tier{}; key == "GraphicsTier" && ParseName(value, GraphicsTierNames, tier))
 				m_GraphicsTier = tier;
 		}
+		if (!antiAliasing && m_GraphicsTier)
+			m_Settings.Aa = GraphicsPresets[size_t(*m_GraphicsTier)].Aa;
 	}
 
 	void GameApp::RememberSettings(SettingsGroup group)
@@ -163,6 +168,7 @@ namespace Game
 			m_Stored.Vsync = m_Settings.Vsync;
 			m_Stored.FrameCap = m_Settings.FrameCap;
 			m_Stored.RenderScale = m_Settings.RenderScale;
+			m_Stored.Aa = m_Settings.Aa;
 			m_Stored.ShowControls = m_Settings.ShowControls;
 			m_Stored.ScreenShake = m_Settings.ScreenShake;
 			break;
@@ -185,7 +191,7 @@ namespace Game
 		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nFriendsCanJoin=" << (m_Stored.FriendsCanJoin ? 1 : 0) << "\nKit=" << GetKit(m_Stored.Kit).Name
 			<< "\nVolume=" << m_Stored.Volume << "\nMusicVolume=" << m_Stored.MusicVolume << "\nEffectsVolume=" << m_Stored.EffectsVolume << "\nMuted=" << (m_Stored.Muted ? 1 : 0)
 			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0) << "\nVsync=" << (m_Stored.Vsync ? 1 : 0)
-			<< "\nFrameCap=" << m_Stored.FrameCap << "\nRenderScale=" << m_Stored.RenderScale << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\nScreenShake=" << m_Stored.ScreenShake << "\n";
+			<< "\nFrameCap=" << m_Stored.FrameCap << "\nRenderScale=" << m_Stored.RenderScale << "\nAntiAliasing=" << AntiAliasingNames[size_t(m_Stored.Aa)] << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\nScreenShake=" << m_Stored.ScreenShake << "\n";
 		if (!m_GraphicsGpu.empty())
 			file << "Gpu=" << m_GraphicsGpu << "\n";
 		if (m_GraphicsTier)
@@ -290,6 +296,8 @@ namespace Game
 			m_Settings.FrameCap = *options.FrameCap;
 		if (options.RenderScale)
 			m_Settings.RenderScale = *options.RenderScale;
+		if (options.Aa)
+			m_Settings.Aa = AntiAliasing(*options.Aa);
 		if (options.ScreenShake)
 			m_Settings.ScreenShake = *options.ScreenShake;
 		m_Settings.ShowPerformance = options.ShowPerformance;
@@ -358,6 +366,7 @@ namespace Game
 			m_Settings.Gi = GiQuality(*options.Gi);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
 		m_WorldRenderer->SetRenderScale(float(m_Settings.RenderScale) / 100.0f);
+		m_WorldRenderer->SetAntiAliasing(m_Settings.Aa);
 		m_WorldRenderer->SetLakeFullResolution(m_RecommendedGraphics != GraphicsTier::Low);
 		PostProcess& post = m_WorldRenderer->GetPost();
 		if (options.Tonemap)
@@ -373,8 +382,8 @@ namespace Game
 				RDN_LOG_ERROR("Using the built-in grade because {}", lutError);
 		}
 
-		if (options.LightingTest || !options.PbrTest.empty())
-			m_State = std::make_unique<LightingTestState>(*this, options.PbrTest);
+		if (options.LightingTest)
+			m_State = std::make_unique<LightingTestState>(*this);
 		else if (options.HostPort || options.JoinAddress)
 		{
 			SessionConfig config;
@@ -461,6 +470,7 @@ namespace Game
 		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
 		m_WorldRenderer->SetRenderScale(float(m_Settings.RenderScale) / 100.0f);
+		m_WorldRenderer->SetAntiAliasing(m_Settings.Aa);
 		m_WorldRenderer->SetLakeFullResolution(m_RecommendedGraphics != GraphicsTier::Low);
 		m_Window->SetFullscreen(m_Settings.Fullscreen);
 		m_PresentQueue->SetPresentMode(PresentModeFor(m_Settings.Vsync));
@@ -478,15 +488,19 @@ namespace Game
 			m_Settings.FrameCap = next.FrameCap;
 		if (m_Settings.RenderScale == previous.RenderScale)
 			m_Settings.RenderScale = next.RenderScale;
+		if (m_Settings.Aa == previous.Aa)
+			m_Settings.Aa = next.Aa;
 		m_Stored.Shadows = m_Settings.Shadows;
 		m_Stored.Gi = m_Settings.Gi;
 		m_Stored.FrameCap = m_Settings.FrameCap;
 		m_Stored.RenderScale = m_Settings.RenderScale;
+		m_Stored.Aa = m_Settings.Aa;
 		m_GraphicsGpu = m_Device->GetProperties().Name;
 		m_GraphicsTier = m_RecommendedGraphics;
 		m_PreferencesDirty = true;
 		m_PreferencesDelay = 0.0f;
-		RDN_LOG("Graphics for this GPU: indirect light {}, shadows {}, frame cap {}, render scale {}%", GiQualityNames[size_t(m_Settings.Gi)], ShadowQualityNames[size_t(m_Settings.Shadows)], m_Settings.FrameCap, m_Settings.RenderScale);
+		RDN_LOG("Graphics for this GPU: indirect light {}, shadows {}, frame cap {}, render scale {}%, anti-aliasing {}", GiQualityNames[size_t(m_Settings.Gi)], ShadowQualityNames[size_t(m_Settings.Shadows)], m_Settings.FrameCap, m_Settings.RenderScale,
+			AntiAliasingNames[size_t(m_Settings.Aa)]);
 	}
 
 	void GameApp::ApplyRecommendedGraphics()
@@ -496,6 +510,7 @@ namespace Game
 		m_Settings.Gi = preset.Gi;
 		m_Settings.FrameCap = preset.FrameCap;
 		m_Settings.RenderScale = preset.RenderScale;
+		m_Settings.Aa = preset.Aa;
 		ApplyVisualSettings();
 		RememberSettings(SettingsGroup::Visuals);
 	}

@@ -277,7 +277,7 @@ namespace Game
 			};
 		}
 
-		SceneLighting MapLighting(MapKind map, const WorldRenderer& renderer)
+		SceneLighting MapLighting(MapKind map)
 		{
 			SceneLighting lighting;
 			lighting.Grade = { .MidSaturation = 0.1f, .Shadows = { 0.97f, 0.99f, 1.04f }, .Highlights = { 1.02f, 1.0f, 0.97f } };
@@ -344,25 +344,6 @@ namespace Game
 				lighting.ContactShadow = 0.45f;
 				lighting.Lake.Active = true;
 				lighting.Grade = { .Saturation = 1.1f, .MidSaturation = 0.18f, .Shadows = { 0.9f, 0.99f, 1.1f }, .Highlights = { 1.0f, 1.0f, 1.0f } };
-			}
-			else if (map == MapKind::Abbey)
-			{
-				constexpr float SunAzimuth = -0.65f;
-				constexpr float SunElevation = 0.42f;
-				if (const std::optional<int32_t> environment = renderer.FindEnvironment("kiara_8_sunset"))
-				{
-					const ModelEnvironment& source = renderer.GetModels().GetData().Environments[size_t(*environment)];
-					const glm::vec3 toSun = -source.SunDirection;
-					lighting.Environment = *environment;
-					lighting.EnvironmentRotation = SunAzimuth - std::atan2(toSun.x, toSun.z);
-					lighting.EnvironmentIntensity = 1.4f;
-					const float luminance = glm::dot(source.SunIrradiance, glm::vec3(0.2126f, 0.7152f, 0.0722f));
-					if (luminance > 0.0f)
-						lighting.SunColor = glm::mix(source.SunIrradiance / luminance, glm::vec3(1.0f), 0.45f);
-				}
-				lighting.SunDirection = -glm::vec3(std::cos(SunElevation) * std::sin(SunAzimuth), std::sin(SunElevation), std::cos(SunElevation) * std::cos(SunAzimuth));
-				lighting.SunIntensity = 5.5f;
-				lighting.EmissionGi = 4.0f;
 			}
 			return lighting;
 		}
@@ -2384,7 +2365,7 @@ namespace Game
 			UpdateCamera(0.0f);
 		}
 
-		m_Lighting = MapLighting(level->Kind, renderer);
+		m_Lighting = MapLighting(level->Kind);
 		m_Lighting.Time = m_Time;
 		if (m_Lighting.Daylight)
 		{

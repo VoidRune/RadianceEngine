@@ -51,6 +51,7 @@ namespace Game
 		bool Vsync = true;
 		uint32_t FrameCap = GraphicsPreset{}.FrameCap;
 		uint32_t RenderScale = GraphicsPreset{}.RenderScale;
+		AntiAliasing Aa = GraphicsPreset{}.Aa;
 		float ScreenShake = 1.0f;
 		bool ShowControls = true;
 		bool ShowPerformance = false;

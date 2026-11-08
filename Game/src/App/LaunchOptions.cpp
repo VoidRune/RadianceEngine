@@ -29,11 +29,6 @@ namespace Game
 
 		bool ParseMap(std::string_view text, MapKind& map)
 		{
-			if (SameText(text, "abbey") || SameText(text, GetMapDef(MapKind::Abbey).Name))
-			{
-				map = MapKind::Abbey;
-				return true;
-			}
 			for (const MapDef& def : Maps)
 				if (IsMissionMap(def.Id) && (SameText(def.Name, text) || (def.Id == MapKind::Town && SameText(text, "town"))))
 				{
@@ -85,7 +80,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves|abbey]] [--shardfall] [--run-minute 0..12] [--run-level 1..30] [--spawns 0..300] [--xp 25..500] [--only quartz|jade|sapphire|ruby|amethyst|prismatic] [--immortal] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource|translucency] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--render-scale 50..100] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan] [--no-distortion] [--no-trails] [--no-translucency] [--no-point-lights] [--no-refraction] [--distortion-stage all|shockwaves] [--no-steam]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--kit arcanist|knight|ranger|lancer] [--new-character] [--no-save] [--export-props] [--mission [town|caves]] [--horde [town|caves]] [--shardfall] [--run-minute 0..12] [--run-level 1..30] [--spawns 0..300] [--xp 25..500] [--only quartz|jade|sapphire|ruby|amethyst|prismatic] [--immortal] [--arena [ffa|teams]] [--royale [ashlands|town|caves]] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--goal kills] [--minutes 3..20] [--tier 1..10] [--mods brutal,fortified,...] [--unlimited-materials] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--peaceful] [--start-wave n] [--loot-rate multiplier] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource|translucency] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--render-scale 50..100] [--aa off|smaa|ssaa1.5|ssaa2] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--leviathan] [--no-distortion] [--no-trails] [--no-translucency] [--no-point-lights] [--no-refraction] [--distortion-stage all|shockwaves] [--no-steam]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -451,6 +446,14 @@ namespace Game
 					options.RenderScale = scale;
 				i++;
 			}
+			else if (argument == "--aa" && hasValue)
+			{
+				const auto it = std::find_if(std::begin(AntiAliasingNames), std::end(AntiAliasingNames), [&](const char* name) { return SameText(name, value); });
+				valid = it != std::end(AntiAliasingNames);
+				if (valid)
+					options.Aa = uint8_t(it - std::begin(AntiAliasingNames));
+				i++;
+			}
 			else if (argument == "--screen-shake" && hasValue)
 			{
 				float shake = 100.0f;
@@ -473,11 +476,6 @@ namespace Game
 				options.Grading = false;
 			else if (argument == "--lighting-test")
 				options.LightingTest = true;
-			else if (argument == "--pbr-test" && hasValue)
-			{
-				options.PbrTest = std::string(value);
-				i++;
-			}
 			else if (argument == "--no-distortion")
 				options.Distortion = false;
 			else if (argument == "--no-trails")

@@ -258,7 +258,9 @@ namespace Game
 	void MainMenuState::DrawPage(Ui& ui)
 	{
 		const float ease = 1.0f - std::pow(1.0f - m_Reveal, 3.0f);
-		const UiRect panel{ PageX, PageTop, PageWidth, std::min(m_Page == Page::Settings ? SettingsPageHeight : PageHeight, ui.GetSize().y - PageTop - 24.0f) };
+		const bool settings = m_Page == Page::Settings;
+		const float top = settings ? std::clamp(ui.GetSize().y - 24.0f - SettingsPageHeight, 24.0f, PageTop) : PageTop;
+		const UiRect panel{ PageX, top, PageWidth, std::min(settings ? SettingsPageHeight : PageHeight, ui.GetSize().y - top - 24.0f) };
 		const float height = panel.H * ease;
 		UiDrawList& draw = ui.Draw();
 		draw.PushClip({ panel.X - 40.0f, panel.Center().y - height * 0.5f - 40.0f, panel.W + 80.0f, height + 80.0f });

@@ -175,6 +175,11 @@ namespace Game
 		void SetPointLights(bool enabled) { m_PointLights = enabled; }
 		void SetRenderScale(float scale) { m_RenderScale = std::clamp(scale, 0.5f, 1.0f); }
 		float GetRenderScale() const { return m_RenderScale; }
+		void SetAntiAliasing(AntiAliasing mode)
+		{
+			m_Supersample = SupersampleFactors[size_t(mode)];
+			m_Post->Smaa = mode != AntiAliasing::Off;
+		}
 		void SetGlassModels(bool enabled) { m_GlassModels = enabled; }
 		void DrawFacet(const GlassFacet& facet) { m_Glass->Draw(facet); }
 		uint32_t AddShield(const EnergyShield& shield) { return m_Glass->AddShield(shield); }
@@ -378,6 +383,7 @@ namespace Game
 		bool m_Translucency = true;
 		bool m_PointLights = true;
 		float m_RenderScale = 1.0f;
+		float m_Supersample = 1.0f;
 		std::unique_ptr<ParticleSystem> m_Particles;
 		std::unique_ptr<DeferredLighting> m_Deferred;
 		std::unique_ptr<RadianceCascades> m_Gi;

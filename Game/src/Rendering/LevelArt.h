@@ -97,6 +97,5 @@ namespace Game
 
 	void RegisterPeakMeshes(WorldRenderer& renderer);
 	LevelScene BuildLevelScene(const Level& level, WorldRenderer& renderer);
-	bool BuildAbbeyScene(const Level& level, WorldRenderer& renderer, LevelScene& scene);
 	std::optional<float> SampleGround(const LevelScene& scene, Vec2 position);
 }

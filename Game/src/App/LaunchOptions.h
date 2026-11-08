@@ -51,12 +51,12 @@ namespace Game
 		std::optional<bool> Vsync;
 		std::optional<uint32_t> FrameCap;
 		std::optional<uint32_t> RenderScale;
+		std::optional<uint8_t> Aa;
 		std::optional<float> ScreenShake;
 		bool ShowPerformance = false;
 		std::optional<float> Exposure;
 		bool Grading = true;
 		bool LightingTest = false;
-		std::string PbrTest;
 		bool ProfileGpu = false;
 		bool Leviathan = false;
 		std::optional<std::array<float, 6>> ShotCamera;

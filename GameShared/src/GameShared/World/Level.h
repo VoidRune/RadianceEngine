@@ -23,7 +23,6 @@ namespace Game
 		Hub,
 		Crucible,
 		Ashlands,
-		Abbey,
 		Caldera,
 		FrozenLake,
 		SkyRuins,
@@ -45,7 +44,6 @@ namespace Game
 		{ MapKind::Hub, "Emberhold", "The camp between expeditions, with a stash, a forge, a lapidary, the mission board and the proving grounds." },
 		{ MapKind::Crucible, "The Crucible", "A walled fighting pit around a low dais, with broken colonnades, cover walls and pools of black water. Shrines hand out healing and power." },
 		{ MapKind::Ashlands, "The Ashlands", "A burned island: a ruined village, a drowned chapel, a walled graveyard, crystal hollows, a sunken library, farmland and the watchtower hill. Chests everywhere, and the ash storm closes in." },
-		{ MapKind::Abbey, "Vesper Abbey", "A rain-soaked abbey courtyard at dusk, with a walled garden, a storage yard and a candlelit crypt." },
 		{ MapKind::Caldera, "Molten Heart", "The Forge of the Titans: an iron mold plate chained above a molten pit. The titan's crucible pours molten metal down a sword-shaped trench, and late in the round the forge floods the plate from the edge inward." },
 		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes." },
 		{ MapKind::SkyRuins, "Sky Observatory", "The domed observatory of a vanished sky civilization, high above the clouds. There is no lava, only a long fall: a hole gapes in the middle of its star-chart floor, and the old core's burning field closes in around it." },
@@ -527,7 +525,6 @@ namespace Game
 	Level BuildHubLevel(uint32_t seed);
 	Level BuildCrucibleLevel(uint32_t seed);
 	Level BuildAshlandsLevel(uint32_t seed);
-	Level BuildAbbeyLevel(uint32_t seed);
 	Level BuildCalderaLevel(uint32_t seed);
 	Level BuildFrozenLakeLevel(uint32_t seed);
 	Level BuildSkyRuinsLevel(uint32_t seed);

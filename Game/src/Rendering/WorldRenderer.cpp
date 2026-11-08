@@ -1136,9 +1136,11 @@ namespace Game
 
 	void WorldRenderer::Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D display, uint32_t frameIndex, const std::array<float, 4>& clearColor)
 	{
-		const Rdn::Extent2D output = m_RenderScale < 0.999f ? Rdn::Extent2D{ std::max(uint32_t(std::lround(float(display.Width) * m_RenderScale)), 1u), std::max(uint32_t(std::lround(float(display.Height) * m_RenderScale)), 1u) } : display;
+		constexpr float MaxRenderExtent = 8192.0f;
 		const bool gi = HasGi();
 		const float guardBand = GetGuardBand();
+		const float scale = std::min(m_RenderScale * m_Supersample, MaxRenderExtent / (float(std::max({ display.Width, display.Height, 1u })) * (1.0f + 2.0f * guardBand)));
+		const Rdn::Extent2D output = std::abs(scale - 1.0f) > 0.001f ? Rdn::Extent2D{ std::max(uint32_t(std::lround(float(display.Width) * scale)), 1u), std::max(uint32_t(std::lround(float(display.Height) * scale)), 1u) } : display;
 		const glm::uvec2 guard(uint32_t(std::lround(float(output.Width) * guardBand)), uint32_t(std::lround(float(output.Height) * guardBand)));
 		const Rdn::Extent2D extent{ output.Width + 2 * guard.x, output.Height + 2 * guard.y };
 		WorldCamera camera = m_Camera;

@@ -864,11 +864,8 @@ namespace Game
 			return;
 		m_Key = key;
 		renderer.ClearLevelGeometry();
-		if (level.Kind != MapKind::Abbey || !BuildAbbeyScene(level, renderer, m_Scene))
-		{
-			renderer.SetSkyMask(0, 0, {}, {}, {});
-			m_Scene = BuildLevelScene(level, renderer);
-		}
+		renderer.SetSkyMask(0, 0, {}, {}, {});
+		m_Scene = BuildLevelScene(level, renderer);
 		m_Hall.Clear();
 		if (!m_Scene.Relief.IsEmpty() || !level.Hall.IsEmpty() || level.Kind == MapKind::Caldera)
 			m_Island.Clear();

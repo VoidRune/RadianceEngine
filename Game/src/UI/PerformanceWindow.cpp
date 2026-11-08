@@ -332,7 +332,7 @@ namespace Game
 	void PerformanceWindow::DrawGraphics(GameApp& app)
 	{
 		const Settings& settings = app.GetSettings();
-		ImGui::Text("Indirect light %s, shadows %s, render scale %u%%", GiQualityNames[size_t(settings.Gi)], ShadowQualityNames[size_t(settings.Shadows)], settings.RenderScale);
+		ImGui::Text("Indirect light %s, shadows %s, render scale %u%%, anti-aliasing %s", GiQualityNames[size_t(settings.Gi)], ShadowQualityNames[size_t(settings.Shadows)], settings.RenderScale, AntiAliasingNames[size_t(settings.Aa)]);
 		if (settings.Vsync)
 			ImGui::Text("Vsync on, the %u fps cap applies when it's off", settings.FrameCap);
 		else
@@ -341,8 +341,8 @@ namespace Game
 		const GraphicsTier tier = app.GetRecommendedGraphics();
 		const GraphicsPreset& preset = GraphicsPresets[size_t(tier)];
 		ImGui::Text("Recommended for this GPU: the %s tier", GraphicsTierNames[size_t(tier)]);
-		ImGui::TextDisabled("Indirect light %s, shadows %s, cap %u fps, render scale %u%%", GiQualityNames[size_t(preset.Gi)], ShadowQualityNames[size_t(preset.Shadows)], preset.FrameCap, preset.RenderScale);
-		const bool recommended = settings.Gi == preset.Gi && settings.Shadows == preset.Shadows && settings.FrameCap == preset.FrameCap && settings.RenderScale == preset.RenderScale;
+		ImGui::TextDisabled("Indirect light %s, shadows %s, cap %u fps, render scale %u%%, anti-aliasing %s", GiQualityNames[size_t(preset.Gi)], ShadowQualityNames[size_t(preset.Shadows)], preset.FrameCap, preset.RenderScale, AntiAliasingNames[size_t(preset.Aa)]);
+		const bool recommended = settings.Gi == preset.Gi && settings.Shadows == preset.Shadows && settings.FrameCap == preset.FrameCap && settings.RenderScale == preset.RenderScale && settings.Aa == preset.Aa;
 		ImGui::BeginDisabled(recommended);
 		if (ImGui::Button(recommended ? "Using the recommended settings" : "Use the recommended settings"))
 			app.ApplyRecommendedGraphics();

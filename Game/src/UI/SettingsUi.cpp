@@ -14,7 +14,8 @@ namespace Game
 	{
 		constexpr const char* ShadowOptions[] = { "Off", "Low", "High" };
 		constexpr const char* GiOptions[] = { "Off", "Low", "Medium", "High" };
-		static_assert(std::size(ShadowOptions) == size_t(ShadowQuality::Count) && std::size(GiOptions) == size_t(GiQuality::Count));
+		constexpr const char* AntiAliasingOptions[] = { "Off", "SMAA", "SSAA 1.5x", "SSAA 2x" };
+		static_assert(std::size(ShadowOptions) == size_t(ShadowQuality::Count) && std::size(GiOptions) == size_t(GiQuality::Count) && std::size(AntiAliasingOptions) == size_t(AntiAliasing::Count));
 	}
 
 	void DrawSettings(Ui& ui, GameApp& app, UiRect area)
@@ -52,19 +53,29 @@ namespace Game
 		area.CutTop(6.0f);
 		bool visuals = false;
 		int shadows = int(settings.Shadows);
-		if (ui.Choice(Ui::MakeId("settings.shadows"), row("Shadows", 40.0f).CutLeft(230.0f), shadows, ShadowOptions))
+		if (ui.Choice(Ui::MakeId("settings.shadows"), row("Shadows", 36.0f).CutLeft(230.0f), shadows, ShadowOptions))
 		{
 			settings.Shadows = ShadowQuality(shadows);
 			visuals = true;
 		}
 		int gi = int(settings.Gi);
-		if (ui.Choice(Ui::MakeId("settings.gi"), row("Indirect light", 40.0f).CutLeft(230.0f), gi, GiOptions))
+		if (ui.Choice(Ui::MakeId("settings.gi"), row("Indirect light", 36.0f).CutLeft(230.0f), gi, GiOptions))
 		{
 			settings.Gi = GiQuality(gi);
 			visuals = true;
 		}
-		visuals |= ui.Checkbox(Ui::MakeId("settings.fullscreen"), row("Display", 34.0f), "Fullscreen", settings.Fullscreen);
-		visuals |= ui.Checkbox(Ui::MakeId("settings.vsync"), row("Vsync", 34.0f), settings.Vsync ? "Synced to the monitor's refresh rate" : "Off, the frame cap below applies", settings.Vsync);
+		int aa = int(settings.Aa);
+		UiRect aaRow = row("Anti-aliasing", 36.0f);
+		if (ui.Choice(Ui::MakeId("settings.aa"), aaRow.CutLeft(230.0f), aa, AntiAliasingOptions))
+		{
+			settings.Aa = AntiAliasing(aa);
+			visuals = true;
+		}
+		if (SupersampleFactors[size_t(settings.Aa)] > 1.0f)
+			draw.TextAligned(aaRow.Shrink(12.0f, 0.0f), "+ SMAA", Theme::Body(13.5f, Theme::Faint), { 0.0f, 0.5f });
+		UiRect display = row("Display", 34.0f);
+		visuals |= ui.Checkbox(Ui::MakeId("settings.fullscreen"), display.CutLeft(150.0f), "Fullscreen", settings.Fullscreen);
+		visuals |= ui.Checkbox(Ui::MakeId("settings.vsync"), display, "Vsync", settings.Vsync);
 		const UiRect cap = row("Frame cap");
 		if (settings.Vsync)
 			draw.TextAligned(cap, "Turn vsync off to cap the frame rate", Theme::Body(15.0f, Theme::Faint), { 0.0f, 0.5f });

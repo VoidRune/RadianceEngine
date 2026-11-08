@@ -62,7 +62,6 @@ namespace Game
 			switch (map)
 			{
 			case MapKind::Hub:
-			case MapKind::Abbey:
 				return AmbienceScene::Hub;
 			case MapKind::Town:
 				return AmbienceScene::Town;

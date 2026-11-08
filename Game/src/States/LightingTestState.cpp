@@ -13,7 +13,7 @@ namespace Game
 		constexpr float Fov = 40.0f;
 		constexpr float SunIntensity = 2.36f;
 		constexpr glm::vec3 SunDirection{ 0.45f, -1.0f, 0.3f };
-		constexpr const char* PbrEnvironment = "kiara_8_sunset";
+		constexpr const char* Prefix = "LightingTest";
 
 		glm::vec3 ToPathTracer(const glm::vec3& v)
 		{
@@ -21,49 +21,23 @@ namespace Game
 		}
 	}
 
-	LightingTestState::LightingTestState(GameApp& app, const std::string& model)
+	LightingTestState::LightingTestState(GameApp& app)
 		: m_App(app)
 	{
 		const WorldRenderer& renderer = app.GetWorldRenderer();
 		const ModelLibrary& models = renderer.GetModels();
-		const std::string prefix = model.empty() ? "LightingTest" : model;
-		glm::vec3 low(1e9f);
-		glm::vec3 high(-1e9f);
 		for (uint32_t i = 0; i < uint32_t(models.GetData().Meshes.size()); i++)
-		{
-			const ModelMesh& mesh = models.GetMesh(i);
-			if (model.empty() ? !mesh.Name.starts_with(prefix) : (mesh.Name != model && !mesh.Name.starts_with(model + ".")))
-				continue;
-			m_Meshes.push_back(i);
-			low = glm::min(low, mesh.Min);
-			high = glm::max(high, mesh.Max);
-		}
+			if (models.GetMesh(i).Name.starts_with(Prefix))
+				m_Meshes.push_back(i);
 		if (m_Meshes.empty())
-			RDN_LOG_ERROR("The model library has no {}", prefix);
+			RDN_LOG_ERROR("The model library has no {}", Prefix);
 		PostProcess& post = app.GetWorldRenderer().GetPost();
 		post.Tonemap = Tonemapper::Aces;
 		post.Exposure = 1.0f / TonemapperExposure[size_t(Tonemapper::Aces)];
 		post.Grading = false;
 
 		m_Lighting = { .SunDirection = SunDirection, .SunColor = glm::vec3(1.0f), .SunIntensity = SunIntensity, .SkyColor = glm::vec3(0.0f), .GroundColor = glm::vec3(0.0f) };
-		std::string scene = "../../../Game/assets/Reference/LightingTest.gltf --env-intensity 0";
-		if (!model.empty())
-		{
-			const glm::vec3 center = m_Meshes.empty() ? glm::vec3(0.0f) : 0.5f * (low + high);
-			const float radius = m_Meshes.empty() ? 1.0f : 0.5f * glm::length(high - low);
-			m_Target = center;
-			m_Eye = center + glm::normalize(glm::vec3(0.0f, 0.55f, -1.0f)) * (radius / std::tan(glm::radians(Fov * 0.5f)) * 1.15f);
-			if (const std::optional<int32_t> environment = renderer.FindEnvironment(PbrEnvironment))
-			{
-				const ModelEnvironment& source = models.GetData().Environments[size_t(*environment)];
-				m_Lighting.Environment = *environment;
-				m_Lighting.SunDirection = source.SunDirection;
-				m_Lighting.SunIntensity = glm::dot(source.SunIrradiance, glm::vec3(0.2126f, 0.7152f, 0.0722f));
-			}
-			else
-				RDN_LOG_ERROR("The model library has no {} environment", PbrEnvironment);
-			scene = "../../../Game/assets/PolyHaven/Models/" + model + "/" + model + "_1k.gltf --env sky.hdr --env-intensity 1 --env-rotation 0";
-		}
+		const char* scene = "../../../Game/assets/Reference/LightingTest.gltf --env-intensity 0";
 		const glm::vec3 eye = ToPathTracer(m_Eye);
 		const glm::vec3 forward = glm::normalize(ToPathTracer(m_Target - m_Eye));
 		const glm::vec3 sun = ToPathTracer(m_Lighting.SunDirection);
