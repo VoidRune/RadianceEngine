@@ -138,7 +138,7 @@ namespace Game
 	};
 
 	uint64_t TextureByteSize(TextureFormat format, uint32_t width, uint32_t height, uint32_t mips);
-	bool SaveModelLibrary(const char* path, const ModelLibraryData& data);
+	bool SaveModelLibrary(const char* path, const ModelLibraryData& data, int compressionLevel);
 	bool LoadModelLibrary(const char* path, ModelLibraryData& data);
 	bool ReadModelLibraryHash(const char* path, uint64_t& hash);
 	void AppendModelLibrary(ModelLibraryData& target, ModelLibraryData&& pack);

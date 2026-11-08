@@ -42,8 +42,8 @@ namespace Game
 		constexpr float RumbleReach = 16.0f;
 		constexpr float DefaultBloom = 0.3f;
 		constexpr float CalderaBloom = 0.14f;
-		constexpr float CalderaLavaLight = 1.2f;
-		constexpr float CalderaLavaCrust = 0.11f;
+		constexpr float CalderaLavaLight = 0.8f;
+		constexpr float CalderaLavaCrust = 0.24f;
 		constexpr float ForgeFxRange = 30.0f;
 		constexpr float OwnRumble = 0.7f;
 		constexpr float GuardTrauma = 0.12f;
@@ -306,8 +306,8 @@ namespace Game
 				lighting.SunDirection = { -0.35f, -1.0f, 0.55f };
 				lighting.SunColor = { 0.86f, 0.76f, 1.0f };
 				lighting.SunIntensity = 1.2f;
-				lighting.SkyColor = { 0.13f, 0.1f, 0.24f };
-				lighting.GroundColor = { 0.15f, 0.06f, 0.03f };
+				lighting.SkyColor = { 0.14f, 0.1f, 0.27f };
+				lighting.GroundColor = { 0.1f, 0.045f, 0.03f };
 				lighting.EmissionGi = 3.0f;
 				lighting.Grade = { .MidSaturation = 0.15f, .Shadows = { 0.9f, 0.97f, 1.12f }, .Highlights = { 1.04f, 1.0f, 0.95f } };
 			}

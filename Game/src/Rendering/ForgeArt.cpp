@@ -30,6 +30,9 @@ namespace Game
 		constexpr float ChannelMelt = 0.51f;
 		constexpr Vec2 TroughLip{ 4.0f, -21.0f };
 		constexpr float TroughMelt = 1.05f;
+		constexpr float ChannelSource = 22.6f;
+		constexpr float TroughRun = 5.0f;
+		constexpr float SpoutSource = 1.25f;
 		constexpr float SmokeInset = 0.6f;
 		constexpr float PumpStroke = 0.22f;
 		constexpr float PumpRate = 0.9f;
@@ -54,13 +57,13 @@ namespace Game
 		const glm::vec3 JointTint(1.0f, 1.0f, 1.0f);
 		constexpr const char* RockMaterial = "GroundBasalt";
 		constexpr const char* WallMaterial = "castle_wall_varriation";
-		constexpr uint32_t ScatterCount = 46;
+		constexpr uint32_t ScatterCount = 28;
 		constexpr uint32_t ScatterAttempts = 2400;
 		constexpr float ScatterInner = 17.0f;
 		constexpr float ScatterOuter = 31.0f;
 		constexpr float ScatterEdge = 20.5f;
 		constexpr float ScatterSpacing = 3.4f;
-		constexpr float ScatterClusterShare = 0.55f;
+		constexpr float ScatterClusterShare = 0.0f;
 
 		struct ScatterKeepOut
 		{
@@ -71,30 +74,41 @@ namespace Game
 
 		constexpr ScatterKeepOut ScatterKeepOuts[] = {
 			{ { -12.0f, 13.0f }, { 12.0f, 30.0f }, 4.0f },
-			{ { 13.2f, 17.0f }, { 13.2f, 17.0f }, 5.0f },
-			{ { -13.2f, 17.0f }, { -13.2f, 17.0f }, 5.0f },
-			{ { 15.8f, 9.9f }, { 25.4f, 15.9f }, 2.8f },
-			{ { -15.8f, 9.9f }, { -25.4f, 15.9f }, 2.8f },
-			{ { 25.4f, 15.9f }, { 25.4f, 15.9f }, 8.5f },
-			{ { -25.4f, 15.9f }, { -25.4f, 15.9f }, 8.5f },
-			{ { -30.5f, -1.6f }, { -28.5f, -10.9f }, 8.0f },
+			{ { 6.9f, 15.3f }, { 6.9f, 15.3f }, 4.8f },
+			{ { -6.9f, 15.3f }, { -6.9f, 15.3f }, 4.8f },
+			{ { 15.8f, 9.9f }, { 19.4f, 12.1f }, 2.8f },
+			{ { -15.8f, 9.9f }, { -19.4f, 12.1f }, 2.8f },
+			{ { 22.0f, 13.8f }, { 28.0f, 17.5f }, 7.0f },
+			{ { -22.0f, 13.8f }, { -28.0f, 17.5f }, 7.0f },
+			{ { 21.3f, 2.7f }, { 33.0f, 4.3f }, 6.8f },
+			{ { -21.2f, -2.0f }, { -37.0f, -2.0f }, 5.5f },
+			{ { 24.5f, -9.8f }, { 24.5f, -9.8f }, 3.8f },
+			{ { -24.5f, 7.0f }, { -24.5f, 7.0f }, 3.8f },
+			{ { 22.8f, -3.0f }, { 22.8f, -3.0f }, 2.6f },
+			{ { -20.6f, -6.6f }, { -20.6f, -6.6f }, 2.6f },
 			{ { 4.0f, -33.0f }, { 4.0f, -21.0f }, 3.0f },
-			{ { 24.3f, -4.5f }, { 19.6f, -11.8f }, 2.8f },
-			{ { 29.5f, -2.5f }, { 44.0f, -5.0f }, 3.0f },
-			{ { -19.8f, -10.0f }, { -23.8f, 5.6f }, 3.0f },
 			{ { -24.0f, -18.0f }, { -20.0f, -14.6f }, 2.8f },
 			{ { -18.5f, 10.0f }, { -18.5f, 10.0f }, 3.2f },
-			{ { -23.0f, 4.5f }, { -23.0f, 4.5f }, 3.8f },
 			{ { 10.5f, -14.0f }, { 10.5f, -14.0f }, 3.0f },
 			{ { 21.0f, -19.0f }, { 21.0f, -19.0f }, 4.5f },
 			{ { -21.5f, -12.0f }, { -21.5f, -12.0f }, 4.5f },
+			{ { -15.2f, 5.4f }, { -9.6f, 11.0f }, 2.8f },
+			{ { 12.2f, 7.2f }, { 12.2f, 7.2f }, 3.8f },
+			{ { -18.6f, 1.0f }, { -18.6f, 1.0f }, 2.8f },
+			{ { -11.5f, -10.5f }, { -11.5f, -10.5f }, 2.6f },
+			{ { -15.8f, -5.2f }, { -15.8f, -5.2f }, 2.2f },
+			{ { 12.2f, -10.0f }, { 12.2f, -10.0f }, 2.6f },
+			{ { 17.6f, -5.4f }, { 17.6f, -5.4f }, 2.8f },
+			{ { -3.4f, -20.6f }, { -6.9f, -24.1f }, 2.8f },
 		};
+		constexpr glm::vec3 WallTint{ 0.42f, 0.37f, 0.38f };
 		constexpr float FloodLightFade = 3.0f;
 		constexpr float PourLightRadius = 7.0f;
 		constexpr float ChainPitch = 0.82f;
 		constexpr float ChainRise = 14.0f;
 		constexpr float ChainStart = 0.5f;
 		constexpr float ChainReach = 4.5f;
+		constexpr uint32_t CrustLinks = 10;
 		constexpr float ShackleInset = 0.45f;
 		constexpr float ShackleLift = 0.42f;
 		constexpr float RaisedShift = 0.65f;
@@ -319,6 +333,7 @@ namespace Game
 		{
 			glm::vec3 Lip;
 			glm::vec3 Forward;
+			glm::vec3 Source;
 		};
 
 		std::vector<ForgeFall> Falls()
@@ -327,9 +342,9 @@ namespace Game
 			for (const float degrees : { 32.0f, 148.0f })
 			{
 				const Vec2 out(std::cos(glm::radians(degrees)), std::sin(glm::radians(degrees)));
-				falls.push_back({ World(out * ChannelLip, ChannelMelt), glm::vec3(-out.x, 0.0f, -out.y) });
+				falls.push_back({ World(out * ChannelLip, ChannelMelt), glm::vec3(-out.x, 0.0f, -out.y), World(out * ChannelSource, ChannelMelt) });
 			}
-			falls.push_back({ World(TroughLip, TroughMelt), glm::vec3(0.0f, 0.0f, 1.0f) });
+			falls.push_back({ World(TroughLip, TroughMelt), glm::vec3(0.0f, 0.0f, 1.0f), World(TroughLip - Vec2(0.0f, TroughRun), TroughMelt) });
 			return falls;
 		}
 
@@ -337,6 +352,11 @@ namespace Game
 		{
 			const glm::mat4 tipped = glm::rotate(glm::translate(glm::mat4(1.0f), World(CruciblePivot, CrucibleHeight)), -CrucibleTiltMax, glm::vec3(1.0f, 0.0f, 0.0f));
 			return glm::vec3(tipped * glm::vec4(0.0f, SpoutLift, -SpoutReach, 1.0f));
+		}
+
+		glm::mat4 FullTilt()
+		{
+			return glm::rotate(glm::translate(glm::mat4(1.0f), World(CruciblePivot, CrucibleHeight)), -CrucibleTiltMax, glm::vec3(1.0f, 0.0f, 0.0f));
 		}
 
 		struct TubeShape
@@ -357,7 +377,7 @@ namespace Game
 		constexpr TubeShape PourShape{ 0.32f, 0.28f, 0.8f, 0.2f, 0.13f, 1.4f, 0.9f, 0.4f, 1.8f, 0.3f, 1.0f };
 		constexpr TubeShape FallShape{ 0.55f, 0.35f, 0.9f, 0.3f, 0.24f, 2.5f, 0.5f, 0.55f, 1.5f, 0.45f, 1.7f };
 
-		void StreamTube(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, const glm::vec3& lip, const glm::vec3& forward, float floor, float thickness, const TubeShape& shape)
+		void StreamTube(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, const glm::vec3& lip, const glm::vec3& forward, float floor, float thickness, const TubeShape& shape, const glm::vec3& source, const glm::vec3& bed)
 		{
 			constexpr uint32_t Sides = 14;
 			const float height = lip.y - floor;
@@ -368,12 +388,33 @@ namespace Game
 				drops.push_back(d);
 			drops.push_back(height);
 			const uint32_t first = uint32_t(vertices.size());
+			const glm::vec3 side = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), forward));
+			const float topWide = thickness * shape.TopRadius * shape.Width * (1.0f + shape.Spread);
+			const float topThin = thickness * shape.TopRadius * (1.0f - shape.Flatten);
+			const float approach = glm::length(lip - source);
+			const uint32_t leads = approach > 0.01f ? std::max(2u, uint32_t(approach / 0.12f)) : 0u;
+			const glm::vec3 run = approach > 0.01f ? (lip - source) / approach : forward;
+			const glm::vec3 lift = glm::normalize(bed);
+			const glm::vec3 lateral = side;
+			const glm::vec3 rise = glm::normalize(glm::cross(run, side));
+			for (uint32_t i = 0; i < leads; i++)
+			{
+				const float t = float(i) / float(leads);
+				const glm::vec3 center = source + (lip - source) * t + lift * topThin * 0.6f;
+				const float wide = topWide * (1.15f - 0.15f * t);
+				for (uint32_t s = 0; s < Sides; s++)
+				{
+					const float a = 2.0f * Pi * float(s) / float(Sides);
+					const glm::vec3 offset = lateral * (std::cos(a) * wide) + rise * (std::sin(a) * topThin);
+					const glm::vec3 normal = glm::normalize(lateral * (std::cos(a) / wide) + rise * (std::sin(a) / topThin));
+					vertices.push_back({ .Position = center + offset, .U = -approach * (1.0f - t), .Normal = normal });
+				}
+			}
 			for (const float d : drops)
 			{
 				const float swing = std::exp(-d / shape.Swing);
-				const glm::vec3 center = lip + glm::vec3(0.0f, -d, 0.0f) + forward * (shape.Throw * (1.0f - swing));
+				const glm::vec3 center = lip + glm::vec3(0.0f, -d, 0.0f) + forward * (shape.Throw * (1.0f - swing)) + lift * (topThin * 0.6f * std::exp(-d / 0.12f));
 				const glm::vec3 direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f) + forward * (shape.Throw * swing / shape.Swing));
-				const glm::vec3 side = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), forward));
 				const glm::vec3 across = glm::normalize(glm::cross(direction, side));
 				const float splash = 1.0f + shape.Splash * Smooth((d - (height - shape.SplashHeight)) / shape.SplashHeight);
 				const float radius = thickness * glm::mix(shape.TopRadius, shape.BottomRadius, Smooth(d / shape.ThinDepth)) * splash;
@@ -387,7 +428,7 @@ namespace Game
 					vertices.push_back({ .Position = center + offset, .U = d, .Normal = normal });
 				}
 			}
-			const uint32_t rings = uint32_t(drops.size());
+			const uint32_t rings = leads + uint32_t(drops.size());
 			const auto triangle = [&](uint32_t a, uint32_t b, uint32_t c)
 			{
 				const glm::vec3 winding = glm::cross(vertices[b].Position - vertices[a].Position, vertices[c].Position - vertices[a].Position);
@@ -404,6 +445,16 @@ namespace Game
 					triangle(a, b, c);
 					triangle(a, c, d);
 				}
+			glm::vec3 middle(0.0f);
+			for (uint32_t s = 0; s < Sides; s++)
+				middle += vertices[first + s].Position / float(Sides);
+			const uint32_t cap = uint32_t(vertices.size());
+			vertices.push_back({ .Position = middle, .U = vertices[first].U, .Normal = -run });
+			for (uint32_t s = 0; s < Sides; s++)
+			{
+				vertices[first + s].Normal = glm::normalize(vertices[first + s].Normal - run * 0.5f);
+				triangle(cap, first + s, first + (s + 1) % Sides);
+			}
 		}
 
 		glm::mat4 Frame(const glm::vec3& origin, Vec2 outward)
@@ -529,19 +580,19 @@ namespace Game
 		}
 		{
 			const uint32_t first = uint32_t(indices.size());
-			StreamTube(vertices, indices, FullTiltLip(), PourForward, TrenchFloor, StreamCore, PourShape);
+			StreamTube(vertices, indices, FullTiltLip(), PourForward, TrenchFloor, StreamCore, PourShape, glm::vec3(FullTilt() * glm::vec4(0.0f, SpoutLift, -SpoutSource, 1.0f)), glm::vec3(FullTilt() * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)));
 			m_Stream = close(first, MeshVertexTint);
 		}
 		{
 			const uint32_t first = uint32_t(indices.size());
-			StreamTube(vertices, indices, FullTiltLip(), PourForward, TrenchFloor, 1.0f, PourShape);
+			StreamTube(vertices, indices, FullTiltLip(), PourForward, TrenchFloor, 1.0f, PourShape, glm::vec3(FullTilt() * glm::vec4(0.0f, SpoutLift, -SpoutSource, 1.0f)), glm::vec3(FullTilt() * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)));
 			m_StreamFlow = close(first, MeshFlow);
 		}
 		for (const bool core : { true, false })
 		{
 			const uint32_t first = uint32_t(indices.size());
 			for (const ForgeFall& fall : Falls())
-				StreamTube(vertices, indices, fall.Lip, fall.Forward, ForgePitSurface - 0.2f, core ? FallCore : 1.0f, FallShape);
+				StreamTube(vertices, indices, fall.Lip, fall.Forward, ForgePitSurface - 0.2f, core ? FallCore : 1.0f, FallShape, fall.Source, glm::vec3(0.0f, 1.0f, 0.0f));
 			(core ? m_FallCore : m_FallFlow) = close(first, core ? MeshVertexTint | MeshGround : MeshFlow | MeshGround);
 		}
 		{
@@ -682,9 +733,13 @@ namespace Game
 		const std::vector<uint32_t> link = group("Forge/ChainLink");
 		if (link.empty())
 			return;
+		std::vector<uint32_t> crust = group("Forge/ChainLinkCrust");
+		if (crust.empty())
+			crust = link;
 		const Vec2 corners[] = { { 0.0f, ForgeReach }, { ForgeReach, 0.0f }, { 0.0f, -ForgeReach }, { -ForgeReach, 0.0f } };
-		for (const Vec2 corner : corners)
+		for (uint32_t c = 0; c < 4; c++)
 		{
+			const Vec2 corner = corners[c];
 			const Vec2 outward = Normalize(corner);
 			const glm::vec3 from = World(corner - outward * ShackleInset, AnchorTop + ShackleLift);
 			const glm::vec3 to = from + glm::vec3(outward.x, 0.0f, outward.y) * ChainReach + glm::vec3(0.0f, ChainRise, 0.0f);
@@ -700,7 +755,8 @@ namespace Game
 				frame[1] = glm::vec4(y, 0.0f);
 				frame[2] = glm::vec4(glm::cross(t, y), 0.0f);
 				frame[3] = glm::vec4(from + t * (ChainStart + float(i) * ChainPitch), 1.0f);
-				AddKit(renderer, link, frame);
+				const bool crusted = (i & 1u) == 0 && i < CrustLinks && (i / 2u + c) % 3u != 1u;
+				AddKit(renderer, crusted ? crust : link, frame);
 			}
 		}
 	}
@@ -840,6 +896,7 @@ namespace Game
 			if (!name.starts_with(prefix))
 				continue;
 			const std::string_view part = name.substr(prefix.size());
+			const bool walled = retextures[1].second && retextures[1].first != NoTexture && meshes[mesh].Texture == retextures[1].first;
 			for (const auto& [texture, material] : retextures)
 				if (material && texture != NoTexture && meshes[mesh].Texture == texture)
 				{
@@ -867,6 +924,8 @@ namespace Game
 			if (!part.starts_with("Cradle"))
 				renderer.AddMeshFlags(mesh, MeshGround);
 			AddKit(renderer, { mesh }, arena);
+			if (walled)
+				m_Kit.back().Instance.Tint = glm::vec4(WallTint, 0.0f);
 			if (part.starts_with("Furnace") || part.starts_with("VatMelt") || part.starts_with("ChannelMelt"))
 			{
 				const ModelMesh& info = meshes[mesh];

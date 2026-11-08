@@ -80,8 +80,16 @@ project "ModelBaker"
 		"dependencies/bc7enc/bc7enc.h",
 		"dependencies/bc7enc/bc7enc.c",
 		"dependencies/bc7enc/rgbcx.h",
+		"dependencies/bc7enc/bc7decomp.h",
+		"dependencies/bc7enc/bc7decomp.cpp",
+		"dependencies/bc7enc/ert.h",
+		"dependencies/bc7enc/ert.cpp",
 		"dependencies/mikktspace/mikktspace.h",
 		"dependencies/mikktspace/mikktspace.c",
+		"../Dependencies/zstd/zstd.h",
+		"../Dependencies/zstd/common/*.c",
+		"../Dependencies/zstd/compress/*.c",
+		"../Dependencies/zstd/decompress/*.c",
 	}
 
 	includedirs
@@ -102,8 +110,12 @@ project "ModelBaker"
 	editandcontinue "Off"
 	runtimechecks "Off"
 
-	filter "files:dependencies/**.c"
+	filter "files:dependencies/**.c or files:dependencies/bc7enc/**.cpp"
 		warnings "Off"
+
+	filter "files:../Dependencies/zstd/**.c"
+		warnings "Off"
+		defines { "ZSTD_MULTITHREAD", "ZSTD_DISABLE_ASM" }
 
 	filter "system:windows"
 		systemversion "latest"
@@ -144,6 +156,10 @@ project "Game"
 		"src/**.cpp",
 		"dependencies/imgui/*.h",
 		"dependencies/imgui/*.cpp",
+		"../Dependencies/zstd/zstd.h",
+		"../Dependencies/zstd/common/*.c",
+		"../Dependencies/zstd/compress/*.c",
+		"../Dependencies/zstd/decompress/*.c",
 	}
 
 	includedirs
@@ -176,6 +192,10 @@ project "Game"
 		'{COPYFILE} %[../Dependencies/Steamworks/redistributable_bin/win64/steam_api64.dll] %[%{cfg.targetdir}]',
 		'{COPYFILE} %[steam_appid.txt] %[%{cfg.targetdir}]',
 	}
+
+	filter "files:../Dependencies/zstd/**.c"
+		warnings "Off"
+		defines { "ZSTD_MULTITHREAD", "ZSTD_DISABLE_ASM" }
 
 	filter "system:windows"
 		systemversion "latest"

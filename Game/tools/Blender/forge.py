@@ -678,6 +678,12 @@ def build_fascia(m, target, rng):
                 width = rng.uniform(1.1, 1.9)
                 piece(f'Course{course}_{int(x * 100)}_', (width - 0.02, 0.04, high - low - 0.02), (x + width * 0.5, 0.02, 0.5 * (low + high)), m['block'], bevel=0.015)
                 x += width
+        drips = fascia_drips(side, length, flip, random.Random(71 + side))
+        bmesh.ops.transform(drips, matrix=frame, verts=drips.verts)
+        slag = kit.mesh_object(f'Drips{side}', drips, target, m['slag'])
+        pk.tag(slag)
+        kit.smooth_by_angle(slag, 60.0)
+        parts.append(slag)
         for j in range(CLAMPS_PER_SIDE):
             x = (j + 0.5) * length / CLAMPS_PER_SIDE
             piece(f'Clamp{j}_', (0.42, 0.12, rim + 0.95), (x, 0.11, 0.5 * (rim + 0.06 - 0.95)), m['bronze'], bevel=0.03)
@@ -687,6 +693,80 @@ def build_fascia(m, target, rng):
                     rivet = pk.part(f'Bolt{side}_{j}_{bolt}_{z}', pk.cylinder(0.04, 0.04, 8), target, m['iron'], matrix=frame @ Matrix.Translation((x + bolt, 0.17 * flip, z)) @ Matrix.Rotation(-0.5 * math.pi * flip, 4, 'X'), smooth=40.0)
                     parts.append(rivet)
     return sides
+
+
+def slag_material(name, bake_size):
+    s = kit.Shader(name)
+    p = pk.local(s)
+    heat = s.node('ShaderNodeAttribute', attribute_name='Heat', attribute_type='GEOMETRY').outputs['Fac']
+    noise = s.noise(p, 6.0, detail=4.0)
+    flow = s.noise(s.stretch(p, (4.0, 4.0, 0.7)), 3.0, detail=3.0)
+    base = s.mix(noise, (0.016, 0.014, 0.015), (0.055, 0.046, 0.042))
+    base = s.mix(s.mul(s.smooth(0.55, 0.8, s.noise(p, 2.0, detail=3.0)), 0.45), base, (0.11, 0.045, 0.022))
+    warped = s.offset(p, s.mul(s.noise_color(p, 3.0, detail=2.0), 0.45))
+    cracks = s.sub(1.0, s.smooth(0.0, 0.018, s.voronoi(warped, 9.0, 'DISTANCE_TO_EDGE', 1.0, 'Distance')))
+    hot = s.smooth(0.35, 1.0, heat)
+    glow = s.clamp01(s.add(s.mul(hot, 0.95), s.mul(cracks, s.mul(s.smooth(0.05, 0.6, heat), 0.8))))
+    base = s.mix(glow, base, (0.95, 0.42, 0.1))
+    rough = s.remap(flow, 0.3, 0.7, 0.16, 0.42)
+    height = s.sub(flow, s.mul(cracks, 0.4))
+    return s.finish(base, rough, height=height, bump=0.35, bump_distance=0.006, metallic=0.35, emission=glow, emission_color=EMBER, emission_strength=4.0, bake_size=bake_size)
+
+
+def drip_mesh(bm, layer, x, y, top, bottom, width, rng, heat_floor=0.0, sides=6):
+    length = top - bottom
+    rings = max(3, int(length / 0.09))
+    phase, freq, sway = rng.uniform(0.0, 6.28), rng.uniform(5.0, 11.0), rng.uniform(-0.04, 0.04)
+    loops = []
+    for k in range(rings + 1):
+        t = k / rings
+        w = width * (1.0 - 0.55 * t ** 0.8) * (1.0 + 0.16 * math.sin(t * freq + phase))
+        w *= 1.0 + 0.55 * math.exp(-((t - 0.86) / 0.08) ** 2)
+        if k == 0:
+            w *= 0.4
+        cx = x + sway * math.sin(t * 3.0 + phase)
+        u = max(0.0, min(1.0, (t - 0.7) / 0.3))
+        heat = max(heat_floor * t * t, u * u * (3.0 - 2.0 * u))
+        loop = []
+        for j in range(sides):
+            a = 2.0 * math.pi * j / sides
+            v = bm.verts.new((cx + math.cos(a) * w, y + math.sin(a) * 0.62 * w, top - length * t))
+            v[layer] = heat
+            loop.append(v)
+        loops.append(loop)
+    tip = bm.verts.new((x, y, bottom - 0.5 * width))
+    tip[layer] = 1.0
+    bm.faces.new(list(reversed(loops[0])))
+    for a, b in zip(loops, loops[1:]):
+        for j in range(sides):
+            bm.faces.new((a[j], a[(j + 1) % sides], b[(j + 1) % sides], b[j]))
+    for j in range(sides):
+        bm.faces.new((loops[-1][j], loops[-1][(j + 1) % sides], tip))
+
+
+def fascia_drips(side, length, flip, rng):
+    bm = bmesh.new()
+    layer = bm.verts.layers.float.new('Heat')
+    facing = side in (1, 2)
+    lava = F['ForgePitSurface']
+    clamps = [(j + 0.5) * length / CLAMPS_PER_SIDE for j in range(CLAMPS_PER_SIDE)]
+    x = 0.7 + rng.uniform(0.0, 0.3)
+    while x < length - 0.7:
+        drip_mesh(bm, layer, x, 0.07 * flip, -2.42, rng.uniform(lava + 0.05, lava + 0.3), rng.uniform(0.05, 0.13), rng, heat_floor=0.35, sides=5)
+        x += rng.uniform(0.2, 0.5) if facing else rng.uniform(0.7, 1.5)
+    tops = (F['ForgeRingHeights'][0] - 0.2, -0.66, -1.72)
+    for _ in range(14 if facing else 4):
+        x = rng.uniform(0.8, length - 0.8)
+        if any(abs(x - c) < 0.32 for c in clamps):
+            continue
+        top = rng.choice(tops)
+        bottom = max(lava + 0.04, top - rng.uniform(0.6, 2.6))
+        drip_mesh(bm, layer, x, 0.075 * flip, top, bottom, rng.uniform(0.09, 0.2), rng, heat_floor=0.15 if bottom < -2.5 else 0.0)
+    for c in clamps:
+        if rng.random() < (0.55 if facing else 0.2):
+            drip_mesh(bm, layer, c + rng.uniform(-0.12, 0.12), 0.13 * flip, -0.9, rng.uniform(lava + 0.06, -1.6), rng.uniform(0.1, 0.17), rng, heat_floor=0.1)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    return bm
 
 
 def build_anchors(m, target, rng):
@@ -768,6 +848,34 @@ def chain_link(m, target, rng):
     points = [Vector((straight + radius * math.cos(-0.5 * math.pi + k * math.pi / 4.0), radius * math.sin(-0.5 * math.pi + k * math.pi / 4.0), 0.0)) for k in range(5)]
     points += [Vector((-straight + radius * math.cos(0.5 * math.pi + k * math.pi / 4.0), radius * math.sin(0.5 * math.pi + k * math.pi / 4.0), 0.0)) for k in range(5)]
     return pk.tube(points, wire, target, m['chain'], 'ChainLink', resolution=3, sides=8, closed=True, rng=rng)
+
+
+def chain_crust(m, target, rng):
+    radius, straight, wire = 0.27, 0.26, 0.12
+    points = [Vector((straight + radius * math.cos(-0.5 * math.pi + k * math.pi / 4.0), radius * math.sin(-0.5 * math.pi + k * math.pi / 4.0), 0.0)) for k in range(5)]
+    points += [Vector((-straight + radius * math.cos(0.5 * math.pi + k * math.pi / 4.0), radius * math.sin(0.5 * math.pi + k * math.pi / 4.0), 0.0)) for k in range(5)]
+    link = pk.tube(points, wire, target, m['chain'], 'ChainLinkCrust', resolution=3, sides=8, closed=True, rng=rng)
+    bm = bmesh.new()
+    layer = bm.verts.layers.float.new('Heat')
+    lumps = []
+    for k in range(6):
+        a = rng.uniform(-0.6, 0.6) * math.pi
+        center = Vector((straight * 0.6 + radius * math.cos(a) * 0.95, radius * math.sin(a) * 0.95, rng.uniform(-0.04, 0.04)))
+        lumps.append(pk.ellipsoid_bm(center, (rng.uniform(0.1, 0.16), rng.uniform(0.09, 0.14), rng.uniform(0.12, 0.17)), segments=8, rings=5))
+    for side in (-1.0, 1.0):
+        for k in range(2):
+            y = side * (radius + rng.uniform(-0.04, 0.05))
+            drip_mesh(bm, layer, 0.0, 0.0, 0.0, -rng.uniform(0.25, 0.6), rng.uniform(0.06, 0.1), rng, heat_floor=0.2)
+            bmesh.ops.transform(bm, matrix=Matrix.Translation((straight + 0.12 + 0.08 * k, y, rng.uniform(-0.05, 0.05))) @ Matrix.Rotation(-0.5 * math.pi, 4, 'Y'), verts=[v for v in bm.verts if not v.tag])
+            for v in bm.verts:
+                v.tag = True
+    crust = pk.merge_bm(lumps)
+    crust_obj = kit.mesh_object('ChainCrustLumps', crust, target, m['slag'])
+    drips_obj = kit.mesh_object('ChainCrustDrips', bm, target, m['slag'])
+    for obj in (crust_obj, drips_obj):
+        pk.tag(obj, rng=rng)
+        kit.smooth_by_angle(obj, 50.0)
+    return kit.join([link, drips_obj, crust_obj], 'ChainLinkCrust')
 
 
 def blade_half_width(y):
@@ -867,6 +975,7 @@ def build(target):
         'bronze': pk.brass_material('ForgeBronze', tone=(0.5, 0.33, 0.15), bake_size=2048),
         'iron': pk.iron_material('ForgeIron', tone=(0.06, 0.056, 0.052), rust=0.5, bake_size=1024),
         'chain': chain_material('ChainIron', 1024),
+        'slag': slag_material('ForgeSlag', 1024),
     }
     m['curb'] = m['block']
     objects = build_floor(m, target, rng)
@@ -880,6 +989,7 @@ def build(target):
     objects.append(kit.join(build_bridges(m, target, rng), 'Bridges'))
     objects += build_sluice(m, target, rng)
     objects.append(chain_link(m, target, rng))
+    objects.append(chain_crust(m, target, random.Random(97)))
     for obj in objects:
         kit.select_only([obj])
         with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj], selected_editable_objects=[obj]):

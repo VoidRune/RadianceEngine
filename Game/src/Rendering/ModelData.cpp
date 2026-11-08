@@ -3,34 +3,53 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <thread>
 #include <type_traits>
+
+#include "zstd/zstd.h"
 
 namespace Game
 {
 	namespace
 	{
 		constexpr uint32_t FileMagic = 0x4C444F4D;
-		constexpr uint32_t FileVersion = 7;
+		constexpr uint32_t FileVersion = 8;
 		constexpr uint64_t MaxElements = 1ull << 28;
 		constexpr uint32_t MaxTextures = 4096;
 		constexpr uint32_t MaxTextureSize = 8192;
+		constexpr int WindowLog = 27;
+
+		template<typename T>
+		bool RawValue(std::ifstream& file, T& value)
+		{
+			static_assert(std::is_trivially_copyable_v<T>);
+			return bool(file.read(reinterpret_cast<char*>(&value), sizeof(value)));
+		}
 
 		class Writer
 		{
 		public:
-			explicit Writer(std::ofstream& file) : m_File(file) {}
+			Writer(std::ofstream& file, int level) : m_File(file), m_Context(ZSTD_createCCtx()), m_Buffer(ZSTD_CStreamOutSize())
+			{
+				ZSTD_CCtx_setParameter(m_Context, ZSTD_c_compressionLevel, level);
+				ZSTD_CCtx_setParameter(m_Context, ZSTD_c_windowLog, WindowLog);
+				ZSTD_CCtx_setParameter(m_Context, ZSTD_c_enableLongDistanceMatching, 1);
+				ZSTD_CCtx_setParameter(m_Context, ZSTD_c_nbWorkers, int(std::clamp(std::thread::hardware_concurrency(), 1u, 32u)));
+			}
+
+			~Writer() { ZSTD_freeCCtx(m_Context); }
 
 			template<typename T>
 			void Value(const T& value)
 			{
 				static_assert(std::is_trivially_copyable_v<T>);
-				m_File.write(reinterpret_cast<const char*>(&value), sizeof(value));
+				Write(&value, sizeof(value));
 			}
 
 			void String(const std::string& text)
 			{
 				Value(uint32_t(text.size()));
-				m_File.write(text.data(), std::streamsize(text.size()));
+				Write(text.data(), text.size());
 			}
 
 			template<typename T>
@@ -38,23 +57,57 @@ namespace Game
 			{
 				static_assert(std::is_trivially_copyable_v<T>);
 				Value(uint64_t(values.size()));
-				m_File.write(reinterpret_cast<const char*>(values.data()), std::streamsize(values.size() * sizeof(T)));
+				Write(values.data(), values.size() * sizeof(T));
+			}
+
+			bool Finish()
+			{
+				ZSTD_inBuffer input{ nullptr, 0, 0 };
+				size_t remaining = 0;
+				do
+				{
+					ZSTD_outBuffer output{ m_Buffer.data(), m_Buffer.size(), 0 };
+					remaining = ZSTD_compressStream2(m_Context, &output, &input, ZSTD_e_end);
+					if (ZSTD_isError(remaining))
+						return false;
+					m_File.write(reinterpret_cast<const char*>(m_Buffer.data()), std::streamsize(output.pos));
+				} while (remaining != 0);
+				return m_Ok && bool(m_File);
 			}
 
 		private:
+			void Write(const void* data, size_t size)
+			{
+				ZSTD_inBuffer input{ data, size, 0 };
+				while (m_Ok && input.pos < input.size)
+				{
+					ZSTD_outBuffer output{ m_Buffer.data(), m_Buffer.size(), 0 };
+					m_Ok = !ZSTD_isError(ZSTD_compressStream2(m_Context, &output, &input, ZSTD_e_continue));
+					m_File.write(reinterpret_cast<const char*>(m_Buffer.data()), std::streamsize(output.pos));
+				}
+			}
+
 			std::ofstream& m_File;
+			ZSTD_CCtx* m_Context;
+			std::vector<uint8_t> m_Buffer;
+			bool m_Ok = true;
 		};
 
 		class Reader
 		{
 		public:
-			explicit Reader(std::ifstream& file) : m_File(file) {}
+			explicit Reader(std::ifstream& file) : m_File(file), m_Context(ZSTD_createDCtx()), m_Buffer(ZSTD_DStreamInSize())
+			{
+				ZSTD_DCtx_setParameter(m_Context, ZSTD_d_windowLogMax, WindowLog);
+			}
+
+			~Reader() { ZSTD_freeDCtx(m_Context); }
 
 			template<typename T>
 			bool Value(T& value)
 			{
 				static_assert(std::is_trivially_copyable_v<T>);
-				return bool(m_File.read(reinterpret_cast<char*>(&value), sizeof(value)));
+				return Read(&value, sizeof(value));
 			}
 
 			bool String(std::string& text)
@@ -63,7 +116,7 @@ namespace Game
 				if (!Value(size) || size > 4096)
 					return false;
 				text.resize(size);
-				return bool(m_File.read(text.data(), std::streamsize(size)));
+				return Read(text.data(), size);
 			}
 
 			template<typename T>
@@ -73,11 +126,33 @@ namespace Game
 				if (!Value(count) || count > MaxElements)
 					return false;
 				values.resize(size_t(count));
-				return bool(m_File.read(reinterpret_cast<char*>(values.data()), std::streamsize(count * sizeof(T))));
+				return Read(values.data(), size_t(count) * sizeof(T));
 			}
 
 		private:
+			bool Read(void* data, size_t size)
+			{
+				ZSTD_outBuffer output{ data, size, 0 };
+				while (output.pos < output.size)
+				{
+					if (m_Input.pos == m_Input.size)
+					{
+						m_File.read(reinterpret_cast<char*>(m_Buffer.data()), std::streamsize(m_Buffer.size()));
+						m_Input = { m_Buffer.data(), size_t(m_File.gcount()), 0 };
+						if (m_Input.size == 0)
+							return false;
+					}
+					const size_t result = ZSTD_decompressStream(m_Context, &output, &m_Input);
+					if (ZSTD_isError(result) || (result == 0 && output.pos < output.size))
+						return false;
+				}
+				return true;
+			}
+
 			std::ifstream& m_File;
+			ZSTD_DCtx* m_Context;
+			std::vector<uint8_t> m_Buffer;
+			ZSTD_inBuffer m_Input{ nullptr, 0, 0 };
 		};
 
 		bool IsBlockCompressed(TextureFormat format)
@@ -147,7 +222,7 @@ namespace Game
 		return total;
 	}
 
-	bool SaveModelLibrary(const char* path, const ModelLibraryData& data)
+	bool SaveModelLibrary(const char* path, const ModelLibraryData& data, int compressionLevel)
 	{
 		const std::filesystem::path target(path);
 		std::error_code error;
@@ -158,10 +233,10 @@ namespace Game
 			std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
 			if (!file)
 				return false;
-			Writer out(file);
-			out.Value(FileMagic);
-			out.Value(FileVersion);
-			out.Value(data.SourceHash);
+			file.write(reinterpret_cast<const char*>(&FileMagic), sizeof(FileMagic));
+			file.write(reinterpret_cast<const char*>(&FileVersion), sizeof(FileVersion));
+			file.write(reinterpret_cast<const char*>(&data.SourceHash), sizeof(data.SourceHash));
+			Writer out(file, compressionLevel);
 
 			out.Value(uint32_t(data.Skeletons.size()));
 			for (const ModelSkeleton& skeleton : data.Skeletons)
@@ -237,7 +312,7 @@ namespace Game
 				out.Value(environment.SunDirection);
 				out.Value(environment.SunIrradiance);
 			}
-			if (!file)
+			if (!out.Finish())
 				return false;
 		}
 		std::filesystem::rename(temporary, target, error);
@@ -247,10 +322,9 @@ namespace Game
 	bool ReadModelLibraryHash(const char* path, uint64_t& hash)
 	{
 		std::ifstream file(path, std::ios::binary);
-		Reader in(file);
 		uint32_t magic = 0;
 		uint32_t version = 0;
-		return file && in.Value(magic) && magic == FileMagic && in.Value(version) && version == FileVersion && in.Value(hash);
+		return file && RawValue(file, magic) && magic == FileMagic && RawValue(file, version) && version == FileVersion && RawValue(file, hash);
 	}
 
 	bool LoadModelLibrary(const char* path, ModelLibraryData& data)
@@ -258,11 +332,11 @@ namespace Game
 		std::ifstream file(path, std::ios::binary);
 		if (!file)
 			return false;
-		Reader in(file);
 		uint32_t magic = 0;
 		uint32_t version = 0;
-		if (!in.Value(magic) || magic != FileMagic || !in.Value(version) || version != FileVersion || !in.Value(data.SourceHash))
+		if (!RawValue(file, magic) || magic != FileMagic || !RawValue(file, version) || version != FileVersion || !RawValue(file, data.SourceHash))
 			return false;
+		Reader in(file);
 
 		uint32_t skeletons = 0;
 		if (!in.Value(skeletons) || skeletons > 64)

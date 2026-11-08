@@ -17,7 +17,10 @@
 
 namespace
 {
-	constexpr uint32_t BakerVersion = 9;
+	constexpr uint32_t BakerVersion = 10;
+	constexpr int DevCompressionLevel = 3;
+	constexpr int ShipCompressionLevel = 19;
+	constexpr float ShipEntropyLambda = 0.5f;
 
 	uint64_t Hash(uint64_t hash, const void* data, size_t size)
 	{
@@ -151,7 +154,7 @@ namespace
 			std::printf("  material %s, %.2f m\n", material.Name.c_str(), material.Size);
 	}
 
-	int BakePack(const std::filesystem::path& assets, const Game::ModelPack& pack, bool force, bool swatches)
+	int BakePack(const std::filesystem::path& assets, const Game::ModelPack& pack, bool force, bool swatches, bool ship)
 	{
 		using namespace Game;
 		const uint64_t sourceHash = HashPack(assets, pack);
@@ -182,7 +185,7 @@ namespace
 			ReportSwatches(library);
 			return 0;
 		}
-		if (!SaveModelLibrary(pack.Path, library))
+		if (!SaveModelLibrary(pack.Path, library, ship ? ShipCompressionLevel : DevCompressionLevel))
 		{
 			std::fprintf(stderr, "ModelBaker : error : can't write %s\n", pack.Path);
 			return 1;
@@ -203,6 +206,7 @@ int main(int argc, char** argv)
 	bool force = false;
 	bool swatches = false;
 	bool list = false;
+	bool ship = false;
 	std::string skyPath;
 	std::vector<std::string> folders;
 	for (int i = 1; i < argc; i++)
@@ -213,6 +217,8 @@ int main(int argc, char** argv)
 			swatches = true;
 		else if (std::string_view(argv[i]) == "--list")
 			list = true;
+		else if (std::string_view(argv[i]) == "--ship")
+			ship = force = true;
 		else if (std::string_view(argv[i]) == "--export-sky" && i + 1 < argc)
 			skyPath = std::filesystem::absolute(argv[++i]).string();
 		else
@@ -220,7 +226,7 @@ int main(int argc, char** argv)
 	}
 	if (folders.size() != 2)
 	{
-		std::fprintf(stderr, "usage: ModelBaker <assets folder> <game folder> [--force] [--swatches] [--list] [--export-sky file.hdr]\n");
+		std::fprintf(stderr, "usage: ModelBaker <assets folder> <game folder> [--force] [--ship] [--swatches] [--list] [--export-sky file.hdr]\n");
 		return 1;
 	}
 	if (std::string message; !CheckSwatchTables(message))
@@ -269,12 +275,12 @@ int main(int argc, char** argv)
 		std::fprintf(stderr, "ModelBaker : error : no environment source to export\n");
 		return 1;
 	}
-	InitTextureEncoders();
+	InitTextureEncoders(ship ? ShipEntropyLambda : 0.0f);
 	for (const ModelPack& pack : ModelPacks)
 	{
 		if (swatches && !UsesSwatches(pack))
 			continue;
-		if (const int result = BakePack(assets, pack, force, swatches); result != 0)
+		if (const int result = BakePack(assets, pack, force, swatches, ship); result != 0)
 			return result;
 	}
 	return 0;

@@ -421,9 +421,10 @@ void main()
 	if ((flags & MeshFlow) != 0u)
 	{
 		float across = (inWorld.x + inWorld.z) * 0.7071;
-		float n = VeinNoise(vec3(across * 1.6, inWorld.y * 0.55 + time * 1.9, 3.0)) * 0.6 + VeinNoise(vec3(across * 4.2, inWorld.y * 1.3 + time * 3.1, 11.0)) * 0.4;
+		float along = -inUv.x;
+		float n = VeinNoise(vec3(across * 1.6, along * 0.55 + time * 1.9, 3.0)) * 0.6 + VeinNoise(vec3(across * 4.2, along * 1.3 + time * 3.1, 11.0)) * 0.4;
 		float hot = smoothstep(0.45, 0.85, n);
-		float crusted = smoothstep(0.58, 0.8, VeinNoise(vec3(across * 2.6, inWorld.y * 0.8 + time * 2.4, 7.0)));
+		float crusted = smoothstep(0.58, 0.8, VeinNoise(vec3(across * 2.6, along * 0.8 + time * 2.4, 7.0)));
 		float body = inColor.a;
 		albedo *= 1.0 - body;
 		heat += (FlowDeep + FlowHot * hot) * (body * (1.0 - 0.75 * crusted) * (0.86 + 0.28 * max(-pc.Eye.w, 0.0)));

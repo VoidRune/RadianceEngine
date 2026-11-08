@@ -158,6 +158,16 @@ namespace Game
 			Shapes.push_back(MakeBox(gate, { SluiceHalfWidth, 0.5f * SluiceThickness }, 0.0f, Block::Movement));
 			for (const float side : { -1.0f, 1.0f })
 				Shapes.push_back(MakeBox(gate + Vec2(side * SluicePostX, 0.0f), SluicePostHalf, 0.0f, Block::Movement));
+			for (const Vec2 out : { Vec2(0.0f, 1.0f), Vec2(1.0f, 0.0f), Vec2(0.0f, -1.0f), Vec2(-1.0f, 0.0f) })
+			{
+				const Vec2 anchor = ForgeCenter + out * (ForgeReach - AnchorInset);
+				Shapes.push_back(MakeBox(anchor, { AnchorHalf, AnchorHalf }, 0.25f * Pi, Block::Movement));
+				Shapes.push_back(MakeCircle(anchor + out * ChainFootReach, ChainFootRadius, Block::Movement));
+			}
+			for (const ForgeCollider& collider : ForgePitColliders)
+				Shapes.push_back(collider.Half.y > 0.0f ? MakeBox(ForgeCenter + collider.Center, collider.Half, collider.Yaw, Block::Movement) : MakeCircle(ForgeCenter + collider.Center, collider.Half.x, Block::Movement));
+			for (size_t i = 0; i < std::size(ForgeIslandCenters); i++)
+				Shapes.push_back(MakeCircle(ForgeCenter + ForgeIslandCenters[i], ForgeIslandRadii[i] * 0.85f, Block::Movement));
 		}
 		Boundaries.clear();
 		if (Rounded)

@@ -46,6 +46,48 @@ namespace Game
 	inline constexpr float CurbWidth = 0.3f;
 	inline constexpr float CurbTop = 0.24f;
 	inline constexpr float AnchorTop = 1.25f;
+	inline constexpr float AnchorInset = 0.45f;
+	inline constexpr float AnchorHalf = 0.86f;
+	inline constexpr float ChainFootRadius = 0.5f;
+	inline constexpr float ChainFootReach = 1.3f;
+
+	struct ForgeCollider
+	{
+		Vec2 Center;
+		Vec2 Half;
+		float Yaw;
+	};
+
+	inline constexpr ForgeCollider ForgePitColliders[] = {
+		{ { 6.9f, 15.35f }, { 3.9f, 0.0f }, 0.0f },
+		{ { -6.9f, 15.35f }, { 3.9f, 0.0f }, 0.0f },
+		{ { 0.0f, 28.6f }, { 7.75f, 3.75f }, 0.0f },
+		{ { 11.5f, 21.0f }, { 1.6f, 1.6f }, 0.0f },
+		{ { -11.5f, 21.0f }, { 1.6f, 1.6f }, 0.0f },
+		{ { 25.9f, 16.2f }, { 6.6f, 0.0f }, 0.0f },
+		{ { -25.9f, 16.2f }, { 6.3f, 0.0f }, 0.0f },
+		{ { 30.8f, 4.0f }, { 6.0f, 0.0f }, 0.0f },
+		{ { -30.6f, -2.3f }, { 5.6f, 0.0f }, 0.0f },
+		{ { 22.6f, -20.6f }, { 3.8f, 0.0f }, 0.0f },
+		{ { -23.2f, -12.9f }, { 3.6f, 0.0f }, 0.0f },
+		{ { 24.5f, -9.8f }, { 3.5f, 0.0f }, 0.0f },
+		{ { -24.5f, 7.0f }, { 3.5f, 0.0f }, 0.0f },
+		{ { 22.8f, -3.0f }, { 2.3f, 0.0f }, 0.0f },
+		{ { -20.6f, -6.6f }, { 2.3f, 0.0f }, 0.0f },
+		{ { 15.5f, -14.0f }, { 3.3f, 4.9f }, 0.0f },
+		{ { 19.5f, -12.0f }, { 1.4f, 0.0f }, 0.0f },
+		{ { -16.0f, -12.5f }, { 1.4f, 0.0f }, 0.0f },
+		{ { 17.6f, 11.0f }, { 2.15f, 1.0f }, 0.5585f },
+		{ { -17.6f, 11.0f }, { 2.15f, 1.0f }, -0.5585f },
+		{ { 4.0f, -27.0f }, { 1.1f, 6.0f }, 0.0f },
+		{ { -18.6f, 1.0f }, { 1.9f, 0.0f }, 0.0f },
+		{ { -11.5f, -10.5f }, { 1.6f, 0.0f }, 0.0f },
+		{ { -15.8f, -5.2f }, { 1.3f, 0.0f }, 0.0f },
+		{ { 12.2f, -10.0f }, { 1.8f, 0.0f }, 0.0f },
+		{ { -7.0f, -18.0f }, { 2.2f, 0.0f }, 0.0f },
+		{ { 7.0f, -18.0f }, { 2.2f, 0.0f }, 0.0f },
+		{ { 0.0f, -19.6f }, { 2.0f, 0.0f }, 0.0f },
+	};
 	inline constexpr Vec2 ForgeIslandCenters[] = { { 17.5f, -15.5f }, { 25.5f, -1.5f }, { -17.5f, -14.5f }, { 9.0f, -22.0f }, { -24.5f, 8.0f }, { 21.5f, 4.0f }, { -9.5f, -22.5f } };
 	inline constexpr float ForgeIslandRadii[] = { 6.0f, 4.5f, 5.2f, 2.4f, 2.6f, 1.8f, 2.0f };
 	inline constexpr float ForgeIslandTops[] = { -1.6f, -1.2f, -1.4f, -2.1f, -1.8f, -2.3f, -2.2f };

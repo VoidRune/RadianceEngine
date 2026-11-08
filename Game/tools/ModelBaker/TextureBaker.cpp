@@ -7,6 +7,8 @@
 
 #include "tinygltf/stb_image.h"
 #include "bc7enc/bc7enc.h"
+#include "bc7enc/bc7decomp.h"
+#include "bc7enc/ert.h"
 #define RGBCX_IMPLEMENTATION
 #include "bc7enc/rgbcx.h"
 
@@ -14,6 +16,9 @@ namespace Game
 {
 	namespace
 	{
+		constexpr uint32_t EntropyChunkBlocks = 4096;
+		constexpr uint32_t EntropyLookback = 128;
+		float s_EntropyLambda = 0.0f;
 		struct FloatImage
 		{
 			uint32_t Width = 0;
@@ -130,6 +135,59 @@ namespace Game
 				worker.join();
 		}
 
+		bool UnpackBc7(const void* block, ert::color_rgba* pixels, uint32_t, void*)
+		{
+			return bc7decomp::unpack_bc7(block, reinterpret_cast<bc7decomp::color_rgba*>(pixels));
+		}
+
+		bool UnpackBc4(const void* block, ert::color_rgba* pixels, uint32_t, void*)
+		{
+			std::memset(pixels, 0, 16 * sizeof(ert::color_rgba));
+			rgbcx::unpack_bc4(block, pixels[0].m_c, 4);
+			return true;
+		}
+
+		void ReduceEntropy(uint8_t* blocks, uint32_t count, TextureFormat format, const std::vector<ert::color_rgba>& pixels)
+		{
+			const float lambda = s_EntropyLambda;
+			if (lambda <= 0.0f || count < 16)
+				return;
+			ert::reduce_entropy_params params;
+			params.m_lambda = lambda;
+			params.m_lookback_window_size = EntropyLookback;
+			params.m_try_two_matches = true;
+			const uint32_t chunks = (count + EntropyChunkBlocks - 1) / EntropyChunkBlocks;
+			if (format == TextureFormat::Bc5)
+			{
+				params.m_smooth_block_max_mse_scale = 10.0f + 20.0f * std::min(1.0f, lambda / 4.0f);
+				params.m_color_weights[1] = params.m_color_weights[2] = params.m_color_weights[3] = 0;
+				std::vector<ert::color_rgba> red(pixels.size());
+				std::vector<ert::color_rgba> green(pixels.size());
+				for (size_t i = 0; i < pixels.size(); i++)
+				{
+					red[i] = { { pixels[i].m_c[0], 0, 0, 0 } };
+					green[i] = { { pixels[i].m_c[1], 0, 0, 0 } };
+				}
+				ParallelFor(chunks, [&](uint32_t chunk)
+				{
+					const uint32_t first = chunk * EntropyChunkBlocks;
+					const uint32_t size = std::min(EntropyChunkBlocks, count - first);
+					uint32_t modified = 0;
+					ert::reduce_entropy(blocks + size_t(first) * 16, size, 16, 8, 4, 4, 1, &red[size_t(first) * 16], params, modified, UnpackBc4, nullptr);
+					ert::reduce_entropy(blocks + size_t(first) * 16 + 8, size, 16, 8, 4, 4, 1, &green[size_t(first) * 16], params, modified, UnpackBc4, nullptr);
+				});
+				return;
+			}
+			params.m_smooth_block_max_mse_scale = 15.0f + 35.0f * std::min(1.0f, lambda / 4.0f);
+			ParallelFor(chunks, [&](uint32_t chunk)
+			{
+				const uint32_t first = chunk * EntropyChunkBlocks;
+				const uint32_t size = std::min(EntropyChunkBlocks, count - first);
+				uint32_t modified = 0;
+				ert::reduce_entropy(blocks + size_t(first) * 16, size, 16, 16, 4, 4, 4, &pixels[size_t(first) * 16], params, modified, UnpackBc7, nullptr);
+			});
+		}
+
 		void EncodeLevel(const std::vector<uint8_t>& rgba, uint32_t width, uint32_t height, TextureFormat format, std::vector<uint8_t>& output)
 		{
 			if (format == TextureFormat::Rgba8 || format == TextureFormat::Rgba8Srgb)
@@ -139,8 +197,10 @@ namespace Game
 			}
 			const uint32_t blocksX = (width + 3) / 4;
 			const uint32_t blocksY = (height + 3) / 4;
+			const uint32_t count = blocksX * blocksY;
 			const size_t base = output.size();
-			output.resize(base + size_t(blocksX) * blocksY * 16);
+			output.resize(base + size_t(count) * 16);
+			std::vector<ert::color_rgba> pixels(size_t(count) * 16);
 			bc7enc_compress_block_params params;
 			bc7enc_compress_block_params_init(&params);
 			params.m_uber_level = 1;
@@ -148,9 +208,9 @@ namespace Game
 				bc7enc_compress_block_params_init_linear_weights(&params);
 			ParallelFor(blocksY, [&](uint32_t by)
 			{
-				uint8_t block[64];
 				for (uint32_t bx = 0; bx < blocksX; bx++)
 				{
+					uint8_t* block = pixels[(size_t(by) * blocksX + bx) * 16].m_c;
 					for (uint32_t y = 0; y < 4; y++)
 						for (uint32_t x = 0; x < 4; x++)
 						{
@@ -165,6 +225,7 @@ namespace Game
 						bc7enc_compress_block(target, block, &params);
 				}
 			});
+			ReduceEntropy(&output[base], count, format, pixels);
 		}
 
 		ModelTexture Encode(const std::string& name, const std::vector<std::vector<uint8_t>>& levels, uint32_t width, uint32_t height, TextureFormat format, bool repeat)
@@ -231,8 +292,9 @@ namespace Game
 		return image;
 	}
 
-	void InitTextureEncoders()
+	void InitTextureEncoders(float entropyLambda)
 	{
+		s_EntropyLambda = entropyLambda;
 		bc7enc_compress_block_init();
 		rgbcx::init();
 	}

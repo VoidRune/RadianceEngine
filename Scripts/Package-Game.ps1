@@ -25,6 +25,9 @@ foreach ($file in $files) {
     }
 }
 
+$baker = Join-Path $root "bin\windows-x86_64\ModelBaker\ModelBaker.exe"
+if (-not (Test-Path $baker)) { throw "Missing $baker - build the Dist configuration first" }
+
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 if (Test-Path $zip) { Remove-Item $zip -Force }
 New-Item -ItemType Directory -Force $stage | Out-Null
@@ -34,6 +37,9 @@ foreach ($file in $files) {
 }
 Copy-Item (Join-Path $source "res") $stage -Recurse
 Copy-Item (Join-Path $root "LICENSE") $stage
+
+& $baker (Join-Path $root "Game\assets") $stage --ship
+if ($LASTEXITCODE -ne 0) { throw "ModelBaker failed to bake the ship model packs" }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $true)

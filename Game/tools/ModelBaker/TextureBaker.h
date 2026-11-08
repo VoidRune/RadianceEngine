@@ -39,6 +39,6 @@ namespace Game
 		ModelTexture Surface;
 	};
 
-	void InitTextureEncoders();
+	void InitTextureEncoders(float entropyLambda);
 	PbrBakeOutput BakePbrTextures(const PbrBakeInput& input);
 }

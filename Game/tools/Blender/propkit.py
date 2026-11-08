@@ -468,7 +468,7 @@ def stone_material(name, light=(0.38, 0.355, 0.31), dark=(0.2, 0.185, 0.155), mo
     return s.finish(base, rough, height=height, bump=0.22, bump_distance=0.012, bake_size=bake_size)
 
 
-def masonry_material(name, light=(0.36, 0.33, 0.29), dark=(0.17, 0.155, 0.135), brick=(0.32, 0.16), mortar=(0.11, 0.1, 0.085), soot=0.0, bake_size=2048, radius=None):
+def masonry_material(name, light=(0.36, 0.33, 0.29), dark=(0.17, 0.155, 0.135), brick=(0.32, 0.16), mortar=(0.11, 0.1, 0.085), soot=0.0, bake_size=2048, radius=None, glow=0.0, glow_color=(1.0, 0.42, 0.12), glow_strength=3.0, relief=None):
     s = kit.Shader(name)
     p = local(s)
     x, y, z = s.separate(p)
@@ -500,7 +500,18 @@ def masonry_material(name, light=(0.36, 0.33, 0.29), dark=(0.17, 0.155, 0.135), 
     base = s.mix(s.mul(edge, 0.25), base, (light[0], light[1], light[2]))
     rough = s.remap(mid, 0.3, 0.7, 0.78, 0.92)
     height = s.add(s.mul(s.sub(1.0, s.smooth(0.2, 0.6, joints)), -0.6), s.mul(mid, 0.4))
-    return s.finish(base, rough, height=height, bump=0.35, bump_distance=0.012, bake_size=bake_size)
+    bump = 0.35
+    if relief:
+        chips = s.mul(wear(s, 0.04), s.smooth(0.45, 0.65, s.noise(p, 5.0, detail=3.0)))
+        height = s.sub(s.add(s.mul(s.smooth(0.2, 0.6, joints), -relief), s.mul(mid, 0.5)), s.mul(chips, 0.5))
+        base = s.mix(s.mul(chips, 0.5), base, (light[0] * 1.3, light[1] * 1.3, light[2] * 1.3))
+        rough = s.lerp(s.mul(chips, 0.6), rough, 0.7)
+        bump = 0.9
+    if glow > 0.0:
+        lit = s.mul(s.mul(s.smooth(0.45, 0.8, joints), s.smooth(0.58, 0.72, s.noise(p, 0.55, detail=2.0))), glow)
+        base = s.mix(lit, base, (0.9, 0.38, 0.1))
+        return s.finish(base, rough, height=height, bump=bump, bump_distance=0.02, emission=lit, emission_color=glow_color, emission_strength=glow_strength, bake_size=bake_size)
+    return s.finish(base, rough, height=height, bump=bump, bump_distance=0.012 if bump < 0.5 else 0.02, bake_size=bake_size)
 
 
 def leather_material(name, tone=(0.22, 0.09, 0.05), bake_size=512):
