@@ -386,6 +386,7 @@ namespace Game
 		void DrawProjectile(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawEffect(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawTelegraph(WorldRenderer& renderer, const EntityState& entity, float progress) const;
+		bool DrawSpellMarkFor(WorldRenderer& renderer, AbilityId ability, const glm::vec3& base, float radius, float progress, float age, uint32_t seed, float fade = 1.0f) const;
 		void DrawBoss(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawChest(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawGateway(WorldRenderer& renderer, const EntityState& entity) const;
@@ -448,6 +449,7 @@ namespace Game
 		void DrawTeamChoice(UiRect& area);
 		void SetBrawlTeams(uint8_t teams);
 		void TidyBrawlSeats();
+		void DefaultBrawlBots();
 		void AddBrawlBot(int delta);
 		std::array<uint32_t, MaxTeams> CountTeamMembers() const;
 		static constexpr int SeatPayload = 32;
@@ -617,6 +619,9 @@ namespace Game
 		MatchRules m_ArenaRules;
 		MapKind m_RoyaleMap = MapKind::Ashlands;
 		MatchRules m_BrawlRules;
+		uint32_t m_SoloBots = 1;
+		uint32_t m_AutoBots = 0;
+		bool m_BotsChosen = false;
 		int m_BrawlArena = 0;
 		int m_GateTab = 0;
 		CollapsePlan m_SeenPlan;

@@ -47,6 +47,8 @@ const float DyeFloor = 0.014;
 const float TrimLight = 0.3;
 const float TrimGlow = 0.12;
 const float RimPower = 3.5;
+const float PlayerRimPower = 3.5;
+const float PlayerRimWhite = 0.15;
 const float CrystalTranslucency = 0.85;
 const float CharDepth = 3.0;
 const float TwoToneLow = 0.1;
@@ -623,8 +625,18 @@ void main()
 		n = -n;
 	if (!metal && (flags & MeshHeated) == 0u && inAccent.a > 0.0)
 	{
-		float facing = clamp(dot(n, normalize(pc.Eye.xyz - inWorld)), 0.0, 1.0);
-		heat += inAccent.rgb * (pow(1.0 - facing, RimPower) * inAccent.a);
+		vec3 toEye = normalize(pc.Eye.xyz - inWorld);
+		if ((flags & MeshSkinned) != 0u)
+		{
+			float edge = 1.0 - abs(dot(geometric, toEye));
+			vec3 rim = mix(inAccent.rgb, vec3(max(max(inAccent.r, inAccent.g), inAccent.b)), PlayerRimWhite);
+			heat += rim * (pow(edge, PlayerRimPower) * inAccent.a);
+		}
+		else
+		{
+			float facing = clamp(dot(n, toEye), 0.0, 1.0);
+			heat += inAccent.rgb * (pow(1.0 - facing, RimPower) * inAccent.a);
+		}
 	}
 	if ((material.Flags & MaterialPbr) != 0u)
 		roughness = FilterRoughness(n, roughness);

@@ -59,6 +59,11 @@ namespace Game
 		Caustic,
 		Nova,
 		Void,
+		CometMark,
+		StormMark,
+		VoidMark,
+		FirebombMark,
+		Contact,
 	};
 
 	enum class ParticleAlign : uint8_t

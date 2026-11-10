@@ -1633,6 +1633,29 @@ namespace Game
 		renderer.DrawDecal(decal);
 	}
 
+	GroundDecal SpellMarkDecal(const SpellMark& mark)
+	{
+		static constexpr DecalShape Shapes[] = { DecalShape::CometMark, DecalShape::StormMark, DecalShape::VoidMark, DecalShape::FirebombMark };
+		static constexpr glm::vec4 Shades[] = { { 0.03f, 0.016f, 0.01f, 1.0f }, { 0.012f, 0.016f, 0.04f, 0.85f }, { 0.018f, 0.005f, 0.04f, 1.0f }, { 0.035f, 0.02f, 0.012f, 1.0f } };
+		const float extent = mark.Radius + 0.4f;
+		GroundDecal decal;
+		decal.Center = mark.Center;
+		decal.Yaw = mark.Yaw;
+		decal.Extent = glm::vec2(extent);
+		decal.Depth = 0.9f;
+		decal.Shape = Shapes[size_t(mark.Kind)];
+		decal.Color = glm::vec4(mark.Color * mark.Intensity, mark.Fade);
+		decal.Tint = Shades[size_t(mark.Kind)] * glm::vec4(1.0f, 1.0f, 1.0f, mark.Fade);
+		decal.Params = glm::vec4(mark.Progress, mark.Appear, mark.Radius / extent, 0.0f);
+		decal.Seed = mark.Seed;
+		return decal;
+	}
+
+	void DrawSpellMark(WorldRenderer& renderer, const SpellMark& mark)
+	{
+		renderer.DrawDecal(SpellMarkDecal(mark));
+	}
+
 	void DrawGroundRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float intensity, float thickness, float dashes, float spin, uint32_t pattern)
 	{
 		GroundDecal decal;
@@ -1655,6 +1678,18 @@ namespace Game
 		decal.Depth = 0.5f;
 		decal.Shape = DecalShape::Glow;
 		decal.Color = glm::vec4(color * intensity, 1.0f);
+		renderer.DrawDecal(decal);
+	}
+
+	void DrawContactShadow(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength)
+	{
+		GroundDecal decal;
+		decal.Center = center;
+		decal.Extent = glm::vec2(radius);
+		decal.Depth = 0.3f;
+		decal.Shape = DecalShape::Contact;
+		decal.Color = glm::vec4(0.0f);
+		decal.Tint = glm::vec4(0.0f, 0.0f, 0.0f, strength);
 		renderer.DrawDecal(decal);
 	}
 

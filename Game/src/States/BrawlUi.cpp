@@ -1840,6 +1840,7 @@ namespace Game
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
 		TidyBrawlSeats();
+		DefaultBrawlBots();
 		uint32_t humans = 0;
 		for (const PlayerInfo& player : m_Client.GetPlayers())
 			humans += player.Bot ? 0u : 1u;
@@ -1970,6 +1971,29 @@ namespace Game
 			AddBrawlBot(-1);
 	}
 
+	void SessionState::DefaultBrawlBots()
+	{
+		if (m_BotsChosen)
+			return;
+		const uint32_t bots = CountRuleBots(m_BrawlRules);
+		if (bots != m_AutoBots)
+		{
+			m_BotsChosen = true;
+			return;
+		}
+		uint32_t humans = 0;
+		for (const PlayerInfo& player : m_Client.GetPlayers())
+			humans += player.Bot ? 0u : 1u;
+		const uint32_t want = humans <= 1 ? m_SoloBots : 0u;
+		if (want == bots)
+			return;
+		if (m_BrawlRules.Teams >= 2)
+			AddBrawlBot(int(want) - int(bots));
+		else
+			m_BrawlRules.Bots = uint8_t(want);
+		m_AutoBots = CountRuleBots(m_BrawlRules);
+	}
+
 	void SessionState::DrawArenaChoice(UiRect& area)
 	{
 		Ui& ui = m_App.GetUi();
@@ -2041,6 +2065,7 @@ namespace Game
 			return;
 		}
 		TidyBrawlSeats();
+		DefaultBrawlBots();
 		ui.Tabs(Ui::MakeId("gatetabs"), content.CutTop(36.0f), m_GateTab, GateTabs);
 		content.CutTop(12.0f);
 		const UiRect footer = content.CutBottom(96.0f);

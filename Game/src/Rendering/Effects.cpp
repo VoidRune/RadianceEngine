@@ -1249,7 +1249,7 @@ namespace Game
 			scorch(ground, radius * 0.85f, 9.0f, 0.8f);
 			cracks(ground, radius * 1.05f, 8.0f, 1.0f);
 			shock(radius * 1.1f, 0.45f);
-			runes(ground, radius, 0.7f, 0.0f, 1.0f, 1.15f);
+			Mark(SpellMarkDecal({ .Center = ground, .Radius = radius, .Color = { 1.0f, 0.42f, 0.12f }, .Intensity = 0.95f, .Kind = SpellMarkKind::Comet, .Seed = seed }), 0.75f, 0.01f, 1.0f, 1.15f, 0.25f);
 			Shockwave(ground, radius * 1.8f, 0.6f, 0.26f, 0.45f);
 			break;
 		case AbilityId::GravityWell:

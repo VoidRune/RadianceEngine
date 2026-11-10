@@ -282,7 +282,31 @@ namespace Game
 		uint32_t Seed = 0;
 	};
 
+	enum class SpellMarkKind : uint8_t
+	{
+		Comet,
+		Storm,
+		Void,
+		Firebomb,
+	};
+
+	struct SpellMark
+	{
+		glm::vec3 Center{ 0.0f };
+		float Radius = 1.0f;
+		float Yaw = 0.0f;
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 1.0f;
+		float Progress = -1.0f;
+		float Appear = 1.0f;
+		float Fade = 1.0f;
+		SpellMarkKind Kind = SpellMarkKind::Comet;
+		uint32_t Seed = 0;
+	};
+
 	float RingExtent(float radius, float thickness);
+	GroundDecal SpellMarkDecal(const SpellMark& mark);
+	void DrawSpellMark(WorldRenderer& renderer, const SpellMark& mark);
 
 	SpellMeshes RegisterSpellMeshes(WorldRenderer& renderer);
 	void DrawIceSpear(WorldRenderer& renderer, const SpellMeshes& meshes, const IceSpearLook& look, float time, uint32_t seed);
@@ -325,6 +349,7 @@ namespace Game
 	void DrawRuneCircle(WorldRenderer& renderer, const RuneCircle& circle);
 	void DrawGroundRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float intensity, float thickness, float dashes = 0.0f, float spin = 0.0f, uint32_t pattern = 0);
 	void DrawGroundGlow(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float intensity);
+	void DrawContactShadow(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength);
 	void DrawSectorTelegraph(WorldRenderer& renderer, const glm::vec3& apex, float facing, float reach, float halfArc, const glm::vec3& color, float intensity, float progress, float appear = 1.0f);
 	void DrawLaneTelegraph(WorldRenderer& renderer, const glm::vec3& start, float facing, float length, float width, const glm::vec3& color, float intensity, float progress, float appear = 1.0f);
 

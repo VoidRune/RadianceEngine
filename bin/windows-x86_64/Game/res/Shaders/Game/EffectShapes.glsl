@@ -22,6 +22,11 @@ const uint DecalFissure = 11u;
 const uint DecalCaustic = 12u;
 const uint DecalNova = 13u;
 const uint DecalVoid = 14u;
+const uint DecalCometMark = 15u;
+const uint DecalStormMark = 16u;
+const uint DecalVoidMark = 17u;
+const uint DecalFirebombMark = 18u;
+const uint DecalContact = 19u;
 
 const float Tau = 6.28318531;
 
@@ -139,6 +144,354 @@ float RuneCircle(vec2 uv, float pixel, float radius, float progress, float appea
 		glow *= 0.75 + 0.5 * progress;
 	}
 	return (glow + fill) * reveal;
+}
+
+float LightningBolt(vec2 uv, uint seed, float segments, float amplitude, float pixel);
+
+const uint RuneCounts[16] = uint[16](3u, 2u, 2u, 2u, 2u, 1u, 3u, 3u, 3u, 2u, 3u, 3u, 3u, 2u, 3u, 3u);
+
+const vec3 RuneDots[16] = vec3[16](
+	vec3(0.0), vec3(0.0), vec3(0.0, 0.0, 0.13), vec3(0.0), vec3(0.0), vec3(0.12, 0.0, 0.14), vec3(0.0), vec3(0.0, 0.35, 0.11),
+	vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.28, -0.45, 0.11), vec3(0.0), vec3(0.0));
+
+const vec2 RuneStrokes[144] = vec2[144](
+	vec2(0.0, -0.9), vec2(0.0, 0.0), vec2(0.0, 0.9),
+	vec2(0.0, 0.05), vec2(0.12, 0.45), vec2(0.45, 0.8),
+	vec2(0.0, 0.05), vec2(-0.12, 0.45), vec2(-0.45, 0.8),
+
+	vec2(-0.1, -0.9), vec2(-0.1, 0.0), vec2(-0.1, 0.9),
+	vec2(-0.1, 0.6), vec2(0.65, 0.35), vec2(-0.1, -0.05),
+	vec2(0.0), vec2(0.0), vec2(0.0),
+
+	vec2(0.0, 0.88), vec2(0.7, 0.0), vec2(0.0, -0.88),
+	vec2(0.0, 0.88), vec2(-0.7, 0.0), vec2(0.0, -0.88),
+	vec2(0.0), vec2(0.0), vec2(0.0),
+
+	vec2(-0.45, 0.85), vec2(0.15, 0.05), vec2(0.45, -0.85),
+	vec2(0.45, 0.85), vec2(-0.15, 0.05), vec2(-0.45, -0.85),
+	vec2(0.0), vec2(0.0), vec2(0.0),
+
+	vec2(0.0, -0.9), vec2(0.0, -0.3), vec2(0.0, 0.3),
+	vec2(-0.5, 0.88), vec2(0.0, 0.05), vec2(0.5, 0.88),
+	vec2(0.0), vec2(0.0), vec2(0.0),
+
+	vec2(0.35, 0.85), vec2(-0.75, 0.0), vec2(0.35, -0.85),
+	vec2(0.0), vec2(0.0), vec2(0.0),
+	vec2(0.0), vec2(0.0), vec2(0.0),
+
+	vec2(0.0, -0.9), vec2(0.0, 0.0), vec2(0.0, 0.88),
+	vec2(-0.45, 0.35), vec2(-0.1, 0.55), vec2(0.0, 0.88),
+	vec2(0.45, 0.35), vec2(0.1, 0.55), vec2(0.0, 0.88),
+
+	vec2(-0.45, 0.35), vec2(0.0, 1.0), vec2(0.45, 0.35),
+	vec2(-0.45, 0.35), vec2(0.0, -0.3), vec2(0.45, 0.35),
+	vec2(0.0, 0.0), vec2(0.0, -0.45), vec2(0.0, -0.9),
+
+	vec2(0.0, -0.9), vec2(0.0, 0.0), vec2(0.0, 0.9),
+	vec2(0.0, 0.5), vec2(0.5, 0.0), vec2(0.0, -0.5),
+	vec2(0.0, 0.5), vec2(-0.5, 0.0), vec2(0.0, -0.5),
+
+	vec2(-0.05, 0.9), vec2(-0.55, 0.45), vec2(-0.05, 0.05),
+	vec2(0.05, -0.05), vec2(0.55, -0.45), vec2(0.05, -0.9),
+	vec2(0.0), vec2(0.0), vec2(0.0),
+
+	vec2(0.0, -0.9), vec2(0.0, -0.45), vec2(0.0, 0.3),
+	vec2(-0.5, 0.88), vec2(-0.45, 0.2), vec2(0.0, 0.05),
+	vec2(0.5, 0.88), vec2(0.45, 0.2), vec2(0.0, 0.05),
+
+	vec2(0.0, -0.9), vec2(0.0, 0.0), vec2(0.0, 0.9),
+	vec2(-0.45, 0.6), vec2(0.0, 0.5), vec2(0.45, 0.3),
+	vec2(-0.45, -0.05), vec2(0.0, -0.15), vec2(0.45, -0.35),
+
+	vec2(0.0, -0.9), vec2(0.15, 0.0), vec2(0.0, 0.9),
+	vec2(0.05, 0.6), vec2(0.3, 0.5), vec2(0.5, 0.78),
+	vec2(0.08, -0.05), vec2(-0.25, -0.15), vec2(-0.5, 0.08),
+
+	vec2(0.0, -0.88), vec2(-0.6, 0.15), vec2(0.05, 0.85),
+	vec2(0.05, 0.85), vec2(0.55, 0.4), vec2(0.1, 0.1),
+	vec2(0.0), vec2(0.0), vec2(0.0),
+
+	vec2(-0.42, -0.65), vec2(-0.55, 0.15), vec2(-0.25, 0.7),
+	vec2(0.0, -0.88), vec2(0.08, 0.0), vec2(0.0, 0.9),
+	vec2(0.42, -0.65), vec2(0.55, 0.15), vec2(0.25, 0.7),
+
+	vec2(0.0, -0.9), vec2(0.0, 0.0), vec2(0.0, 0.9),
+	vec2(-0.5, 0.25), vec2(0.0, 0.55), vec2(0.5, 0.25),
+	vec2(0.0, -0.9), vec2(0.35, -0.85), vec2(0.48, -0.55));
+
+vec4 BrushStroke(vec2 p, vec2 a, vec2 b, vec2 c, float width)
+{
+	vec4 best = vec4(1e3, 0.0, 0.0, width);
+	vec2 prev = a;
+	for (int i = 1; i <= 6; i++)
+	{
+		float s = float(i) / 6.0;
+		vec2 next = mix(mix(a, b, s), mix(b, c, s), s);
+		vec2 pa = p - prev;
+		vec2 ba = next - prev;
+		float len = max(length(ba), 1e-5);
+		float h = clamp(dot(pa, ba) / (len * len), 0.0, 1.0);
+		float along = (float(i - 1) + h) / 6.0;
+		float w = width * (0.6 + 0.55 * smoothstep(0.0, 0.1, along) - 0.15 * smoothstep(0.1, 0.3, along)) * (1.0 - 0.78 * smoothstep(0.35, 1.0, along));
+		float sd = length(pa - ba * h) - w;
+		if (sd < best.x)
+			best = vec4(sd, along, (ba.x * pa.y - ba.y * pa.x) / len, w);
+		prev = next;
+	}
+	return best;
+}
+
+vec4 RuneGlyph(vec2 g, uint key, float pixel)
+{
+	uint h = Hash(key * 2654435761u + 17u);
+	uint index = h % 16u;
+	g.x = (h & 0x10000u) != 0u ? -g.x : g.x;
+	g = Rotate(g, (HashUnit(h ^ 0x5BD1u) - 0.5) * 0.2);
+	g /= mix(0.92, 1.05, HashUnit(h ^ 0x1F3Du));
+	float width = 0.155 * mix(0.85, 1.15, HashUnit(h ^ 0x7A11u));
+	vec4 best = vec4(1e3, 0.0, 0.0, width);
+	float stroke = 0.0;
+	for (uint s = 0u; s < 3u; s++)
+	{
+		if (s >= RuneCounts[index])
+			break;
+		uint base = index * 9u + s * 3u;
+		vec4 candidate = BrushStroke(g, RuneStrokes[base], RuneStrokes[base + 1u], RuneStrokes[base + 2u], width * (s == 0u ? 1.1 : 0.92));
+		if (candidate.x < best.x)
+		{
+			best = candidate;
+			stroke = float(s);
+		}
+	}
+	vec3 blot = RuneDots[index];
+	if (blot.z > 0.0)
+	{
+		float sd = length(g - blot.xy) - blot.z;
+		if (sd < best.x)
+		{
+			best = vec4(sd, 0.3, 0.0, blot.z);
+			stroke = 3.0;
+		}
+	}
+	float salt = float(h & 255u) * 0.37;
+	float across = best.z / max(best.w, 1e-3);
+	float ragged = ValueNoise(vec2(best.y * 11.0 + stroke * 7.3 + salt, sign(across) * 2.5 + 5.0));
+	float sd = best.x + (ragged - 0.5) * 0.5 * best.w;
+	float fibre = ValueNoise(vec2(across * 3.6 + stroke * 5.1 + salt, best.y * 2.4));
+	float dry = smoothstep(0.2, 0.6, fibre + 0.32 - 0.45 * smoothstep(0.5, 1.0, best.y));
+	float ink = 1.0 - smoothstep(-pixel, pixel, sd);
+	float depth = clamp(-sd / max(best.w, 1e-3), 0.0, 1.0);
+	float paint = ink * mix(0.2, 0.6, dry);
+	float core = smoothstep(0.25, 0.85, depth + 0.25 * (dry - 0.5)) * mix(0.45, 1.0, dry) * ink;
+	float outside = max(sd, 0.0);
+	float halo = exp(-outside * outside / 0.05);
+	return vec4(ink, paint, core, halo);
+}
+
+struct RuneInk
+{
+	float Ink;
+	float Glow;
+	float Hot;
+	float Cell;
+};
+
+RuneInk RuneRing(float r, float angle, float inner, float outer, float spin, uint seed, float pixel, float time)
+{
+	RuneInk runes = RuneInk(0.0, 0.0, 0.0, 0.0);
+	float band = outer - inner;
+	float mid = 0.5 * (inner + outer);
+	if (abs(r - mid) > band)
+		return runes;
+	float cells = max(6.0, floor(Tau * mid / (band * 1.05)));
+	float spun = fract((angle + spin) / Tau) * cells;
+	float cellWidth = Tau * mid / cells;
+	float scale = band * 0.44;
+	runes.Cell = floor(spun);
+	uint key = uint(runes.Cell) + seed * 131u;
+	float wave = pow(0.5 + 0.5 * cos(angle - time * 1.3 + float(seed & 31u)), 10.0);
+	vec2 g = vec2((fract(spun) - 0.5) * cellWidth, r - mid) / scale;
+	if (abs(g.y) < 1.4)
+	{
+		vec4 glyph = RuneGlyph(g, key, pixel / scale);
+		float pulse = 0.8 + 0.2 * sin(time * 2.3 + HashUnit(key * 31u) * Tau);
+		float lit = (0.75 + 0.9 * wave) * pulse;
+		runes.Ink = glyph.x;
+		runes.Glow = (glyph.y * 0.6 + glyph.z * 0.95 + glyph.w * 0.22) * lit;
+		runes.Hot = glyph.z * 0.6 * lit * (0.35 + 0.65 * wave);
+	}
+	float gap = (0.5 - abs(fract(spun) - 0.5)) * cellWidth;
+	float diamond = gap / (band * 0.06) + abs(r - mid) / (band * 0.15);
+	float separator = 1.0 - smoothstep(1.0 - 2.0 * pixel / (band * 0.06), 1.0, diamond);
+	float frameRadius = inner - band * 0.1;
+	float frameWidth = band * (0.022 + 0.03 * ValueNoise(vec2(angle * mid * 6.0, 1.0 + float(seed & 15u))));
+	float frame = 1.0 - smoothstep(frameWidth - pixel, frameWidth + pixel, abs(r - frameRadius));
+	float trim = (separator * 0.7 + frame * 0.45) * (0.8 + 0.6 * wave);
+	runes.Ink = max(runes.Ink, max(separator, frame) * 0.8);
+	runes.Glow += trim;
+	return runes;
+}
+
+vec3 MarkRunes(vec3 mark, RuneInk runes, float strength, float darken)
+{
+	return vec3(max(mark.x, runes.Ink * darken), mark.y + runes.Glow * strength, mark.z + runes.Hot * strength);
+}
+
+float MarkRim(float r, float radius, float width, float pixel)
+{
+	float d = r - radius;
+	return Line(abs(d), max(width, pixel * 0.7), pixel) + 0.3 * exp(-d * d / (width * width * 14.0));
+}
+
+float MarkOutline(float r, float radius)
+{
+	float d = (r - radius - 0.07) / 0.06;
+	return 0.55 * exp(-d * d);
+}
+
+vec3 MarkAccumulate(vec3 mark, float glow, float hot)
+{
+	return vec3(mark.x, mark.y + glow, mark.z + glow * hot);
+}
+
+vec3 CometMarkShape(vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
+{
+	float grow = smoothstep(0.0, 1.0, appear);
+	float r = length(p) / mix(0.88, 1.0, grow);
+	float n = r / radius;
+	if (n > 1.12 || grow <= 0.0)
+		return vec3(0.0);
+	float angle = atan(p.y, p.x);
+	bool live = progress >= 0.0;
+	float t = clamp(progress, 0.0, 1.0);
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.53;
+	vec3 mark = vec3(MarkOutline(r, radius), 0.0, 0.0);
+
+	float soft = live ? mix(0.6, 0.05, t) : 0.3;
+	float shadow = (1.0 - smoothstep(1.0 - soft, 1.0, n)) * (live ? mix(0.15, 0.72, t * t) : 0.08);
+	mark.x = max(mark.x, shadow);
+
+	mark = MarkAccumulate(mark, MarkRim(r, radius, 0.034, pixel) * (1.0 + 0.3 * t), 0.15 * t);
+	mark = MarkRunes(mark, RuneRing(r, angle, radius - 0.5, radius - 0.12, time * 0.12, seed, pixel, time), 0.55 + 0.4 * t, 0.75);
+
+	if (live)
+	{
+		float front = 1.0 - t;
+		float heated = smoothstep(front - 0.01, front + 0.02, n) * step(n, 1.0);
+		float ember = 0.55 + 0.9 * Fbm(p * 1.4 + offset + vec2(time * 0.25, -time * 0.18));
+		float ridge = 1.0 - abs(ValueNoise(p * 2.7 + offset * 1.7) * 2.0 - 1.0);
+		float veins = smoothstep(0.955, 0.99, ridge) * heated * smoothstep(0.35, 0.85, t);
+		mark = MarkAccumulate(mark, heated * (0.03 + 0.06 * t) * ember, 0.0);
+		mark = MarkAccumulate(mark, veins * 0.45, 0.1);
+		float gap = (n - front) * radius / 0.12;
+		float edge = Line(abs(n - front) * radius, max(0.026, pixel * 0.7), pixel) + 0.25 * exp(-gap * gap);
+		mark = MarkAccumulate(mark, edge * (0.75 + 0.35 * t) * smoothstep(0.0, 0.1, front), 0.25);
+	}
+	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4)) * vec3(grow, grow, 1.0);
+}
+
+vec3 StormMarkShape(vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
+{
+	float grow = smoothstep(0.0, 1.0, appear);
+	float r = length(p) / mix(0.8, 1.0, grow);
+	float n = r / radius;
+	if (n > 1.15 || grow <= 0.0)
+		return vec3(0.0);
+	float angle = atan(p.y, p.x);
+	bool live = progress >= 0.0;
+	float t = clamp(progress, 0.0, 1.0);
+	float beat = floor(time * mix(14.0, 36.0, t));
+	float flicker = 0.75 + 0.25 * HashUnit(uint(beat) * 7919u + seed);
+	vec3 mark = vec3(MarkOutline(r, radius) + (1.0 - smoothstep(0.2, 1.0, n)) * 0.3 * t, 0.0, 0.0);
+
+	float wobble = (ValueNoise(vec2(angle * 5.0 + 30.0, time * 20.0 + float(seed & 63u))) - 0.5) * (0.016 + 0.03 * t);
+	mark = MarkAccumulate(mark, MarkRim(r + wobble, radius, 0.032, pixel) * flicker * (1.0 + 0.4 * t), 0.08 + 0.15 * t);
+
+	RuneInk runes = RuneRing(r, angle, radius - 0.4, radius - 0.1, -time * 0.25, seed, pixel, time);
+	float lit = HashUnit(uint(runes.Cell) * 977u + uint(beat) * 131u + seed) < (live ? 0.4 + 0.55 * t : 0.65) ? 1.0 : 0.3;
+	mark = MarkRunes(mark, runes, 0.7 * lit, 0.6);
+
+	if (live)
+	{
+		uint arcBeat = uint(time * 16.0);
+		for (uint k = 0u; k < 4u; k++)
+		{
+			uint h = Hash(seed * 2654435761u + arcBeat * 40503u + k * 977u);
+			if (HashUnit(h ^ 0x3333u) > 0.45 + 0.6 * t)
+				continue;
+			float a = (float(k) + HashUnit(h)) / 4.0 * Tau;
+			vec2 start = vec2(cos(a), sin(a)) * (radius - 0.04);
+			float b = a + (HashUnit(h ^ 0x9E37u) - 0.5) * 1.1;
+			vec2 end = vec2(cos(b), sin(b)) * radius * mix(0.7, 0.05, t) * mix(0.8, 1.1, HashUnit(h ^ 0x51F1u));
+			vec2 axis = end - start;
+			float span = max(length(axis), 1e-3);
+			vec2 along = axis / span;
+			vec2 local = vec2(dot(p - start, along), dot(p - start, vec2(-along.y, along.x))) / span;
+			mark = MarkAccumulate(mark, LightningBolt(local, h, 6.0, 0.3, pixel / span) * (0.9 + 0.6 * t), 0.6);
+		}
+	}
+	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4)) * vec3(grow, grow, 1.0);
+}
+
+vec3 VoidMarkShape(vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
+{
+	float grow = smoothstep(0.0, 1.0, appear);
+	float r = length(p) / mix(0.9, 1.0, grow);
+	float n = r / radius;
+	if (n > 1.12 || grow <= 0.0)
+		return vec3(0.0);
+	float angle = atan(p.y, p.x);
+	float t = clamp(progress, 0.0, 1.0);
+	vec3 mark = vec3(MarkOutline(r, radius), 0.0, 0.0);
+	mark = MarkAccumulate(mark, MarkRim(r, radius, 0.04, pixel) * (1.0 + 0.3 * t), 0.0);
+	mark = MarkRunes(mark, RuneRing(r, angle, radius - 0.6, radius - 0.14, -(time * 0.2 + t * t * 1.2), seed, pixel, time), 0.5 + 0.35 * t, 0.8);
+	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4)) * vec3(grow, grow, 1.0);
+}
+
+vec3 FirebombMarkShape(vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
+{
+	float grow = smoothstep(0.0, 1.0, appear);
+	float r = length(p) / mix(0.85, 1.0, grow);
+	float n = r / radius;
+	if (n > 1.12 || grow <= 0.0)
+		return vec3(0.0);
+	float angle = atan(p.y, p.x);
+	bool live = progress >= 0.0;
+	float t = clamp(progress, 0.0, 1.0);
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.61;
+	vec2 dir = p / max(length(p), 1e-4);
+	float phase = live ? 3.0 * t + 4.0 * t * t : time * 1.2;
+	float tick = fract(phase);
+	float beat = exp(-tick * 7.0) * (live ? 1.0 : 0.4);
+	vec3 mark = vec3(MarkOutline(r, radius) + (1.0 - smoothstep(0.3, 1.0, n)) * (live ? 0.06 + 0.22 * t : 0.04), 0.0, 0.0);
+
+	mark = MarkAccumulate(mark, MarkRim(r, radius, 0.034, pixel) * (0.85 + 0.65 * beat), 0.08 + 0.3 * beat * t);
+	float inner = radius - 0.46;
+	mark = MarkRunes(mark, RuneRing(r, angle, inner, radius - 0.12, time * 0.15, seed, pixel, time), 0.5 + 0.25 * t + 0.3 * beat, 0.7);
+
+	if (live)
+	{
+		float edge = inner - 0.08;
+		float depth = edge - r;
+		float tongue = ValueNoise(dir * edge * 4.5 + offset + vec2(time * 2.3, -time * 1.1));
+		float height = mix(0.08, 0.32, t) * (0.3 + 1.4 * tongue * tongue);
+		float body = clamp(1.0 - depth / max(height, 1e-3), 0.0, 1.0) * step(0.0, depth);
+		float erode = Fbm(p * 3.8 - dir * time * 2.2 + offset * 1.3);
+		float flame = smoothstep(0.0, 0.25, body) * smoothstep(0.4, 0.62, erode * 0.75 + body * 0.5);
+		mark = MarkAccumulate(mark, flame * (0.25 + 0.65 * body) * (0.55 + 0.5 * t), 0.1 * body);
+	}
+	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4)) * vec3(grow, grow, 1.0);
+}
+
+vec3 SpellMarkShape(uint shape, vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
+{
+	if (shape == DecalCometMark)
+		return CometMarkShape(p, radius, pixel, progress, appear, seed, time);
+	if (shape == DecalStormMark)
+		return StormMarkShape(p, radius, pixel, progress, appear, seed, time);
+	if (shape == DecalFirebombMark)
+		return FirebombMarkShape(p, radius, pixel, progress, appear, seed, time);
+	return VoidMarkShape(p, radius, pixel, progress, appear, seed, time);
 }
 
 float SectorShape(vec2 uv, float pixel, float radius, float halfArc, float progress, float appear)

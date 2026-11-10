@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -133,7 +134,9 @@ namespace Game
 		constexpr int GemPayload = 3;
 		constexpr float VictoryPoseSeconds = 1.4f;
 		constexpr float VictoryPoseWindup = 0.28f;
-		constexpr float PlayerRim = 0.4f;
+		constexpr float PlayerRim = 1.0f;
+		constexpr float ContactRadius = 0.7f;
+		constexpr float ContactStrength = 0.85f;
 
 		float Perlin(float x, uint32_t seed)
 		{
@@ -353,6 +356,7 @@ namespace Game
 		: m_App(app), m_Config(std::move(config)), m_Extent{ app.GetWindow().Width(), app.GetWindow().Height() }
 	{
 		m_BrawlRules.Mode = app.GetSettings().Rules.Mode;
+		m_SoloBots = 1 + std::random_device{}() % 3;
 		m_RunRules = app.GetSettings().Run;
 		m_Characters = std::make_unique<CharacterLibrary>(app.GetWorldRenderer().GetModels());
 		m_Effects = std::make_unique<EffectSystem>(app.GetWorldRenderer().GetParticles());
@@ -1549,7 +1553,7 @@ namespace Game
 		DrawStreak(renderer, position - direction * 2.4f, position, 0.42f, { 2.8f, 1.1f, 0.25f });
 		DrawGlow(renderer, position, 0.5f, { 3.0f, 1.6f, 0.5f });
 		const AbilityDef& def = GetAbility(AbilityId::Meteor);
-		DrawGroundGlow(renderer, target, def.ImpactRadius * entity.GetScale() * (0.6f + 0.4f * progress), { 1.5f, 0.45f, 0.1f }, 0.25f + 0.9f * progress * progress);
+		DrawGroundGlow(renderer, target, def.ImpactRadius * entity.GetScale() * (0.3f + 0.35f * progress), { 1.5f, 0.45f, 0.1f }, 0.1f + 0.55f * progress * progress);
 	}
 
 	const EntityState* SessionState::FindBody(uint32_t owner) const
@@ -2486,7 +2490,9 @@ namespace Game
 				if (ability.Kind == AbilityKind::Ground && !AimsFromPoint(ability.Id))
 				{
 					const Vec2 point = GetGroundTarget(*level, self->Position, FromAngle(m_Aim), m_AimDistance, ability.Range);
-					DrawRuneCircle(renderer, { .Center = Ground(point), .Radius = ability.ImpactRadius * m_Client.GetTraits().AreaScale, .Color = SpellTint(ability.Id), .Intensity = 0.6f, .Spin = 0.6f, .Seed = 7u });
+					const float radius = ability.ImpactRadius * m_Client.GetTraits().AreaScale;
+					if (!DrawSpellMarkFor(renderer, ability.Id, Ground(point), radius, -1.0f, 1.0f, 7u))
+						DrawRuneCircle(renderer, { .Center = Ground(point), .Radius = radius, .Color = SpellTint(ability.Id), .Intensity = 0.6f, .Spin = 0.6f, .Seed = 7u });
 				}
 			}
 		}
@@ -2608,6 +2614,7 @@ namespace Game
 		const auto body = m_BodyHeights.find(entity.NetId);
 		if (body != m_BodyHeights.end() && body->second.Aloft)
 			return;
+		DrawContactShadow(renderer, base, ContactRadius * look.Scale, ContactStrength);
 		DrawGroundRing(renderer, base, 0.42f, color, 1.2f, 0.022f, 0.0f, 0.0f, PlayerPattern(entity.Owner));
 		if (m_Client.IsHostile(entity) && !brawl)
 			DrawGroundRing(renderer, base, 0.56f, { 1.0f, 0.25f, 0.18f }, 1.6f, 0.03f, 12.0f, 0.15f);
@@ -3533,6 +3540,13 @@ namespace Game
 				}
 			}
 			DrawVoidGaze(renderer, look, SpellLightGain);
+			const float vanish = std::clamp(std::max(well.Pull, 0.0f) / 0.5f, 0.0f, 1.0f);
+			if (vanish < 1.0f)
+			{
+				const float ease = vanish * vanish * (3.0f - 2.0f * vanish);
+				const float progress = well.Pull < 0.0f ? std::clamp(well.Age / def.ImpactDelay, 0.0f, 1.0f) : 1.0f;
+				DrawSpellMarkFor(renderer, AbilityId::GravityWell, look.Ground, look.Radius * (1.0f - 0.45f * ease), progress, well.Age, well.Seed, (1.0f - ease) * look.Fade);
+			}
 			if (well.Pull < 0.0f || well.Pull > 0.55f)
 				continue;
 			const float strength = 1.0f - well.Pull / 0.55f;
@@ -3781,11 +3795,52 @@ namespace Game
 		DrawStar(renderer, base + glm::vec3(0.0f, top - 0.12f, 0.0f), 0.2f * size, EliteGold * 2.2f, m_Time * 1.5f);
 	}
 
+	bool SessionState::DrawSpellMarkFor(WorldRenderer& renderer, AbilityId ability, const glm::vec3& base, float radius, float progress, float age, uint32_t seed, float fade) const
+	{
+		SpellMark mark{ .Center = base, .Radius = radius, .Progress = progress, .Fade = fade, .Seed = seed };
+		const bool aiming = progress < 0.0f;
+		switch (ability)
+		{
+		case AbilityId::Comet:
+			mark.Kind = SpellMarkKind::Comet;
+			mark.Color = { 1.0f, 0.42f, 0.12f };
+			mark.Intensity = aiming ? 0.45f : 0.55f + 0.25f * progress;
+			mark.Appear = aiming ? 1.0f : std::clamp(age / 0.18f, 0.0f, 1.0f);
+			break;
+		case AbilityId::StormStrike:
+			mark.Kind = SpellMarkKind::Storm;
+			mark.Color = { 0.48f, 0.4f, 1.0f };
+			mark.Intensity = aiming ? 0.4f : 0.5f + 0.2f * progress;
+			mark.Appear = aiming ? 1.0f : std::clamp(age / 0.05f, 0.0f, 1.0f);
+			break;
+		case AbilityId::GravityWell:
+			mark.Kind = SpellMarkKind::Void;
+			mark.Color = { 0.55f, 0.22f, 1.0f };
+			mark.Intensity = aiming ? 0.4f : 0.45f + 0.2f * progress;
+			mark.Appear = aiming ? 1.0f : std::clamp(age / 0.12f, 0.0f, 1.0f);
+			break;
+		case AbilityId::Firebomb:
+		case AbilityId::FirebombSkip:
+		case AbilityId::FirebombSkip2:
+			mark.Kind = SpellMarkKind::Firebomb;
+			mark.Color = { 1.0f, 0.5f, 0.14f };
+			mark.Intensity = (aiming ? 0.45f : 0.5f + 0.25f * progress) * (ability == AbilityId::Firebomb ? 1.0f : 0.75f);
+			mark.Appear = aiming ? 1.0f : std::clamp(age / 0.15f, 0.0f, 1.0f);
+			break;
+		default:
+			return false;
+		}
+		DrawSpellMark(renderer, mark);
+		return true;
+	}
+
 	void SessionState::DrawTelegraph(WorldRenderer& renderer, const EntityState& entity, float progress) const
 	{
 		const glm::vec3 base = Ground(entity.Position);
 		const AbilityDef& def = GetAbility(AbilityOf(entity));
 		const AbilityId ability = AbilityOf(entity);
+		if (DrawSpellMarkFor(renderer, ability, base, def.ImpactRadius * entity.GetScale(), progress, AgeOf(entity.NetId), entity.NetId))
+			return;
 		const bool storm = ability == AbilityId::StormStrike;
 		const glm::vec3 color = storm ? StormTelegraph : EffectColor(entity);
 		const float scale = entity.GetScale();

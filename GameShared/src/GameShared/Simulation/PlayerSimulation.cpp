@@ -602,6 +602,13 @@ namespace Game
 		{
 			state.RecastAge += dt;
 			Cool(state.RecastTimer, dt);
+			if (state.RecastTimer <= 0.0f && state.Alive && state.RecastSlot >= 0 && AbilityId(state.RecastAbility) == AbilityId::GlacialNova)
+			{
+				actions.Recast |= uint8_t(1u << uint32_t(state.RecastSlot));
+				actions.RecastAbility = AbilityId::GlacialNova;
+				actions.RecastPoint = state.RecastOrigin;
+				actions.RecastAge = state.RecastAge;
+			}
 		}
 		if (state.RecastTimer <= 0.0f)
 		{

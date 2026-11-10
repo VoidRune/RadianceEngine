@@ -103,6 +103,11 @@ void main()
 		float r2 = dot(uv, uv);
 		result.y = exp(-r2 * 3.5) * (1.0 - smoothstep(0.7, 1.0, sqrt(r2)));
 	}
+	else if (shape == DecalContact)
+	{
+		float r2 = dot(uv, uv);
+		result.x = exp(-r2 * 2.6) * (1.0 - smoothstep(0.55, 1.0, sqrt(r2)));
+	}
 	else if (shape == DecalScorch)
 		result = ScorchShape(uv, params.x, seed);
 	else if (shape == DecalFrost || shape == DecalFrostLane || shape == DecalNova)
@@ -123,6 +128,13 @@ void main()
 		result = FractureShape(world.xz, pixelWorld, params.x, time);
 	else if (shape == DecalFissure)
 		result = FissureShape(uv, extent.xy, pixelWorld, params.x, params.y, params.z, seed, time);
+	else if (shape >= DecalCometMark && shape <= DecalFirebombMark)
+	{
+		vec3 mark = SpellMarkShape(shape, uv * extent.x, extent.x * params.z, pixelWorld, params.x, params.y, seed, time);
+		result = mark.xy;
+		float peak = max(max(decal.Color.r, decal.Color.g), decal.Color.b);
+		glow = mix(vec3(1.0), vec3(peak) / max(decal.Color.rgb, vec3(1e-3)), clamp(mark.z, 0.0, 0.6));
+	}
 	else if (shape == DecalCaustic)
 	{
 		glow = CausticShape(uv, extent.x, pixel, params.x, params.y, params.z, seed, time);

@@ -15,9 +15,9 @@ namespace Game
 	class WorldRenderer;
 
 	inline constexpr float CameraFov = 40.0f;
-	inline constexpr float CameraHeight = 14.2f;
-	inline constexpr float CameraBack = 9.2f;
-	inline constexpr float CameraFocusOffset = 1.1f;
+	inline constexpr float CameraHeight = 12.78f;
+	inline constexpr float CameraBack = 8.28f;
+	inline constexpr float CameraFocusOffset = 0.99f;
 	inline constexpr float LavaSurface = -0.3f;
 	inline constexpr float LavaHazeLift = 0.12f;
 	inline constexpr float LavaHazeStrength = 0.02f;
