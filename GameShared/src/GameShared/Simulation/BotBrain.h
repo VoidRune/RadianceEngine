@@ -175,7 +175,6 @@ namespace Game
 		Vec2 SafePoint(const BotArena& arena, float reach, float minimum) const;
 		Vec2 SafeDirection(const BotArena& arena, Vec2 from, float step) const;
 		int32_t ComboSlot(uint32_t slot, float castTime) const;
-		bool Planted(const BotArena& arena) const;
 		void Steer(PlayerInput& input) const;
 		void PressDodge(const BotArena& arena, PlayerInput& input, Vec2 direction, bool path = true);
 		void Cast(PlayerInput& input, uint32_t slot, float aim, float distance, float charge = 0.0f);
@@ -243,9 +242,6 @@ namespace Game
 		float m_WellRemaining = 0.0f;
 		Vec2 m_YankTarget;
 		bool m_Yanking = false;
-		bool m_Planting = false;
-		float m_EchoUntil = 0.0f;
-		AbilityId m_EchoSpell = AbilityId::Count;
 
 		BrawlPhase m_Phase = BrawlPhase::Draft;
 		uint8_t m_Round = 255;

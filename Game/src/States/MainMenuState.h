@@ -27,6 +27,7 @@ namespace Game
 			Join,
 			Character,
 			Settings,
+			Wardrobe,
 		};
 
 		void StartSession(bool host);
@@ -41,6 +42,7 @@ namespace Game
 		void DrawHostPage(Ui& ui, UiRect area);
 		void DrawJoinPage(Ui& ui, UiRect area);
 		void DrawCharacterPage(Ui& ui, UiRect area);
+		void DrawWardrobePage(Ui& ui, UiRect area);
 
 		GameApp& m_App;
 		std::string m_Message;

@@ -19,8 +19,6 @@ namespace Game
 		constexpr float LavaTickSeconds = 0.25f;
 		constexpr float ArenaWander = 1.5f;
 		constexpr float SkySpawnMargin = 1.2f;
-		constexpr float SkyCatchSearch = 6.0f;
-		constexpr float SkyCatchGrace = 0.6f;
 		constexpr float BoltSpacing = 2.6f;
 
 		bool SafeOnSky(const Level& level, const CollapsePlan& plan, float clock, Vec2 point, float margin)
@@ -198,15 +196,14 @@ namespace Game
 						break;
 			loadout.Ready = false;
 			loadout.OfferPending = false;
-			m_Brawlers[id].Shield = IsDamageMode() && HasCard(loadout.Cards, CardId::Barrier) ? BarrierShield : 0.0f;
+			m_Brawlers[id].WardUp = IsDamageMode() && HasCard(loadout.Cards, CardId::CrystalWard);
+			m_Brawlers[id].WardTimer = 0.0f;
 			if (m_Present[id] && m_Rules.RandomSpells)
 			{
 				loadout.Spells = DealSpells(world.GetRandom());
 				world.RefreshTraits(world.FindPlayer(id));
 				world.Notify(id, std::string("Your spells this round: ") + GetAbility(loadout.Spells[0]).Name + ", " + GetAbility(loadout.Spells[1]).Name + " and " + GetAbility(loadout.Spells[2]).Name, true);
 			}
-			if (m_Present[id])
-				RollArcana(world, id, -1);
 		}
 		m_Brawl.Phase = BrawlPhase::Countdown;
 		m_Brawl.Timer = BrawlCountdownSeconds;
@@ -255,18 +252,18 @@ namespace Game
 			brawler.Afterburn = 0.0f;
 			brawler.LavaBank = 0.0f;
 			brawler.Burning = false;
-			brawler.FeatherUsed = false;
-			brawler.FeatherGrace = 0.0f;
 			brawler.EchoArmed = false;
 			brawler.IgniteLeft = 0.0f;
 			brawler.IgniteBank = 0.0f;
 			brawler.IgniteBy = NoPlayer;
 			brawler.MarkTime = 0.0f;
 			brawler.MarkedBy = NoPlayer;
-			brawler.SecondWindUsed = false;
+			brawler.HurtAge = 0.0f;
+			brawler.RallyBank = 0.0f;
+			brawler.LifeBank = 0.0f;
+			brawler.FlowAt = -1e9f;
 			brawler.ScaldedBy = -1;
 		}
-		m_Bursts.clear();
 		m_IgniteTick = 0.0f;
 		if (m_Brawl.Round == 1)
 			world.Emit({ WorldEventType::MatchStarted });
@@ -432,12 +429,6 @@ namespace Game
 		{
 			if (controller.PlayerId >= MaxPlayers || !controller.State.Alive || !controller.State.IsFalling())
 				return;
-			Brawler& brawler = m_Brawlers[controller.PlayerId];
-			if (!brawler.FeatherUsed && controller.State.Fall >= SkyCatchSeconds && HasCard(brawler.Loadout.Cards, CardId::Featherfall) && Catch(world, entity, controller))
-			{
-				brawler.FeatherUsed = true;
-				return;
-			}
 			if (controller.State.Fall >= SkyFallSeconds)
 				fallen.push_back(entity);
 		});
@@ -526,38 +517,6 @@ namespace Game
 		return std::nullopt;
 	}
 
-	bool MatchDirector::Catch(World& world, Entity entity, PlayerController& controller)
-	{
-		Transform* transform = world.GetEntities().TryGet<Transform>(entity);
-		if (!transform)
-			return false;
-		const Level& level = world.GetLevel();
-		const float footing = m_Brawl.Clock + FeatherfallFooting;
-		const auto safe = [&](Vec2 spot) { return SafeOnSky(level, m_Brawl.Plan, m_Brawl.Clock, spot, 0.5f) && SafeOnSky(level, m_Brawl.Plan, footing, spot, 0.5f); };
-		std::optional<Vec2> best;
-		for (const Vec2 origin : { controller.State.Ledge, transform->Position })
-			for (float radius = 0.0f; radius <= SkyCatchSearch && !best; radius += 0.5f)
-				for (uint32_t step = 0; step < (radius > 0.0f ? 24u : 1u) && !best; step++)
-					if (const Vec2 spot = origin + FromAngle(2.0f * Pi * float(step) / 24.0f) * radius; safe(spot))
-						best = spot;
-		if (!best)
-			return false;
-		world.MarkTargetsMoved();
-		transform->Position = *best;
-		controller.State.Fall = 0.0f;
-		controller.State.Push = {};
-		controller.State.Ledge = *best;
-		controller.State.Invulnerable = std::max(controller.State.Invulnerable, SkyCatchGrace);
-		if (MotionHistory* history = world.GetEntities().TryGet<MotionHistory>(entity))
-		{
-			history->Positions.fill(*best);
-			history->FirstTick = world.GetTick() + 1;
-		}
-		world.SpawnEffect(AbilityId::Gust, *best, 0.0f, controller.PlayerId, 0, 0.7f);
-		world.Notify(controller.PlayerId, "Featherfall caught you", true);
-		return true;
-	}
-
 	void MatchDirector::UpdateLava(World& world, float dt)
 	{
 		if (m_Brawl.Plan.Shape == BrawlShape::Caldera && m_Brawl.Phase == BrawlPhase::Fight)
@@ -585,20 +544,7 @@ namespace Game
 				brawler.LavaBank = 0.0f;
 				return;
 			}
-			if (brawler.FeatherGrace > 0.0f)
-			{
-				brawler.FeatherGrace = std::max(brawler.FeatherGrace - dt, 0.0f);
-				brawler.Burning = false;
-				brawler.Afterburn = 0.0f;
-				return;
-			}
 			const bool lava = peak ? !controller.State.IsFalling() && ring.Outside(transform->Position) : controller.State.DashDistance <= 0.0f && IsBrawlLava(level, m_Brawl, transform->Position);
-			if (lava && !peak && !brawler.FeatherUsed && m_Brawl.Phase == BrawlPhase::Fight && HasCard(brawler.Loadout.Cards, CardId::Featherfall) && Featherfall(world, entity, controller, transform->Position))
-			{
-				brawler.FeatherUsed = true;
-				brawler.FeatherGrace = FeatherfallGrace;
-				return;
-			}
 			float rate = 0.0f;
 			if (lava)
 			{
@@ -747,75 +693,7 @@ namespace Game
 
 	PlayerTraits MatchDirector::GetBrawlTraits(uint32_t playerId) const
 	{
-		const Brawler& brawler = m_Brawlers[playerId < MaxPlayers ? playerId : 0];
-		if (!IsDamageMode() || !HasCard(brawler.Loadout.Cards, CardId::UnstableArcana) || brawler.Arcana[0] == AbilityId::Count)
-			return MakeBrawlTraits(brawler.Loadout, m_Rules);
-		BrawlLoadout rolled = brawler.Loadout;
-		rolled.Spells = brawler.Arcana;
-		return MakeBrawlTraits(rolled, m_Rules);
-	}
-
-	void MatchDirector::RollArcana(World& world, uint32_t playerId, int32_t slot)
-	{
-		if (!IsDamageMode() || playerId >= MaxPlayers || !HasCard(m_Brawlers[playerId].Loadout.Cards, CardId::UnstableArcana))
-			return;
-		BrawlSpells& arcana = m_Brawlers[playerId].Arcana;
-		if (slot < 0)
-			arcana.fill(AbilityId::Count);
-		Random& random = world.GetRandom();
-		for (uint32_t i = 0; i < SkillSlots; i++)
-		{
-			if (slot >= 0 && uint32_t(slot) != i)
-				continue;
-			std::array<AbilityId, std::size(BrawlSpellPool)> options{};
-			uint32_t count = 0;
-			for (const AbilityId spell : BrawlSpellPool)
-				if (GetAbility(spell).BrawlDamage > 0 && std::none_of(arcana.begin(), arcana.end(), [&](AbilityId held) { return held == spell && &held != &arcana[i]; }))
-					options[count++] = spell;
-			arcana[i] = options[random.Below(count)];
-		}
-		world.RefreshTraits(world.FindPlayer(playerId));
-	}
-
-	bool MatchDirector::Featherfall(World& world, Entity entity, PlayerController& controller, Vec2 position)
-	{
-		const Level& level = world.GetLevel();
-		const auto safe = [&](Vec2 spot)
-		{
-			return level.Map.IsWalkableAt(spot) && !IsBrawlLava(level, m_Brawl, spot) && PositionCollapseTime(level, m_Brawl.Plan, spot) > m_Brawl.Clock + FeatherfallFooting;
-		};
-		for (float radius = 0.5f; radius <= FeatherfallSearch; radius += 0.5f)
-		{
-			std::optional<Vec2> best;
-			for (uint32_t step = 0; step < 24; step++)
-			{
-				const Vec2 spot = position + FromAngle(2.0f * Pi * float(step) / 24.0f) * radius;
-				if (safe(spot) && (!best || LengthSquared(spot - m_Brawl.Plan.Center) < LengthSquared(*best - m_Brawl.Plan.Center)))
-					best = spot;
-			}
-			if (!best)
-				continue;
-			const Vec2 offset = *best - position;
-			controller.State.DashDistance = 0.0f;
-			if (Transform* transform = world.GetEntities().TryGet<Transform>(entity); transform && UsesForge(level) && !OnForgePlate(position))
-			{
-				world.MarkTargetsMoved();
-				transform->Position = *best;
-				controller.State.Push = {};
-				if (MotionHistory* history = world.GetEntities().TryGet<MotionHistory>(entity))
-				{
-					history->Positions.fill(*best);
-					history->FirstTick = world.GetTick() + 1;
-				}
-			}
-			else
-				controller.State.Push = ClampLength(Normalize(offset) * ((Length(offset) + FeatherfallMargin) * PushFriction), MaxPush);
-			m_Brawlers[controller.PlayerId].Afterburn = 0.0f;
-			world.SpawnEffect(AbilityId::Gust, position, AngleOf(offset), controller.PlayerId, 0, 0.7f);
-			world.Notify(controller.PlayerId, "Featherfall caught you", true);
-			return true;
-		}
-		return false;
+		return MakeBrawlTraits(m_Brawlers[playerId < MaxPlayers ? playerId : 0].Loadout, m_Rules);
 	}
 
 	void MatchDirector::AddCrust(const Level& level, Vec2 center, float radius)
@@ -834,13 +712,6 @@ namespace Game
 			plan.CrustCount--;
 		}
 		plan.Crusts[plan.CrustCount++] = { center, radius, m_Brawl.Clock };
-	}
-
-	void MatchDirector::AddCrater(Vec2 center, float radius)
-	{
-		if (m_Mode != GameMode::Brawl || m_Brawl.Phase != BrawlPhase::Fight || m_Brawl.Plan.CraterCount >= MaxCraters)
-			return;
-		m_Brawl.Plan.Craters[m_Brawl.Plan.CraterCount++] = { center, radius * (IsDamageMode() ? DamageCraterScale : 1.0f), m_Brawl.Clock + (IsDamageMode() ? DamageCraterDelay : CraterDelay) };
 	}
 
 	CardMask MatchDirector::GetCards(uint32_t playerId) const
@@ -1028,7 +899,7 @@ namespace Game
 				m_Brawlers[order[rank]].Points += PlacementPoints[rank];
 	}
 
-	float MatchDirector::CastDamageScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float still) const
+	float MatchDirector::CastDamageScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float momentum) const
 	{
 		if (!IsDamageMode() || playerId >= MaxPlayers)
 			return 1.0f;
@@ -1042,8 +913,8 @@ namespace Game
 			scale *= 1.0f + ManaSingularityDamage * manaBefore;
 		if (HasCard(cards, CardId::BloodMagic))
 			scale *= BloodMagicDamage;
-		if (HasCard(cards, CardId::Leyline) && still >= LeylineSeconds)
-			scale *= LeylineDamage;
+		if (HasCard(cards, CardId::Quicksilver) && momentum >= QuicksilverSeconds)
+			scale *= QuicksilverDamage;
 		return scale;
 	}
 
@@ -1074,20 +945,56 @@ namespace Game
 			}
 		}
 		int32_t result = std::max(1, int32_t(std::lround(scaled)));
-		if (target.Shield > 0.0f)
-		{
-			const int32_t absorbed = std::min(result, int32_t(std::ceil(target.Shield)));
-			target.Shield = std::max(target.Shield - float(absorbed), 0.0f);
-			result -= absorbed;
-		}
+		if (attacker < MaxPlayers && attacker != victim)
+			state.Momentum *= QuicksilverHit;
 		if (HasCard(target.Loadout.Cards, CardId::MindOverMatter))
 		{
 			state.ManaStall = MindOverMatterStall;
-			const int32_t absorbed = std::min(result, int32_t(std::floor(state.Mana / MindOverMatterRatio)));
+			const int32_t share = int32_t(std::lround(float(result) * MindOverMatterShare));
+			const int32_t absorbed = std::min(share, int32_t(std::floor(state.Mana / MindOverMatterRatio)));
 			state.Mana = std::max(state.Mana - float(absorbed) * MindOverMatterRatio, 0.0f);
 			result -= absorbed;
 		}
 		return result;
+	}
+
+	uint8_t MatchDirector::GetWardGauge(uint32_t playerId) const
+	{
+		if (!IsDamageMode() || playerId >= MaxPlayers || !HasCard(m_Brawlers[playerId].Loadout.Cards, CardId::CrystalWard))
+			return 0;
+		const Brawler& brawler = m_Brawlers[playerId];
+		return brawler.WardUp ? uint8_t(255) : uint8_t(std::clamp(std::ceil(brawler.WardTimer * 10.0f), 1.0f, 254.0f));
+	}
+
+	bool MatchDirector::BreakCrystalWard(World& world, Entity target, uint32_t victim)
+	{
+		if (!IsDamageMode() || m_Brawl.Phase != BrawlPhase::Fight || victim >= MaxPlayers || !m_Brawlers[victim].WardUp)
+			return false;
+		Brawler& brawler = m_Brawlers[victim];
+		brawler.WardUp = false;
+		brawler.WardTimer = CrystalWardSeconds;
+		const Transform* transform = world.GetEntities().TryGet<Transform>(target);
+		const Replicated* replicated = world.GetEntities().TryGet<Replicated>(target);
+		if (transform && replicated)
+			world.RecordHit({ .Target = replicated->NetId, .Position = transform->Position, .Damage = 0, .OnPlayer = true, .Guarded = true });
+		return true;
+	}
+
+	void MatchDirector::NoteSpellHit(World& world, uint32_t attacker, uint8_t ability)
+	{
+		if (!TracksFeats() || attacker >= MaxPlayers || !HasCard(m_Brawlers[attacker].Loadout.Cards, CardId::Flow))
+			return;
+		Brawler& brawler = m_Brawlers[attacker];
+		if (m_Brawl.Clock - brawler.FlowAt < FlowSpacing)
+			return;
+		PlayerController* controller = world.GetEntities().TryGet<PlayerController>(world.FindPlayer(attacker));
+		if (!controller)
+			return;
+		brawler.FlowAt = m_Brawl.Clock;
+		const AbilityId source = CreditOf(AbilityId(ability));
+		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
+			if (!controller->Traits.Skills[slot].IsEmpty() && CreditOf(controller->Traits.Skills[slot].Ability) != source)
+				controller->State.Cooldowns[slot] = std::max(controller->State.Cooldowns[slot] - FlowRefund, 0.0f);
 	}
 
 	void MatchDirector::AfterDamage(World& world, Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt)
@@ -1096,6 +1003,18 @@ namespace Game
 			return;
 		EntityRegistry& entities = world.GetEntities();
 		const AbilityId source = CreditOf(AbilityId(ability));
+		if (attacker < MaxPlayers && attacker != victim && dealt > 0 && HasCard(m_Brawlers[attacker].Loadout.Cards, CardId::Vampirism))
+		{
+			const Entity caster = world.FindPlayer(attacker);
+			const PlayerController* controller = entities.TryGet<PlayerController>(caster);
+			Health* health = entities.TryGet<Health>(caster);
+			Brawler& leech = m_Brawlers[attacker];
+			leech.LifeBank += float(dealt) * VampirismShare;
+			const int32_t heal = int32_t(leech.LifeBank);
+			leech.LifeBank -= float(heal);
+			if (controller && health && controller->State.Alive && heal > 0)
+				health->Current = std::min(health->Max, health->Current + heal);
+		}
 		if (attacker < MaxPlayers && attacker != victim && dealt > 0 && source != AbilityId::Ignite && source != AbilityId::Count)
 		{
 			const CardMask cards = m_Brawlers[attacker].Loadout.Cards;
@@ -1106,8 +1025,6 @@ namespace Game
 			{
 				if (HasCard(cards, CardId::Siphon))
 					controller->State.Mana = std::min(controller->Traits.MaxMana, controller->State.Mana + SiphonMana);
-				if (HasCard(cards, CardId::VampiricEmbers) && source == AbilityId::EmberBolt)
-					health->Current = std::min(health->Max, health->Current + VampiricHeal);
 				if (HasCard(cards, CardId::BloodMagic))
 					health->Current = std::min(health->Max, health->Current + int32_t(std::lround(float(dealt) * BloodMagicHeal)));
 			}
@@ -1120,15 +1037,16 @@ namespace Game
 			}
 		}
 		Brawler& brawler = m_Brawlers[victim];
-		if (PlayerController* hurt = entities.TryGet<PlayerController>(target); hurt && dealt > 0 && HasCard(brawler.Loadout.Cards, CardId::ManaSingularity))
+		if (dealt <= 0)
+			return;
+		brawler.HurtAge = 0.0f;
+		PlayerController* hurt = entities.TryGet<PlayerController>(target);
+		if (!hurt)
+			return;
+		if (HasCard(brawler.Loadout.Cards, CardId::ManaSingularity))
 			hurt->State.Mana = std::max(hurt->State.Mana - float(dealt) * ManaSingularityDrain, 0.0f);
-		Health* life = entities.TryGet<Health>(target);
-		if (life && life->Current > 0 && !brawler.SecondWindUsed && HasCard(brawler.Loadout.Cards, CardId::SecondWind) && float(life->Current) < SecondWindHealth * float(life->Max))
-		{
-			brawler.SecondWindUsed = true;
-			life->Current = std::min(life->Max, life->Current + SecondWindHeal);
-			world.Notify(victim, "Second Wind", true);
-		}
+		if (HasCard(brawler.Loadout.Cards, CardId::BloodPact) && hurt->State.Alive)
+			hurt->State.Mana = std::min(hurt->Traits.MaxMana, hurt->State.Mana + float(dealt) * BloodPactMana);
 	}
 
 	void MatchDirector::Ignite(uint32_t victim, uint32_t attacker, float damage, float seconds)
@@ -1141,25 +1059,18 @@ namespace Game
 		brawler.IgniteBy = attacker;
 	}
 
-	void MatchDirector::NoteDeath(uint32_t victim, uint32_t killer, Vec2 position, bool chilled)
+	void MatchDirector::NoteDeath(uint32_t victim)
 	{
 		if (!IsDamageMode() || victim >= MaxPlayers || m_Brawl.Phase != BrawlPhase::Fight)
 			return;
 		Brawler& brawler = m_Brawlers[victim];
-		if (killer < MaxPlayers && killer != victim)
-		{
-			const CardMask cards = m_Brawlers[killer].Loadout.Cards;
-			if (HasCard(cards, CardId::Wildfire) && (brawler.IgniteLeft > 0.0f || brawler.Burning))
-				m_Bursts.push_back({ position, killer, CardId::Wildfire });
-			if (HasCard(cards, CardId::Shatter) && chilled)
-				m_Bursts.push_back({ position, killer, CardId::Shatter });
-		}
 		brawler.IgniteLeft = 0.0f;
 		brawler.IgniteBank = 0.0f;
 		brawler.IgniteBy = NoPlayer;
 		brawler.MarkTime = 0.0f;
 		brawler.MarkedBy = NoPlayer;
-		brawler.Shield = 0.0f;
+		brawler.WardUp = false;
+		brawler.WardTimer = 0.0f;
 	}
 
 	void MatchDirector::UpdateCards(World& world, float dt)
@@ -1201,28 +1112,34 @@ namespace Game
 			for (const Tick& tick : ticks)
 				ApplyDamage(world, tick.Handle, { .Amount = tick.Damage, .Attacker = tick.By, .Damages = Element::Fire, .Ability = uint8_t(AbilityId::Ignite) });
 		}
-		const std::vector<Burst> bursts = std::exchange(m_Bursts, {});
-		for (const Burst& burst : bursts)
+		entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
 		{
-			if (burst.Card == CardId::Wildfire)
+			if (controller.PlayerId >= MaxPlayers)
+				return;
+			Brawler& brawler = m_Brawlers[controller.PlayerId];
+			brawler.HurtAge += dt;
+			if (!controller.State.Alive)
+				return;
+			const CardMask cards = brawler.Loadout.Cards;
+			if (!brawler.WardUp && brawler.WardTimer > 0.0f && HasCard(cards, CardId::CrystalWard))
 			{
-				const AbilityDef& flame = GetAbility(AbilityId::FirebombSkip2);
-				world.SpawnEffect(AbilityId::FirebombSkip2, burst.Center, 0.0f, burst.Owner, 0, WildfireRadius / flame.ImpactRadius);
-				entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
-				{
-					const Transform* transform = entities.TryGet<Transform>(entity);
-					if (controller.PlayerId < MaxPlayers && controller.PlayerId != burst.Owner && controller.State.Alive && transform && LengthSquared(transform->Position - burst.Center) <= WildfireRadius * WildfireRadius)
-						Ignite(controller.PlayerId, burst.Owner, WildfireDamage, WildfireSeconds);
-				});
+				brawler.WardTimer = std::max(brawler.WardTimer - dt, 0.0f);
+				brawler.WardUp = brawler.WardTimer <= 0.0f;
 			}
-			else if (burst.Card == CardId::Shatter)
+			Health* health = entities.TryGet<Health>(entity);
+			if (!health || !HasCard(cards, CardId::Rally))
+				return;
+			const int32_t ceiling = int32_t(std::floor(RallyHealth * float(health->Max)));
+			if (health->Current >= ceiling || brawler.HurtAge < RallyPause)
 			{
-				const AbilityDef& shatter = GetAbility(AbilityId::ShatterBurst);
-				const HitInfo hit{ .Damage = ShatterDamage, .Attacker = burst.Owner, .Damages = Element::Cold, .Ability = uint8_t(AbilityId::ShatterBurst), .Push = 8.0f, .Mode = PushMode::Radial, .PushOrigin = burst.Center, .PushReach = shatter.ImpactRadius };
-				StrikeCircle(world, burst.Center, shatter.ImpactRadius, hit, Team::Players, 0.0f);
-				world.SpawnEffect(AbilityId::ShatterBurst, burst.Center, 0.0f, burst.Owner, 0, 1.0f);
+				brawler.RallyBank = 0.0f;
+				return;
 			}
-		}
+			brawler.RallyBank += RallyRate * dt;
+			const int32_t heal = int32_t(brawler.RallyBank);
+			brawler.RallyBank -= float(heal);
+			health->Current = std::min(ceiling, health->Current + heal);
+		});
 	}
 
 	void MatchDirector::NoteCast(uint32_t playerId)

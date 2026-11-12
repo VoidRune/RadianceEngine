@@ -44,14 +44,6 @@ namespace Game
 		constexpr float BloodHealth = 0.7f;
 		constexpr float BloodPrice = 0.15f;
 		constexpr float BloodMagicFloor = 0.25f;
-		constexpr float PlantReach = 7.5f;
-		constexpr float PlantNear = 2.5f;
-		constexpr float PlantCrowd = 6.0f;
-		constexpr float PlantHealth = 0.25f;
-		constexpr uint32_t PlantCrowdMax = 2;
-		constexpr float PlantHorizon = 0.6f;
-		constexpr float PlantClearance = 1.5f;
-		constexpr float PlantCollapse = 3.0f;
 		constexpr float StrikeHorizon = BoltWarning + 0.2f;
 		constexpr float StrikeLead = 0.4f;
 		constexpr float StrikeMargin = 0.45f;
@@ -286,15 +278,10 @@ namespace Game
 				case CardId::GlassCannon:
 					score += style == BotStyle::Bruiser ? 0.5f : 0.1f;
 					break;
-				case CardId::Featherfall:
-					score += 0.55f;
-					break;
 				case CardId::HeavyRobes:
 					score += style == BotStyle::Sniper ? 0.4f : 0.2f;
 					break;
-				case CardId::Wildfire:
 				case CardId::Overload:
-				case CardId::Shatter:
 				case CardId::Conductive:
 					score += 0.55f;
 					break;
@@ -304,14 +291,25 @@ namespace Game
 				case CardId::Brimming:
 				case CardId::Kindling:
 				case CardId::Brittle:
-				case CardId::Barrier:
+				case CardId::WideSigils:
+				case CardId::SwiftRunes:
+				case CardId::QuickTongue:
 				case CardId::Precise:
-				case CardId::VampiricEmbers:
 					score += 0.4f;
+					break;
+				case CardId::Vampirism:
+				case CardId::CrystalWard:
+				case CardId::Rally:
+				case CardId::ResonantGround:
+				case CardId::Rewind:
+					score += 0.5f;
 					break;
 				case CardId::BloodPact:
 				case CardId::LastStand:
-				case CardId::SecondWind:
+				case CardId::Epicenter:
+				case CardId::Flow:
+				case CardId::Tempo:
+				case CardId::SnapCast:
 					score += 0.3f;
 					break;
 				default:
@@ -1522,35 +1520,6 @@ namespace Game
 		ChooseGoal(world, arena);
 	}
 
-	bool BotBrain::Planted(const BotArena& arena) const
-	{
-		if (!m_DamageMode || m_Burning || !HasCard(m_Loadout.Cards, CardId::Leyline))
-			return false;
-		const Rival* target = FindRival(m_Target);
-		if (!target || m_Health < PlantHealth || LengthSquared(target->Position - m_Position) > PlantReach * PlantReach)
-			return false;
-		uint32_t near = 0;
-		for (const Rival& rival : m_Rivals)
-		{
-			const float gap = LengthSquared(rival.Position - m_Position);
-			if (gap < PlantNear * PlantNear)
-				return false;
-			near += gap < PlantCrowd * PlantCrowd ? 1u : 0u;
-		}
-		if (near > PlantCrowdMax)
-			return false;
-		for (const Missile& missile : m_Missiles)
-		{
-			const float speedSquared = LengthSquared(missile.Velocity);
-			if (speedSquared < 1e-4f)
-				continue;
-			const float time = std::clamp(-Dot(missile.Position - m_Position, missile.Velocity) / speedSquared, 0.0f, missile.Lifetime);
-			if (time < PlantHorizon && Length(missile.Position + missile.Velocity * time - m_Position) < missile.Radius + PlayerRadius + 0.5f)
-				return false;
-		}
-		return arena.Clearance(m_Position) > PlantClearance && arena.CollapseIn(m_Position) > PlantCollapse;
-	}
-
 	void BotBrain::Steer(PlayerInput& input) const
 	{
 		if (m_SidestepTime > 0.0f)
@@ -1617,7 +1586,6 @@ namespace Game
 			Erupt(arena, input);
 			const bool urgent = Escape(world, arena, input) || Recover(arena, input) || Evade(world, arena, input);
 			const bool holding = !urgent && FollowUp(arena, input, tally);
-			m_Planting = !urgent && m_SidestepTime <= 0.0f && Planted(arena);
 			m_Think -= dt;
 			if (m_Think <= 0.0f || !m_HasGoal)
 			{
@@ -1635,11 +1603,6 @@ namespace Game
 						Cast(input, uint32_t(chosen.Slot), chosen.Aim, chosen.Distance, chosen.Charge);
 						m_CastTarget = chosen.Target;
 						m_CastOffset = chosen.Point;
-						if (m_DamageMode && HasCard(m_Loadout.Cards, CardId::EchoChamber) && EchoesInChamber(SpellIn(uint32_t(chosen.Slot))))
-						{
-							m_EchoSpell = SpellIn(uint32_t(chosen.Slot));
-							m_EchoUntil = m_Time + m_Traits->Skills[size_t(chosen.Slot)].CastTime + EchoChamberDelay + 0.1f;
-						}
 						const AbilityDef& def = GetAbility(SpellIn(uint32_t(chosen.Slot)));
 						if (def.Kind == AbilityKind::Ground && def.Push < 0.0f)
 						{
@@ -1650,22 +1613,18 @@ namespace Game
 					}
 				}
 			}
-			if (!urgent && !m_Planting)
-			{
-
+			if (!urgent)
 				Steer(input);
-			}
-			const bool echoing = m_State->CastSlot < 0 && m_Time < m_EchoUntil;
-			const bool charging = !echoing && m_State->CastSlot >= 0 && m_Casting == m_State->CastSlot && IsCharged(m_Traits->Skills[size_t(m_Casting)]);
+			const bool charging = m_State->CastSlot >= 0 && m_Casting == m_State->CastSlot && IsCharged(m_Traits->Skills[size_t(m_Casting)]);
 			if (charging && m_Time < m_ChargeUntil)
 				input.Buttons |= uint8_t(SlotButton(uint32_t(m_Casting)));
 			if (m_State->CastSlot >= 0 && m_Casting == m_State->CastSlot && IsGuard(m_Traits->Skills[size_t(m_Casting)]) && m_Time < m_GuardUntil)
 				input.Buttons |= uint8_t(SlotButton(uint32_t(m_Casting)));
-			if ((m_State->CastSlot >= 0 && m_Casting >= 0) || echoing)
+			if (m_State->CastSlot >= 0 && m_Casting >= 0)
 			{
-				const AbilityDef& def = GetAbility(echoing ? m_EchoSpell : SpellIn(uint32_t(m_Casting)));
+				const AbilityDef& def = GetAbility(SpellIn(uint32_t(m_Casting)));
 				const Rival* target = FindRival(m_CastTarget);
-				const float lead = echoing ? 0.0f : charging ? std::max(m_ChargeUntil - m_Time, 0.0f) : m_State->CastTimer;
+				const float lead = charging ? std::max(m_ChargeUntil - m_Time, 0.0f) : m_State->CastTimer;
 				const float speed = charging ? m_ChargeSpeed : def.ProjectileSpeed;
 				if (target && (def.Kind == AbilityKind::Projectile || def.Kind == AbilityKind::Melee || def.Kind == AbilityKind::Ground))
 				{
@@ -1674,7 +1633,7 @@ namespace Game
 					input.Aim = AngleOf(offset) + m_CastNoise;
 					input.AimDistance = std::clamp(Length(offset) * m_CastStretch, 0.0f, MaxAimDistance);
 				}
-				else if (!echoing)
+				else
 				{
 					input.Aim = m_CastAim;
 					input.AimDistance = m_CastDistance;

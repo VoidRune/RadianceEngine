@@ -2,6 +2,7 @@
 #include "Rendering/Animation.h"
 #include <RadianceEngine/Core/Log.h>
 #include <algorithm>
+#include <cmath>
 
 namespace Game
 {
@@ -11,6 +12,9 @@ namespace Game
 		constexpr float ContactHeight = 0.03f;
 		constexpr uint32_t MinimumContacts = 4;
 		constexpr float RootTravel = 0.05f;
+		constexpr float ContactBand = 0.07f;
+		constexpr float ContactSlip = 0.4f;
+		constexpr float MovingPace = 0.3f;
 	}
 
 	bool ModelLibrary::Load(std::span<const ModelPack> packs, std::string& error)
@@ -48,6 +52,7 @@ namespace Game
 		RetargetClips();
 		MeasureClips();
 		ExtractRootMotion(authored);
+		MeasureGaits();
 		return true;
 	}
 
@@ -213,6 +218,99 @@ namespace Game
 			}
 			if (samples >= MinimumContacts && planted / float(samples) > 0.2f)
 				m_StrideSpeeds[i] = planted / float(samples);
+		}
+	}
+
+	bool ModelLibrary::IsPlanted(uint32_t clip, float time, uint32_t side) const
+	{
+		if (clip >= m_Gaits.size() || m_Gaits[clip].Contacts.empty())
+			return true;
+		const std::vector<uint8_t>& contacts = m_Gaits[clip].Contacts;
+		const float duration = m_Data.Clips[clip].Duration();
+		if (duration > 0.0f)
+			time -= duration * std::floor(time / duration);
+		const size_t frame = std::min(size_t(time * m_Data.Clips[clip].FrameRate + 0.5f), contacts.size() - 1);
+		return (contacts[frame] >> side & 1u) != 0;
+	}
+
+	void ModelLibrary::MeasureGaits()
+	{
+		m_Gaits.assign(m_Data.Clips.size(), {});
+		JointMatrices globals;
+		for (size_t i = 0; i < m_Data.Clips.size(); i++)
+		{
+			const ModelClip& clip = m_Data.Clips[i];
+			const std::optional<uint32_t> feet[] = { FindJoint("foot.l", clip.Skeleton), FindJoint("foot.r", clip.Skeleton) };
+			const std::optional<uint32_t> hips = FindJoint("hips", clip.Skeleton);
+			if (!feet[0] || !feet[1] || !hips || clip.FrameCount < 2)
+				continue;
+			const ModelSkeleton& skeleton = m_Data.Skeletons[clip.Skeleton];
+			Pose pose;
+			RestPose(skeleton, pose);
+			ComputeGlobals(skeleton, pose, globals);
+			const float band = ContactBand * std::max(globals[*hips][3].y, 0.1f);
+			std::vector<glm::vec3> tracks[2];
+			for (uint32_t frame = 0; frame < clip.FrameCount; frame++)
+			{
+				SampleClip(clip, skeleton.JointCount(), float(frame) / clip.FrameRate, false, pose);
+				ComputeGlobals(skeleton, pose, globals);
+				for (uint32_t side = 0; side < 2; side++)
+					tracks[side].push_back(glm::vec3(globals[*feet[side]][3]));
+			}
+			const uint32_t cycle = clip.FrameCount - 1;
+			const auto velocityOf = [&](uint32_t side, uint32_t frame)
+			{
+				const glm::vec3 step = tracks[side][(frame + 1) % cycle] - tracks[side][(frame + cycle - 1) % cycle];
+				return glm::vec2(step.x, step.z) * (0.5f * clip.FrameRate);
+			};
+			std::vector<uint8_t> low(clip.FrameCount, 0);
+			glm::vec2 travel(0.0f);
+			uint32_t samples = 0;
+			for (uint32_t side = 0; side < 2; side++)
+			{
+				float floor = 1e9f;
+				for (const glm::vec3& point : tracks[side])
+					floor = std::min(floor, point.y);
+				for (uint32_t frame = 0; frame < clip.FrameCount; frame++)
+					if (tracks[side][frame].y < floor + band)
+					{
+						low[frame] |= uint8_t(1u << side);
+						travel -= velocityOf(side, frame);
+						samples++;
+					}
+			}
+			const float drift = glm::length(travel);
+			const float pace = m_StrideSpeeds[i] > MovingPace ? m_StrideSpeeds[i] : drift / float(std::max(samples, 1u));
+			travel = drift > 1e-5f ? travel * (pace / drift) : glm::vec2(0.0f);
+			Gait& gait = m_Gaits[i];
+			gait.Contacts = low;
+			if (pace > MovingPace && cycle >= 4)
+			{
+				float planted = 0.0f;
+				uint32_t contacts = 0;
+				for (uint32_t frame = 0; frame < clip.FrameCount; frame++)
+					for (uint32_t side = 0; side < 2; side++)
+					{
+						if (!(low[frame] >> side & 1u))
+							continue;
+						const glm::vec2 velocity = velocityOf(side, frame);
+						if (glm::length(velocity + travel) > ContactSlip * pace)
+							gait.Contacts[frame] &= uint8_t(~(1u << side));
+						else
+						{
+							planted += glm::length(velocity);
+							contacts++;
+						}
+					}
+				if (contacts >= MinimumContacts)
+					m_StrideSpeeds[i] = planted / float(contacts);
+			}
+			for (uint32_t frame = 1; frame < clip.FrameCount; frame++)
+				if ((gait.Contacts[frame] & 1u) && !(gait.Contacts[frame - 1] & 1u))
+				{
+					gait.Sync = float(frame) / float(clip.FrameCount - 1);
+					break;
+				}
 		}
 	}
 }

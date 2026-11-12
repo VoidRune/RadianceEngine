@@ -117,7 +117,9 @@ namespace Game
 		Entity SpawnEffect(AbilityId ability, Vec2 position, float facing, uint32_t owner, uint16_t tag, float scale);
 		Entity SpawnPendingStrike(const AbilityDef& ability, Vec2 position, int32_t damage, const AbilityContext& context);
 		Entity SpawnCardStrike(AbilityId visual, Vec2 position, float facing, float delay, float radius, float push, uint8_t perks, bool visible, const AbilityContext& context);
-		void AddCrater(Vec2 center, float radius) { m_Match.AddCrater(center, radius); }
+		Entity SpawnResonance(const AbilityDef& spell, Vec2 position, float delay, float radius, int32_t damage, float push, const AbilityContext& context);
+		bool BreakCrystalWard(Entity target, uint32_t victim) { return m_Match.BreakCrystalWard(*this, target, victim); }
+		void NoteSpellHit(uint32_t attacker, uint8_t ability) { m_Match.NoteSpellHit(*this, attacker, ability); }
 		void AddCrust(Vec2 center, float radius) { m_Match.AddCrust(m_Level, center, radius); }
 		void RecordDamage(uint32_t victim, uint32_t attacker, int32_t amount, uint8_t ability) { m_Match.RecordDamage(victim, attacker, amount, ability); }
 		int32_t ShapeBrawlDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount) { return m_Match.ShapeDamage(state, victim, attacker, ability, unmitigated, chilled, amount); }
@@ -249,6 +251,7 @@ namespace Game
 		void UpdateHub(float dt);
 		void UpdateBalloon(float dt);
 		void UpdateEchoes(float dt);
+		void CastCopies(AbilityId ability, const AbilityContext& context);
 		void StargazeAt(const PlayerController& controller, Vec2 origin, const PlayerActions& actions);
 		PlayerTraits HubTraits(uint32_t playerId) const;
 		bool PayFor(Inventory& inventory, const MaterialStock& cost);
@@ -288,7 +291,6 @@ namespace Game
 			AbilityContext Context;
 			float Remaining = 0.0f;
 			float Strength = EchoPushScale;
-			bool Reaim = false;
 		};
 		std::vector<EchoCast> m_Echoes;
 		std::array<BrawlSpells, MaxPlayers> m_HubSpells;

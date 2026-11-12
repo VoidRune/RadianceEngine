@@ -3,15 +3,38 @@
 #include "GameShared/Simulation/World.h"
 #include "GameShared/World/Collision.h"
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace Game
 {
+	namespace
+	{
+		void Resonate(World& world, const AbilityDef& ability, int32_t damage, const AbilityContext& context)
+		{
+			Vec2 center = ability.Kind == AbilityKind::Nova ? context.Origin : context.Target;
+			float radius = ability.ImpactRadius * context.AreaScale;
+			if (ability.Shape == StrikeShape::Line)
+			{
+				center = context.Target + Normalize(context.Direction) * (ability.Reach * context.AreaScale * 0.5f);
+				radius = ability.Reach * context.AreaScale * 0.6f;
+			}
+			else if (ability.Kind == AbilityKind::Nova)
+				radius = ability.Reach * context.AreaScale;
+			const int32_t pulse = std::max(1, int32_t(std::lround(float(damage) * ResonanceScale)));
+			world.SpawnResonance(ability, center, ability.ImpactDelay + ResonanceDelay, radius, pulse, ability.Push * ResonanceScale * context.PushScale, context);
+		}
+	}
+
 	void ExecuteAbility(World& world, AbilityId id, const AbilityContext& context)
 	{
 		const AbilityDef& ability = GetAbility(id);
 		const bool brawlDamage = world.UsesBrawlDamage();
 		const int32_t damage = ScaleDamage(brawlDamage ? ability.BrawlDamage : ability.Damage, context.DamageScale);
+		if (HasCard(context.Cards, CardId::ResonantGround) && ability.Spell && IsAreaSpell(id) && ability.Kind != AbilityKind::Projectile && id != AbilityId::GlacialNova)
+			Resonate(world, ability, damage, context);
+		if (id == AbilityId::GlacialEruption && HasCard(context.Cards, CardId::ResonantGround))
+			Resonate(world, ability, damage, context);
 		switch (ability.Kind)
 		{
 		case AbilityKind::Projectile:
@@ -73,8 +96,15 @@ namespace Game
 			{
 				AbilityContext twin = context;
 				twin.DamageScale *= brawlDamage ? TwinDamage / TwinScale : 1.0f;
-				world.SpawnCardStrike(AbilityId::Comet, context.Target, AngleOf(context.Direction), ability.ImpactDelay + TwinDelay, ability.ImpactRadius * context.AreaScale * (brawlDamage ? 1.0f : TwinScale), ability.Push * TwinScale * context.PushScale, HasCard(context.Cards, CardId::ShatteringImpact) ? PerkShatter : 0, true, twin);
+				world.SpawnCardStrike(AbilityId::Comet, context.Target, AngleOf(context.Direction), ability.ImpactDelay + TwinDelay, ability.ImpactRadius * context.AreaScale * (brawlDamage ? 1.0f : TwinScale), ability.Push * TwinScale * context.PushScale, 0, true, twin);
 			}
+			if (id == AbilityId::Comet && HasCard(context.Cards, CardId::Aftershock))
+			{
+				const AbilityDef& shock = GetAbility(AbilityId::Aftershock);
+				world.SpawnCardStrike(AbilityId::Aftershock, context.Target, AngleOf(context.Direction), ability.ImpactDelay + AftershockDelay, ability.ImpactRadius * AftershockRadius * context.AreaScale, shock.Push * context.PushScale, 0, true, context);
+			}
+			if (id == AbilityId::StormStrike && HasCard(context.Cards, CardId::ForkedLightning))
+				world.SpawnCardStrike(AbilityId::StormStrike, context.Target, AngleOf(context.Direction), ability.ImpactDelay + ForkedDelay, ability.ImpactRadius * context.AreaScale, ability.Push * ForkedScale * context.PushScale, HasCard(context.Cards, CardId::StaticCharge) ? PerkStatic : 0, true, context);
 			if (id == AbilityId::GravityWell && HasCard(context.Cards, CardId::Implosion))
 			{
 				AbilityContext burst = context;

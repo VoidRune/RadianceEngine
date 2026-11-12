@@ -19,18 +19,6 @@ namespace Game
 			return { glm::mix(a.Translation, b.Translation, t), Nlerp(a.Rotation, b.Rotation, t), glm::mix(a.Scale, b.Scale, t) };
 		}
 
-		using JointRotations = std::array<glm::quat, MaxModelJoints>;
-
-		void GlobalRotations(const ModelSkeleton& skeleton, const Pose& pose, JointRotations& rotations)
-		{
-			const uint32_t joints = std::min(skeleton.JointCount(), MaxModelJoints);
-			for (uint32_t joint = 0; joint < joints; joint++)
-			{
-				const int32_t parent = skeleton.Parents[joint];
-				rotations[joint] = parent >= 0 ? glm::normalize(rotations[size_t(parent)] * pose[joint].Rotation) : pose[joint].Rotation;
-			}
-		}
-
 		int32_t JointIndex(const ModelSkeleton& skeleton, const std::string& name)
 		{
 			const uint32_t joints = std::min(skeleton.JointCount(), MaxModelJoints);
@@ -83,16 +71,121 @@ namespace Game
 		}
 	}
 
+	void AddPose(Pose& target, const Pose& reference, const Pose& source, float weight, uint32_t joints, const JointWeights* mask)
+	{
+		if (weight <= 0.0f)
+			return;
+		joints = std::min(joints, MaxModelJoints);
+		const glm::quat identity(1.0f, 0.0f, 0.0f, 0.0f);
+		for (uint32_t joint = 0; joint < joints; joint++)
+		{
+			const float amount = std::min(weight * (mask ? (*mask)[joint] : 1.0f), 1.0f);
+			if (amount > 0.0f)
+				target[joint].Rotation = glm::normalize(target[joint].Rotation * Nlerp(identity, glm::inverse(reference[joint].Rotation) * source[joint].Rotation, amount));
+		}
+	}
+
+	glm::mat4 JointMatrix(const JointPose& pose)
+	{
+		return glm::translate(glm::mat4(1.0f), pose.Translation) * glm::mat4_cast(pose.Rotation) * glm::scale(glm::mat4(1.0f), pose.Scale);
+	}
+
 	void ComputeGlobals(const ModelSkeleton& skeleton, const Pose& pose, JointMatrices& globals)
 	{
 		const uint32_t joints = std::min(skeleton.JointCount(), MaxModelJoints);
 		for (uint32_t joint = 0; joint < joints; joint++)
 		{
-			const JointPose& local = pose[joint];
-			const glm::mat4 matrix = glm::translate(glm::mat4(1.0f), local.Translation) * glm::mat4_cast(local.Rotation) * glm::scale(glm::mat4(1.0f), local.Scale);
+			const glm::mat4 matrix = JointMatrix(pose[joint]);
 			const int32_t parent = skeleton.Parents[joint];
 			globals[joint] = parent >= 0 ? globals[size_t(parent)] * matrix : matrix;
 		}
+	}
+
+	void ComputeRotations(const ModelSkeleton& skeleton, const Pose& pose, JointRotations& rotations)
+	{
+		const uint32_t joints = std::min(skeleton.JointCount(), MaxModelJoints);
+		for (uint32_t joint = 0; joint < joints; joint++)
+		{
+			const int32_t parent = skeleton.Parents[joint];
+			rotations[joint] = parent >= 0 ? glm::normalize(rotations[size_t(parent)] * pose[joint].Rotation) : pose[joint].Rotation;
+		}
+	}
+
+	glm::quat GlobalRotation(const ModelSkeleton& skeleton, const Pose& pose, int32_t joint)
+	{
+		glm::quat rotation(1.0f, 0.0f, 0.0f, 0.0f);
+		for (; joint >= 0; joint = skeleton.Parents[size_t(joint)])
+			rotation = pose[size_t(joint)].Rotation * rotation;
+		return glm::normalize(rotation);
+	}
+
+	void TurnJoint(const ModelSkeleton& skeleton, Pose& pose, uint32_t joint, const glm::quat& turn)
+	{
+		const glm::quat parent = GlobalRotation(skeleton, pose, skeleton.Parents[joint]);
+		pose[joint].Rotation = glm::normalize(glm::inverse(parent) * turn * parent * pose[joint].Rotation);
+	}
+
+	glm::quat RotationBetween(const glm::vec3& from, const glm::vec3& to)
+	{
+		const float alignment = glm::dot(from, to);
+		if (alignment > 0.99999f)
+			return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+		if (alignment < -0.99999f)
+		{
+			const glm::vec3 side = std::abs(from.x) < 0.9f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+			return glm::angleAxis(3.14159265f, glm::normalize(glm::cross(from, side)));
+		}
+		const glm::vec3 axis = glm::cross(from, to);
+		return glm::normalize(glm::quat(1.0f + alignment, axis.x, axis.y, axis.z));
+	}
+
+	glm::vec3 RotationVector(glm::quat rotation)
+	{
+		if (rotation.w < 0.0f)
+			rotation = -rotation;
+		const glm::vec3 axis(rotation.x, rotation.y, rotation.z);
+		const float length = glm::length(axis);
+		if (length < 1e-6f)
+			return axis * 2.0f;
+		return axis * (2.0f * std::atan2(length, rotation.w) / length);
+	}
+
+	glm::quat FromRotationVector(const glm::vec3& vector)
+	{
+		const float angle = glm::length(vector);
+		if (angle < 1e-6f)
+			return glm::normalize(glm::quat(1.0f, 0.5f * vector.x, 0.5f * vector.y, 0.5f * vector.z));
+		return glm::angleAxis(angle, vector / angle);
+	}
+
+	constexpr float HingeBias = 0.06f;
+
+	LimbSolve SolveLimb(const glm::vec3& root, const glm::vec3& middle, const glm::vec3& end, const glm::vec3& target, const glm::quat& rootRotation, const glm::quat& middleRotation, const glm::vec3& hinge)
+	{
+		const auto angle = [](const glm::vec3& a, const glm::vec3& b)
+		{
+			const float scale = glm::length(a) * glm::length(b);
+			return scale > 1e-12f ? std::acos(std::clamp(glm::dot(a, b) / scale, -1.0f, 1.0f)) : 0.0f;
+		};
+		const float upper = glm::length(middle - root);
+		const float lower = glm::length(end - middle);
+		LimbSolve solve;
+		if (upper < 1e-5f || lower < 1e-5f)
+			return solve;
+		const float reach = std::clamp(glm::length(target - root), std::abs(upper - lower) + 1e-4f, upper + lower - 1e-4f);
+		const float rootBefore = angle(end - root, middle - root);
+		const float middleBefore = angle(root - middle, end - middle);
+		const float swing = angle(end - root, target - root);
+		const float rootAfter = std::acos(std::clamp((lower * lower - upper * upper - reach * reach) / (-2.0f * upper * reach), -1.0f, 1.0f));
+		const float middleAfter = std::acos(std::clamp((reach * reach - upper * upper - lower * lower) / (-2.0f * upper * lower), -1.0f, 1.0f));
+		const glm::vec3 bend = glm::normalize(glm::cross(end - root, middle - root) + hinge * (HingeBias * upper * lower));
+		const glm::vec3 turn = glm::cross(end - root, target - root);
+		const glm::quat toRoot = glm::inverse(rootRotation);
+		const glm::quat fold = glm::angleAxis(rootAfter - rootBefore, toRoot * bend);
+		const glm::quat aim = glm::length(turn) > 1e-8f ? glm::angleAxis(swing, toRoot * glm::normalize(turn)) : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+		solve.Upper = fold * aim;
+		solve.Lower = glm::angleAxis(middleAfter - middleBefore, glm::inverse(middleRotation) * bend);
+		return solve;
 	}
 
 	void ComputeSkin(const ModelSkeleton& skeleton, const JointMatrices& globals, JointMatrices& skin)
@@ -128,8 +221,8 @@ namespace Game
 		ComputeGlobals(to, targetRest, targetRestGlobals);
 		JointRotations sourceRestRotations;
 		JointRotations targetRestRotations;
-		GlobalRotations(from, sourceRest, sourceRestRotations);
-		GlobalRotations(to, targetRest, targetRestRotations);
+		ComputeRotations(from, sourceRest, sourceRestRotations);
+		ComputeRotations(to, targetRest, targetRestRotations);
 		float stride = 1.0f;
 		if (sourceHips >= 0 && targetHips >= 0 && sourceRestGlobals[size_t(sourceHips)][3].y > 1e-3f)
 			stride = targetRestGlobals[size_t(targetHips)][3].y / sourceRestGlobals[size_t(sourceHips)][3].y;
@@ -163,7 +256,7 @@ namespace Game
 			const JointPose* frames = clip.Frames.data() + size_t(frame) * sourceJoints;
 			std::copy(frames, frames + sourceJoints, source.begin());
 			ComputeGlobals(from, source, sourceGlobals);
-			GlobalRotations(from, source, sourceRotations);
+			ComputeRotations(from, source, sourceRotations);
 			for (uint32_t joint = 0; joint < targetJoints; joint++)
 			{
 				const int32_t parent = to.Parents[joint];

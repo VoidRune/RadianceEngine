@@ -23,7 +23,6 @@ namespace Game
 		constexpr glm::vec3 StormBurnGlow{ 0.4f, 0.55f, 1.0f };
 		constexpr float StormArcRate = 9.0f;
 		constexpr glm::vec3 MarkGlow{ 0.66f, 0.4f, 1.0f };
-		constexpr glm::vec3 BarrierGlow{ 0.72f, 0.88f, 1.0f };
 		constexpr float CardBurnDelay = 0.2f;
 		constexpr float CardBurnSeconds = 0.85f;
 		constexpr const char* SpellKeys[] = { "RMB", "Q", "R" };
@@ -32,7 +31,7 @@ namespace Game
 		static_assert(std::size(CardKeys) == CardChoices);
 		constexpr float CardNewsSeconds = 9.0f;
 		constexpr float ApexNewsSeconds = 4.5f;
-		constexpr glm::vec3 LeylineGlow{ 0.42f, 1.0f, 0.78f };
+		constexpr glm::vec3 QuicksilverGlow{ 0.82f, 0.9f, 1.05f };
 		constexpr float CrumbleRange = 18.0f;
 		constexpr float StrikeSight = 24.0f;
 		constexpr float StrikeRumble = 0.5f;
@@ -917,26 +916,22 @@ namespace Game
 			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 1.95f, 0.0f), 0.32f, MarkGlow * (1.0f * pulse), 0.025f);
 			DrawGlow(renderer, base + glm::vec3(0.0f, 1.95f, 0.0f), 0.3f, MarkGlow * (0.2f * pulse));
 		}
-		if (entity.Has(EntityFlags::Leyline))
+		if (entity.Has(EntityFlags::Quicksilver))
 		{
-			const float pulse = 0.75f + 0.25f * std::sin(m_Time * 3.0f + float(entity.NetId));
-			DrawGroundGlow(renderer, base, 1.1f, LeylineGlow, 0.7f * pulse);
-			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 0.95f, LeylineGlow * (0.9f * pulse), 0.035f);
-			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 0.62f, LeylineGlow * (0.5f * pulse), 0.025f);
+			const float pulse = 0.75f + 0.25f * std::sin(m_Time * 9.0f + float(entity.NetId));
+			DrawGroundGlow(renderer, base, 0.95f, QuicksilverGlow, 0.6f * pulse);
+			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 0.8f, QuicksilverGlow * (0.9f * pulse), 0.03f);
+			DrawGlow(renderer, base + glm::vec3(0.0f, 0.9f, 0.0f), 0.8f, QuicksilverGlow * (0.12f * pulse), 0.5f);
 		}
-		else if (entity.NetId == m_Client.GetPlayerNetId() && HasCard(m_Client.GetLocalPlayer().Brawl.Cards, CardId::Leyline))
+		else if (entity.NetId == m_Client.GetPlayerNetId() && HasCard(m_Client.GetLocalPlayer().Brawl.Cards, CardId::Quicksilver))
 		{
-			const float charge = std::clamp(m_Client.GetPredictedState().Still / LeylineSeconds, 0.0f, 1.0f);
+			const float charge = std::clamp(m_Client.GetPredictedState().Momentum / QuicksilverSeconds, 0.0f, 1.0f);
 			if (charge > 0.05f)
-				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 0.3f + 0.65f * charge, LeylineGlow * (0.45f * charge), 0.025f);
+				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 0.3f + 0.5f * charge, QuicksilverGlow * (0.45f * charge), 0.022f);
 		}
 		if (entity.Has(EntityFlags::Barrier))
-		{
-			const float shimmer = 0.8f + 0.2f * std::sin(m_Time * 5.0f + float(entity.NetId));
-			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.75f, 0.0f), 0.7f, BarrierGlow * (0.3f * shimmer), 0.03f);
-			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 1.35f, 0.0f), 0.5f, BarrierGlow * (0.2f * shimmer), 0.025f);
-			DrawGlow(renderer, base + glm::vec3(0.0f, 0.85f, 0.0f), 1.0f, BarrierGlow * (0.1f * shimmer), 0.6f);
-		}
+			if (const auto fx = m_Fx.find(entity.NetId); fx != m_Fx.end())
+				DrawCrystalWard(renderer, base, fx->second.CrystalForm, m_Time, entity.NetId);
 	}
 
 	void SessionState::DrawSkyWarnings()

@@ -75,8 +75,10 @@ def materials():
         'wood': blackwood_material('ArmoryWood'),
         'runewood': blackwood_material('ArmoryRunewood', runes=(12.0, 0.11, 0.34)),
         'brass': pk.brass_material('ArmoryBrass', tone=(0.55, 0.38, 0.17), bake_size=256),
+        'gold': pk.brass_material('ArmoryGold', tone=(0.78, 0.55, 0.2), bake_size=512),
         'leather': pk.leather_material('ArmoryLeather', tone=(0.045, 0.028, 0.019), bake_size=256),
         'ember': pk.crystal_material('ArmoryEmber', core=EMBER, shell=(0.16, 0.04, 0.012), strength=4.5, bake_size=128, veins=0.4, cells=40.0, thickness=0.01),
+        'ember_large': pk.crystal_material('ArmoryEmberLarge', core=EMBER, shell=(0.16, 0.04, 0.012), strength=4.5, bake_size=256, veins=0.3, cells=11.0, thickness=0.02),
         'spirit': pk.crystal_material('ArmorySpirit', core=SPIRIT, shell=(0.02, 0.07, 0.12), strength=3.6, bake_size=256, veins=0.4, cells=24.0, thickness=0.025),
     }
 
@@ -164,42 +166,92 @@ def wand(m, target, rng):
     return kit.join(parts, 'Wand')
 
 
+def twisted(rows, steps, rng, strands=3, turns=1.5, depth=0.32, gnarl=0.05):
+    bm = pk.lathe(rows, steps, phase=rng.uniform(0.0, math.pi))
+    seed = Vector((rng.uniform(-50.0, 50.0), rng.uniform(-50.0, 50.0), rng.uniform(-50.0, 50.0)))
+    for vertex in bm.verts:
+        radial = Vector((vertex.co.x, vertex.co.y, 0.0))
+        if radial.length < 1e-7:
+            continue
+        z = vertex.co.z
+        angle = math.atan2(radial.y, radial.x)
+        rope = abs(math.cos(0.5 * strands * (angle + z * turns * 2.0 * math.pi)))
+        swell = depth * (rope ** 0.5 - 0.6) + gnarl * noise.noise(seed + Vector((math.cos(angle) * 1.5, math.sin(angle) * 1.5, z * 7.0)))
+        vertex.co = Vector((0.0, 0.0, z)) + radial * (1.0 + swell)
+    return bm
+
+
+def helix(z0, z1, radius, turns, phase=0.0, count=120):
+    points = []
+    for k in range(count + 1):
+        t = k / count
+        z = z0 + (z1 - z0) * t
+        a = phase + turns * 2.0 * math.pi * t
+        points.append((math.cos(a) * radius(z), math.sin(a) * radius(z), z))
+    return points
+
+
 def staff(m, target, rng):
     parts = []
-    ferrule = pk.lathe([(0.0, -1.05), (0.012, -1.048), (0.0175, -1.04), (0.0205, -1.02), (0.0215, -0.99), (0.0235, -0.984), (0.0225, -0.976), (0.0205, -0.972)], 18)
-    parts.append(pk.part('Staff_Ferrule', ferrule, target, m['brass'], rng=rng, smooth=40.0))
-    profile = [(0.0196, -0.975), (0.0205, -0.8), (0.0212, -0.55), (0.0218, -0.3), (0.0205, -0.16), (0.016, -0.125), (0.016, 0.145), (0.0205, 0.18), (0.0216, 0.4), (0.0206, 0.62), (0.0196, 0.72), (0.015, 0.75)]
+    gold, wood = m['gold'], m['wood']
+    ferrule = pk.lathe([(0.0, -0.99), (0.006, -0.96), (0.016, -0.9), (0.0235, -0.875), (0.026, -0.862), (0.0225, -0.85), (0.019, -0.84)], 16)
+    parts.append(pk.part('Staff_Ferrule', ferrule, target, gold, rng=rng, smooth=40.0))
+    profile = [(0.0175, -0.85), (0.0195, -0.6), (0.0205, -0.3), (0.0198, -0.16), (0.0165, -0.13), (0.0165, 0.15), (0.0198, 0.18), (0.021, 0.42), (0.0215, 0.66), (0.024, 0.74), (0.02, 0.775)]
     rows = []
     for (r0, z0), (r1, z1) in zip(profile, profile[1:]):
-        count = max(2, int((z1 - z0) / 0.03))
+        count = max(2, int((z1 - z0) / 0.012))
         for k in range(count):
             t = k / count
             rows.append((r0 + (r1 - r0) * t, z0 + (z1 - z0) * t))
     rows.append(profile[-1])
-    knots = tuple(((rng.uniform(0.0, 6.28), z), rng.uniform(0.012, 0.02), rng.uniform(0.15, 0.25)) for z in (-0.72, -0.41, 0.33, 0.52))
-    parts.append(pk.part('Staff_Shaft', shaft(rows, 16, rng, gnarl=0.09, bend=0.006, knots=knots), target, m['wood'], rng=rng, smooth=60.0))
-    parts.append(pk.part('Staff_Grip', wrap(-0.11, 0.13, 0.0168, 52.0, steps=20, depth=0.0013), target, m['leather'], rng=rng, smooth=50.0))
-    for z in (-0.125, 0.145, 0.6):
-        ring = pk.lathe([(0.021, z - 0.009), (0.0258, z - 0.006), (0.027, z), (0.0258, z + 0.006), (0.021, z + 0.009)], 20)
-        parts.append(pk.part('Staff_Ring', ring, target, m['brass'], rng=rng, smooth=40.0))
-    phase = rng.uniform(0.0, 6.28)
-    for i in range(3):
-        angle = phase + 2.0 * math.pi * i / 3.0
-        points, radii = [], []
-        for (r, z, turn, width) in ((0.006, 0.7, 0.0, 1.0), (0.03, 0.79, 0.35, 0.9), (0.055, 0.87, 0.75, 0.75), (0.052, 0.95, 1.1, 0.6), (0.026, 1.01, 1.45, 0.45), (0.004, 1.035, 1.7, 0.3)):
-            a = angle + turn
-            points.append((math.cos(a) * r, math.sin(a) * r, z))
-            radii.append(width)
-        tine = pk.tube(points, 0.0095, target, m['wood'], f'Staff_Tine{i}', resolution=12, sides=12, radii=radii, rng=rng)
-        parts.append(gnarl_object(tine, rng, 0.0016))
-    collar = pk.lathe([(0.0198, 0.69), (0.0255, 0.695), (0.027, 0.705), (0.0245, 0.716), (0.017, 0.722)], 20)
-    parts.append(pk.part('Staff_Collar', collar, target, m['brass'], rng=rng, smooth=40.0))
-    for i in range(3):
-        angle = phase + 2.0 * math.pi * i / 3.0 + 0.93
-        band = pk.torus(0.0098, 0.0024, steps=16, sides=8)
-        bmesh.ops.transform(band, verts=band.verts, matrix=Matrix.Translation((math.cos(angle) * 0.054, math.sin(angle) * 0.054, 0.91)))
-        parts.append(pk.part('Staff_Band', band, target, m['brass'], rng=rng, smooth=50.0))
-    parts.append(pk.part('Staff_Crystal', crystal((0.0, 0.0, 0.888), 0.026, 0.11, sides=7, twist=phase), target, m['spirit'], rng=rng, bevel=(0.0015, 1, 30.0)))
+    parts.append(pk.part('Staff_Shaft', twisted(rows, 24, rng), target, wood, rng=rng, smooth=60.0))
+    parts.append(pk.part('Staff_Grip', wrap(-0.12, 0.14, 0.0172, 52.0, steps=20, depth=0.0013), target, m['leather'], rng=rng, smooth=50.0))
+
+    def girth(z):
+        return 0.0228 if z > 0.0 else 0.0222
+
+    for z0, z1, phase in ((-0.82, -0.16, 0.4), (0.17, 0.72, 2.1)):
+        band = helix(z0, z1, girth, turns=(z1 - z0) * 3.4, phase=phase)
+        parts.append(pk.tube(band, 0.0032, target, gold, f'Staff_Spiral{len(parts)}', resolution=2, sides=8, rng=rng))
+        for k in range(1, 4):
+            a, b = Vector(band[k * len(band) // 4]), Vector(band[k * len(band) // 4 - 2])
+            out = Vector((a.x, a.y, 0.0)).normalized()
+            spike = pk.cone_bm(a - out * 0.004, a + out * 0.03 + (a - b).normalized() * 0.012, 0.0055, sides=6)
+            parts.append(pk.part('Staff_Thorn', spike, target, gold, rng=rng, bevel=(0.0008, 1, 30.0)))
+    for z in (-0.135, 0.155):
+        ring = pk.lathe([(0.02, z - 0.008), (0.0255, z - 0.005), (0.0268, z), (0.0255, z + 0.005), (0.02, z + 0.008)], 20)
+        parts.append(pk.part('Staff_Ring', ring, target, gold, rng=rng, smooth=40.0))
+    collar = pk.lathe([(0.021, 0.74), (0.03, 0.75), (0.034, 0.765), (0.031, 0.78), (0.022, 0.79)], 20)
+    parts.append(pk.part('Staff_Collar', collar, target, gold, rng=rng, smooth=40.0))
+
+    center = Vector((0.0, 0.0, 0.905))
+    hoop_major, hoop_minor = 0.088, 0.0105
+    hoop = pk.torus(hoop_major, hoop_minor, steps=40, sides=12)
+    bmesh.ops.transform(hoop, verts=hoop.verts, matrix=Matrix.Translation(center) @ Matrix.Rotation(math.pi * 0.5, 4, 'X'))
+    obj = pk.part('Staff_Hoop', hoop, target, wood, rng=rng, smooth=60.0)
+    parts.append(gnarl_object(obj, rng, 0.0018))
+    for k in range(8):
+        a = math.pi * 0.5 + 2.0 * math.pi * k / 8.0
+        direction = Vector((math.cos(a), 0.0, math.sin(a)))
+        base = center + direction * (hoop_major + hoop_minor * 0.4)
+        length = 0.085 if k == 0 else 0.05 if k % 2 == 0 else 0.035
+        if k == 4:
+            continue
+        spike = pk.cone_bm(base - direction * 0.006, base + direction * length, 0.011 if k % 2 == 0 else 0.008, sides=4, flatten=0.45)
+        parts.append(pk.part('Staff_Spike', spike, target, gold, rng=rng, bevel=(0.0012, 1, 30.0)))
+        if k % 2 == 1:
+            band = pk.torus(hoop_minor + 0.0022, 0.0028, steps=14, sides=6)
+            tangent = Vector((-math.sin(a), 0.0, math.cos(a)))
+            frame = Matrix.Translation(center + direction * hoop_major) @ tangent.to_track_quat('Z', 'Y').to_matrix().to_4x4()
+            bmesh.ops.transform(band, verts=band.verts, matrix=frame)
+            parts.append(pk.part('Staff_HoopBand', band, target, gold, rng=rng, smooth=50.0))
+    for side in (-1.0, 1.0):
+        points = [(side * 0.012, 0.0, 0.78), (side * 0.032, 0.0, 0.8), (side * 0.03, 0.0, 0.85), (side * 0.018, 0.0, 0.875)]
+        parts.append(pk.tube(points, 0.0035, target, gold, 'Staff_Prong', resolution=6, sides=8, radii=[1.2, 1.0, 0.85, 0.6], rng=rng))
+    for side in (-1.0, 1.0):
+        points = [(0.0, side * 0.01, 0.78), (0.0, side * 0.024, 0.82), (0.0, side * 0.02, 0.86), (0.0, side * 0.012, 0.88)]
+        parts.append(pk.tube(points, 0.003, target, gold, 'Staff_Prong', resolution=6, sides=8, radii=[1.2, 1.0, 0.85, 0.6], rng=rng))
+    parts.append(pk.part('Staff_Crystal', crystal((0.0, 0.0, 0.89), 0.036, 0.1, sides=6, squash=0.95, twist=0.2), target, m['ember_large'], rng=rng, bevel=(0.0015, 1, 30.0)))
     return kit.join(parts, 'Staff')
 
 

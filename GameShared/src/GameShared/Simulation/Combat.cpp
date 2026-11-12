@@ -179,7 +179,7 @@ namespace Game
 		{
 			float extent = std::max(strike.Radius, strike.Length + strike.Width * 0.5f);
 			if (strike.Ability == uint8_t(AbilityId::StormStrike))
-				extent += GetAbility(AbilityId::StormJump).Range * float((strike.Perks & PerkFork) ? ForkedJumps : 1u);
+				extent += GetAbility(AbilityId::StormJump).Range;
 			return extent;
 		}
 
@@ -483,10 +483,15 @@ namespace Game
 			return true;
 		}
 
+		float ChainReach(const Projectile& projectile)
+		{
+			return ChainRange * ((projectile.Perks & PerkReach) ? OverchargeReach : 1.0f);
+		}
+
 		bool Chain(World& world, const std::vector<Target>& targets, const Projectile& projectile, Entity hit, Vec2 from, uint32_t owner)
 		{
 			const Target* best = nullptr;
-			float bestDistance = ChainRange * ChainRange;
+			float bestDistance = ChainReach(projectile) * ChainReach(projectile);
 			const auto already = [&](Entity entity) { return entity == hit || std::find(projectile.Hits.begin(), projectile.Hits.begin() + projectile.HitCount, entity) != projectile.Hits.begin() + projectile.HitCount; };
 			for (const Target& target : targets)
 			{
@@ -512,7 +517,7 @@ namespace Game
 			const Vec2 direction = Normalize(best->Position - from);
 			const float speed = Length(projectile.Velocity);
 			next.Velocity = direction * speed;
-			next.Lifetime = ChainRange / std::max(speed, 1e-3f);
+			next.Lifetime = ChainReach(projectile) / std::max(speed, 1e-3f);
 			world.SpawnProjectileCopy(next, from + direction * 0.3f, owner);
 			return true;
 		}
@@ -520,35 +525,29 @@ namespace Game
 		void StormJumps(World& world, const std::vector<Target>& targets, const PendingStrike& strike, Vec2 center, const HitInfo& base, std::vector<Entity>& struck)
 		{
 			const AbilityDef& jump = GetAbility(AbilityId::StormJump);
-			const uint32_t jumps = (strike.Perks & PerkFork) ? ForkedJumps : 1u;
 			const float scale = strike.Push / std::max(GetAbility(AbilityId::StormStrike).Push, 1e-3f);
-			Vec2 from = center;
-			for (uint32_t i = 0; i < jumps; i++)
+			const Target* best = nullptr;
+			float bestDistance = jump.Range * jump.Range;
+			for (const Target& target : targets)
 			{
-				const Target* best = nullptr;
-				float bestDistance = jump.Range * jump.Range;
-				for (const Target& target : targets)
-				{
-					const float distance = LengthSquared(target.Position - from);
-					if (distance >= bestDistance || !IsHostile(world, strike.Side, strike.Owner, target) || std::find(struck.begin(), struck.end(), target.Handle) != struck.end() || !HasLineOfFire(world.GetLevel(), from, target.Position))
-						continue;
-					best = &target;
-					bestDistance = distance;
-				}
-				if (!best)
-					return;
-				HitInfo hit = base;
-				hit.Ability = uint8_t(AbilityId::StormJump);
-				if (world.UsesBrawlDamage())
-					hit.Damage = int32_t(std::lround(float(base.Damage) * float(jump.BrawlDamage) / float(std::max(GetAbility(AbilityId::StormStrike).BrawlDamage, 1))));
-				hit.Push = jump.Push * scale;
-				hit.Mode = PushMode::Along;
-				hit.PushDirection = best->Position - from;
-				DealDamage(world, best->Handle, hit);
-				struck.push_back(best->Handle);
-				world.SpawnEffect(AbilityId::StormJump, best->Position, AngleOf(best->Position - from), strike.Owner, 0, std::sqrt(bestDistance));
-				from = best->Position;
+				const float distance = LengthSquared(target.Position - center);
+				if (distance >= bestDistance || !IsHostile(world, strike.Side, strike.Owner, target) || std::find(struck.begin(), struck.end(), target.Handle) != struck.end() || !HasLineOfFire(world.GetLevel(), center, target.Position))
+					continue;
+				best = &target;
+				bestDistance = distance;
 			}
+			if (!best)
+				return;
+			HitInfo hit = base;
+			hit.Ability = uint8_t(AbilityId::StormJump);
+			if (world.UsesBrawlDamage())
+				hit.Damage = int32_t(std::lround(float(base.Damage) * float(jump.BrawlDamage) / float(std::max(GetAbility(AbilityId::StormStrike).BrawlDamage, 1))));
+			hit.Push = jump.Push * scale;
+			hit.Mode = PushMode::Along;
+			hit.PushDirection = best->Position - center;
+			DealDamage(world, best->Handle, hit);
+			struck.push_back(best->Handle);
+			world.SpawnEffect(AbilityId::StormJump, best->Position, AngleOf(best->Position - center), strike.Owner, 0, std::sqrt(bestDistance));
 		}
 
 		template <typename AlreadyHit>
@@ -690,6 +689,8 @@ namespace Game
 		const HitInfo warded = hit;
 		if (Guard(world, target, warded, damage, hit) == GuardOutcome::Held)
 			return true;
+		if (const PlayerController* crystal = entities.TryGet<PlayerController>(target); crystal && crystal->State.Alive && crystal->State.Invulnerable <= 0.0f && hit.Attacker != NoPlayer && hit.Attacker != crystal->PlayerId && world.BreakCrystalWard(target, crystal->PlayerId))
+			return true;
 		if (const PlayerController* victim = entities.TryGet<PlayerController>(target); victim && victim->State.Alive && victim->State.Invulnerable <= 0.0f)
 			world.NoteBlow(victim->PlayerId, hit.Attacker, hit.Ability, hit.Mode == PushMode::Pull, hit.Returned);
 		if (damage <= 0)
@@ -715,7 +716,9 @@ namespace Game
 		{
 			PlayerState& state = controller->State;
 			if (hit.Chill > 0.0f)
-				state.Chill = std::max(state.Chill, PvpChillDuration(hit.Chill));
+				state.Chill = std::max(state.Chill, PvpChillDuration(hit.Chill) * (world.IsDamageBrawl() && world.GetMatch().HasPlayerCard(hit.Attacker, CardId::Brittle) ? BrittleChill : 1.0f));
+			if (hit.Attacker != NoPlayer && hit.Attacker != controller->PlayerId)
+				world.NoteSpellHit(hit.Attacker, hit.Ability);
 			if (hit.Slick)
 				state.Slick = std::max(state.Slick, BlackIceSeconds);
 			if (hit.Static)
@@ -959,7 +962,7 @@ namespace Game
 				}
 				if (hook)
 					hooks.push_back({ point, transform->Facing, owner, tag, projectile.Source, true });
-				if (projectile.Chain > 0 && Chain(world, sweep.Pick(targets, point, ChainRange), projectile, contact.Handle, point, owner))
+				if (projectile.Chain > 0 && Chain(world, sweep.Pick(targets, point, ChainReach(projectile)), projectile, contact.Handle, point, owner))
 				{
 					spent = true;
 					break;
@@ -1072,8 +1075,6 @@ namespace Game
 				}
 				if (landed.Ability == uint8_t(AbilityId::StormStrike))
 					StormJumps(world, targets, landed, center, hit, struck);
-				if (landed.Perks & PerkShatter)
-					world.AddCrater(center, landed.Radius * CraterScale);
 				const AbilityDef& ability = GetAbility(AbilityId(landed.Ability));
 				const Replicated* replicated = entities.TryGet<Replicated>(entity);
 				world.SpawnEffect(ability.Id, center, facing, landed.Owner, replicated ? replicated->Tag : 0, StrikeScale(ability, landed));

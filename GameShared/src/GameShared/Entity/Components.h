@@ -140,7 +140,11 @@ namespace Game
 		uint8_t Overload = 0;
 		uint8_t RecastAbility = UINT8_MAX;
 		float ManaStall = 0.0f;
-		float Still = 0.0f;
+		float Momentum = 0.0f;
+		float Tempo = 0.0f;
+		uint8_t TempoStacks = 0;
+		float Snap = 0.0f;
+		uint8_t Surge = 0;
 		float GuardLost = 0.0f;
 		float GuardIdle = 0.0f;
 		bool GuardUp = false;
@@ -276,6 +280,7 @@ namespace Game
 		float Push = 0.0f;
 		uint8_t Ability = 0;
 		uint8_t Perks = 0;
+		float Lead = 0.0f;
 	};
 
 	struct Boss

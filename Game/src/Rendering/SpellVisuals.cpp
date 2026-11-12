@@ -1635,8 +1635,8 @@ namespace Game
 
 	GroundDecal SpellMarkDecal(const SpellMark& mark)
 	{
-		static constexpr DecalShape Shapes[] = { DecalShape::CometMark, DecalShape::StormMark, DecalShape::VoidMark, DecalShape::FirebombMark };
-		static constexpr glm::vec4 Shades[] = { { 0.03f, 0.016f, 0.01f, 1.0f }, { 0.012f, 0.016f, 0.04f, 0.85f }, { 0.018f, 0.005f, 0.04f, 1.0f }, { 0.035f, 0.02f, 0.012f, 1.0f } };
+		static constexpr DecalShape Shapes[] = { DecalShape::CometMark, DecalShape::StormMark, DecalShape::VoidMark, DecalShape::FirebombMark, DecalShape::AftershockMark, DecalShape::ResonanceMark };
+		static constexpr glm::vec4 Shades[] = { { 0.03f, 0.016f, 0.01f, 1.0f }, { 0.012f, 0.016f, 0.04f, 0.85f }, { 0.018f, 0.005f, 0.04f, 1.0f }, { 0.035f, 0.02f, 0.012f, 1.0f }, { 0.035f, 0.014f, 0.008f, 1.0f }, { 0.03f, 0.024f, 0.012f, 0.9f } };
 		const float extent = mark.Radius + 0.4f;
 		GroundDecal decal;
 		decal.Center = mark.Center;
@@ -2379,5 +2379,99 @@ namespace Game
 		lens.Params = glm::vec4(horizon, einstein, 0.0f, 0.0f);
 		lens.Color = ring;
 		renderer.DrawDistortion(lens);
+	}
+
+	namespace
+	{
+		constexpr uint32_t CrystalCount = 3;
+		constexpr float CrystalOrbit = 0.62f;
+		constexpr float CrystalHeight = 1.0f;
+		constexpr float CrystalTall = 0.26f;
+		constexpr float CrystalWide = 0.11f;
+		constexpr glm::vec3 CrystalEdge{ 1.1f, 2.1f, 3.0f };
+		constexpr glm::vec3 CrystalAbsorption{ 0.9f, 0.32f, 0.1f };
+
+		template <typename Face>
+		void CrystalFacets(const glm::vec3& base, float form, float time, uint32_t seed, const Face& face)
+		{
+			const float phase = Unit(seed) * 6.2832f;
+			for (uint32_t i = 0; i < CrystalCount; i++)
+			{
+				const float angle = phase + time * 1.6f + float(i) * 6.2832f / float(CrystalCount);
+				const glm::vec3 center = base + RingPoint(angle, CrystalOrbit, CrystalHeight + 0.08f * std::sin(time * 2.3f + float(i) * 2.1f));
+				const float size = form * form * (3.0f - 2.0f * form);
+				const float spin = time * 2.0f + float(i) * 1.3f;
+				const glm::vec3 top = center + Up * (CrystalTall * size);
+				const glm::vec3 bottom = center - Up * (CrystalTall * size * 0.8f);
+				std::array<glm::vec3, 4> ring;
+				for (uint32_t k = 0; k < 4; k++)
+					ring[k] = center + SpinY(glm::vec3(CrystalWide * size, 0.0f, 0.0f), spin + float(k) * 1.5708f);
+				for (uint32_t k = 0; k < 4; k++)
+				{
+					const glm::vec3& a = ring[k];
+					const glm::vec3& b = ring[(k + 1) % 4];
+					face(std::array<glm::vec3, 3>{ top, a, b }, center, i * 8u + k);
+					face(std::array<glm::vec3, 3>{ bottom, b, a }, center, i * 8u + k + 4u);
+				}
+			}
+		}
+	}
+
+	void DrawCrystalWard(WorldRenderer& renderer, const glm::vec3& base, float form, float time, uint32_t seed)
+	{
+		if (form <= 0.01f)
+			return;
+		const float pulse = 0.8f + 0.2f * std::sin(time * 4.0f + Unit(seed) * 6.0f);
+		CrystalFacets(base, form, time, seed, [&](const std::array<glm::vec3, 3>& corners, const glm::vec3&, uint32_t index)
+		{
+			GlassFacet glass;
+			glass.A = corners[0];
+			glass.B = corners[1];
+			glass.C = corners[2];
+			glass.Absorption = CrystalAbsorption;
+			glass.Scatter = 0.05f;
+			glass.Edge = CrystalEdge * pulse;
+			glass.Glint = 1.0f;
+			glass.Ior = 1.9f;
+			glass.Dispersion = 0.25f;
+			glass.Roughness = 0.02f;
+			glass.Floor = base.y;
+			glass.Flash = 0.6f * (1.0f - form);
+			glass.Fade = std::min(form * 2.0f, 1.0f);
+			glass.Seed = Mix(seed, index);
+			renderer.DrawFacet(glass);
+		});
+		const float phase = Unit(seed) * 6.2832f;
+		for (uint32_t i = 0; i < CrystalCount; i++)
+		{
+			const float angle = phase + time * 1.6f + float(i) * 6.2832f / float(CrystalCount);
+			const glm::vec3 center = base + RingPoint(angle, CrystalOrbit, CrystalHeight + 0.08f * std::sin(time * 2.3f + float(i) * 2.1f));
+			DrawGlow(renderer, center, 0.3f * form, CrystalEdge * (0.22f * pulse * form));
+			DrawStar(renderer, center + Up * (CrystalTall * form), 0.09f * form * pulse, CrystalEdge * (0.35f * form), time * 1.7f + float(i));
+		}
+		DrawFloatingRing(renderer, base + Up * CrystalHeight, CrystalOrbit, CrystalEdge * (0.06f * pulse * form), 0.012f);
+	}
+
+	void ShatterCrystalWard(const glm::vec3& base, float time, uint32_t seed, std::vector<DiamondShard>& shards)
+	{
+		CrystalFacets(base, 1.0f, time, seed, [&](const std::array<glm::vec3, 3>& corners, const glm::vec3& core, uint32_t index)
+		{
+			const uint32_t piece = Mix(seed, index + 101u);
+			const glm::vec3 center = (corners[0] + corners[1] + corners[2]) / 3.0f;
+			const glm::vec3 out = center - core;
+			const glm::vec3 scatter = glm::vec3(Unit(Mix(piece, 1u)), Unit(Mix(piece, 2u)), Unit(Mix(piece, 3u))) * 2.0f - 1.0f;
+			const glm::vec3 radial = glm::vec3(core.x - base.x, 0.0f, core.z - base.z);
+			DiamondShard shard;
+			for (size_t c = 0; c < 3; c++)
+				shard.Corners[c] = (corners[c] - center) * 0.9f;
+			shard.Center = center;
+			shard.Velocity = (glm::length(radial) > 1e-3f ? glm::normalize(radial) : Up) * (1.6f + 1.8f * Unit(Mix(piece, 4u))) + out * 6.0f + Up * (0.8f + 1.4f * Unit(Mix(piece, 5u))) + scatter * 0.5f;
+			shard.Axis = glm::length(scatter) > 1e-3f ? glm::normalize(scatter) : Up;
+			shard.Spin = (6.0f + 9.0f * Unit(Mix(piece, 6u))) * (Unit(Mix(piece, 7u)) > 0.5f ? 1.0f : -1.0f);
+			shard.Floor = base.y;
+			shard.Life = 0.5f + 0.4f * Unit(Mix(piece, 8u));
+			shard.Seed = piece;
+			shards.push_back(shard);
+		});
 	}
 }

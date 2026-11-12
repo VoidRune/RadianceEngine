@@ -215,7 +215,7 @@ namespace Game
 		switch (card)
 		{
 		case CardId::SplittingEmber: return UiIcon::SplitArrows;
-		case CardId::ShatteringImpact: return UiIcon::EarthCrack;
+		case CardId::Aftershock: return UiIcon::EarthCrack;
 		case CardId::TwinComets: return UiIcon::MeteorImpact;
 		case CardId::Afterimage: return UiIcon::Teleport;
 		case CardId::IceShrapnel: return UiIcon::Shard;
@@ -225,7 +225,6 @@ namespace Game
 		case CardId::ThornedMirror: return UiIcon::ThornedArrow;
 		case CardId::BlackIce: return UiIcon::Snowflake;
 		case CardId::GlassCannon: return UiIcon::SkullCrack;
-		case CardId::Featherfall: return UiIcon::HighShot;
 		case CardId::Echo: return UiIcon::Dodge;
 		case CardId::HeavyRobes: return UiIcon::Robe;
 		case CardId::LongChain: return UiIcon::SpearHook;
@@ -242,23 +241,30 @@ namespace Game
 		case CardId::Brimming: return UiIcon::FizzingFlask;
 		case CardId::BloodPact: return UiIcon::BleedingHeart;
 		case CardId::LastStand: return UiIcon::BrokenShield;
-		case CardId::VampiricEmbers: return UiIcon::Heartburn;
+		case CardId::Vampirism: return UiIcon::HeartDrop;
 		case CardId::Kindling: return UiIcon::BurningEmbers;
-		case CardId::Wildfire: return UiIcon::FireRing;
 		case CardId::Brittle: return UiIcon::FrozenBlock;
-		case CardId::Shatter: return UiIcon::IceBolt;
 		case CardId::Conductive: return UiIcon::LightningHelix;
 		case CardId::Overload: return UiIcon::PowerLightning;
-		case CardId::Barrier: return UiIcon::EnergyShield;
-		case CardId::SecondWind: return UiIcon::HeartBottle;
+		case CardId::CrystalWard: return UiIcon::EnergyShield;
+		case CardId::Rally: return UiIcon::HeartPlus;
 		case CardId::Precise: return UiIcon::OnTarget;
+		case CardId::WideSigils: return UiIcon::FireRing;
+		case CardId::Epicenter: return UiIcon::Waves;
+		case CardId::ResonantGround: return UiIcon::Aura;
+		case CardId::SwiftRunes: return UiIcon::Hourglass;
+		case CardId::Flow: return UiIcon::Whirlwind;
+		case CardId::Rewind: return UiIcon::Stopwatch;
+		case CardId::QuickTongue: return UiIcon::Sparkles;
+		case CardId::Tempo: return UiIcon::Upgrade;
+		case CardId::SnapCast: return UiIcon::HighShot;
 		case CardId::ApexOfMagic: return UiIcon::StarSwirl;
 		case CardId::ManaSingularity: return UiIcon::Sunbeams;
 		case CardId::MindOverMatter: return UiIcon::PsychicWaves;
 		case CardId::BloodMagic: return UiIcon::DrippingBlade;
 		case CardId::EchoChamber: return UiIcon::EchoRipples;
 		case CardId::UnstableArcana: return UiIcon::UnstableOrb;
-		case CardId::Leyline: return UiIcon::Meditation;
+		case CardId::Quicksilver: return UiIcon::Run;
 		default: return UiIcon::Upgrade;
 		}
 	}
@@ -352,13 +358,39 @@ namespace Game
 		}
 	}
 
-	UiIcon IconFor(Headwear headwear)
+	UiIcon IconFor(Outfit outfit)
 	{
-		switch (headwear)
+		return outfit == Outfit::Frostwarden ? UiIcon::Snowflake : UiIcon::Hood;
+	}
+
+	UiIcon IconFor(Focus focus)
+	{
+		switch (focus)
 		{
-		case Headwear::Hood: return UiIcon::Hood;
-		case Headwear::Bare: return UiIcon::Aura;
-		default: return UiIcon::PointyHat;
+		case Focus::Staff: return UiIcon::WizardStaff;
+		case Focus::Hands: return UiIcon::Hand;
+		default: return UiIcon::CrystalWand;
+		}
+	}
+
+	UiIcon IconFor(Aura aura)
+	{
+		switch (aura)
+		{
+		case Aura::Ember: return UiIcon::BurningEmbers;
+		case Aura::Astral: return UiIcon::StarSwirl;
+		case Aura::Frost: return UiIcon::FrozenOrb;
+		default: return UiIcon::CrossMark;
+		}
+	}
+
+	UiIcon IconFor(Headpiece headpiece)
+	{
+		switch (headpiece)
+		{
+		case Headpiece::ShatteredCrown: return UiIcon::Crown;
+		case Headpiece::FrostCrown: return UiIcon::IceSpear;
+		default: return UiIcon::CrossMark;
 		}
 	}
 

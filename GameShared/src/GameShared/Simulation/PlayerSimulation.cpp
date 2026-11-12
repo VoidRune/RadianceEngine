@@ -250,6 +250,11 @@ namespace Game
 			return std::any_of(level.Constellations.begin(), level.Constellations.end(), [&](const Constellation& constellation) { return constellation.Spell == spell && LengthSquared(target - constellation.Position) <= constellation.Radius * constellation.Radius; });
 		}
 
+		float CastPace(const PlayerState& state, const PlayerTraits& traits)
+		{
+			return 1.0f + traits.TempoStep * float(state.TempoStacks);
+		}
+
 		void Release(const Level& level, Vec2 origin, PlayerState& state, PlayerActions& actions, const PlayerTraits& traits, uint32_t slot, Vec2 aim, float aimDistance)
 		{
 			const SkillTraits& skill = traits.Skills[slot];
@@ -270,6 +275,11 @@ namespace Game
 			if (overloaded)
 				actions.Overloaded |= uint8_t(1u << slot);
 			state.Cooldowns[slot] = skill.Cooldown;
+			if (traits.TempoStep > 0.0f)
+			{
+				state.TempoStacks = std::min<uint8_t>(uint8_t(state.TempoStacks + 1), TempoMaxStacks);
+				state.Tempo = TempoSeconds;
+			}
 			actions.Released |= uint8_t(1u << slot);
 			if (AimsFromPoint(skill.Ability))
 			{
@@ -598,6 +608,10 @@ namespace Game
 		Cool(state.WardShatter, dt);
 		Cool(state.Static, dt);
 		Cool(state.ManaStall, dt);
+		Cool(state.Snap, dt);
+		Cool(state.Tempo, dt);
+		if (state.Tempo <= 0.0f)
+			state.TempoStacks = 0;
 		if (state.RecastTimer > 0.0f)
 		{
 			state.RecastAge += dt;
@@ -623,17 +637,16 @@ namespace Game
 			state.CastTimer = 0.0f;
 			state.Push = {};
 			state.Fall = 0.0f;
-			state.Still = 0.0f;
+			state.Momentum = 0.0f;
 			return actions;
 		}
 		if (state.IsFalling())
 		{
-			state.Still = 0.0f;
+			state.Momentum = 0.0f;
 			Plunge(level, arena, transform, state, actions, dt);
 			return actions;
 		}
-		if (state.ManaStall <= 0.0f)
-			state.Mana = std::min(traits.MaxMana, state.Mana + traits.ManaRegen * dt);
+		state.Mana = std::min(traits.MaxMana, state.Mana + traits.ManaRegen * (state.ManaStall > 0.0f ? traits.StallRegen : 1.0f) * dt);
 
 		ArenaState next = arena;
 		next.Clock += dt;
@@ -684,6 +697,7 @@ namespace Game
 			state.DodgeCooldown = traits.Dodge.Cooldown;
 			state.Push *= 0.5f;
 			actions.Dodged = true;
+			state.Snap = traits.SnapWindow;
 		}
 
 		if (state.RecastSlot >= 0 && state.DashDistance <= 0.0f && (pressed & uint8_t(SlotButton(uint32_t(state.RecastSlot)))) != 0)
@@ -734,7 +748,7 @@ namespace Game
 				else if (IsCharged(skill))
 				{
 					state.CastTimer = std::max(state.CastTimer - dt, 0.0f);
-					state.Charge = std::min(state.Charge + dt, skill.ChargeTime + ChargeHoldSeconds);
+					state.Charge = std::min(state.Charge + dt * CastPace(state, traits), skill.ChargeTime + ChargeHoldSeconds);
 					const bool held = state.Charge >= skill.ChargeTime + ChargeHoldSeconds - ReadyEpsilon;
 					if (held || (state.CastTimer <= ReadyEpsilon && !input.IsDown(SlotButton(uint32_t(castingSlot)))))
 					{
@@ -771,13 +785,16 @@ namespace Game
 						const Vec2 away = state.CastPoint - transform.Position;
 						state.CastAim = SteerSpike(state.CastPoint, LengthSquared(away) > 0.01f ? Normalize(away) : aim, transform.Position + aim * input.AimDistance);
 					}
-					if (traits.Skills[slot].CastTime <= ReadyEpsilon && !IsCharged(traits.Skills[slot]))
+					const SkillTraits& starting = traits.Skills[slot];
+					const bool snapped = state.Snap > 0.0f;
+					state.Snap = 0.0f;
+					if ((starting.CastTime <= ReadyEpsilon || snapped) && !IsCharged(starting))
 						Release(level, transform.Position, state, actions, traits, slot, aim, input.AimDistance);
 					else
 					{
 						state.CastSlot = int8_t(slot);
-						state.CastTimer = traits.Skills[slot].CastTime;
-						state.Charge = 0.0f;
+						state.CastTimer = snapped ? 0.0f : starting.CastTime / CastPace(state, traits);
+						state.Charge = snapped ? starting.ChargeTime : 0.0f;
 						castingSlot = int32_t(slot);
 					}
 					break;
@@ -801,10 +818,10 @@ namespace Game
 		}
 		DecayPush(level, transform.Position, state, dt);
 		Footing(level, next, transform, state, actions, dashed || dashing);
-		if (LengthSquared(move) <= 1e-4f && !dashed && !dashing)
-			state.Still = std::min(state.Still + dt, LeylineSeconds + LeylineLinger);
+		if (LengthSquared(move) > 1e-4f || dashed || dashing)
+			state.Momentum = std::min(state.Momentum + dt, QuicksilverSeconds);
 		else
-			state.Still = state.Still > LeylineSeconds ? state.Still - dt : 0.0f;
+			state.Momentum = std::max(state.Momentum - QuicksilverDrain * dt, 0.0f);
 		Strike(arena, dt, transform, state);
 		return actions;
 	}

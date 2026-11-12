@@ -11,3 +11,8 @@ mocap/
 	Each .asf is a subject skeleton and each .amc a trial cut down to the span heroanim.py uses and decimated
 	from 120 to 60 fps; "# offset" is the start of the span in the original trial (seconds), "# rate" the frame rate.
 	heroanim.py retargets them onto the hero rig, and hero.py exports the result as the Hero.gltf animations.
+mixamo/
+	Animations downloaded from Adobe Mixamo (https://www.mixamo.com/) as FBX "Without Skin" at 30 fps, including clips
+	from the "Pro Magic Pack". Mixamo animations may be used royalty free in games, but not redistributed as standalone files,
+	so the shipped game only contains them baked into the hero clips. heroanim.py samples the mixamorig bone curves
+	(class Mixamo), retargets them onto the hero rig and trims the casts around their strike frames.

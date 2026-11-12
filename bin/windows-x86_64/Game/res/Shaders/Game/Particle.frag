@@ -14,6 +14,8 @@ layout(location = 4) flat in vec4 inParams;
 layout(location = 0) out vec4 outScene;
 layout(location = 1) out vec4 outEmission;
 
+const vec2 NearFade = vec2(0.4, 1.5);
+
 void main()
 {
 	float pixel = max(length(dFdx(inUv)), length(dFdy(inUv)));
@@ -23,7 +25,7 @@ void main()
 	float far = Frame.Screen.z;
 	float sceneZ = near * far / (far - textureLod(SceneDepth, screen, 0.0).r * (far - near));
 	float particleZ = near * far / (far - gl_FragCoord.z * (far - near));
-	float fade = clamp((sceneZ - particleZ) / max(inLook.z, 0.01), 0.0, 1.0);
+	float fade = clamp((sceneZ - particleZ) / max(inLook.z, 0.01), 0.0, 1.0) * smoothstep(NearFade.x, NearFade.y, particleZ);
 	float coverage = clamp(inColor.a * mask, 0.0, 1.0) * fade;
 	float intensity = mix(coverage, max(inColor.a * mask, 0.0) * fade, inLook.x);
 	vec3 radiance = inColor.rgb * intensity;

@@ -269,6 +269,123 @@ class Source:
         self.count = len(times)
 
 
+MIXAMO = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'mixamo')
+MIXAMO_SOURCE = {
+    'hips': ('Hips', False),
+    'spine': ('Spine1', False),
+    'chest': ('Spine2', False),
+    'neck': ('Neck', False),
+    'head': ('Head', False),
+}
+for _side, _word in (('l', 'Left'), ('r', 'Right')):
+    MIXAMO_SOURCE.update({
+        f'shoulder.{_side}': (f'{_word}Shoulder', False),
+        f'upperarm.{_side}': (f'{_word}Arm', True),
+        f'lowerarm.{_side}': (f'{_word}ForeArm', True),
+        f'wrist.{_side}': (f'{_word}Hand', True),
+        f'hand.{_side}': (f'{_word}Hand', True),
+        f'upperleg.{_side}': (f'{_word}UpLeg', True),
+        f'lowerleg.{_side}': (f'{_word}Leg', True),
+        f'foot.{_side}': (f'{_word}Foot', True),
+        f'toes.{_side}': (f'{_word}ToeBase', True),
+    })
+
+
+class MixamoSkeleton:
+    def __init__(self, directions, leg):
+        self.directions = directions
+        self.length = leg
+
+    def rest_direction(self, name):
+        return self.directions[name]
+
+    def leg(self):
+        return self.length
+
+
+def fcurve_values(action, path, size, frames, default):
+    out = np.tile(np.asarray(default, dtype=np.float64), (len(frames), 1))
+    for fc in action.fcurves:
+        if fc.data_path == path and fc.array_index < size:
+            out[:, fc.array_index] = [fc.evaluate(f) for f in frames]
+    return out
+
+
+def euler_matrix(angles, order):
+    m = np.repeat(np.eye(3)[None], len(angles), 0)
+    for axis in order:
+        m = axis_rotation(AXES[axis.lower()], angles[:, AXES[axis.lower()]]) @ m
+    return m
+
+
+class Mixamo:
+    mapping = MIXAMO_SOURCE
+    keys = {'hip': '{word}UpLeg', 'ankle': '{word}Foot'}
+
+    def __init__(self, name, start=None, end=None, mirror=False, folder=None):
+        path = os.path.join(folder or MIXAMO, name + '.fbx')
+        objects, actions, armatures = set(bpy.data.objects), set(bpy.data.actions), set(bpy.data.armatures)
+        fps = bpy.context.scene.render.fps
+        bpy.ops.import_scene.fbx(filepath=path, automatic_bone_orientation=False)
+        bpy.context.scene.render.fps = fps
+        imported = [o for o in bpy.data.objects if o not in objects]
+        armature = [o for o in imported if o.type == 'ARMATURE'][0]
+        action = armature.animation_data.action
+        first, last = (int(round(v)) for v in action.frame_range)
+        frames = np.arange(first, last + 1, dtype=np.float64)
+        if start is not None:
+            frames = frames[frames >= first + start * FPS - 1e-6]
+        if end is not None:
+            frames = frames[frames <= first + end * FPS + 1e-6]
+        world = np.array(armature.matrix_world)
+        n = len(frames)
+        poses = {}
+        rest_world = {}
+        prefix = 'mixamorig:'
+        for bone in armature.data.bones:
+            rest = np.array(bone.matrix_local)
+            pose_bone = armature.pose.bones[bone.name]
+            base = f'pose.bones["{bone.name}"]'
+            basis = np.repeat(np.eye(4)[None], n, 0)
+            basis[:, :3, 3] = fcurve_values(action, base + '.location', 3, frames, pose_bone.location)
+            if pose_bone.rotation_mode == 'QUATERNION':
+                basis[:, :3, :3] = to_matrix(fcurve_values(action, base + '.rotation_quaternion', 4, frames, pose_bone.rotation_quaternion))
+            else:
+                basis[:, :3, :3] = euler_matrix(fcurve_values(action, base + '.rotation_euler', 3, frames, pose_bone.rotation_euler), pose_bone.rotation_mode)
+            if bone.parent is None:
+                poses[bone.name] = world @ rest @ basis
+            else:
+                poses[bone.name] = poses[bone.parent.name] @ (np.linalg.inv(np.array(bone.parent.matrix_local)) @ rest) @ basis
+            rest_world[bone.name] = (world @ rest, np.array(world @ np.append(np.array(bone.tail_local), 1.0))[:3])
+        self.rotations = {}
+        self.points = {}
+        directions = {}
+        for full, matrix in poses.items():
+            short = full[len(prefix):] if full.startswith(prefix) else full
+            rest, tail = rest_world[full]
+            rest_rot = rest[:3, :3] / np.linalg.norm(rest[:3, :3], axis=0, keepdims=True)
+            rot = matrix[:, :3, :3] / np.linalg.norm(matrix[:, :3, :3], axis=1, keepdims=True)
+            self.rotations[short] = rot @ rest_rot.T
+            self.points[short] = matrix[:, :3, 3].copy()
+            direction = tail - rest[:3, 3]
+            directions[short] = direction / max(np.linalg.norm(direction), 1e-9)
+        hip, knee, ankle = (rest_world[prefix + name][0][:3, 3] for name in ('LeftUpLeg', 'LeftLeg', 'LeftFoot'))
+        leg = float(np.linalg.norm(knee - hip) + np.linalg.norm(ankle - knee))
+        if mirror:
+            swap = lambda s: 'Right' + s[4:] if s.startswith('Left') else 'Left' + s[5:] if s.startswith('Right') else s
+            self.rotations = {swap(k): MIRROR @ r @ MIRROR for k, r in self.rotations.items()}
+            self.points = {swap(k): p @ MIRROR for k, p in self.points.items()}
+            directions = {swap(k): MIRROR @ d for k, d in directions.items()}
+        self.skeleton = MixamoSkeleton(directions, leg)
+        self.count = n
+        for o in imported:
+            bpy.data.objects.remove(o, do_unlink=True)
+        for a in [a for a in bpy.data.actions if a not in actions]:
+            bpy.data.actions.remove(a)
+        for a in [a for a in bpy.data.armatures if a not in armatures]:
+            bpy.data.armatures.remove(a)
+
+
 class Rig:
     def __init__(self, armature):
         self.object = armature
@@ -276,6 +393,8 @@ class Rig:
         for bone in armature.data.bones:
             rest = np.array(bone.matrix_local)
             self.bones[bone.name] = {'rest': rest, 'rot': rest[:3, :3].copy(), 'head': np.array(bone.head_local), 'tail': np.array(bone.tail_local), 'parent': bone.parent.name if bone.parent else None}
+        for bone in armature.data.bones:
+            self.bones[bone.name]['dorsal'] = np.array(bone['dorsal'], dtype=np.float64) if 'dorsal' in bone else None
         depth = {}
         names = [bone.name for bone in armature.data.bones]
         for name in names:
@@ -327,21 +446,33 @@ class Clip:
         return Clip({k: np.concatenate([v, other.rotations[k]]) for k, v in self.rotations.items()}, np.concatenate([self.hips, other.hips]), {k: np.concatenate([v, other.ankles[k]]) for k, v in self.ankles.items()})
 
 
+def frame(direction, up):
+    direction = direction / np.linalg.norm(direction)
+    up = up - direction * np.dot(up, direction)
+    up = up / np.linalg.norm(up)
+    return np.stack([direction, up, np.cross(direction, up)], axis=1)
+
+
 def transfer(rig, source):
     scale = rig.leg() / source.skeleton.leg()
     rotations = {}
-    for target, (name, correct) in SOURCE.items():
+    mapping = getattr(source, 'mapping', SOURCE)
+    keys = getattr(source, 'keys', {'hip': '{side}hipjoint', 'ankle': '{side}tibia'})
+    point = lambda key, side: source.points[keys[key].format(side=side, word='Left' if side == 'l' else 'Right')]
+    for target, (name, correct) in mapping.items():
         rest = rig.bones[target]['rot']
         if correct:
             fix = arc(rig.direction(target), source.skeleton.rest_direction(name))
+            if rig.bones[target]['dorsal'] is not None:
+                fix = frame(source.skeleton.rest_direction(name), UP) @ frame(rig.direction(target), rig.bones[target]['dorsal']).T
             rotations[target] = source.rotations[name] @ (fix @ rest)
         else:
             rotations[target] = source.rotations[name] @ rest
-    joints = (source.points['lhipjoint'] + source.points['rhipjoint']) * 0.5 * scale
+    joints = (point('hip', 'l') + point('hip', 'r')) * 0.5 * scale
     rest_joints = (rig.bones['upperleg.l']['head'] + rig.bones['upperleg.r']['head']) * 0.5
     above = rig.bones['hips']['rot'].T @ (rig.bones['hips']['head'] - rest_joints)
     hips = joints + rotations['hips'] @ above
-    ankles = {side: source.points[f'{side}tibia'] * scale for side in 'lr'}
+    ankles = {side: point('ankle', side) * scale for side in 'lr'}
     return Clip(rotations, hips, ankles)
 
 
@@ -533,8 +664,11 @@ def aim_wand(rig, clip, direction, weight, side='r'):
     return clip
 
 
-def plant(rig, clip):
+def plant(rig, clip, knees=0.0):
     world = globals_of(rig, clip)
+    facing = (clip.rotations['hips'] @ rig.bones['hips']['rot'].T) @ FORWARD
+    facing[:, 2] = 0.0
+    facing /= np.linalg.norm(facing, axis=1, keepdims=True)
     for side in 'lr':
         thigh = clip.rotations[f'upperleg.{side}'].copy()
         shin = clip.rotations[f'lowerleg.{side}'].copy()
@@ -552,6 +686,8 @@ def plant(rig, clip):
             bend = bend - line * np.dot(bend, line)
             ahead = thigh[i] @ (rig.bones[f'upperleg.{side}']['rot'].T @ FORWARD)
             hint = ahead if np.linalg.norm(bend) < 0.03 else bend / np.linalg.norm(bend) + 0.25 * ahead
+            if knees > 0.0:
+                hint = (1.0 - knees) * hint / max(np.linalg.norm(hint), 1e-9) + knees * facing[i]
             pole = hint - axis * np.dot(hint, axis)
             if np.linalg.norm(pole) < 1e-6:
                 pole = ahead - axis * np.dot(ahead, axis)
@@ -714,8 +850,8 @@ def one_shot(rig, base, trial, start, end, fade=0.5, mirror=False, wand=0.0):
     return plant(rig, settle(rig, pin_feet(clip, base.frames([0]))))
 
 
-def cast(rig, base, trial, at, before, after, mirror=False, face='strike', offset=0.0, speed=1.0, fade=(0.15, 0.3), aim=(0.15, 0.2), side='r', calm=0.0):
-    clip = source(rig, trial, at - before, at + after, mirror)
+def cast(rig, base, trial, at, before, after, mirror=False, face='strike', offset=0.0, speed=1.0, fade=(0.15, 0.3), aim=(0.15, 0.2), side='r', calm=0.0, windup=None, mixamo=False, recover=1.0, snap=False):
+    clip = transfer(rig, Mixamo(trial, at - before, at + after, mirror)) if mixamo else source(rig, trial, at - before, at + after, mirror)
     index = int(round(before * FPS))
     if face == 'strike':
         face_direction(clip, strike_direction(rig, clip, index, side), offset)
@@ -726,10 +862,15 @@ def cast(rig, base, trial, at, before, after, mirror=False, face='strike', offse
         face_start(rig, clip, index, offset)
     align_feet(clip, base)
     ground(rig, clip)
-    if speed != 1.0:
+    if speed != 1.0 or windup is not None or recover != 1.0:
         duration = (clip.count - 1) / FPS
-        clip = retime(clip, [(0.0, 0.0), (duration, duration / speed)])
-        index = int(round(index / speed))
+        lead = before if windup is None else windup
+        rest = (duration - before) / recover
+        keys = [(0.0, 0.0), (before, lead), (duration, lead + rest)]
+        if snap:
+            keys = [(0.0, 0.0), (0.5 * before, 0.62 * lead), (before, lead), (before + 0.35 * (duration - before), lead + 0.22 * rest), (duration, lead + rest)]
+        clip = retime(clip, [(s, t / speed) for s, t in keys])
+        index = int(round(lead / speed * FPS))
     t = np.arange(clip.count) / FPS
     strike = index / FPS
     if calm > 0.0:
@@ -741,6 +882,33 @@ def cast(rig, base, trial, at, before, after, mirror=False, face='strike', offse
         weight = smoothstep(strike - aim[0], strike, t) * smoothstep(strike + aim[1] + 0.25, strike + aim[1], t)
         aim_wand(rig, clip, None, weight, side)
     return plant(rig, clip)
+
+
+ARM_PARTS = ('shoulder', 'upperarm', 'lowerarm', 'wrist', 'hand')
+
+
+def strike_frame(rig, clip, side='r', margin=3):
+    hand = globals_of(rig, clip)[f'handslot.{side}'][1]
+    speed = np.linalg.norm(np.diff(hand, axis=0), axis=1)
+    speed[:margin] = 0.0
+    speed[-margin:] = 0.0
+    return int(np.argmax(speed)) + 1
+
+
+def blend_cast(rig, base, old, trial, at, before, after, arms=0.5, torso=0.3, dip=0.03, recover=1.3, face='chest', fade=(0.12, 0.35)):
+    lead = strike_frame(rig, old) / FPS
+    new = cast(rig, base, trial, at, before, after, face=face, windup=lead, recover=recover, snap=True, fade=fade, aim=None, mixamo=True)
+    old = retime(old, [(0.0, 0.0), (lead, lead), ((old.count - 1) / FPS, (new.count - 1) / FPS)])
+    n = min(old.count, new.count)
+    new, old = new.frames(np.arange(n)), old.frames(np.arange(n))
+    for name in new.rotations:
+        weight = arms if name.split('.')[0] in ARM_PARTS else torso if name in ('spine', 'chest', 'neck', 'head') else 0.0
+        if weight > 0.0:
+            new.rotations[name] = slerp(new.rotations[name], old.rotations[name], np.full(n, weight))
+    t = np.arange(n) / FPS
+    new.hips[:, 2] -= dip * np.exp(-0.5 * ((t - lead - 0.05) / 0.08) ** 2)
+    aim_wand(rig, new, None, smoothstep(lead - 0.15, lead, t) * smoothstep(lead + 0.45, lead + 0.2, t))
+    return plant(rig, new)
 
 
 def backpedal(rig, forward_clip, lean=10.0):
@@ -952,6 +1120,169 @@ def stride_cycle(rig, trial, frames, gain, abduct, scale, lean):
     return closed(plant(rig, clip))
 
 
+UPPER = ('spine', 'chest', 'neck', 'head') + tuple(f'{bone}.{side}' for side in 'lr' for bone in ('shoulder', 'upperarm', 'lowerarm', 'wrist', 'hand'))
+
+
+def borrow(clip, donor, bones, weight):
+    for name in bones:
+        clip.rotations[name] = slerp(clip.rotations[name], np.repeat(donor.rotations[name][:1], clip.count, 0), np.full(clip.count, weight))
+    return clip
+
+
+def stand_taller(clip, lift, narrow):
+    middle = clip.hips[:, 0:1].mean()
+    clip.hips[:, 2] += lift
+    for side in 'lr':
+        clip.ankles[side][:, 0] = middle + (clip.ankles[side][:, 0] - middle) * narrow
+    clip.hips[:, 0] = middle + (clip.hips[:, 0] - middle) * narrow
+    if clip.drift is not None:
+        clip.drift = clip.drift * narrow
+    return clip
+
+
+def strafe_cycle(rig, trial, frames, donor, side, weight=0.85, lift=0.07, narrow=0.82):
+    for mirror in (False, True):
+        probe = source(rig, trial, None, None, mirror)
+        face_hips(rig, probe)
+        step = loop(probe, frames)[0].drift[-1]
+        if (step[0] < 0.0) == (side == 'r'):
+            break
+    offset = math.degrees((math.pi if side == 'r' else 0.0) - math.atan2(step[1], step[0]))
+    clip = source(rig, trial, None, None, mirror)
+    face_hips(rig, clip, (offset + 180.0) % 360.0 - 180.0)
+    clip, cost, speed = loop(clip, frames)
+    clip = start_at(clip, contact(clip, 'l'))
+    in_place(clip, 'center')
+    ground(rig, clip)
+    stand_taller(clip, lift, narrow)
+    borrow(clip, donor, UPPER, weight)
+    aim_wand(rig, clip, None, 0.7)
+    return closed(plant(rig, clip))
+
+
+def mixamo(rig, name, start=None, end=None, mirror=False):
+    return transfer(rig, Mixamo(name, start, end, mirror))
+
+
+def open_loop(clip):
+    out = clip.frames(np.arange(clip.count - 1))
+    travel = clip.hips[-1] - clip.hips[0]
+    travel[2] = 0.0
+    shift(out, np.outer(np.arange(out.count) / out.count, travel))
+    return out
+
+
+def mixamo_cycle(rig, name, stride=1.0, abduct=0.0, lift=0.0, wand=0.7, mirror=False):
+    clip = open_loop(mixamo(rig, name, mirror=mirror))
+    clip = start_at(clip, contact(clip, 'l'))
+    in_place(clip, 'center')
+    ground(rig, clip)
+    if abduct:
+        amplify_arms(rig, clip, 1.0, abduct)
+    if stride != 1.0:
+        lengthen(clip, stride)
+    clip.hips[:, 2] += lift
+    settle(rig, clip)
+    aim_wand(rig, clip, None, wand)
+    return closed(plant(rig, clip))
+
+
+def shuffle(rig, clip, scale, floor=None, soft=0.03, step=0.6):
+    width = abs(rig.bones['foot.l']['head'][0]) * 0.7
+    ground_z = min(clip.ankles['l'][:, 2].min(), clip.ankles['r'][:, 2].min())
+    for side, sign in (('l', 1.0), ('r', -1.0)):
+        ankle = clip.ankles[side]
+        out = width + scale * (sign * (ankle[:, 0] - clip.hips[:, 0]) - width)
+        if floor is not None:
+            out = floor + soft * np.logaddexp(0.0, (out - floor) / soft)
+        ankle[:, 0] = clip.hips[:, 0] + sign * out
+        ankle[:, 2] = ground_z + step * (ankle[:, 2] - ground_z)
+    return clip
+
+
+def straighten_feet(rig, clip, amount):
+    body = heading(clip.rotations['hips'] @ rig.bones['hips']['rot'].T)
+    for side in 'lr':
+        rest = rig.bones[f'foot.{side}']['rot'].T
+        toe = heading(clip.rotations[f'foot.{side}'] @ rest)
+        delta = np.angle(np.exp(1j * (toe - body)))
+        turn = axis_rotation(2, -amount * delta)
+        for bone in (f'foot.{side}', f'toes.{side}'):
+            clip.rotations[bone] = turn @ clip.rotations[bone]
+    return clip
+
+
+def bone_yaw(rig, clip, bone):
+    return np.angle(np.exp(1j * (heading(clip.rotations[bone] @ rig.bones[bone]['rot'].T) - math.atan2(FORWARD[1], FORWARD[0]))))
+
+
+def turn_chain(rig, clip, bone, angles):
+    turn = axis_rotation(2, angles)
+    for name in descendants(rig, bone):
+        clip.rotations[name] = turn @ clip.rotations[name]
+    return clip
+
+
+def face_torso(rig, clip, spine_share=0.4):
+    chest = bone_yaw(rig, clip, 'chest')
+    turn_chain(rig, clip, 'spine', -spine_share * chest)
+    turn_chain(rig, clip, 'chest', -bone_yaw(rig, clip, 'chest'))
+    turn_chain(rig, clip, 'neck', -bone_yaw(rig, clip, 'neck'))
+    return turn_chain(rig, clip, 'head', -bone_yaw(rig, clip, 'head'))
+
+
+def mixamo_strafe(rig, name, abduct=0.0, narrow=None, quick=1.0, lift=0.0):
+    clip = open_loop(mixamo(rig, name))
+    clip = start_at(clip, contact(clip, 'l'))
+    in_place(clip, 'center')
+    ground(rig, clip)
+    if narrow is not None:
+        shuffle(rig, clip, narrow)
+        straighten_feet(rig, clip, 0.7)
+        face_torso(rig, clip)
+    clip.hips[:, 2] += lift
+    if abduct:
+        amplify_arms(rig, clip, 1.0, abduct)
+    settle(rig, clip)
+    aim_wand(rig, clip, None, 0.7)
+    clip = closed(plant(rig, clip, 0.0 if narrow is None else 0.7))
+    if quick != 1.0:
+        duration = (clip.count - 1) / FPS
+        clip = retime(clip, [(0.0, 0.0), (duration, duration / quick)])
+    return clip
+
+
+def mixamo_idle(rig, name, abduct):
+    clip = open_loop(mixamo(rig, name))
+    in_place(clip, 'center')
+    pin_feet(clip, clip)
+    ground(rig, clip)
+    amplify_arms(rig, clip, 1.0, abduct)
+    aim_wand(rig, clip, REST_WAND, 1.0)
+    return closed(plant(rig, settle(rig, clip)))
+
+
+def mixamo_fidget(rig, base, name, abduct, fade=0.4):
+    clip = mixamo(rig, name)
+    ground(rig, clip)
+    align_feet(clip, base)
+    pin_feet(clip, base.frames([0]))
+    amplify_arms(rig, clip, 1.0, abduct)
+    aim_wand(rig, clip, REST_WAND, 1.0)
+    blend_pose(clip, base.frames([0]), ends(clip.count, fade, fade))
+    return plant(rig, settle(rig, clip))
+
+
+def mixamo_react(rig, base, name, start=None, end=None, fade=(0.15, 0.3), hold=False):
+    clip = mixamo(rig, name, start, end)
+    face_start(rig, clip, 3)
+    align_feet(clip, base)
+    ground(rig, clip)
+    aim_wand(rig, clip, None, 0.7)
+    blend_pose(clip, base.frames([0]), ends(clip.count, fade[0], 0.0 if hold else fade[1]))
+    return plant(rig, clip)
+
+
 REST_WAND = np.array([0.15, -0.75, -0.64]) / np.linalg.norm([0.15, -0.75, -0.64])
 
 
@@ -1050,6 +1381,16 @@ def stagger(rig, base):
     return a.build()
 
 
+IDLE_ARMS_OUT = 7.0
+RUN_ARMS_OUT = 4.0
+JOG_STRIDE = 0.85
+SHUFFLE_NARROW = 0.7
+SHUFFLE_WALK = 1.3
+SHUFFLE_RUN = 2.0
+SHUFFLE_LIFT = -0.03
+RUN_STRIDE = 1.1
+
+
 SEGMENTS = {
     '77_02': (0.0, 8.0),
     '40_10': (4.0, 22.2),
@@ -1059,47 +1400,53 @@ SEGMENTS = {
     '143_20': (3.5, 4.9),
     '17_10': (17.4, 18.6),
     '90_18': (0.8, 3.3),
+    '78_29': (None, None),
 }
 
 
 def clips(rig):
-    base = still(rig, '77_02', 0.5, 7.5, 90, 12, 18)
-    jog = cycle(rig, '09_06', 20)
+    idle = mixamo_idle(rig, 'Idle', IDLE_ARMS_OUT)
+    base = idle
     return {
-        'Idle_A': base,
+        'Idle_A': idle,
         'Hero_Idle_Look': glance(rig, base, 'left'),
         'Hero_Idle_LookRight': glance(rig, base, 'right'),
         'Hero_Idle_Scan': scan(rig, base),
         'Hero_Idle_Wand': flourish(rig, base),
-        'Hero_Idle_Bracer': one_shot(rig, base, '40_10', 4.2, 6.8, wand=0.6),
-        'Hero_Idle_Scratch': one_shot(rig, base, '40_10', 18.9, 21.9, mirror=True, wand=0.8),
-        'Walking_A': cycle(rig, '07_01', 31),
-        'Hero_Jog': jog,
-        'Running_A': stride_cycle(rig, '16_46', 21, 2.0, 12.0, 1.3, 7.0),
-        'Walking_Backwards': backpedal(rig, jog),
+        'Hero_Idle_Stretch': mixamo_fidget(rig, base, 'Neck Stretching', IDLE_ARMS_OUT),
+        'Hero_Idle_Rub': mixamo_fidget(rig, base, 'Shoulder Rubbing', IDLE_ARMS_OUT),
+        'Hero_Idle_Nod': mixamo_fidget(rig, base, 'Thoughtful Head Nod', IDLE_ARMS_OUT),
+        'Walking_A': mixamo_cycle(rig, 'Walking', abduct=RUN_ARMS_OUT),
+        'Hero_Jog': mixamo_cycle(rig, 'Running', stride=JOG_STRIDE, abduct=RUN_ARMS_OUT),
+        'Running_A': mixamo_cycle(rig, 'Running (1)', stride=RUN_STRIDE, abduct=RUN_ARMS_OUT),
+        'Walking_Backwards': mixamo_cycle(rig, 'Running Backward', abduct=RUN_ARMS_OUT),
+        'Running_Strafe_Right': mixamo_strafe(rig, 'Right Strafe Walking', RUN_ARMS_OUT, SHUFFLE_NARROW, SHUFFLE_RUN, SHUFFLE_LIFT),
+        'Running_Strafe_Left': mixamo_strafe(rig, 'Left Strafe Walking', RUN_ARMS_OUT, SHUFFLE_NARROW, SHUFFLE_RUN, SHUFFLE_LIFT),
+        'Hero_Strafe_Walk_Right': mixamo_strafe(rig, 'Right Strafe Walking', RUN_ARMS_OUT, SHUFFLE_NARROW, SHUFFLE_WALK),
+        'Hero_Strafe_Walk_Left': mixamo_strafe(rig, 'Left Strafe Walking', RUN_ARMS_OUT, SHUFFLE_NARROW, SHUFFLE_WALK),
         'Hero_Cast_Flick': flick_cast(rig, base),
         'Hero_Cast_Slash': slash_cast(rig, base),
         'Hero_Cast_Backhand': backhand_cast(rig, base),
-        'Hero_Cast_Lunge': lunge_cast(rig, base),
+        'Hero_Cast_Lunge': blend_cast(rig, base, lunge_cast(rig, base), 'Standing 2H Magic Attack 03', 0.97, 0.5, 0.5, arms=0.6),
         'Hero_Cast_Hurl': cast(rig, base, '143_20', 4.16, 0.45, 0.6, mirror=True),
-        'Hero_Cast_Surge': surge_cast(rig, base),
+        'Hero_Cast_Surge': blend_cast(rig, base, surge_cast(rig, base), 'Standing 2H Magic Attack 02', 1.25, 0.3, 0.5),
         'Hero_Cast_Lash': lash_cast(rig, base),
-        'Hero_Cast_Grasp': grasp_cast(rig, base),
-        'Hero_Cast_Lob': lob_cast(rig, base),
-        'Hero_Cast_Smite': smite_cast(rig, base),
-        'Hero_Cast_Summon': summon_cast(rig, base),
+        'Hero_Cast_Grasp': blend_cast(rig, base, grasp_cast(rig, base), 'Standing 2H Magic Attack 04', 0.9, 0.5, 0.55),
+        'Hero_Cast_Lob': blend_cast(rig, base, lob_cast(rig, base), 'Standing 2H Magic Attack 05', 2.0, 0.7, 0.5),
+        'Hero_Cast_Smite': blend_cast(rig, base, smite_cast(rig, base), 'Standing 2H Magic Area Attack 01', 1.22, 0.35, 0.6, arms=0.4, dip=0.0),
+        'Hero_Cast_Summon': blend_cast(rig, base, summon_cast(rig, base), 'Standing 2H Cast Spell 01', 1.22, 0.5, 0.55, arms=0.25, torso=0.2),
         'Hero_Cast_Call': cast(rig, base, '17_10', 17.99, 0.28, 0.45, face='chest', aim=None),
         'Hero_Cast_Push': shove_cast(rig, base),
         'Hero_Cast_Ward': guard_cast(rig, base),
-        'Hero_Cast_Nova': nova(rig, base),
+        'Hero_Cast_Nova': blend_cast(rig, base, nova(rig, base), 'Standing 2H Magic Area Attack 02', 1.73, 0.55, 0.55),
         'Hero_Cast_Blink': blink(rig, base),
         'Dodge_Forward': dodge(rig, base, 'forward'),
         'Dodge_Backward': dodge(rig, base, 'back'),
         'Dodge_Left': dodge(rig, base, 'left'),
         'Dodge_Right': dodge(rig, base, 'right'),
-        'Hit_A': flinch(rig, base),
-        'Hit_B': stagger(rig, base),
-        'Death_A': collapse(rig, base, '90_18', 0.9, 3.3),
+        'Hit_A': mixamo_react(rig, base, 'Head Hit (1)'),
+        'Hit_B': mixamo_react(rig, base, 'Head Hit', fade=(0.12, 0.4)),
+        'Death_A': mixamo_react(rig, base, 'Falling Back Death', hold=True),
     }
 
 

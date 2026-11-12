@@ -1091,8 +1091,8 @@ namespace Game
 		constexpr uint16_t ServerFlags = uint16_t(EntityFlags::Burning) | uint16_t(EntityFlags::Ignited) | uint16_t(EntityFlags::Marked) | uint16_t(EntityFlags::Barrier);
 		if (const auto server = std::find_if(m_Entities.begin(), m_Entities.end(), [&](const EntityState& entity) { return entity.NetId == m_Welcome.PlayerNetId; }); server != m_Entities.end())
 			self.Flags |= server->Flags & ServerFlags;
-		if (m_PredictedState.Still >= LeylineSeconds && HasCard(m_LocalPlayer.Brawl.Cards, CardId::Leyline))
-			self.Flags |= uint32_t(EntityFlags::Leyline);
+		if (m_PredictedState.Momentum >= QuicksilverSeconds && HasCard(m_LocalPlayer.Brawl.Cards, CardId::Quicksilver))
+			self.Flags |= uint32_t(EntityFlags::Quicksilver);
 		if (m_PredictedState.CastSlot >= 0)
 		{
 			const SkillTraits& skill = GetTraits().Skills[size_t(m_PredictedState.CastSlot)];

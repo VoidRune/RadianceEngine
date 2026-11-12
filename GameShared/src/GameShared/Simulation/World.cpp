@@ -259,42 +259,86 @@ namespace Game
 				continue;
 			const SkillTraits& skill = traits.Skills[slot];
 			AbilityContext eruption = context;
-			eruption.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, controller->State.Still) * NovaEruptionScale(actions.RecastAge);
-			eruption.PushScale = NovaEruptionPush(actions.RecastAge);
+			eruption.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, controller->State.Momentum) * NovaEruptionScale(actions.RecastAge);
+			eruption.PushScale = NovaEruptionPush(actions.RecastAge) * skill.PushScale;
 			eruption.AreaScale = traits.AreaScale * skill.AreaScale;
 			eruption.PvpScale = skill.PvpScale;
 			EruptFrostNova(*this, actions.RecastPoint, eruption);
 		}
-		const bool chamber = HasCard(context.Cards, CardId::EchoChamber) && IsDamageBrawl();
-		uint8_t rolled = 0;
+		const bool damage = IsDamageBrawl();
+		const bool chamber = damage && HasCard(context.Cards, CardId::EchoChamber);
+		const bool arcana = damage && HasCard(context.Cards, CardId::UnstableArcana);
 		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
 		{
 			if (!actions.HasReleased(slot))
 				continue;
 			const SkillTraits& skill = traits.Skills[slot];
 			const AbilityDef& ability = GetAbility(skill.Ability);
-			context.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, actions.ManaBefore, traits.MaxMana, (actions.Overloaded & (1u << slot)) != 0, controller->State.Still);
-			if (skill.Ability == AbilityId::ChainHook && IsDamageBrawl())
+			context.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, actions.ManaBefore, traits.MaxMana, (actions.Overloaded & (1u << slot)) != 0, controller->State.Momentum);
+			if (skill.Ability == AbilityId::ChainHook && damage)
 				context.DamageScale *= (HasCard(context.Cards, CardId::Whiplash) ? WhiplashDamage : 1.0f) * (HasCard(context.Cards, CardId::LongChain) ? LongChainDamage : 1.0f);
 			context.AreaScale = traits.AreaScale * skill.AreaScale;
+			context.PushScale = skill.PushScale;
 			context.ExtraProjectiles = uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles);
 			context.Direction = AimsFromPoint(skill.Ability) ? actions.CastAim : actions.Direction;
 			context.Target = AimsFromPoint(skill.Ability) ? actions.CastPoint : GetGroundTarget(m_Level, context.Origin, context.Direction, actions.AimDistance, ability.Range);
 			context.PvpScale = skill.PvpScale;
 			context.RangeScale = skill.RangeScale;
 			context.Charge = IsCharged(skill) ? actions.Charge : 0.0f;
+			const bool guard = ability.Kind == AbilityKind::Shield;
+			ArcanaSurge surge = ArcanaSurge::None;
+			if (arcana && !guard)
+			{
+				surge = ArcanaSurge(1u + m_Random.Below(4u));
+				if (surge == ArcanaSurge::Copies && !EchoesInChamber(skill.Ability))
+					surge = ArcanaSurge::Power;
+				if (surge == ArcanaSurge::Area && !IsAreaSpell(skill.Ability))
+					surge = ArcanaSurge::Refund;
+				if (surge == ArcanaSurge::Power)
+					context.DamageScale *= ArcanaDamage;
+				if (surge == ArcanaSurge::Area)
+					context.AreaScale *= ArcanaArea;
+				if (surge == ArcanaSurge::Refund)
+					controller->State.Cooldowns[slot] = 0.0f;
+				controller->State.Surge = uint8_t((uint8_t(controller->State.Surge + 0x10) & 0xF0) | uint8_t(surge));
+			}
 			ExecuteAbility(*this, skill.Ability, context);
+			if ((chamber && EchoesInChamber(skill.Ability)) || surge == ArcanaSurge::Copies)
+				CastCopies(skill.Ability, context);
 			if (slot > 0 && ability.Kind != AbilityKind::Dash && ability.Kind != AbilityKind::Ward && m_Match.ConsumeEcho(controller->PlayerId))
 				m_Echoes.push_back({ player, skill.Ability, context, EchoDelay });
-			if (chamber && EchoesInChamber(skill.Ability))
-				m_Echoes.push_back({ player, skill.Ability, context, EchoChamberDelay, 1.0f, true });
-			if (slot > 0)
-				rolled |= uint8_t(1u << slot);
+			if (!guard && HasCard(context.Cards, CardId::Rewind) && m_Random.Float() < RewindChance)
+			{
+				controller->State.Cooldowns[slot] = 0.0f;
+				controller->State.Surge = uint8_t((uint8_t(controller->State.Surge + 0x10) & 0xF0) | uint8_t(ArcanaSurge::Refund));
+			}
 		}
-		for (uint32_t slot = 1; slot < AbilitySlots && rolled != 0; slot++)
-			if (rolled & (1u << slot))
-				m_Match.RollArcana(*this, controller->PlayerId, int32_t(slot - 1));
 		return actions;
+	}
+
+	void World::CastCopies(AbilityId id, const AbilityContext& context)
+	{
+		const AbilityDef& ability = GetAbility(id);
+		AbilityContext copy = context;
+		copy.Tag = 0;
+		copy.DamageScale *= EchoChamberShare;
+		copy.PushScale *= EchoChamberShare;
+		const float facing = AngleOf(context.Direction);
+		for (const float side : { -1.0f, 1.0f })
+		{
+			AbilityContext cast = copy;
+			if (ability.Kind == AbilityKind::Projectile)
+				cast.Direction = FromAngle(facing + side * EchoChamberFan);
+			else if (ability.Shape == StrikeShape::Line)
+				cast.Target = context.Target + FromAngle(facing + side * (Pi * 0.5f)) * (ability.Width * context.AreaScale * 1.6f);
+			else
+			{
+				const float reach = std::max(ability.ImpactRadius, ability.Reach) * context.AreaScale;
+				cast.AreaScale *= EchoChamberArea;
+				cast.Target = context.Target + FromAngle(facing + side * (2.0f * Pi / 3.0f)) * reach;
+			}
+			ExecuteAbility(*this, id, cast);
+		}
 	}
 
 	void World::UpdateEchoes(float dt)
@@ -316,8 +360,6 @@ namespace Game
 			AbilityContext context = echo.Context;
 			context.Origin = transform->Position;
 			context.Departure = transform->Position;
-			if (echo.Reaim)
-				context.Direction = FromAngle(transform->Facing);
 			context.Rewind = 0.0f;
 			context.Tag = 0;
 			context.PushScale *= echo.Strength;
@@ -471,8 +513,7 @@ namespace Game
 		if (killer == victim || (IsPvp() && !m_Match.IsPresent(killer)))
 			killer = NoPlayer;
 		if (IsDamageBrawl())
-			if (const Transform* transform = m_Entities.TryGet<Transform>(player))
-				m_Match.NoteDeath(victim, killer, transform->Position, controller->State.Chill > 0.0f);
+			m_Match.NoteDeath(victim);
 		controller->State.Alive = false;
 		controller->State.DashDistance = 0.0f;
 		controller->State.CastSlot = -1;
@@ -1011,9 +1052,16 @@ namespace Game
 		if (seeking)
 			perks |= PerkSeek;
 		const bool overcharged = ability.Id == AbilityId::ArcLightning && HasCard(context.Cards, CardId::Overcharge);
+		if (overcharged)
+			perks |= PerkReach;
+		const bool razor = ability.Id == AbilityId::ObsidianBlades && HasCard(context.Cards, CardId::RazorGlass);
+		const bool frozen = (perks & PerkSlick) != 0;
+		const float boost = overcharged ? OverchargeScale : razor ? RazorGlassScale : 1.0f;
 		const bool charged = IsChargedShot(ability.Id);
 		const ChargedShot shot = ChargedShotOf(ability, context.Charge);
-		const float push = ability.Id == AbilityId::ChainHook ? (HasCard(context.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) : shot.Push;
+		const float push = (ability.Id == AbilityId::ChainHook ? (HasCard(context.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) : shot.Push) * boost;
+		if (boost != 1.0f && IsDamageBrawl())
+			damage = ScaleDamage(damage, boost);
 		const float lifetime = (pattern.Speed > 0.0f ? ChargedRange(ability, context.Charge) / pattern.Speed : 0.0f) * context.RangeScale;
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, position, AngleOf(direction));
@@ -1032,8 +1080,8 @@ namespace Game
 			.CritMultiplier = context.CritMultiplier,
 			.LifeSteal = context.LifeSteal,
 			.ImpactRadius = shot.Blast * context.AreaScale,
-			.Chill = shot.Chill + ((perks & PerkSlick) != 0 && IsDamageBrawl() ? BlackIceChill : 0.0f),
-			.Stun = ability.Stun,
+			.Chill = shot.Chill + (frozen && IsDamageBrawl() ? BlackIceChill : 0.0f),
+			.Stun = frozen ? BlackIceFreeze / PvpStunScale : ability.Stun,
 			.PvpScale = context.PvpScale,
 			.Push = push * context.PushScale * (seeking ? SeekerPush : 1.0f),
 			.Damages = ability.Damages,
@@ -1101,9 +1149,30 @@ namespace Game
 			.PvpScale = context.PvpScale,
 			.Push = ability.Push * context.PushScale,
 			.Ability = uint8_t(ability.Id),
-			.Perks = uint8_t((ability.Id == AbilityId::Comet && HasCard(context.Cards, CardId::ShatteringImpact) ? PerkShatter : 0)
-				| (ability.Id == AbilityId::StormStrike && HasCard(context.Cards, CardId::ForkedLightning) ? PerkFork : 0)
-				| (ability.Id == AbilityId::StormStrike && HasCard(context.Cards, CardId::StaticCharge) ? PerkStatic : 0)),
+			.Perks = uint8_t(ability.Id == AbilityId::StormStrike && HasCard(context.Cards, CardId::StaticCharge) ? PerkStatic : 0),
+		});
+		return entity;
+	}
+
+	Entity World::SpawnResonance(const AbilityDef& spell, Vec2 position, float delay, float radius, int32_t damage, float push, const AbilityContext& context)
+	{
+		const AbilityDef& pulse = GetAbility(AbilityId::Resonance);
+		const Entity entity = m_Entities.Create();
+		m_Entities.Add<Transform>(entity, position, AngleOf(context.Direction));
+		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Effect, .Owner = context.Owner, .Variant = uint8_t(AbilityId::Resonance), .Scale = ScaleByte(radius / pulse.ImpactRadius) });
+		m_Entities.Add<PendingStrike>(entity, PendingStrike{
+			.Remaining = delay,
+			.Radius = radius,
+			.Shape = StrikeShape::Circle,
+			.Damage = IsDamageBrawl() ? damage : 0,
+			.Side = context.Side,
+			.Owner = context.Owner,
+			.Source = context.Source,
+			.Damages = spell.Damages,
+			.PvpScale = context.PvpScale,
+			.Push = push,
+			.Ability = uint8_t(AbilityId::Resonance),
+			.Lead = std::max(delay - pulse.ImpactDelay, 0.0f),
 		});
 		return entity;
 	}
@@ -1132,6 +1201,7 @@ namespace Game
 			.Push = push,
 			.Ability = uint8_t(visual),
 			.Perks = perks,
+			.Lead = visible ? std::max(delay - ability.ImpactDelay, 0.0f) : 0.0f,
 		});
 		return entity;
 	}

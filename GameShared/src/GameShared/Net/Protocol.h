@@ -23,7 +23,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 82;
+	constexpr uint32_t ProtocolVersion = 87;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -65,7 +65,7 @@ namespace Game
 		Ignited = 1 << 13,
 		Marked = 1 << 14,
 		Barrier = 1 << 15,
-		Leyline = 1u << 16,
+		Quicksilver = 1u << 16,
 		Shattered = 1u << 17,
 		WardShattered = 1u << 18,
 	};
@@ -319,6 +319,18 @@ namespace Game
 	inline uint8_t PackCharge(float power)
 	{
 		return uint8_t(std::lround(std::clamp(power, 0.0f, 1.0f) * 255.0f));
+	}
+
+	inline constexpr float LeadStep = 0.02f;
+
+	inline uint8_t PackLead(float lead)
+	{
+		return uint8_t(std::lround(std::clamp(lead / LeadStep, 0.0f, 255.0f)));
+	}
+
+	inline float UnpackLead(uint8_t packed)
+	{
+		return float(packed) * LeadStep;
 	}
 
 	inline uint8_t PackGuard(float left, float durability)

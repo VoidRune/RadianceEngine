@@ -24,6 +24,7 @@ layout(location = 8) in vec4 inColor;
 layout(location = 9) in vec3 inWorld;
 layout(location = 10) flat in vec4 inAccent;
 layout(location = 11) flat in uint inFlash;
+layout(location = 15) flat in vec3 inCenter;
 #ifdef DISSOLVE
 layout(location = 12) in vec3 inLocal;
 layout(location = 13) flat in vec4 inDissolve;
@@ -49,6 +50,9 @@ const float TrimGlow = 0.12;
 const float RimPower = 3.5;
 const float PlayerRimPower = 3.5;
 const float PlayerRimWhite = 0.15;
+const float PlayerRimCore = 0.04;
+const vec2 PlayerRimFeet = vec2(0.12, 0.4);
+const vec2 PlayerRimGraze = vec2(0.5, 0.85);
 const float CrystalTranslucency = 0.85;
 const float CharDepth = 3.0;
 const float TwoToneLow = 0.1;
@@ -628,7 +632,12 @@ void main()
 		vec3 toEye = normalize(pc.Eye.xyz - inWorld);
 		if ((flags & MeshSkinned) != 0u)
 		{
-			float edge = 1.0 - abs(dot(geometric, toEye));
+			vec2 radial = inWorld.xz - inCenter.xz;
+			vec2 sight = toEye.xz;
+			float edge = clamp(1.0 - abs(dot(radial, sight)) / max(length(radial) * length(sight), 1e-4), 0.0, 1.0);
+			edge *= smoothstep(PlayerRimCore, 2.0 * PlayerRimCore, length(radial));
+			edge *= smoothstep(PlayerRimFeet.x, PlayerRimFeet.y, inWorld.y - inCenter.y);
+			edge *= smoothstep(PlayerRimGraze.x, PlayerRimGraze.y, 1.0 - abs(dot(geometric, toEye)));
 			vec3 rim = mix(inAccent.rgb, vec3(max(max(inAccent.r, inAccent.g), inAccent.b)), PlayerRimWhite);
 			heat += rim * (pow(edge, PlayerRimPower) * inAccent.a);
 		}

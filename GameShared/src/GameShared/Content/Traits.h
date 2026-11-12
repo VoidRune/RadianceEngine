@@ -20,6 +20,7 @@ namespace Game
 		float MoveScale = 1.0f;
 		float DamageScale = 1.0f;
 		float AreaScale = 1.0f;
+		float PushScale = 1.0f;
 		uint8_t ExtraProjectiles = 0;
 		float PvpScale = 1.0f;
 		float RangeScale = 1.0f;
@@ -49,6 +50,9 @@ namespace Game
 		std::array<float, size_t(Element::Count)> Resist{};
 		float BloodRate = 0.0f;
 		uint8_t OverloadEvery = 0;
+		float TempoStep = 0.0f;
+		float SnapWindow = 0.0f;
+		float StallRegen = 0.0f;
 
 		bool operator==(const PlayerTraits&) const = default;
 	};

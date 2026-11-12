@@ -1007,6 +1007,15 @@ namespace Game
 		};
 		switch (ability)
 		{
+		case AbilityId::Aftershock:
+			PlayAt(Cue::Rock, at, 0.9f, 0.6f);
+			PlayAt(Cue::FireImpact, at, 0.6f, 0.7f, 0.03f);
+			PlayAt(Cue::WhooshHeavy, at, 0.6f, 0.7f);
+			break;
+		case AbilityId::Resonance:
+			PlayAt(Cue::ShockHit, at, 0.5f, 0.6f);
+			PlayAt(Cue::Bell, at, 0.35f, 0.8f, 0.02f);
+			break;
 		case AbilityId::Slash:
 		case AbilityId::Chop:
 		case AbilityId::Stab:
@@ -1220,11 +1229,12 @@ namespace Game
 	void GameAudio::StartTelegraph(const EntityState& entity, Tracked& tracked)
 	{
 		const Vec2 at = entity.Position;
+		const float lead = UnpackLead(entity.Charge);
 		switch (AbilityOf(entity))
 		{
 		case AbilityId::Meteor:
 		case AbilityId::Comet:
-			PlayAt(Cue::FireLaunch, at, 1.0f, 0.6f);
+			PlayAt(Cue::FireLaunch, at, 1.0f, 0.6f, lead);
 			break;
 		case AbilityId::GravityWell:
 			PlayAt(Cue::Rumble, at, 0.75f, 0.55f);
@@ -1238,7 +1248,14 @@ namespace Game
 			PlayAt(Cue::FireLaunch, at, 0.7f, 0.75f);
 			break;
 		case AbilityId::StormStrike:
-			PlayAt(Cue::ShockLaunch, at, 0.5f, 0.7f);
+			PlayAt(Cue::ShockLaunch, at, 0.5f, 0.7f, lead);
+			break;
+		case AbilityId::Aftershock:
+			PlayAt(Cue::Rumble, at, 0.7f, 0.7f, lead);
+			break;
+		case AbilityId::Resonance:
+			PlayAt(Cue::Bell, at, 0.3f, 0.6f, lead);
+			PlayAt(Cue::ManaStart, at, 0.3f, 0.7f, lead);
 			break;
 		case AbilityId::Firestrike:
 			tracked.Loop = PlayAt(Cue::FireLoop, at, 0.5f);

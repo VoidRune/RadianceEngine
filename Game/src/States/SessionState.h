@@ -2,7 +2,9 @@
 #include "App/AppState.h"
 #include "Online/SteamPlatform.h"
 #include "Rendering/LevelRenderer.h"
+#include "Rendering/CharacterAnimator.h"
 #include "Rendering/Characters.h"
+#include "Rendering/CosmeticVisuals.h"
 #include "Rendering/Crawlers.h"
 #include "Rendering/Effects.h"
 #include "Rendering/Lighting.h"
@@ -98,6 +100,7 @@ namespace Game
 			float Age = 0.0f;
 			bool Seen = false;
 			bool Hurt = false;
+			Vec2 Push;
 			float SinceHit = 1e9f;
 			float FallAge = -1.0f;
 			float FallFrom = 0.0f;
@@ -113,6 +116,7 @@ namespace Game
 			uint32_t BladeSlot = 0;
 			float DeathAge = -1.0f;
 			float SpawnAge = 1e9f;
+			float CrystalForm = 0.0f;
 			glm::vec3 DeathColor{ 0.0f };
 			Element HitElement = Element::Physical;
 			AbilityId Cast = AbilityId::Count;
@@ -310,6 +314,8 @@ namespace Game
 		float FlashOf(uint32_t netId) const;
 		glm::vec4 HitLight(const EntityState& entity) const;
 		float AgeOf(uint32_t netId) const;
+		float PendingAge(const EntityState& entity) const;
+		float LocalArea(const EntityState& caster, AbilityId ability) const;
 		const CharacterAnimator* AnimatorOf(uint32_t netId) const;
 		float BarHeight(const EntityState& entity) const;
 		glm::vec3 BodyBase(const EntityState& entity, float lift = 0.0f) const;
@@ -373,7 +379,7 @@ namespace Game
 		uint32_t NovaSpikes(const NovaField& field, std::span<NovaSpike> spikes) const;
 		void UpdateNovaFields(float dt);
 		void DrawNovaFields(WorldRenderer& renderer) const;
-		VoidWell* FindVoidWell(uint32_t owner, uint16_t tag);
+		VoidWell* FindVoidWell(uint32_t owner, uint16_t tag, Vec2 position);
 		void UpdateVoidWells(float dt);
 		void DrawVoidWells(WorldRenderer& renderer) const;
 		void ShieldMoments(const EntityState& entity, float dt);
@@ -521,6 +527,8 @@ namespace Game
 		float m_Aim = 0.0f;
 		float m_AimDistance = 0.0f;
 		float m_Time = 0.0f;
+		uint8_t m_SeenSurge = 0;
+		float m_SurgeTime = -10.0f;
 		float m_Fps = 0.0f;
 		float m_FpsWindow = 0.0f;
 		uint32_t m_FpsFrames = 0;
@@ -531,6 +539,7 @@ namespace Game
 		std::vector<Corpse> m_Corpses;
 		std::unique_ptr<CharacterLibrary> m_Characters;
 		std::unique_ptr<EffectSystem> m_Effects;
+		std::unique_ptr<CosmeticVisuals> m_Cosmetics;
 		std::unique_ptr<CrawlerSystem> m_Crawlers;
 		std::optional<uint32_t> m_MeteorMesh;
 		SpellMeshes m_SpellMeshes;

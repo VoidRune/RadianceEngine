@@ -177,6 +177,37 @@ namespace Game
 					{ .Kind = K::Fire, .Count = 8.0f, .Shape = SpawnShape::Disc, .Radius = 0.5f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.4f, .Speed = { 0.4f, 1.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.25f, 0.45f } },
 					{ .Kind = K::Smoke, .Count = 1.6f, .Shape = SpawnShape::Disc, .Radius = 0.8f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 0.6f, 1.2f }, .Life = { 3.0f, 5.0f }, .Size = { 1.2f, 2.4f }, .Tint = { 0.35f, 0.29f, 0.28f } },
 				});
+				set(Fx::AuraEmberHands, {
+					{ .Kind = K::Fire, .Count = 35.0f, .Density = 5.0f, .Shape = SpawnShape::Segment, .Radius = 0.03f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.45f, .Speed = { 0.15f, 0.45f }, .Life = { 0.16f, 0.3f }, .Size = { 0.08f, 0.13f }, .Tint = { 0.6f, 0.6f, 0.6f } },
+					{ .Kind = K::Ember, .Count = 6.2f, .Density = 3.0f, .Shape = SpawnShape::Segment, .Radius = 0.04f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.7f, .Speed = { 0.4f, 1.1f }, .Life = { 0.45f, 0.9f }, .Size = { 0.012f, 0.022f } },
+				});
+				set(Fx::AuraEmberMantle, {
+					{ .Kind = K::Fire, .Count = 16.2f, .Density = 1.5f, .Shape = SpawnShape::Segment, .Radius = 0.05f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.35f, .Speed = { 0.3f, 0.7f }, .Life = { 0.18f, 0.34f }, .Size = { 0.07f, 0.12f }, .Tint = { 0.5f, 0.5f, 0.5f } },
+				});
+				set(Fx::AuraEmberRise, {
+					{ .Kind = K::Ember, .Count = 11.2f, .Shape = SpawnShape::Disc, .Radius = 0.2f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.45f, .Speed = { 0.5f, 1.2f }, .Life = { 0.8f, 1.5f }, .Size = { 0.012f, 0.024f } },
+				});
+				set(Fx::AuraAstralDust, {
+					{ .Kind = K::Mote, .Count = 7.5f, .Density = 7.0f, .Shape = SpawnShape::Segment, .Radius = 0.02f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.9f, .Speed = { 0.03f, 0.12f }, .Life = { 0.45f, 0.85f }, .Size = { 0.022f, 0.04f }, .Tint = { 0.85f, 0.75f, 1.1f } },
+					{ .Kind = K::Arcane, .Count = 3.8f, .Density = 2.0f, .Shape = SpawnShape::Segment, .Radius = 0.03f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.05f, 0.2f }, .Life = { 0.4f, 0.7f }, .Size = { 0.04f, 0.07f }, .Tint = { 0.45f, 0.45f, 0.45f } },
+				});
+				set(Fx::AuraCrownMist, {
+					{ .Kind = K::Arcane, .Count = 4.0f, .Shape = SpawnShape::Disc, .Radius = 0.11f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.35f, .Speed = { 0.05f, 0.14f }, .Life = { 0.7f, 1.2f }, .Size = { 0.035f, 0.06f }, .Tint = { 0.4f, 0.4f, 0.45f } },
+				});
+				set(Fx::AuraFrostHands, {
+					{ .Kind = K::Frost, .Count = 11.2f, .Density = 2.0f, .Shape = SpawnShape::Segment, .Radius = 0.04f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 0.05f, 0.2f }, .Life = { 0.4f, 0.7f }, .Size = { 0.08f, 0.14f }, .Tint = { 0.45f, 0.45f, 0.45f } },
+					{ .Kind = K::IceShard, .Count = 3.8f, .Density = 1.0f, .Shape = SpawnShape::Segment, .Radius = 0.05f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.2f, 0.6f }, .Life = { 0.4f, 0.8f }, .Size = { 0.015f, 0.028f } },
+				});
+				set(Fx::AuraFrostMist, {
+					{ .Kind = K::Frost, .Count = 12.5f, .Shape = SpawnShape::Disc, .Radius = 0.35f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 0.03f, 0.12f }, .Life = { 1.0f, 1.8f }, .Size = { 0.3f, 0.55f }, .Tint = { 0.5f, 0.5f, 0.5f } },
+				});
+				set(Fx::AuraFrostFlurry, {
+					{ .Kind = K::Snow, .Count = 12.5f, .Shape = SpawnShape::Disc, .Radius = 0.5f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 0.15f, 0.4f }, .Life = { 1.0f, 1.8f }, .Size = { 0.015f, 0.03f } },
+				});
+				set(Fx::AuraFrostCrownMist, {
+					{ .Kind = K::Frost, .Count = 4.0f, .Shape = SpawnShape::Disc, .Radius = 0.11f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.35f, .Speed = { 0.05f, 0.14f }, .Life = { 0.7f, 1.2f }, .Size = { 0.05f, 0.08f }, .Tint = { 0.35f, 0.35f, 0.35f } },
+					{ .Kind = K::Snow, .Count = 3.0f, .Shape = SpawnShape::Disc, .Radius = 0.12f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.1f, 0.25f }, .Life = { 0.8f, 1.3f }, .Size = { 0.012f, 0.022f } },
+				});
 				set(Fx::Snowfall, {
 					{ .Kind = K::Snow, .Count = 150.0f, .Shape = SpawnShape::Disc, .Radius = 16.0f, .Direction = { 0.3f, -1.0f, 0.12f }, .Cone = 0.2f, .Speed = { 0.4f, 0.8f }, .Life = { 6.0f, 8.0f }, .Size = { 0.025f, 0.05f } },
 				});
@@ -849,9 +880,12 @@ namespace Game
 			return Fx::ArcaneBurst;
 		case AbilityId::HookAnchor:
 			return Fx::ArrowImpact;
+		case AbilityId::Aftershock:
 		case AbilityId::ShelfCrush:
 		case AbilityId::Eruption:
 			return Fx::Debris;
+		case AbilityId::Resonance:
+			return Fx::ArcaneBurst;
 		case AbilityId::CrystalSpike:
 		case AbilityId::CrystalRain:
 			return Fx::CrystalBurst;
@@ -1251,6 +1285,17 @@ namespace Game
 			shock(radius * 1.1f, 0.45f);
 			Mark(SpellMarkDecal({ .Center = ground, .Radius = radius, .Color = { 1.0f, 0.42f, 0.12f }, .Intensity = 0.95f, .Kind = SpellMarkKind::Comet, .Seed = seed }), 0.75f, 0.01f, 1.0f, 1.15f, 0.25f);
 			Shockwave(ground, radius * 1.8f, 0.6f, 0.26f, 0.45f);
+			break;
+		case AbilityId::Aftershock:
+			cracks(ground, radius * 0.9f, 6.0f, 1.0f);
+			shock(radius, 0.4f);
+			Mark(SpellMarkDecal({ .Center = ground, .Radius = radius, .Color = { 1.0f, 0.32f, 0.08f }, .Intensity = 0.85f, .Kind = SpellMarkKind::Aftershock, .Seed = seed }), 0.6f, 0.01f, 1.0f, 1.08f, 0.2f);
+			Shockwave(ground, radius * 1.3f, 0.5f, 0.2f, 0.4f);
+			break;
+		case AbilityId::Resonance:
+			Mark(SpellMarkDecal({ .Center = ground, .Radius = radius, .Color = { 1.0f, 0.72f, 0.28f }, .Intensity = 0.9f, .Kind = SpellMarkKind::Resonance, .Seed = seed }), 0.7f, 0.01f, 1.0f, 1.12f, 0.25f);
+			shock(radius, 0.35f, 1.0f);
+			Shockwave(ground, radius * 1.2f, 0.4f, 0.1f, 0.3f);
 			break;
 		case AbilityId::GravityWell:
 			break;

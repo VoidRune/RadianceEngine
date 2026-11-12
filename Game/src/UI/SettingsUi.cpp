@@ -131,34 +131,63 @@ namespace Game
 			NetLibrary::SetSimulation(settings.Simulation);
 	}
 
-	bool DrawHeadwearPicker(Ui& ui, UiRect row, Headwear& headwear)
+	template <typename T, size_t N>
+	bool DrawCosmeticPicker(Ui& ui, UiRect row, const char* name, const CosmeticDef<T> (&defs)[N], T& value)
 	{
 		UiDrawList& draw = ui.Draw();
 		constexpr float Gap = 12.0f;
-		const float count = float(std::size(Headwears));
+		const float count = float(N);
 		const float width = (row.W - Gap * (count - 1.0f)) / count;
+		bool stacked = false;
+		for (const CosmeticDef<T>& def : defs)
+			stacked |= draw.MeasureWidth(def.Name, Theme::Caps(12.5f, Theme::Text, 1.0f)) > width - 56.0f;
 		bool changed = false;
-		for (const HeadwearDef& def : Headwears)
+		for (const CosmeticDef<T>& def : defs)
 		{
 			const UiRect card = row.CutLeft(width);
 			row.CutLeft(Gap);
-			const UiId id = Ui::MakeId("headwear", uint64_t(def.Id));
+			const UiId id = Ui::MakeId(name, uint64_t(def.Id));
 			const UiInteraction interaction = ui.Interact(id, card);
-			const bool selected = headwear == def.Id;
+			const bool selected = value == def.Id;
 			const float hover = ui.Animate(id, interaction.Hovered);
 			const float chosen = ui.Animate(id ^ 0x4EAD3EA7ull, selected, 10.0f);
 			if (interaction.Clicked && !selected)
 			{
-				headwear = def.Id;
+				value = def.Id;
 				changed = true;
 			}
 			ui.Card(card, hover, chosen, Theme::Gold);
 			const float lit = std::max(chosen, hover * 0.7f);
 			const UiColor tone = chosen > 0.5f ? Theme::Gold : Theme::Accent;
-			draw.Icon(IconFor(def.Id), { card.X + 12.0f, card.Center().y - 16.0f, 32.0f, 32.0f }, { .Color = glm::mix(Theme::Muted, chosen > 0.5f ? Theme::GoldLight : Theme::AccentLight, lit), .ColorBottom = glm::mix(Theme::Faint, tone, lit),
+			const UiRect icon = stacked ? UiRect{ card.Center().x - 12.0f, card.Y + 6.0f, 24.0f, 24.0f } : UiRect{ card.X + 12.0f, card.Center().y - 16.0f, 32.0f, 32.0f };
+			draw.Icon(IconFor(def.Id), icon, { .Color = glm::mix(Theme::Muted, chosen > 0.5f ? Theme::GoldLight : Theme::AccentLight, lit), .ColorBottom = glm::mix(Theme::Faint, tone, lit),
 				.ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .GlowColor = WithAlpha(tone, 0.35f * lit) });
-			draw.TextAligned({ card.X + 52.0f, card.Y, card.W - 56.0f, card.H }, def.Name, Theme::Caps(12.5f, glm::mix(Theme::Text, Theme::GoldLight, chosen), 1.0f), { 0.0f, 0.5f });
+			const TextStyle label = Theme::Caps(stacked ? 11.5f : 12.5f, glm::mix(Theme::Text, Theme::GoldLight, chosen), 1.0f);
+			if (stacked)
+				draw.TextFit({ card.X + 4.0f, card.Y + 32.0f, card.W - 8.0f, card.H - 34.0f }, def.Name, label, { 0.5f, 0.5f });
+			else
+				draw.TextAligned({ card.X + 52.0f, card.Y, card.W - 56.0f, card.H }, def.Name, label, { 0.0f, 0.5f });
 		}
 		return changed;
+	}
+
+	bool DrawOutfitPicker(Ui& ui, UiRect row, Outfit& outfit)
+	{
+		return DrawCosmeticPicker(ui, row, "outfit", Outfits, outfit);
+	}
+
+	bool DrawFocusPicker(Ui& ui, UiRect row, Focus& focus)
+	{
+		return DrawCosmeticPicker(ui, row, "focus", Foci, focus);
+	}
+
+	bool DrawAuraPicker(Ui& ui, UiRect row, Aura& aura)
+	{
+		return DrawCosmeticPicker(ui, row, "aura", Auras, aura);
+	}
+
+	bool DrawHeadpiecePicker(Ui& ui, UiRect row, Headpiece& headpiece)
+	{
+		return DrawCosmeticPicker(ui, row, "headpiece", Headpieces, headpiece);
 	}
 }

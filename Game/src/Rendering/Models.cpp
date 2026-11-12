@@ -69,6 +69,8 @@ namespace Game
 			return { 0.74f, 0.3f, 1.0f };
 		case AbilityId::HexShield:
 			return { 0.36f, 0.82f, 1.0f };
+		case AbilityId::Resonance:
+			return { 0.95f, 0.8f, 0.5f };
 		default:
 			break;
 		}

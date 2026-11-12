@@ -495,6 +495,50 @@ namespace Game
 			}
 			else if (argument == "--leviathan")
 				options.Leviathan = true;
+			else if (argument == "--outfit" && hasValue)
+			{
+				valid = false;
+				for (const OutfitDef& def : Outfits)
+					if (SameText(def.Key, value))
+					{
+						options.WornOutfit = def.Id;
+						valid = true;
+					}
+				i++;
+			}
+			else if (argument == "--focus" && hasValue)
+			{
+				valid = false;
+				for (const FocusDef& def : Foci)
+					if (SameText(def.Key, value))
+					{
+						options.CastFocus = def.Id;
+						valid = true;
+					}
+				i++;
+			}
+			else if (argument == "--aura" && hasValue)
+			{
+				valid = false;
+				for (const AuraDef& def : Auras)
+					if (SameText(def.Key, value))
+					{
+						options.WornAura = def.Id;
+						valid = true;
+					}
+				i++;
+			}
+			else if (argument == "--headpiece" && hasValue)
+			{
+				valid = false;
+				for (const HeadpieceDef& def : Headpieces)
+					if (SameText(def.Key, value))
+					{
+						options.WornHeadpiece = def.Id;
+						valid = true;
+					}
+				i++;
+			}
 			else if (argument == "--shot-camera" && hasValue)
 			{
 				std::array<float, 6> camera{};

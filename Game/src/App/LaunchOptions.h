@@ -1,4 +1,5 @@
 #pragma once
+#include <GameShared/Content/Cosmetics.h>
 #include <GameShared/Content/Items.h>
 #include <GameShared/Content/Missions.h>
 #include <GameShared/Content/Pvp.h>
@@ -59,6 +60,10 @@ namespace Game
 		bool LightingTest = false;
 		bool ProfileGpu = false;
 		bool Leviathan = false;
+		std::optional<Outfit> WornOutfit;
+		std::optional<Focus> CastFocus;
+		std::optional<Aura> WornAura;
+		std::optional<Headpiece> WornHeadpiece;
 		std::optional<std::array<float, 6>> ShotCamera;
 		bool Distortion = true;
 		bool Trails = true;

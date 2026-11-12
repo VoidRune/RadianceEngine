@@ -193,6 +193,9 @@ namespace Game
 	UiIcon IconFor(StarterKit kit);
 	UiIcon IconFor(Material material);
 	UiIcon IconFor(StationKind station);
-	UiIcon IconFor(Headwear headwear);
+	UiIcon IconFor(Outfit outfit);
+	UiIcon IconFor(Focus focus);
+	UiIcon IconFor(Aura aura);
+	UiIcon IconFor(Headpiece headpiece);
 	const UiImage* RarityGem(Rarity rarity);
 }

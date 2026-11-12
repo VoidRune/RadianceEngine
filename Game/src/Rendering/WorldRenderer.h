@@ -265,6 +265,8 @@ namespace Game
 		void CreateShadowPipelines();
 		void RenderShadows(Rdn::RenderGraph& graph, Rdn::RGImage shadowMap, const ShadowView& shadow, uint32_t boxCount, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
 		void RenderBackFaces(Rdn::RenderGraph& graph, Rdn::RGImage target, uint32_t boxCount, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
+		void RenderCharacters(Rdn::RenderGraph& graph, const GBuffer& gbuffer, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
+		void DrawModelRanges(Rdn::CommandBuffer& cmd, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex, bool characters) const;
 		void CreateMeshes();
 		void EnsureCapacity(uint32_t instances);
 		void EnsureModelCapacity(uint32_t instances, uint32_t joints);
@@ -374,6 +376,7 @@ namespace Game
 		GiQuality m_GiQuality = GiQuality::Medium;
 		glm::vec2 m_ShadowExtent{ 0.0f };
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelRanges;
+		std::vector<uint32_t> m_ModelCharacterCounts;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelShadowRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelDissolveRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelGlassRanges;

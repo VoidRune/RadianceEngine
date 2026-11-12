@@ -288,6 +288,8 @@ namespace Game
 		Storm,
 		Void,
 		Firebomb,
+		Aftershock,
+		Resonance,
 	};
 
 	struct SpellMark
@@ -345,6 +347,8 @@ namespace Game
 	void ShatterDiamondWard(const DiamondWardLook& look, std::vector<DiamondShard>& shards);
 	void UpdateDiamondShards(std::vector<DiamondShard>& shards, float dt);
 	void DrawDiamondShards(WorldRenderer& renderer, std::span<const DiamondShard> shards);
+	void DrawCrystalWard(WorldRenderer& renderer, const glm::vec3& base, float form, float time, uint32_t seed);
+	void ShatterCrystalWard(const glm::vec3& base, float time, uint32_t seed, std::vector<DiamondShard>& shards);
 
 	void DrawRuneCircle(WorldRenderer& renderer, const RuneCircle& circle);
 	void DrawGroundRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float intensity, float thickness, float dashes = 0.0f, float spin = 0.0f, uint32_t pattern = 0);

@@ -64,6 +64,8 @@ namespace Game
 		VoidMark,
 		FirebombMark,
 		Contact,
+		AftershockMark,
+		ResonanceMark,
 	};
 
 	enum class ParticleAlign : uint8_t

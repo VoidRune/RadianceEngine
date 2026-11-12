@@ -21,7 +21,7 @@ namespace Game
 		static_assert(std::size(BaseKeys) == size_t(ItemBase::Count));
 		constexpr const char* StatKeys[] = { "Damage", "PhysicalDamage", "FireDamage", "ColdDamage", "LightningDamage", "AttackSpeed", "CastSpeed", "CritChance", "CritDamage", "LifeSteal", "AreaSize", "ExtraProjectiles", "Pierce", "ProjectileSpeed", "CooldownRecovery", "GemLevel", "MaxHealth", "MaxMana", "ManaRegen", "Regeneration", "Armor", "FireResist", "ColdResist", "LightningResist", "PoisonResist", "MoveSpeed" };
 		static_assert(std::size(StatKeys) == size_t(Stat::Count));
-		constexpr const char* AbilityKeys[] = { "Bolt", "Orb", "Slash", "Chop", "Stab", "Thrust", "Arrow", "Quarrel", "Fireball", "Meteor", "FrostNova", "IceSpear", "ChainLightning", "Blink", "Cyclone", "GroundSlam", "Volley", "RainOfArrows", "PiercingShot", "Rejuvenate", "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain", "EmberBolt", "Gust", "Comet", "Warp", "GlacialNova", "GravityWell", "ArcLightning", "DiamondWard", "FrostSpear", "ChainHook", "Firebomb", "ObsidianBlades", "StormStrike", "FirebombSkip", "FirebombSkip2", "StormJump", "HookAnchor", "HookPull", "HookYank", "FirebombFlame", "Ignite", "ShatterBurst", "EarthSpike", "PurpleFireball", "HexShield", "GlacialEruption", "WellBurst", "WarpWake", "CrawlerBite", "Pounce", "ShardSpit", "RubyBurst", "RubyShard" };
+		constexpr const char* AbilityKeys[] = { "Bolt", "Orb", "Slash", "Chop", "Stab", "Thrust", "Arrow", "Quarrel", "Fireball", "Meteor", "FrostNova", "IceSpear", "ChainLightning", "Blink", "Cyclone", "GroundSlam", "Volley", "RainOfArrows", "PiercingShot", "Rejuvenate", "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain", "EmberBolt", "Gust", "Comet", "Warp", "GlacialNova", "GravityWell", "ArcLightning", "DiamondWard", "FrostSpear", "ChainHook", "Firebomb", "ObsidianBlades", "StormStrike", "FirebombSkip", "FirebombSkip2", "StormJump", "HookAnchor", "HookPull", "HookYank", "FirebombFlame", "Ignite", "ShatterBurst", "EarthSpike", "PurpleFireball", "HexShield", "GlacialEruption", "WellBurst", "WarpWake", "CrawlerBite", "Pounce", "ShardSpit", "RubyBurst", "RubyShard", "Aftershock", "Resonance" };
 		static_assert(std::size(AbilityKeys) == size_t(AbilityId::Count));
 
 		std::optional<AbilityId> AbilityFromKey(const std::string& name)
@@ -212,13 +212,21 @@ namespace Game
 				const Json& look = root["look"];
 				const auto text = [&](const char* key) { return look.contains(key) && look[key].is_string() ? look[key].get<std::string>() : std::string(); };
 				const std::string outfit = text("outfit");
-				const std::string headwear = text("headwear");
+				const std::string focus = text("focus");
 				for (const OutfitDef& def : Outfits)
 					if (outfit == def.Key)
 						profile.Style.Body = def.Id;
-				for (const HeadwearDef& def : Headwears)
-					if (headwear == def.Key)
-						profile.Style.Head = def.Id;
+				for (const FocusDef& def : Foci)
+					if (focus == def.Key)
+						profile.Style.Cast = def.Id;
+				const std::string aura = text("aura");
+				const std::string headpiece = text("headpiece");
+				for (const AuraDef& def : Auras)
+					if (aura == def.Key)
+						profile.Style.Glow = def.Id;
+				for (const HeadpieceDef& def : Headpieces)
+					if (headpiece == def.Key)
+						profile.Style.Crown = def.Id;
 			}
 			return profile;
 		}
@@ -249,7 +257,7 @@ namespace Game
 		Json spells = Json::array();
 		for (const AbilityId spell : profile.Spells)
 			spells.push_back(AbilityKeys[size_t(spell) < std::size(AbilityKeys) ? size_t(spell) : 0]);
-		const Json look = { { "outfit", GetOutfit(profile.Style.Body).Key }, { "headwear", GetHeadwear(profile.Style.Head).Key } };
+		const Json look = { { "outfit", GetOutfit(profile.Style.Body).Key }, { "focus", GetFocus(profile.Style.Cast).Key }, { "aura", GetAura(profile.Style.Glow).Key }, { "headpiece", GetHeadpiece(profile.Style.Crown).Key } };
 		Json root = { { "version", ProfileVersion }, { "name", profile.Name }, { "kit", KitKeys[size_t(profile.Kit)] }, { "look", look }, { "gear", gear }, { "gems", gems }, { "backpack", backpack }, { "stash", stash }, { "materials", materials }, { "spells", spells } };
 		if (profile.Falls > 0)
 			root["falls"] = profile.Falls;

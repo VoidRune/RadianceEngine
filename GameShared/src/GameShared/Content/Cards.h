@@ -11,7 +11,7 @@ namespace Game
 	enum class CardId : uint8_t
 	{
 		SplittingEmber,
-		ShatteringImpact,
+		Aftershock,
 		TwinComets,
 		Afterimage,
 		IceShrapnel,
@@ -21,7 +21,6 @@ namespace Game
 		ThornedMirror,
 		BlackIce,
 		GlassCannon,
-		Featherfall,
 		Echo,
 		HeavyRobes,
 		LongChain,
@@ -38,23 +37,30 @@ namespace Game
 		Brimming,
 		BloodPact,
 		LastStand,
-		VampiricEmbers,
+		Vampirism,
 		Kindling,
-		Wildfire,
 		Brittle,
-		Shatter,
 		Conductive,
 		Overload,
-		Barrier,
-		SecondWind,
+		CrystalWard,
+		Rally,
 		Precise,
+		WideSigils,
+		Epicenter,
+		ResonantGround,
+		SwiftRunes,
+		Flow,
+		Rewind,
+		QuickTongue,
+		Tempo,
+		SnapCast,
 		ApexOfMagic,
 		ManaSingularity,
 		MindOverMatter,
 		BloodMagic,
 		EchoChamber,
 		UnstableArcana,
-		Leyline,
+		Quicksilver,
 		Count,
 	};
 
@@ -125,50 +131,56 @@ namespace Game
 
 	inline constexpr CardDef Cards[] = {
 		{ CardId::SplittingEmber, CardKind::Upgrade, CardRarity::Common, AbilityId::EmberBolt, "Splitting Ember", "At the end of its range, Ember Bolt splits into three smaller bolts.", "At the end of its range, Ember Bolt splits into three bolts that deal 60% damage.", TagFire },
-		{ CardId::ShatteringImpact, CardKind::Upgrade, CardRarity::Rare, AbilityId::Comet, "Shattering Impact", "The crater cracks and sinks into the lava 1.5 s after the comet lands.", "A smaller crater cracks and sinks into the lava 3 s after the comet lands.", TagFire },
+		{ CardId::Aftershock, CardKind::Upgrade, CardRarity::Rare, AbilityId::Comet, "Aftershock", "Half a second after the comet lands, a shockwave 60% wider bursts out of the crater and shoves everyone again.", "Half a second after the comet lands, a shockwave 60% wider bursts out of the crater for half damage.", TagFire },
 		{ CardId::TwinComets, CardKind::Upgrade, CardRarity::Common, AbilityId::Comet, "Twin Comets", "A smaller second comet lands on the same spot half a second later.", "A second comet lands on the same spot half a second later.", TagFire },
 		{ CardId::Afterimage, CardKind::Upgrade, CardRarity::Rare, AbilityId::Warp, "Afterimage", "Warp leaves a shockwave where you left.", "Warp leaves a shockwave where you left that hits for 16.", TagMana },
 		{ CardId::IceShrapnel, CardKind::Upgrade, CardRarity::Common, AbilityId::GlacialNova, "Ice Shrapnel", "When the erupted spikes shatter, their shards burst outward and shove rivals again.", "When the erupted spikes shatter, their shards burst outward for 50% damage.", TagFrost },
 		{ CardId::Implosion, CardKind::Upgrade, CardRarity::Rare, AbilityId::GravityWell, "Implosion", "When the eye closes the void bursts, flinging everyone outward.", "When the eye closes the void bursts, hitting everyone inside for 5.", TagMana },
 		{ CardId::Pinball, CardKind::Upgrade, CardRarity::Rare, AbilityId::ArcLightning, "Pinball", "Every jump shoves half again as hard as the one before.", "Every jump hits half again as hard as the one before.", TagStorm },
-		{ CardId::Overcharge, CardKind::Upgrade, CardRarity::Common, AbilityId::ArcLightning, "Overcharge", "Arc Lightning jumps to one more rival.", nullptr, TagStorm },
+		{ CardId::Overcharge, CardKind::Upgrade, CardRarity::Common, AbilityId::ArcLightning, "Overcharge", "Arc Lightning shoves 25% harder, jumps 60% farther and reaches one more rival.", "Arc Lightning hits 25% harder, jumps 60% farther and reaches one more rival.", TagStorm },
 		{ CardId::ThornedMirror, CardKind::Upgrade, CardRarity::Common, AbilityId::DiamondWard, "Razor Facets", "Spells your Diamond Ward reflects come back 50% stronger.", nullptr, TagGuard },
-		{ CardId::BlackIce, CardKind::Upgrade, CardRarity::Common, AbilityId::FrostSpear, "Black Ice", "A rival your Ice Spear hits slides 40% further for a second and a half.", "Ice Spear chills half a second longer, and the rival slides 40% further.", TagFrost },
+		{ CardId::BlackIce, CardKind::Upgrade, CardRarity::Common, AbilityId::FrostSpear, "Black Ice", "A rival your Ice Spear hits freezes solid for half a second, then slides 60% further for 2 seconds.", "A rival your Ice Spear hits freezes solid for half a second and stays chilled a second longer.", TagFrost },
 		{ CardId::GlassCannon, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Glass Cannon", "Your spells shove 50% harder, but you fly 15% further.", "You deal 40% more damage, but take 10% more.", TagBlood },
-		{ CardId::Featherfall, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Featherfall", "Once per round, the first time you fall into lava, water or the abyss, you bounce back onto solid ground.", nullptr, TagGuard },
 		{ CardId::Echo, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Echo", "After a dodge, your next spell casts again 0.3 s later at half strength.", nullptr, TagMana },
 		{ CardId::HeavyRobes, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Heavy Robes", "You get shoved 12% less, but move 15% slower.", "You take 12% less damage, but move 15% slower.", TagGuard },
 		{ CardId::LongChain, CardKind::Upgrade, CardRarity::Common, AbilityId::ChainHook, "Long Chain", "Chain Hook flies 20% farther and recharges 20% faster.", "Chain Hook flies 20% farther, recharges 20% faster and hits 25% harder.", TagBlood },
 		{ CardId::Whiplash, CardKind::Upgrade, CardRarity::Rare, AbilityId::ChainHook, "Whiplash", "A rival you hook flies much further past you.", "A rival you hook flies further past you and takes 80% more damage.", TagBlood },
 		{ CardId::ClusterBomb, CardKind::Upgrade, CardRarity::Common, AbilityId::Firebomb, "Cluster Bomb", "Firebomb skips twice and bursts three times, the last time biggest.", nullptr, TagFire },
 		{ CardId::StickyFire, CardKind::Upgrade, CardRarity::Rare, AbilityId::Firebomb, "Sticky Fire", "Every Firebomb landing keeps burning for a second, shoving anyone who walks in.", "Every Firebomb landing keeps burning for a second, scorching anyone who walks in.", TagFire },
-		{ CardId::RazorGlass, CardKind::Upgrade, CardRarity::Common, AbilityId::ObsidianBlades, "Razor Glass", "Obsidian blades cut through the first rival they hit and fly on.", nullptr, TagMana },
-		{ CardId::SeekerBlades, CardKind::Upgrade, CardRarity::Rare, AbilityId::ObsidianBlades, "Seeker Blades", "Obsidian blades curve toward the nearest rival, but shove 15% less.", "Obsidian blades curve toward the nearest rival, but deal half as much and shove 15% less.", TagMana },
-		{ CardId::ForkedLightning, CardKind::Upgrade, CardRarity::Common, AbilityId::StormStrike, "Forked Lightning", "Storm Strike jumps to one more rival.", nullptr, TagStorm },
+		{ CardId::RazorGlass, CardKind::Upgrade, CardRarity::Common, AbilityId::ObsidianBlades, "Razor Glass", "Obsidian blades shove 20% harder and cut through the first rival they hit.", "Obsidian blades deal 20% more damage and cut through the first rival they hit.", TagMana },
+		{ CardId::SeekerBlades, CardKind::Upgrade, CardRarity::Rare, AbilityId::ObsidianBlades, "Seeker Blades", "Obsidian blades curve toward the nearest rival, but shove 15% less.", "Obsidian blades curve toward the nearest rival, but deal 40% less and shove 15% less.", TagMana },
+		{ CardId::ForkedLightning, CardKind::Upgrade, CardRarity::Common, AbilityId::StormStrike, "Forked Lightning", "A second bolt strikes the same spot 0.4 s later and shoves at 60% strength.", "A second bolt strikes the same spot 0.4 s later for 60% damage.", TagStorm },
 		{ CardId::StaticCharge, CardKind::Upgrade, CardRarity::Rare, AbilityId::StormStrike, "Static Charge", "Rivals Storm Strike hits can't dodge for 1.5 seconds.", nullptr, TagStorm },
 		{ CardId::DeepWell, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Deep Well", "50 more maximum mana.", nullptr, TagMana, InDamage },
 		{ CardId::Quickening, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Quickening", "Your mana comes back 40% faster.", nullptr, TagMana, InDamage },
 		{ CardId::Siphon, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Siphon", "Each hit you land restores 4 mana.", nullptr, TagMana, InDamage },
 		{ CardId::Brimming, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Brimming", "Spells cast with over 80% mana deal 30% more damage.", nullptr, TagMana, InDamage },
-		{ CardId::BloodPact, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Blood Pact", "Spells you can't afford take the rest from your health, 1 health per 4 mana.", nullptr, TagBlood, InDamage },
-		{ CardId::LastStand, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Last Stand", "You deal 30% more damage while under 30% health.", nullptr, TagBlood, InDamage },
-		{ CardId::VampiricEmbers, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Vampiric Embers", "Every Ember Bolt hit heals you for 1.", nullptr, TagBlood | TagFire, InDamage },
+		{ CardId::BloodPact, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Blood Pact", "Every point of damage you take restores 2 mana.", nullptr, TagBlood | TagMana, InDamage },
+		{ CardId::LastStand, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Last Stand", "You deal 50% more damage while under 40% health.", nullptr, TagBlood, InDamage },
+		{ CardId::Vampirism, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Vampirism", "Heal for 12% of all the damage you deal.", nullptr, TagBlood, InDamage },
 		{ CardId::Kindling, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Kindling", "Your spells, except Ember Bolt, set rivals alight for 4 damage over 2 seconds.", nullptr, TagFire, InDamage },
-		{ CardId::Wildfire, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Wildfire", "A burning rival you kill bursts into flames that set everyone nearby alight.", nullptr, TagFire, InDamage, AbilityId::Count, AbilityId::Count, CardId::Kindling },
-		{ CardId::Brittle, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Brittle", "Chilled rivals take 15% more damage from you.", nullptr, TagFrost, InDamage, AbilityId::FrostSpear },
-		{ CardId::Shatter, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Shatter", "A chilled rival you kill bursts for 15 damage around them.", nullptr, TagFrost, InDamage, AbilityId::FrostSpear },
+		{ CardId::Brittle, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Brittle", "Your chills last twice as long, and chilled rivals take 25% more damage from you.", nullptr, TagFrost, InDamage, AbilityId::FrostSpear, AbilityId::GlacialNova },
 		{ CardId::Conductive, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Conductive", "Your lightning marks rivals. Your next Ember Bolt on a marked rival deals double.", nullptr, TagStorm, InDamage, AbilityId::ArcLightning, AbilityId::StormStrike },
-		{ CardId::Overload, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Overload", "Every fifth spell you cast costs nothing and deals 50% more.", nullptr, TagStorm | TagMana, InDamage },
-		{ CardId::Barrier, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Barrier", "Start each round with an 8-point shield.", nullptr, TagGuard, InDamage },
-		{ CardId::SecondWind, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Second Wind", "Once per round, heal 6 when you drop under 25% health.", nullptr, TagGuard, InDamage },
+		{ CardId::Overload, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Overload", "Every fourth spell you cast costs nothing and deals 50% more.", nullptr, TagStorm | TagMana, InDamage },
+		{ CardId::CrystalWard, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Crystal Ward", "A crystal ward blocks the next hit completely, then shatters and re-forms 20 seconds later. Burns and lava get through.", nullptr, TagGuard, InDamage },
+		{ CardId::Rally, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Rally", "Under 40% health you regenerate 1.25 health a second, up to 40%. Taking damage pauses it for 2 seconds.", nullptr, TagGuard, InDamage },
 		{ CardId::Precise, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Precise", "Your spells have a 15% chance to deal double damage.", nullptr, TagGuard, InDamage },
+		{ CardId::WideSigils, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Wide Sigils", "Your area spells and explosions cover 25% more ground.", nullptr, TagFire },
+		{ CardId::Epicenter, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Epicenter", "Your area spells and explosions cover 45% more ground, but shove 10% less.", "Your area spells and explosions cover 45% more ground, but deal 15% less damage.", TagFire },
+		{ CardId::ResonantGround, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Resonant Ground", "A second after your area spells land, the ground there pulses again at half strength.", nullptr, TagFire | TagStorm },
+		{ CardId::SwiftRunes, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Swift Runes", "Your spells recharge 20% faster.", nullptr, TagMana },
+		{ CardId::Flow, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Flow", "Every hit you land takes 0.6 s off your other spells' cooldowns.", nullptr, TagMana | TagStorm },
+		{ CardId::Rewind, CardKind::Wild, CardRarity::Legendary, AbilityId::Count, "Rewind", "Each spell you cast has a 20% chance to skip its cooldown.", nullptr, TagMana },
+		{ CardId::QuickTongue, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Quick Tongue", "You cast and charge spells 20% faster.", nullptr, TagStorm },
+		{ CardId::Tempo, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Tempo", "Each spell you cast makes your casting 6% faster for 3 seconds, stacking up to 30%.", nullptr, TagStorm },
+		{ CardId::SnapCast, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Snap Cast", "The first spell you cast within 1.5 s of a dodge goes off instantly. Charged spells start fully charged.", nullptr, TagStorm | TagGuard },
 		{ CardId::ApexOfMagic, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Apex of Magic", "Casting and cooldowns are 300% faster, but every spell costs 50% more mana.", nullptr, TagStorm | TagMana, InDamage },
 		{ CardId::ManaSingularity, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Mana Singularity", "Spells cost no mana and deal 1% more damage for every 2 mana you hold. Hits drain your mana as well as your health.", nullptr, TagMana, InDamage },
-		{ CardId::MindOverMatter, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Mind over Matter", "Damage drains your mana before your health. After any hit, your mana stops coming back for 2 seconds.", nullptr, TagMana | TagGuard, InDamage },
-		{ CardId::BloodMagic, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Blood Magic", "You have no mana. Spells cost 1 health per 5 mana instead, deal 30% more damage and heal you for all the damage they deal.", nullptr, TagBlood, InDamage },
-		{ CardId::EchoChamber, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Echo Chamber", "Every spell casts again a moment later wherever you aim, but its cooldown is 75% longer. Warp and Diamond Ward don't echo.", nullptr, TagStorm, InDamage },
-		{ CardId::UnstableArcana, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Unstable Arcana", "Your spell slots hold random attack spells from the book at 250% power, and each cast rolls a new one. You never choose which.", nullptr, 0, InDamage },
-		{ CardId::Leyline, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Leyline", "Your spells deal double damage once you have stood still for a second. Moving resets it, but a longer stand keeps the charge up to 1.5 seconds after you move.", nullptr, TagGuard, InDamage },
+		{ CardId::MindOverMatter, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Mind over Matter", "Half of every hit drains your mana instead of your health. After a hit, your mana comes back 75% slower for 2 seconds.", nullptr, TagMana | TagGuard, InDamage },
+		{ CardId::BloodMagic, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Blood Magic", "You have no mana. Spells cost 1 health per 5 mana instead, deal 30% more and heal you for all the damage they deal. You also get 10 more health.", nullptr, TagBlood, InDamage },
+		{ CardId::EchoChamber, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Echo Chamber", "Every spell casts two extra copies at 60% strength: projectiles fan out beside it and area spells land around your target. Cooldowns are 40% longer. Warp, wards, Chain Hook and Frost Nova don't echo.", nullptr, TagStorm, InDamage },
+		{ CardId::UnstableArcana, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Unstable Arcana", "Every spell you cast surges at random: double damage, 75% more area, two extra copies, or no cooldown.", nullptr, 0, InDamage },
+		{ CardId::Quicksilver, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Quicksilver", "Keep moving to build charge. After 1.2 s on the move your spells deal double damage. Standing still drains it and every hit you take halves it.", nullptr, TagStorm, InDamage },
 	};
 	static_assert(std::size(Cards) == size_t(CardId::Count));
 
@@ -246,6 +258,8 @@ namespace Game
 	inline constexpr float SplitRadiusScale = 0.8f;
 	inline constexpr float TwinDelay = 0.5f;
 	inline constexpr float TwinScale = 0.7f;
+	inline constexpr float AftershockDelay = 0.5f;
+	inline constexpr float AftershockRadius = 1.6f;
 	inline constexpr float AfterimageDelay = 0.05f;
 	inline constexpr float AfterimageRadius = 2.4f;
 	inline constexpr float AfterimagePush = 14.0f;
@@ -255,21 +269,18 @@ namespace Game
 	inline constexpr float ImplosionDelay = 0.35f;
 	inline constexpr float ImplosionPush = 18.0f;
 	inline constexpr float PinballGrowth = 1.5f;
+	inline constexpr float OverchargeReach = 1.6f;
+	inline constexpr float OverchargeScale = 1.25f;
 	inline constexpr float ThornScale = 1.5f;
-	inline constexpr float BlackIceSeconds = 1.5f;
-	inline constexpr float BlackIceFriction = 1.0f / 1.4f;
+	inline constexpr float BlackIceSeconds = 2.0f;
+	inline constexpr float BlackIceFriction = 1.0f / 1.6f;
+	inline constexpr float BlackIceFreeze = 0.5f;
 	inline constexpr float GlassCannonDealt = 1.5f;
 	inline constexpr float GlassCannonTaken = 1.15f;
 	inline constexpr float HeavyRobesTaken = 0.88f;
 	inline constexpr float HeavyRobesSpeed = 0.85f;
 	inline constexpr float EchoDelay = 0.3f;
 	inline constexpr float EchoPushScale = 0.5f;
-	inline constexpr float CraterDelay = 1.5f;
-	inline constexpr float CraterScale = 0.85f;
-	inline constexpr float FeatherfallSearch = 5.0f;
-	inline constexpr float FeatherfallMargin = 0.7f;
-	inline constexpr float FeatherfallFooting = 1.0f;
-	inline constexpr float FeatherfallGrace = 0.6f;
 	inline constexpr float LongChainScale = 1.2f;
 	inline constexpr float LongChainCooldown = 0.8f;
 	inline constexpr float WhiplashPull = 2.4f;
@@ -279,46 +290,59 @@ namespace Game
 	inline constexpr float StickyInterval = 0.35f;
 	inline constexpr float StickyRadius = 1.7f;
 	inline constexpr float StickyPush = 9.0f;
+	inline constexpr float RazorGlassScale = 1.2f;
 	inline constexpr float SeekRange = 5.0f;
 	inline constexpr float SeekTurnRate = 8.0f;
-	inline constexpr uint32_t ForkedJumps = 2;
+	inline constexpr float ForkedDelay = 0.4f;
+	inline constexpr float ForkedScale = 0.6f;
 	inline constexpr float StaticSeconds = 1.5f;
 	inline constexpr float DeepWellMana = 50.0f;
 	inline constexpr float QuickeningRegen = 1.4f;
 	inline constexpr float SiphonMana = 4.0f;
 	inline constexpr float BrimmingShare = 0.8f;
 	inline constexpr float BrimmingScale = 1.3f;
-	inline constexpr float BloodPactRate = 0.25f;
-	inline constexpr float LastStandHealth = 0.3f;
-	inline constexpr float LastStandScale = 1.3f;
-	inline constexpr int32_t VampiricHeal = 1;
+	inline constexpr float BloodPactMana = 2.0f;
+	inline constexpr float LastStandHealth = 0.4f;
+	inline constexpr float LastStandScale = 1.5f;
+	inline constexpr float VampirismShare = 0.12f;
 	inline constexpr float KindlingDamage = 4.0f;
 	inline constexpr float KindlingSeconds = 2.0f;
-	inline constexpr float WildfireRadius = 3.5f;
-	inline constexpr float WildfireDamage = 10.0f;
-	inline constexpr float WildfireSeconds = 2.5f;
-	inline constexpr float BrittleScale = 1.15f;
-	inline constexpr int32_t ShatterDamage = 15;
+	inline constexpr float BrittleScale = 1.25f;
+	inline constexpr float BrittleChill = 2.0f;
 	inline constexpr float ConductiveSeconds = 4.0f;
 	inline constexpr float ConductiveScale = 2.0f;
-	inline constexpr uint8_t OverloadEvery = 5;
+	inline constexpr uint8_t OverloadEvery = 4;
 	inline constexpr float OverloadScale = 1.5f;
-	inline constexpr float BarrierShield = 8.0f;
-	inline constexpr float SecondWindHealth = 0.25f;
-	inline constexpr int32_t SecondWindHeal = 6;
+	inline constexpr float CrystalWardSeconds = 20.0f;
+	inline constexpr float RallyHealth = 0.4f;
+	inline constexpr float RallyRate = 1.25f;
+	inline constexpr float RallyPause = 2.0f;
 	inline constexpr float PreciseChance = 0.15f;
 	inline constexpr float PreciseMultiplier = 2.0f;
+	inline constexpr float WideSigilsArea = 0.25f;
+	inline constexpr float EpicenterArea = 0.45f;
+	inline constexpr float EpicenterDamage = 0.85f;
+	inline constexpr float EpicenterPush = 0.9f;
+	inline constexpr float ResonanceDelay = 1.0f;
+	inline constexpr float ResonanceScale = 0.5f;
+	inline constexpr float SwiftRunesCooldown = 0.8f;
+	inline constexpr float FlowRefund = 0.6f;
+	inline constexpr float FlowSpacing = 0.15f;
+	inline constexpr float RewindChance = 0.2f;
+	inline constexpr float QuickTongueSpeed = 1.2f;
+	inline constexpr float TempoStep = 0.06f;
+	inline constexpr uint8_t TempoMaxStacks = 5;
+	inline constexpr float TempoSeconds = 3.0f;
+	inline constexpr float SnapWindow = 1.5f;
 	inline constexpr float GlassCannonDamageDealt = 1.4f;
 	inline constexpr float GlassCannonDamageTaken = 1.1f;
 	inline constexpr float HeavyRobesDamageTaken = 0.88f;
-	inline constexpr float BlackIceChill = 1.0f;
+	inline constexpr float BlackIceChill = 2.0f;
 	inline constexpr float WhiplashDamage = 1.8f;
 	inline constexpr float LongChainDamage = 1.25f;
 	inline constexpr float ImplosionDamage = 0.45f;
 	inline constexpr float SeekerDamage = 0.6f;
 	inline constexpr float SeekerPush = 0.85f;
-	inline constexpr float DamageCraterDelay = 3.0f;
-	inline constexpr float DamageCraterScale = 0.7f;
 	inline constexpr float TwinDamage = 1.0f;
 	inline constexpr float AfterimageDamage = 1.4f;
 	inline constexpr uint8_t ApexFromRound = 4;
@@ -328,17 +352,34 @@ namespace Game
 	inline constexpr float ApexMagicCost = 1.5f;
 	inline constexpr float ManaSingularityDamage = 0.005f;
 	inline constexpr float ManaSingularityDrain = 1.0f;
-	inline constexpr float MindOverMatterRatio = 0.8f;
+	inline constexpr float MindOverMatterShare = 0.5f;
+	inline constexpr float MindOverMatterRatio = 1.25f;
 	inline constexpr float MindOverMatterStall = 2.0f;
+	inline constexpr float MindOverMatterRegen = 0.25f;
 	inline constexpr float BloodMagicRate = 0.2f;
 	inline constexpr float BloodMagicDamage = 1.3f;
 	inline constexpr float BloodMagicHeal = 1.0f;
-	inline constexpr float EchoChamberDelay = 0.25f;
-	inline constexpr float EchoChamberCooldown = 1.75f;
-	inline constexpr float ArcanaPower = 2.5f;
-	inline constexpr float LeylineSeconds = 1.0f;
-	inline constexpr float LeylineDamage = 2.0f;
-	inline constexpr float LeylineLinger = 1.5f;
+	inline constexpr int32_t BloodMagicHealth = 10;
+	inline constexpr float BloodMagicRegen = 0.0f;
+	inline constexpr float EchoChamberShare = 0.6f;
+	inline constexpr float EchoChamberCooldown = 1.4f;
+	inline constexpr float EchoChamberFan = 0.21f;
+	inline constexpr float EchoChamberArea = 0.7f;
+	inline constexpr float ArcanaDamage = 2.0f;
+	inline constexpr float ArcanaArea = 1.75f;
+	inline constexpr float QuicksilverSeconds = 1.2f;
+	inline constexpr float QuicksilverDamage = 2.0f;
+	inline constexpr float QuicksilverDrain = 2.0f;
+	inline constexpr float QuicksilverHit = 0.5f;
+
+	enum class ArcanaSurge : uint8_t
+	{
+		None,
+		Power,
+		Area,
+		Copies,
+		Refund,
+	};
 
 	enum ProjectilePerk : uint8_t
 	{
@@ -347,13 +388,12 @@ namespace Game
 		PerkSlick = 1 << 2,
 		PerkSeek = 1 << 3,
 		PerkBurst = 1 << 4,
+		PerkReach = 1 << 5,
 	};
 
 	enum StrikePerk : uint8_t
 	{
-		PerkShatter = 1 << 0,
 		PerkAlong = 1 << 1,
-		PerkFork = 1 << 2,
 		PerkStatic = 1 << 3,
 	};
 }

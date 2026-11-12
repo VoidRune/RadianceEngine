@@ -48,6 +48,7 @@ namespace Game
 			writer.Write(skill.MoveScale);
 			writer.Write(skill.DamageScale);
 			writer.Write(skill.AreaScale);
+			writer.Write(skill.PushScale);
 			writer.Write(skill.ExtraProjectiles);
 			writer.Write(skill.RangeScale);
 			writer.Write(skill.Durability);
@@ -65,6 +66,7 @@ namespace Game
 			skill.MoveScale = reader.Read<float>();
 			skill.DamageScale = reader.Read<float>();
 			skill.AreaScale = reader.Read<float>();
+			skill.PushScale = reader.Read<float>();
 			skill.ExtraProjectiles = reader.Read<uint8_t>();
 			skill.RangeScale = reader.Read<float>();
 			skill.Durability = reader.Read<float>();
@@ -92,6 +94,9 @@ namespace Game
 			WriteBytes(writer, traits.Resist);
 			writer.Write(traits.BloodRate);
 			writer.Write(traits.OverloadEvery);
+			writer.Write(traits.TempoStep);
+			writer.Write(traits.SnapWindow);
+			writer.Write(traits.StallRegen);
 		}
 
 		bool ReadTraits(ByteReader& reader, PlayerTraits& traits)
@@ -117,6 +122,9 @@ namespace Game
 			ReadBytes(reader, traits.Resist);
 			traits.BloodRate = reader.Read<float>();
 			traits.OverloadEvery = reader.Read<uint8_t>();
+			traits.TempoStep = reader.Read<float>();
+			traits.SnapWindow = reader.Read<float>();
+			traits.StallRegen = reader.Read<float>();
 			return !reader.Failed();
 		}
 
@@ -266,7 +274,11 @@ namespace Game
 			writer.Write(state.Overload);
 			writer.Write(state.RecastAbility);
 			writer.Write(state.ManaStall);
-			writer.Write(state.Still);
+			writer.Write(state.Momentum);
+			writer.Write(state.Tempo);
+			writer.Write(state.TempoStacks);
+			writer.Write(state.Snap);
+			writer.Write(state.Surge);
 			writer.Write(state.GuardLost);
 			writer.Write(state.GuardIdle);
 			writer.Write(uint8_t((state.Alive ? 1 : 0) | (state.Airborne ? 2 : 0) | (state.GuardUp ? 4 : 0)));
@@ -309,7 +321,11 @@ namespace Game
 			state.Overload = reader.Read<uint8_t>();
 			state.RecastAbility = reader.Read<uint8_t>();
 			state.ManaStall = reader.Read<float>();
-			state.Still = reader.Read<float>();
+			state.Momentum = reader.Read<float>();
+			state.Tempo = reader.Read<float>();
+			state.TempoStacks = reader.Read<uint8_t>();
+			state.Snap = reader.Read<float>();
+			state.Surge = reader.Read<uint8_t>();
 			state.GuardLost = reader.Read<float>();
 			state.GuardIdle = reader.Read<float>();
 			const uint8_t life = reader.Read<uint8_t>();
@@ -498,7 +514,7 @@ namespace Game
 		message.Name = reader.ReadString();
 		message.Kit = reader.Read<uint8_t>();
 		message.Honors = reader.Read<uint8_t>();
-		message.Style = UnpackCosmetics(reader.Read<uint16_t>());
+		message.Style = UnpackCosmetics(reader.Read<uint32_t>());
 		message.HasGear = reader.Read<uint8_t>() != 0;
 		if (message.HasGear && (!ReadItems(reader, message.Gear.Gear) || !ReadItems(reader, message.Gear.Gems) || !ReadItems(reader, message.Gear.Pack) || !ReadItems(reader, message.Gear.Stash)))
 			return false;
@@ -753,7 +769,7 @@ namespace Game
 			player.Look.Body = reader.Read<ItemBase>();
 			player.Look.Feet = reader.Read<ItemBase>();
 			player.Look.WeaponQuality = reader.Read<Rarity>();
-			player.Look.Style = UnpackCosmetics(reader.Read<uint16_t>());
+			player.Look.Style = UnpackCosmetics(reader.Read<uint32_t>());
 			player.Team = reader.Read<uint8_t>();
 			player.Placement = reader.Read<uint8_t>();
 			const uint8_t flags = reader.Read<uint8_t>();

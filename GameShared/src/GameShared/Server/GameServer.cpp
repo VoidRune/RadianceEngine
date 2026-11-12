@@ -934,10 +934,10 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Ignited);
 				if (m_World->GetMatch().GetMarkedBy(controller->PlayerId) != NoPlayer)
 					state.Flags |= uint16_t(EntityFlags::Marked);
-				if (m_World->GetMatch().GetShield(controller->PlayerId) > 0.0f)
+				if (m_World->GetMatch().HasCrystalWard(controller->PlayerId))
 					state.Flags |= uint16_t(EntityFlags::Barrier);
-				if (controller->State.Still >= LeylineSeconds && m_World->GetMatch().HasPlayerCard(controller->PlayerId, CardId::Leyline))
-					state.Flags |= uint32_t(EntityFlags::Leyline);
+				if (controller->State.Momentum >= QuicksilverSeconds && m_World->GetMatch().HasPlayerCard(controller->PlayerId, CardId::Quicksilver))
+					state.Flags |= uint32_t(EntityFlags::Quicksilver);
 				if (LengthSquared(controller->State.Push) > FlungSpeed * FlungSpeed)
 					state.Flags |= uint16_t(EntityFlags::Flung);
 				if (controller->State.IsFalling())
@@ -989,8 +989,11 @@ namespace Game
 				if (const EnemyDef* def = FindEnemyDef(enemy->Type); def && def->Behavior == EnemyBehavior::Treasure && enemy->Age >= BurrowSeconds - BurrowWarning)
 					state.Flags |= uint16_t(EntityFlags::Falling);
 			}
-			if (entities.TryGet<PendingStrike>(entity))
+			if (const PendingStrike* pending = entities.TryGet<PendingStrike>(entity))
+			{
 				state.Flags |= uint16_t(EntityFlags::Pending);
+				state.Charge = PackLead(pending->Lead);
+			}
 			const Chest* chest = entities.TryGet<Chest>(entity);
 			states.push_back(state);
 			visibility.push_back({ replicated.Visibility, chest ? chest->Opened : uint16_t(0), chest != nullptr, chest && chest->Kind == ChestKind::Cache && chest->Opened == 0 });
@@ -1061,7 +1064,7 @@ namespace Game
 		if (m_Session.Mode == GameMode::Brawl)
 		{
 			local.Brawl = m_World->GetMatch().GetLoadout(client.PlayerId);
-			local.Shield = uint8_t(std::clamp(std::ceil(m_World->GetMatch().GetShield(client.PlayerId)), 0.0f, 255.0f));
+			local.Shield = m_World->GetMatch().GetWardGauge(client.PlayerId);
 		}
 		if (m_Session.Mode == GameMode::Hub)
 			local.Starlit = m_World->GetStarlit(client.PlayerId);
@@ -1192,7 +1195,7 @@ namespace Game
 		}
 		if (bot.Name.empty())
 			bot.Name = "Bot " + std::to_string(playerId + 1);
-		bot.Style.Head = Headwear(m_BotRandom.Below(uint32_t(Headwear::Count)));
+		bot.Style.Cast = Focus(m_BotRandom.Below(uint32_t(Focus::Count)));
 		const uint32_t first = m_BotRandom.Below(uint32_t(BotStyle::Count));
 		size_t fewest = m_Bots.size() + 1;
 		for (uint32_t i = 0; i < uint32_t(BotStyle::Count); i++)

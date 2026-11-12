@@ -43,6 +43,7 @@ layout(location = 8) out vec4 outColor;
 layout(location = 9) out vec3 outWorld;
 layout(location = 10) flat out vec4 outAccent;
 layout(location = 11) flat out uint outFlash;
+layout(location = 15) flat out vec3 outCenter;
 #ifdef DISSOLVE
 layout(location = 12) out vec3 outLocal;
 layout(location = 13) flat out vec4 outDissolve;
@@ -133,6 +134,7 @@ void main()
 	outColor = unpackUnorm4x8(vertex.Skin.w);
 	outWorld = world;
 	outAccent = instance.Accent;
+	outCenter = vec3(instance.Row0.w, instance.Row1.w, instance.Row2.w);
 	outFlash = instance.Flash.a > 0.0 ? packUnorm4x8(instance.Flash) : 0u;
 #ifdef DISSOLVE
 	outLocal = vertex.PositionU.xyz * length(vec3(instance.Row0.y, instance.Row1.y, instance.Row2.y));

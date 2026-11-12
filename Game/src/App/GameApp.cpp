@@ -393,6 +393,14 @@ namespace Game
 			config.Map = m_Settings.Map;
 			config.StartMode = m_Settings.StartMode;
 			config.Profile = LoadCharacter(m_Settings.PlayerName, m_Settings.Kit, options.NewCharacter);
+			if (options.WornOutfit)
+				config.Profile.Style.Body = *options.WornOutfit;
+			if (options.CastFocus)
+				config.Profile.Style.Cast = *options.CastFocus;
+			if (options.WornAura)
+				config.Profile.Style.Glow = *options.WornAura;
+			if (options.WornHeadpiece)
+				config.Profile.Style.Crown = *options.WornHeadpiece;
 			m_State = std::make_unique<SessionState>(*this, std::move(config));
 		}
 		else

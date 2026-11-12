@@ -1,4 +1,5 @@
 #include "Characters.h"
+#include "Rendering/CharacterAnimator.h"
 #include "Rendering/ModelLibrary.h"
 #include "Rendering/WorldRenderer.h"
 #include <RadianceEngine/Core/Log.h>
@@ -14,10 +15,10 @@ namespace Game
 	{
 		constexpr const char* AnimNames[] = {
 			"Idle_A", "Skeletons_Idle", "Melee_2H_Idle", "Ranged_Bow_Idle",
-			"Hero_Idle_Look", "Hero_Idle_LookRight", "Hero_Idle_Scan", "Hero_Idle_Wand", "Hero_Idle_Bracer", "Hero_Idle_Scratch",
+			"Hero_Idle_Look", "Hero_Idle_LookRight", "Hero_Idle_Scan", "Hero_Idle_Wand", "Hero_Idle_Stretch", "Hero_Idle_Rub", "Hero_Idle_Nod",
 			"Walking_A", "Hero_Jog",
 			"Running_A", "Running_HoldingBow", "Running_HoldingRifle", "Skeletons_Walking",
-			"Walking_Backwards", "Running_Strafe_Left", "Running_Strafe_Right",
+			"Walking_Backwards", "Running_Strafe_Left", "Running_Strafe_Right", "Hero_Strafe_Walk_Left", "Hero_Strafe_Walk_Right",
 			"Dodge_Forward", "Dodge_Backward", "Dodge_Left", "Dodge_Right",
 			"Hit_A", "Hit_B", "Death_A", "Skeletons_Death",
 			"Melee_1H_Attack_Slice_Horizontal", "Melee_1H_Attack_Chop", "Melee_1H_Attack_Stab", "Melee_2H_Attack_Stab", "Melee_2H_Attack_Chop", "Melee_2H_Attack_Spinning", "Melee_Unarmed_Attack_Punch_A",
@@ -36,6 +37,10 @@ namespace Game
 			case Anim::Walk:
 			case Anim::Jog:
 				return Anim::Run;
+			case Anim::StrafeLeftWalk:
+				return Anim::StrafeLeft;
+			case Anim::StrafeRightWalk:
+				return Anim::StrafeRight;
 			case Anim::CastFlick:
 			case Anim::CastSlash:
 			case Anim::CastBackhand:
@@ -60,36 +65,66 @@ namespace Game
 			}
 		}
 
-		constexpr Anim IdleVariants[] = { Anim::IdleLook, Anim::IdleLookRight, Anim::IdleScan, Anim::IdleWand, Anim::IdleBracer, Anim::IdleScratch };
+		struct OutfitModel
+		{
+			const char* Skeleton;
+			const char* Folder;
+		};
 
-		constexpr const char* HeroSkeleton = "Hero";
+		constexpr OutfitModel OutfitModels[] = {
+			{ "Hero", "Hero/" },
+			{ "FrostMage", "FrostMage/" },
+		};
+		static_assert(std::size(OutfitModels) == size_t(Outfit::Count));
+
 		constexpr float PlayerScale = 0.78f;
 		constexpr float HeroScale = 0.9f;
 		constexpr float HoodShade = 0.55f;
-		constexpr float DodgeSpeed = 7.0f;
-		constexpr float DodgeSeconds = 0.24f;
-		constexpr float MoveFade = 0.18f;
-		constexpr float ActionFade = 0.1f;
-		constexpr float ActionFadeOut = 0.15f;
-		constexpr float OverrideFade = 0.08f;
-		constexpr float OverrideFadeOut = 0.12f;
-		constexpr float MinimumWindup = 0.05f;
-		constexpr float FlinchCooldown = 0.5f;
-		constexpr float BackpedalEnter = 1.95f;
-		constexpr float BackpedalExit = 1.55f;
-		constexpr float GaitStickiness = 0.12f;
-		constexpr float ForwardWarp = 1.75f;
-		constexpr float BackWarp = 1.4f;
-		constexpr float WarpRate = 10.0f;
-		constexpr float QuickDodge = 0.8f;
-		constexpr float FidgetFade = 0.35f;
-		constexpr float FidgetBreak = 0.2f;
-		constexpr float FidgetDelayMin = 4.0f;
-		constexpr float FidgetDelaySpread = 5.0f;
-		constexpr float StrikeSettle = 18.0f;
-		constexpr float HoldRelease = 1.7f;
-		constexpr float StrikeLead = 0.12f;
-		constexpr float StrikeTail = 0.16f;
+		constexpr float LegRadius = 0.11f;
+		constexpr float ShinRadius = 0.085f;
+		constexpr float TorsoRadius = 0.2f;
+		constexpr float CoreRadius = 0.24f;
+		constexpr float UpperArmRadius = 0.07f;
+		constexpr float WandRadius = 0.025f;
+		constexpr glm::vec3 WandBack{ 0.0f, -0.1f, 0.0f };
+		constexpr glm::vec3 WandFront{ 0.0f, 0.42f, 0.0f };
+		constexpr float ForearmRadius = 0.06f;
+		constexpr float HandTip = 0.07f;
+		constexpr float ColliderMargin = 0.9f;
+		constexpr float LooseTail = 0.15f;
+
+		struct SpringKind
+		{
+			const char* Prefix;
+			float Stiffness;
+			float Damping;
+			float Drag;
+			float Gravity;
+			float Radius;
+			float Bulk;
+			float Margin;
+		};
+
+		constexpr SpringKind SpringKinds[] = {
+			{ "cape", 25.0f, 8.0f, 0.5f, 1.0f, 0.03f, 2.3f, 0.98f },
+			{ "cloak", 25.0f, 8.0f, 0.5f, 1.0f, 0.03f, 2.3f, 0.98f },
+			{ "robe", 90.0f, 11.0f, 0.18f, 1.0f, 0.03f, 1.0f, ColliderMargin },
+			{ "skirt", 90.0f, 11.0f, 0.18f, 1.0f, 0.03f, 1.0f, ColliderMargin },
+			{ "sleeve", 160.0f, 12.0f, 0.15f, 1.0f, 0.02f, 1.0f, ColliderMargin },
+			{ "hair", 400.0f, 14.0f, 0.1f, 0.6f, 0.02f, 1.0f, ColliderMargin },
+			{ "strap", 220.0f, 12.0f, 0.1f, 1.0f, 0.02f, 1.0f, ColliderMargin },
+		};
+
+		const SpringKind* SpringOf(const std::string& name)
+		{
+			for (const SpringKind& kind : SpringKinds)
+			{
+				const size_t length = std::char_traits<char>::length(kind.Prefix);
+				if (name.compare(0, length, kind.Prefix) == 0 && (name.size() == length || name[length] == '.'))
+					return &kind;
+			}
+			return nullptr;
+		}
 
 		uint64_t LookKey(const PlayerLook& look)
 		{
@@ -146,11 +181,14 @@ namespace Game
 				const Anim fallback = FallbackOf(Anim(i));
 				if (!rig.Clips[i] && fallback != Anim::Count)
 					rig.Clips[i] = rig.Clips[size_t(fallback)];
-				const bool optional = std::find(std::begin(IdleVariants), std::end(IdleVariants), Anim(i)) != std::end(IdleVariants);
+				const bool optional = std::find(IdleFidgets.begin(), IdleFidgets.end(), Anim(i)) != IdleFidgets.end();
 				if (!rig.Clips[i] && index == m_Shared && !optional)
 					RDN_LOG_WARNING("Animation {} is missing from the model library", AnimNames[i]);
 			}
-			rig.Twist = { models.FindJoint("hips", index), models.FindJoint("spine", index), models.FindJoint("chest", index) };
+			rig.Hips = models.FindJoint("hips", index);
+			rig.Spine = models.FindJoint("spine", index);
+			rig.Chest = models.FindJoint("chest", index);
+			rig.Neck = models.FindJoint("neck", index);
 			const ModelSkeleton& skeleton = models.GetSkeleton(index);
 			for (uint32_t joint = 0; joint < std::min(skeleton.JointCount(), MaxModelJoints); joint++)
 			{
@@ -159,27 +197,98 @@ namespace Game
 				rig.UpperBody[joint] = name == "spine" ? 0.5f : name == "chest" || name == "neck" || name == "head" || arm ? 1.0f : 0.0f;
 			}
 			rig.RightHand = models.FindJoint("handslot.r", index).value_or(0);
+			const std::optional<uint32_t> arm[] = { models.FindJoint("upperarm.r", index), models.FindJoint("lowerarm.r", index), models.FindJoint("wrist.r", index) };
+			if (arm[0] && arm[1] && arm[2])
+			{
+				rig.RightArm = { *arm[0], *arm[1], *arm[2] };
+				rig.HasRightArm = true;
+			}
 			rig.LeftHand = models.FindJoint("handslot.l", index).value_or(0);
 			rig.Head = models.FindJoint("head", index).value_or(0);
 			Pose rest;
 			RestPose(skeleton, rest);
 			JointMatrices globals;
 			ComputeGlobals(skeleton, rest, globals);
-			for (uint32_t link = 0; link < MaxCapeJoints; link++)
+			rig.HipHeight = rig.Hips ? std::max(globals[*rig.Hips][3].y, 0.1f) : 1.0f;
+			rig.HasLegs = rig.Hips.has_value();
+			for (uint32_t side = 0; side < 2; side++)
 			{
-				const std::optional<uint32_t> joint = models.FindJoint("cape." + std::to_string(link + 1), index);
-				if (!joint || skeleton.Parents[*joint] < 0)
-					break;
-				const glm::mat3 toParent = glm::inverse(glm::mat3(globals[size_t(skeleton.Parents[*joint])]));
-				rig.Cape[rig.CapeCount++] = { .Joint = *joint, .LiftAxis = glm::normalize(toParent * glm::vec3(1.0f, 0.0f, 0.0f)), .SwayAxis = glm::normalize(toParent * glm::vec3(0.0f, 0.0f, 1.0f)) };
+				const std::string suffix = side == 0 ? ".l" : ".r";
+				const std::optional<uint32_t> chain[] = { models.FindJoint("upperleg" + suffix, index), models.FindJoint("lowerleg" + suffix, index), models.FindJoint("foot" + suffix, index) };
+				if (chain[0] && chain[1] && chain[2])
+				{
+					rig.Legs[side] = { *chain[0], *chain[1], *chain[2], glm::inverse(glm::mat3(globals[*chain[0]])) * glm::vec3(-1.0f, 0.0f, 0.0f) };
+					rig.AnkleHeight += 0.5f * globals[*chain[2]][3].y;
+				}
+				else
+					rig.HasLegs = false;
 			}
-			const float shares = float(rig.CapeCount * (rig.CapeCount + 1)) * 0.5f;
-			for (uint32_t link = 0; link < rig.CapeCount; link++)
-				rig.Cape[link].Share = float(rig.CapeCount - link) / shares;
+			for (uint32_t joint = 0; joint < std::min(skeleton.JointCount(), MaxModelJoints) && rig.Springs.size() < MaxSpringJoints; joint++)
+			{
+				const SpringKind* kind = SpringOf(skeleton.Names[joint]);
+				const int32_t parent = skeleton.Parents[joint];
+				if (!kind || parent < 0)
+					continue;
+				const bool chained = SpringOf(skeleton.Names[size_t(parent)]) != nullptr;
+				glm::vec3 tail(0.0f, chained ? glm::length(skeleton.Rest[joint].Translation) : LooseTail * rig.HipHeight, 0.0f);
+				for (uint32_t child = joint + 1; child < skeleton.JointCount(); child++)
+					if (skeleton.Parents[child] == int32_t(joint) && SpringOf(skeleton.Names[child]))
+					{
+						tail = skeleton.Rest[child].Translation;
+						break;
+					}
+				int32_t link = -1;
+				for (size_t other = 0; other < rig.Springs.size(); other++)
+					if (rig.Springs[other].Joint == uint32_t(parent))
+						link = int32_t(other);
+				rig.Springs.push_back({ .Joint = joint, .Parent = link, .Tail = tail, .Stiffness = kind->Stiffness, .Damping = kind->Damping, .Drag = kind->Drag, .Gravity = kind->Gravity, .Radius = kind->Radius * rig.HipHeight, .Bulk = kind->Bulk, .Margin = kind->Margin });
+			}
+			if (!rig.Springs.empty())
+			{
+				if (rig.HasLegs)
+					for (const LegJoints& leg : rig.Legs)
+					{
+						rig.Colliders.push_back({ leg.Upper, leg.Lower, LegRadius * rig.HipHeight, true });
+						rig.Colliders.push_back({ leg.Lower, leg.Foot, ShinRadius * rig.HipHeight, true });
+					}
+				if (rig.Hips && rig.Chest)
+					rig.Colliders.push_back({ *rig.Hips, *rig.Chest, TorsoRadius * rig.HipHeight, true });
+				if (const std::optional<uint32_t> root = models.FindJoint("root", index); root && rig.Hips)
+					rig.Colliders.push_back({ *root, *rig.Hips, CoreRadius * rig.HipHeight, true });
+				for (const char* side : { ".l", ".r" })
+				{
+					const std::optional<uint32_t> shoulder = models.FindJoint(std::string("upperarm") + side, index);
+					const std::optional<uint32_t> elbow = models.FindJoint(std::string("lowerarm") + side, index);
+					const std::optional<uint32_t> wrist = models.FindJoint(std::string("wrist") + side, index);
+					if (shoulder && elbow)
+						rig.Colliders.push_back({ *shoulder, *elbow, UpperArmRadius * rig.HipHeight });
+					if (elbow && wrist)
+						rig.Colliders.push_back({ *elbow, *wrist, ForearmRadius * rig.HipHeight });
+				}
+				if (models.FindJoint("handslot.r", index))
+					rig.Colliders.push_back({ .From = rig.RightHand, .To = rig.RightHand, .Radius = WandRadius * rig.HipHeight, .FromLocal = WandBack, .ToLocal = WandFront });
+				for (size_t body = 0; body < std::min<size_t>(rig.Colliders.size(), MaxBodyCapsules); body++)
+				{
+					const BodyCapsule& capsule = rig.Colliders[body];
+					const glm::vec3 from(globals[capsule.From] * glm::vec4(capsule.FromLocal, 1.0f));
+					const glm::vec3 along = glm::vec3(globals[capsule.To] * glm::vec4(capsule.ToLocal, 1.0f)) - from;
+					for (SpringJoint& spring : rig.Springs)
+					{
+						const glm::vec3 tail(globals[spring.Joint] * glm::vec4(spring.Tail, 1.0f));
+						const float span = glm::dot(along, along);
+						const float t = span > 1e-8f ? std::clamp(glm::dot(tail - from, along) / span, 0.0f, 1.0f) : 0.0f;
+						spring.Clear[body] = std::max(std::min(capsule.Radius * (capsule.Bulky ? spring.Bulk : 1.0f), spring.Margin * glm::length(tail - (from + along * t)) - spring.Radius), 0.0f);
+					}
+				}
+			}
 		}
-		m_Hero = models.FindSkeleton(HeroSkeleton);
-		if (m_Hero && !models.FindMesh("Hero/Hero_Head"))
-			m_Hero.reset();
+		for (size_t outfit = 0; outfit < m_Outfits.size(); outfit++)
+		{
+			const std::optional<uint32_t> skeleton = models.FindSkeleton(OutfitModels[outfit].Skeleton);
+			if (skeleton && models.FindMesh(std::string(OutfitModels[outfit].Folder) + "Hero_Head"))
+				m_Outfits[outfit] = skeleton;
+		}
+		m_Hero = m_Outfits[size_t(Outfit::Wanderer)];
 
 		const uint32_t rightHand = m_Rigs[m_Shared].RightHand;
 		const uint32_t leftHand = m_Rigs[m_Shared].LeftHand;
@@ -258,7 +367,7 @@ namespace Game
 		const std::string& name = data.Textures[texture].Name;
 		if (name.find("Lining") != std::string::npos)
 			return MeshAccentDye;
-		if (name.find("Garb") != std::string::npos)
+		if (name.find("Garb") != std::string::npos || name.find("Cape") != std::string::npos)
 			return dyed ? MeshAccentTrim | MeshAccentDye : MeshAccentTrim;
 		return 0;
 	}
@@ -276,17 +385,20 @@ namespace Game
 			return it->second;
 
 		CharacterLook result;
-		result.Pose = PlayerStance(look.Weapon);
+		ItemBase held = look.Weapon;
+		if (m_Hero && held == ItemBase::Wand)
+			held = look.Style.Cast == Focus::Staff ? ItemBase::Staff : look.Style.Cast == Focus::Hands ? ItemBase::Count : ItemBase::Wand;
+		result.Pose = m_Hero && held == ItemBase::Staff ? Stance::Staff : PlayerStance(held);
 		if (m_Hero)
 			DressHero(result, look);
 		else
 			DressKayKit(result, look);
 		const CharacterRig& rig = m_Rigs[result.Skeleton];
-		const std::vector<uint32_t> weapons = WeaponMeshes(look.Weapon);
-		const glm::mat4 grip = GripOf(look.Weapon);
+		const std::vector<uint32_t> weapons = WeaponMeshes(held);
+		const glm::mat4 grip = GripOf(held);
 		for (const uint32_t weapon : weapons)
-			result.Props.push_back({ weapon, look.Weapon == ItemBase::Bow ? rig.LeftHand : rig.RightHand, grip });
-		if ((look.Weapon == ItemBase::Wand || look.Weapon == ItemBase::Staff) && !weapons.empty())
+			result.Props.push_back({ weapon, held == ItemBase::Bow ? rig.LeftHand : rig.RightHand, grip });
+		if ((held == ItemBase::Wand || held == ItemBase::Staff) && !weapons.empty())
 		{
 			glm::vec3 low(1e9f);
 			glm::vec3 high(-1e9f);
@@ -303,7 +415,12 @@ namespace Game
 			b[axis] = high[axis];
 			const glm::vec3 first = glm::vec3(grip * glm::vec4(a, 1.0f));
 			const glm::vec3 second = glm::vec3(grip * glm::vec4(b, 1.0f));
-			result.Tip = glm::length(first) > glm::length(second) ? first : second;
+			result.Tip = m_Hero ? second : glm::length(first) > glm::length(second) ? first : second;
+			result.TipJoint = rig.RightHand;
+		}
+		else if (m_Hero && held == ItemBase::Count)
+		{
+			result.Tip = glm::vec3(0.0f, HandTip, 0.0f);
 			result.TipJoint = rig.RightHand;
 		}
 		result.Height = TopOf(result) * result.Scale;
@@ -312,38 +429,13 @@ namespace Game
 
 	void CharacterLibrary::DressHero(CharacterLook& look, const PlayerLook& player) const
 	{
-		look.Skeleton = *m_Hero;
+		const size_t outfit = size_t(player.Style.Body) < m_Outfits.size() && m_Outfits[size_t(player.Style.Body)] ? size_t(player.Style.Body) : size_t(Outfit::Wanderer);
+		const std::string folder = OutfitModels[outfit].Folder;
+		look.Skeleton = *m_Outfits[outfit];
 		look.Scale = HeroScale;
-		switch (player.Style.Body)
-		{
-		case Outfit::Wanderer:
-		default:
-			AddNode(look, "Hero/Wizard_Garb");
-			AddNode(look, "Hero/Wizard_Armor");
-			AddNode(look, "Hero/Wizard_Cape", 1.0f, true);
-			break;
-		}
-		switch (player.Style.Head)
-		{
-		case Headwear::Hood:
-			AddNode(look, "Hero/Hero_Head", HoodShade);
-			AddNode(look, "Hero/Hero_Hair", HoodShade);
-			AddNode(look, "Hero/Hero_EyeGlow");
-			AddNode(look, "Hero/Wizard_Hood");
-			break;
-		case Headwear::PointedHat:
-			AddNode(look, "Hero/Hero_Head");
-			AddNode(look, "Hero/Hero_HatHair");
-			AddNode(look, "Hero/Wizard_Cowl");
-			AddNode(look, "Hero/Wizard_Hat");
-			break;
-		case Headwear::Bare:
-		default:
-			AddNode(look, "Hero/Hero_Head");
-			AddNode(look, "Hero/Hero_Hair");
-			AddNode(look, "Hero/Wizard_Cowl");
-			break;
-		}
+		AddNode(look, folder + "Wizard_Garb");
+		AddNode(look, folder + "Wizard_Cape", 1.0f, true);
+		AddNode(look, folder + "Hero_Head", HoodShade);
 	}
 
 	void CharacterLibrary::DressKayKit(CharacterLook& look, const PlayerLook& player) const
@@ -573,469 +665,6 @@ namespace Game
 		default:
 			return {};
 		}
-	}
-
-	void CharacterAnimator::Crossfade::Start(const Layer& layer, bool fade)
-	{
-		if (fade && Current.Clip >= 0)
-		{
-			Previous = Current;
-			Blend = 0.0f;
-		}
-		else
-			Blend = 1.0f;
-		Current = layer;
-	}
-
-	void CharacterAnimator::Crossfade::Advance(const CharacterLibrary&, float dt, float fadeSeconds)
-	{
-		Current.Time += dt * Current.Rate;
-		Previous.Time += dt * Previous.Rate;
-		Blend = std::min(1.0f, Blend + dt / std::max(fadeSeconds, 1e-3f));
-	}
-
-	Anim CharacterAnimator::Locomotion(const Input& input, float& rate, const CharacterLibrary& library)
-	{
-		const float speed = Length(m_Velocity);
-		rate = 1.0f;
-		if (speed < 0.35f * input.Scale)
-		{
-			switch (input.Pose)
-			{
-			case Stance::Heavy:
-				return Anim::HeavyIdle;
-			case Stance::Bow:
-				return Anim::BowIdle;
-			case Stance::Skeleton:
-			case Stance::Shambling:
-				return Anim::SkeletonIdle;
-			default:
-				return Anim::Idle;
-			}
-		}
-		const ModelLibrary& models = library.GetModels();
-		const auto rateOf = [&](Anim anim)
-		{
-			const std::optional<uint32_t> clip = library.Clip(anim, m_Skeleton);
-			const float stride = clip ? models.GetStrideSpeed(*clip) * input.Scale : 0.0f;
-			return stride > 0.1f ? speed / stride : 1.0f;
-		};
-		if (input.Pose == Stance::Shambling || input.Pose == Stance::Skeleton)
-		{
-			const Anim anim = input.Pose == Stance::Shambling ? Anim::SkeletonWalk : Anim::Run;
-			rate = std::clamp(rateOf(anim), 0.6f, 1.8f);
-			return anim;
-		}
-		const Vec2 forward = FromAngle(input.Facing);
-		const float angle = std::atan2(Dot(m_Velocity, Vec2(forward.y, -forward.x)), Dot(m_Velocity, forward));
-		m_Backward = std::abs(angle) > (m_Backward ? BackpedalExit : BackpedalEnter);
-		Anim anim = Anim::WalkBack;
-		if (!m_Backward)
-		{
-			std::array<Anim, 3> gaits = { Anim::Walk, Anim::Jog, Anim::Run };
-			if (input.Pose == Stance::Bow || input.Pose == Stance::Rifle)
-				gaits = { Anim::Walk, Anim::Jog, input.Pose == Stance::Bow ? Anim::RunWithBow : Anim::RunWithRifle };
-			float best = 1e9f;
-			anim = gaits.back();
-			for (const Anim gait : gaits)
-			{
-				const std::optional<uint32_t> clip = library.Clip(gait, m_Skeleton);
-				if (!clip)
-					continue;
-				const float score = std::abs(std::log(std::max(rateOf(gait), 1e-3f))) - (int32_t(*clip) == m_Move.Current.Clip ? GaitStickiness : 0.0f);
-				if (score < best)
-				{
-					best = score;
-					anim = gait;
-				}
-			}
-		}
-		rate = std::clamp(rateOf(anim), 0.6f, 1.8f);
-		return anim;
-	}
-
-	void CharacterAnimator::StartAttack(const CharacterLibrary& library, const Input& input)
-	{
-		Anim windupAnim = input.Attack.Windup;
-		if (input.Attack.Variants > 1)
-		{
-			uint8_t pick = uint8_t(Random() * float(input.Attack.Variants)) % input.Attack.Variants;
-			if (pick == m_Variant)
-				pick = uint8_t((pick + 1) % input.Attack.Variants);
-			m_Variant = pick;
-			windupAnim = Anim(uint8_t(windupAnim) + pick);
-		}
-		const std::optional<uint32_t> clip = library.Clip(windupAnim, m_Skeleton);
-		if (!clip)
-			return;
-		const ModelLibrary& models = library.GetModels();
-		const float duration = models.GetClip(*clip).Duration();
-		const float windup = std::max(input.Windup, MinimumWindup);
-		Layer layer{ int32_t(*clip), 0.0f, 1.0f, input.Attack.Loop };
-		m_StrikeTime = 0.0f;
-		m_HoldTime = 0.0f;
-		if (input.Attack.Hold)
-		{
-			float strike = models.GetStrikeTime(*clip);
-			if (strike < 0.05f)
-				strike = duration * 0.4f;
-			m_HoldTime = strike * input.Attack.HoldAt;
-			layer.Rate = std::clamp(m_HoldTime / input.Attack.HoldReach, 0.6f, 3.0f);
-			layer.Loop = false;
-		}
-		else if (!input.Attack.Loop && input.Attack.Release != Anim::Count)
-		{
-			layer.Rate = std::clamp(duration / windup, 0.5f, 4.0f);
-			layer.Loop = false;
-		}
-		else if (!input.Attack.Loop)
-		{
-			float strike = models.GetStrikeTime(*clip);
-			if (strike < 0.05f)
-				strike = duration * 0.4f;
-			layer.Rate = std::clamp(strike / windup, 0.6f, 1.6f);
-			layer.Time = std::max(0.0f, strike - windup * layer.Rate);
-			layer.Loop = false;
-			m_StrikeTime = strike;
-		}
-		m_IdleTime = 0.0f;
-		m_Action.Start(layer, m_Phase != Phase::None && m_Action.Weight > 0.0f);
-		m_Phase = Phase::Windup;
-		m_ReleaseAnim = input.Attack.Loop ? Anim::Count : input.Attack.Release;
-	}
-
-	void CharacterAnimator::EndAttack(const CharacterLibrary& library)
-	{
-		if (m_Phase != Phase::Windup)
-			return;
-		if (m_Action.Current.Loop)
-		{
-			m_Phase = Phase::None;
-			return;
-		}
-		if (const std::optional<uint32_t> release = library.Clip(m_ReleaseAnim, m_Skeleton))
-		{
-			m_Action.Start({ int32_t(*release), 0.0f, 1.0f, false }, true);
-			m_Phase = Phase::Release;
-			return;
-		}
-		m_Action.Current.Rate = std::max(m_Action.Current.Rate, m_HoldTime > 0.0f ? HoldRelease : 1.0f);
-		m_HoldTime = 0.0f;
-		m_Phase = Phase::FollowThrough;
-	}
-
-	void CharacterAnimator::Spring::Advance(float target, float dt)
-	{
-		constexpr float Frequency = 8.5f;
-		constexpr float Damping = 0.55f;
-		Rate += (Frequency * Frequency * (target - Value) - 2.0f * Damping * Frequency * Rate) * dt;
-		Value += Rate * dt;
-	}
-
-	void CharacterAnimator::UpdateCape(const Input& input, float dt)
-	{
-		m_CapeTime += dt;
-		const Vec2 forward = FromAngle(input.Facing);
-		const float ahead = Dot(m_Velocity, forward);
-		const float across = Dot(m_Velocity, Vec2(forward.y, -forward.x));
-		const float breeze = 0.03f * std::sin(m_CapeTime * 1.3f) + 0.015f * std::sin(m_CapeTime * 3.1f + 1.7f);
-		const float lift = input.Dead ? 0.0f : std::clamp(0.075f * ahead + 0.03f * std::abs(across), -0.1f, 0.9f) + breeze;
-		const float sway = input.Dead ? 0.0f : std::clamp(-0.05f * across, -0.3f, 0.3f);
-		constexpr float Step = 1.0f / 120.0f;
-		for (float left = std::min(dt, 0.1f); left > 0.0f; left -= Step)
-		{
-			m_CapeLift.Advance(lift, std::min(left, Step));
-			m_CapeSway.Advance(sway, std::min(left, Step));
-		}
-	}
-
-	void CharacterAnimator::Update(const CharacterLibrary& library, const Input& input, float dt)
-	{
-		const ModelLibrary& models = library.GetModels();
-		if (input.Skeleton != m_Skeleton)
-		{
-			m_Move = {};
-			m_Action = {};
-			m_Override = {};
-			m_Flinch = {};
-			m_Fidget = {};
-			m_LastFidget = -1;
-			m_Phase = Phase::None;
-			m_DodgeHold = false;
-			m_Warp = 0.0f;
-			m_WasDead = false;
-			m_Skeleton = input.Skeleton;
-		}
-		if (!m_HasPosition)
-		{
-			m_LastPosition = input.Position;
-			m_HasPosition = true;
-			m_Seed ^= uint32_t(reinterpret_cast<uintptr_t>(this) >> 4) | 1u;
-		}
-		Vec2 delta = input.Position - m_LastPosition;
-		m_LastPosition = input.Position;
-		if (LengthSquared(delta) > 4.0f)
-			delta = {};
-		const Vec2 instant = dt > 1e-5f ? delta / dt : Vec2();
-		m_Velocity = Lerp(m_Velocity, instant, 1.0f - std::exp(-dt * 14.0f));
-		const float speed = Length(m_Velocity);
-		m_Moving = std::clamp((speed - 0.3f) / (1.2f * input.Scale), 0.0f, 1.0f);
-		UpdateCape(input, dt);
-
-		float rate = 1.0f;
-		const Anim move = Locomotion(input, rate, library);
-		if (const std::optional<uint32_t> clip = library.Clip(move, m_Skeleton); clip && int32_t(*clip) != m_Move.Current.Clip)
-		{
-			float phase = 0.0f;
-			if (m_Move.Current.Clip >= 0)
-			{
-				const float duration = models.GetClip(uint32_t(m_Move.Current.Clip)).Duration();
-				phase = duration > 0.0f ? std::fmod(m_Move.Current.Time / duration, 1.0f) : 0.0f;
-			}
-			m_Move.Start({ int32_t(*clip), phase * models.GetClip(*clip).Duration(), rate, true }, true);
-		}
-		m_Move.Current.Rate = rate;
-		m_Move.Weight = 1.0f;
-		m_Move.Advance(library, dt, MoveFade);
-
-		if (input.Dead && !m_WasDead)
-		{
-			if (const std::optional<uint32_t> clip = library.Clip(input.Undead ? Anim::SkeletonDeath : Anim::Death, m_Skeleton))
-				m_Override.Start({ int32_t(*clip), 0.0f, 1.0f, false }, m_Override.Weight > 0.0f);
-			m_Phase = Phase::None;
-		}
-		m_WasDead = input.Dead;
-		if (input.Dead)
-		{
-			m_Action.Weight = std::max(0.0f, m_Action.Weight - dt / ActionFadeOut);
-			m_Flinch.Weight = 0.0f;
-			m_Override.Weight = std::min(1.0f, m_Override.Weight + dt / OverrideFade);
-			m_Override.Advance(library, dt, OverrideFade);
-			return;
-		}
-
-		if (input.Attacking && !m_WasAttacking)
-			StartAttack(library, input);
-		else if (!input.Attacking && m_WasAttacking)
-			EndAttack(library);
-		m_WasAttacking = input.Attacking;
-		if (m_Phase != Phase::None && m_Action.Current.Clip >= 0)
-		{
-			m_Action.Advance(library, dt, ActionFade);
-			if (m_Phase == Phase::Windup && m_HoldTime > 0.0f)
-				m_Action.Current.Time = std::min(m_Action.Current.Time, m_HoldTime);
-			m_Action.Weight = std::min(1.0f, m_Action.Weight + dt / ActionFade);
-			const bool finished = !m_Action.Current.Loop && m_Action.Current.Time >= models.GetClip(uint32_t(m_Action.Current.Clip)).Duration();
-			if ((m_Phase == Phase::Release || m_Phase == Phase::FollowThrough) && finished)
-				m_Phase = Phase::None;
-			if (m_StrikeTime > 0.0f && m_Action.Current.Time >= m_StrikeTime)
-				m_Action.Current.Rate += (1.0f - m_Action.Current.Rate) * (1.0f - std::exp(-dt * StrikeSettle));
-		}
-		else
-		{
-			m_Phase = Phase::None;
-			m_Action.Weight = std::max(0.0f, m_Action.Weight - dt / ActionFadeOut);
-		}
-
-		const bool dodging = input.Dashing && speed > DodgeSpeed;
-		if (dodging && !m_WasDodging)
-		{
-			const Vec2 forward = FromAngle(input.Facing);
-			const float along = Dot(m_Velocity, forward);
-			const float across = Dot(m_Velocity, Vec2(forward.y, -forward.x));
-			const Anim anim = std::abs(along) >= std::abs(across) ? (along > 0.0f ? Anim::DodgeForward : Anim::DodgeBack) : (across > 0.0f ? Anim::DodgeRight : Anim::DodgeLeft);
-			if (const std::optional<uint32_t> clip = library.Clip(anim, m_Skeleton))
-			{
-				const float duration = models.GetClip(*clip).Duration();
-				m_DodgeHold = duration <= QuickDodge;
-				m_Override.Start({ int32_t(*clip), 0.0f, m_DodgeHold ? 1.0f : std::max(duration / DodgeSeconds, 1.0f), false }, m_Override.Weight > 0.0f);
-			}
-		}
-		else if (input.Stunned && !m_WasStunned && !dodging)
-		{
-			m_DodgeHold = false;
-			if (const std::optional<uint32_t> clip = library.Clip(Anim::HitB, m_Skeleton))
-				m_Override.Start({ int32_t(*clip), 0.0f, 1.0f, false }, m_Override.Weight > 0.0f);
-		}
-		if (m_DodgeHold && !dodging && m_Override.Current.Clip >= 0)
-		{
-			const bool walking = Length(instant) > 1.2f * input.Scale;
-			if (input.Attacking || walking || m_Override.Current.Time >= models.GetClip(uint32_t(m_Override.Current.Clip)).Duration() - OverrideFadeOut)
-				m_DodgeHold = false;
-		}
-		m_WasDodging = dodging;
-		m_WasStunned = input.Stunned;
-		const bool overriding = dodging || input.Stunned || m_DodgeHold;
-		m_Override.Weight = overriding ? std::min(1.0f, m_Override.Weight + dt / OverrideFade) : std::max(0.0f, m_Override.Weight - dt / OverrideFadeOut);
-		m_Override.Advance(library, dt, OverrideFade);
-
-		m_FlinchCooldown -= dt;
-		if (input.Hurt && m_FlinchCooldown <= 0.0f && m_Phase == Phase::None && !overriding)
-			if (const std::optional<uint32_t> clip = library.Clip(Anim::HitA, m_Skeleton))
-			{
-				m_Flinch.Start({ int32_t(*clip), 0.0f, 1.4f, false }, false);
-				m_Flinch.Weight = 0.55f;
-				m_FlinchCooldown = FlinchCooldown;
-			}
-		m_Flinch.Advance(library, dt, ActionFade);
-		m_Flinch.Weight = std::max(0.0f, m_Flinch.Weight - dt * 1.1f);
-
-		const bool still = speed < 0.35f * input.Scale && m_Phase == Phase::None && !overriding && m_Override.Weight <= 0.0f && m_Flinch.Weight < 0.1f;
-		UpdateFidget(library, still, dt);
-
-		float warp = 0.0f;
-		if (speed > 0.35f * input.Scale && input.Pose != Stance::Skeleton && input.Pose != Stance::Shambling)
-		{
-			const Vec2 forward = FromAngle(input.Facing);
-			const float angle = std::atan2(Dot(m_Velocity, Vec2(forward.y, -forward.x)), Dot(m_Velocity, forward));
-			warp = m_Backward ? std::clamp(angle - std::copysign(Pi, angle), -BackWarp, BackWarp) : std::clamp(angle, -ForwardWarp, ForwardWarp);
-		}
-		if (std::abs(warp - m_Warp) > 2.0f)
-			m_Warp = warp;
-		m_Warp += (warp - m_Warp) * (1.0f - std::exp(-dt * WarpRate));
-	}
-
-	void CharacterAnimator::UpdateFidget(const CharacterLibrary& library, bool still, float dt)
-	{
-		const ModelLibrary& models = library.GetModels();
-		m_IdleTime = still ? m_IdleTime + dt : 0.0f;
-		if (still && m_Fidget.Current.Clip < 0 && m_IdleTime > m_FidgetDelay)
-		{
-			std::array<uint32_t, std::size(IdleVariants)> choices{};
-			uint32_t count = 0;
-			for (const Anim anim : IdleVariants)
-				if (const std::optional<uint32_t> clip = library.Clip(anim, m_Skeleton); clip && int32_t(*clip) != m_LastFidget)
-					choices[count++] = *clip;
-			if (count > 0)
-			{
-				m_LastFidget = int32_t(choices[std::min(uint32_t(Random() * float(count)), count - 1)]);
-				m_Fidget.Start({ m_LastFidget, 0.0f, 1.0f, false }, false);
-			}
-			m_IdleTime = 0.0f;
-			m_FidgetDelay = FidgetDelayMin + FidgetDelaySpread * Random();
-		}
-		if (m_Fidget.Current.Clip < 0)
-			return;
-		m_Fidget.Advance(library, dt, FidgetFade);
-		const float duration = models.GetClip(uint32_t(m_Fidget.Current.Clip)).Duration();
-		const bool ending = m_Fidget.Current.Time > duration - FidgetFade;
-		if (still && !ending)
-			m_Fidget.Weight = std::min(1.0f, m_Fidget.Weight + dt / FidgetFade);
-		else
-			m_Fidget.Weight = std::max(0.0f, m_Fidget.Weight - dt / (still ? FidgetFade : FidgetBreak));
-		if (m_Fidget.Weight <= 0.0f && (ending || !still))
-		{
-			m_Fidget.Current.Clip = -1;
-			m_IdleTime = 0.0f;
-		}
-	}
-
-	float CharacterAnimator::Random()
-	{
-		m_Seed ^= m_Seed << 13;
-		m_Seed ^= m_Seed >> 17;
-		m_Seed ^= m_Seed << 5;
-		return float(m_Seed >> 8) / float(1u << 24);
-	}
-
-	void CharacterAnimator::Warp(const ModelSkeleton& skeleton, const CharacterRig& rig, Pose& pose, float amount) const
-	{
-		if (std::abs(amount) < 1e-3f || !rig.Twist[0] || !rig.Twist[1] || !rig.Twist[2])
-			return;
-		const auto global = [&](int32_t joint)
-		{
-			glm::quat rotation(1.0f, 0.0f, 0.0f, 0.0f);
-			for (; joint >= 0; joint = skeleton.Parents[size_t(joint)])
-				rotation = pose[size_t(joint)].Rotation * rotation;
-			return rotation;
-		};
-		const auto turn = [&](uint32_t joint, float angle)
-		{
-			const glm::quat parent = global(skeleton.Parents[joint]);
-			pose[joint].Rotation = glm::normalize(glm::inverse(parent) * glm::angleAxis(angle, glm::vec3(0.0f, 1.0f, 0.0f)) * parent * pose[joint].Rotation);
-		};
-		turn(*rig.Twist[0], amount);
-		turn(*rig.Twist[1], -0.5f * amount);
-		turn(*rig.Twist[2], -0.5f * amount);
-	}
-
-	void CharacterAnimator::Sample(const CharacterLibrary& library, const Crossfade& layers, Pose& pose) const
-	{
-		const ModelLibrary& models = library.GetModels();
-		const uint32_t joints = models.GetSkeleton(m_Skeleton).JointCount();
-		if (layers.Current.Clip < 0)
-			return;
-		if (layers.Blend < 1.0f && layers.Previous.Clip >= 0)
-		{
-			SampleClip(models.GetClip(uint32_t(layers.Previous.Clip)), joints, layers.Previous.Time, layers.Previous.Loop, pose);
-			Pose current = pose;
-			SampleClip(models.GetClip(uint32_t(layers.Current.Clip)), joints, layers.Current.Time, layers.Current.Loop, current);
-			BlendPose(pose, current, layers.Blend, joints);
-			return;
-		}
-		SampleClip(models.GetClip(uint32_t(layers.Current.Clip)), joints, layers.Current.Time, layers.Current.Loop, pose);
-	}
-
-	float CharacterAnimator::StrikeWeight(const CharacterLibrary& library) const
-	{
-		if (m_Phase == Phase::None || m_Action.Current.Clip < 0 || m_Action.Weight <= 0.0f)
-			return 0.0f;
-		const float strike = library.GetModels().GetStrikeTime(uint32_t(m_Action.Current.Clip));
-		if (strike < 0.05f)
-			return 0.0f;
-		const float t = m_Action.Current.Time - strike;
-		return m_Action.Weight * glm::smoothstep(-StrikeLead, -0.4f * StrikeLead, t) * (1.0f - glm::smoothstep(0.3f * StrikeTail, StrikeTail, t));
-	}
-
-	void CharacterAnimator::Evaluate(const CharacterLibrary& library, uint32_t skeletonIndex, JointMatrices& globals) const
-	{
-		const ModelSkeleton& skeleton = library.GetModels().GetSkeleton(skeletonIndex);
-		const uint32_t joints = skeleton.JointCount();
-		Pose pose;
-		RestPose(skeleton, pose);
-		if (skeletonIndex != m_Skeleton)
-		{
-			ComputeGlobals(skeleton, pose, globals);
-			return;
-		}
-		Sample(library, m_Move, pose);
-		if (m_Fidget.Weight > 0.0f && m_Fidget.Current.Clip >= 0)
-		{
-			Pose fidget = pose;
-			Sample(library, m_Fidget, fidget);
-			BlendPose(pose, fidget, m_Fidget.Weight, joints);
-		}
-		if (m_Flinch.Weight > 0.0f && m_Flinch.Current.Clip >= 0)
-		{
-			Pose flinch = pose;
-			Sample(library, m_Flinch, flinch);
-			BlendPose(pose, flinch, m_Flinch.Weight, joints, &library.GetRig(m_Skeleton).UpperBody);
-		}
-		if (m_Action.Weight > 0.0f && m_Action.Current.Clip >= 0)
-		{
-			Pose action = pose;
-			Sample(library, m_Action, action);
-			const JointWeights& upper = library.GetRig(m_Skeleton).UpperBody;
-			JointWeights mask{};
-			for (uint32_t joint = 0; joint < std::min(joints, MaxModelJoints); joint++)
-				mask[joint] = upper[joint] + (1.0f - upper[joint]) * (1.0f - m_Moving);
-			BlendPose(pose, action, m_Action.Weight, joints, &mask);
-		}
-		if (m_Override.Weight > 0.0f && m_Override.Current.Clip >= 0)
-		{
-			Pose over = pose;
-			Sample(library, m_Override, over);
-			BlendPose(pose, over, m_Override.Weight, joints);
-		}
-		const CharacterRig& rig = library.GetRig(m_Skeleton);
-		Warp(skeleton, rig, pose, m_Warp * (1.0f - m_Override.Weight));
-		for (uint32_t link = 0; link < rig.CapeCount; link++)
-		{
-			const CapeJoint& cape = rig.Cape[link];
-			const glm::quat bend = glm::angleAxis(m_CapeLift.Value * cape.Share, cape.LiftAxis) * glm::angleAxis(m_CapeSway.Value * cape.Share, cape.SwayAxis);
-			pose[cape.Joint].Rotation = glm::normalize(bend * pose[cape.Joint].Rotation);
-		}
-		ComputeGlobals(skeleton, pose, globals);
 	}
 
 	glm::mat4 ModelTransform(const glm::vec3& base, float facing, float scale)

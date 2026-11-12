@@ -106,6 +106,8 @@ namespace Game
 		ShardSpit,
 		RubyBurst,
 		RubyShard,
+		Aftershock,
+		Resonance,
 		Count,
 	};
 
@@ -228,6 +230,8 @@ namespace Game
 		{ .Id = AbilityId::ShardSpit, .Name = "Shard Spit", .Cooldown = 3.0f, .Damage = 10, .ProjectileSpeed = 6.5f, .ProjectileRadius = 0.16f, .ProjectileRange = 8.0f, .ProjectileSpread = 0.32f, .SpawnOffset = 0.5f },
 		{ .Id = AbilityId::RubyBurst, .Name = "Ruby Burst", .Kind = AbilityKind::Ground, .EffectDuration = 0.3f, .ImpactRadius = 0.9f, .ImpactDelay = 0.5f, .Shape = StrikeShape::Ring, .InnerRadius = 0.55f },
 		{ .Id = AbilityId::RubyShard, .Name = "Ruby Shard", .Damage = 12, .ProjectileSpeed = 7.5f, .ProjectileRadius = 0.15f, .ProjectileRange = 5.5f, .SpawnOffset = 0.0f },
+		{ .Id = AbilityId::Aftershock, .Name = "Comet", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .EffectDuration = 0.5f, .ImpactRadius = 4.5f, .ImpactDelay = 0.5f, .Push = 13.0f, .Parent = AbilityId::Comet, .BrawlDamage = 10 },
+		{ .Id = AbilityId::Resonance, .Name = "Resonant Ground", .Kind = AbilityKind::Ground, .EffectDuration = 0.5f, .ImpactRadius = 1.0f, .ImpactDelay = 1.0f, .Push = 10.0f, .BrawlDamage = 10 },
 	};
 
 	constexpr bool AbilitiesMatchIds()

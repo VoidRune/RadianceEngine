@@ -272,7 +272,6 @@ namespace Game
 	inline constexpr float RuinsStartRadius = 10.6f;
 	inline constexpr float RuinsSpawnRank = 4.0f;
 	inline constexpr float SkyFallSeconds = 0.9f;
-	inline constexpr float SkyCatchSeconds = 0.25f;
 	inline constexpr float PeakScale = 2.0f;
 	inline constexpr float PeakStartRadius = 8.2f;
 	inline constexpr float PeakSpawnRank = 4.3f;
@@ -851,7 +850,13 @@ namespace Game
 	inline bool EchoesInChamber(AbilityId id)
 	{
 		const AbilityKind kind = GetAbility(id).Kind;
-		return kind != AbilityKind::Dash && kind != AbilityKind::Ward && kind != AbilityKind::Shield;
+		return (kind == AbilityKind::Projectile || kind == AbilityKind::Ground) && id != AbilityId::ChainHook;
+	}
+
+	inline bool IsAreaSpell(AbilityId id)
+	{
+		const AbilityDef& def = GetAbility(id);
+		return def.Kind == AbilityKind::Ground || def.Kind == AbilityKind::Nova || def.ImpactRadius > 0.0f;
 	}
 
 	inline void ApplyApex(PlayerTraits& traits, CardMask cards)
@@ -872,15 +877,48 @@ namespace Game
 				skill.ManaCost = 0.0f;
 			if (HasCard(cards, CardId::EchoChamber) && EchoesInChamber(skill.Ability))
 				skill.Cooldown *= EchoChamberCooldown;
-			if (HasCard(cards, CardId::UnstableArcana) && slot > 0)
-				skill.DamageScale *= ArcanaPower;
 		}
 		if (HasCard(cards, CardId::BloodMagic))
 		{
 			traits.MaxMana = 0.0f;
 			traits.ManaRegen = 0.0f;
 			traits.BloodRate = BloodMagicRate;
+			traits.MaxHealth += BloodMagicHealth;
+			traits.Regeneration = BloodMagicRegen;
 		}
+		if (HasCard(cards, CardId::MindOverMatter))
+			traits.StallRegen = MindOverMatterRegen;
+	}
+
+	inline void ApplyCasting(PlayerTraits& traits, CardMask cards, BrawlMode mode)
+	{
+		const float area = (HasCard(cards, CardId::WideSigils) ? WideSigilsArea : 0.0f) + (HasCard(cards, CardId::Epicenter) ? EpicenterArea : 0.0f);
+		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
+		{
+			SkillTraits& skill = traits.Skills[slot];
+			if (skill.IsEmpty() || GetAbility(skill.Ability).Kind == AbilityKind::Shield)
+				continue;
+			if (IsAreaSpell(skill.Ability))
+			{
+				skill.AreaScale *= 1.0f + area;
+				if (HasCard(cards, CardId::Epicenter))
+				{
+					if (mode == BrawlMode::Damage)
+						skill.DamageScale *= EpicenterDamage;
+					else
+						skill.PushScale *= EpicenterPush;
+				}
+			}
+			if (HasCard(cards, CardId::SwiftRunes))
+				skill.Cooldown *= SwiftRunesCooldown;
+			if (HasCard(cards, CardId::QuickTongue))
+			{
+				skill.CastTime /= QuickTongueSpeed;
+				skill.ChargeTime /= QuickTongueSpeed;
+			}
+		}
+		traits.TempoStep = HasCard(cards, CardId::Tempo) ? TempoStep : 0.0f;
+		traits.SnapWindow = HasCard(cards, CardId::SnapCast) ? SnapWindow : 0.0f;
 	}
 
 	inline PlayerTraits MakeBrawlTraits(const BrawlLoadout& loadout, const MatchRules& rules)
@@ -893,7 +931,6 @@ namespace Game
 		traits.ManaRegen = mode == BrawlMode::Damage ? BrawlManaRegen * float(rules.ManaRegen) / 100.0f * (HasCard(loadout.Cards, CardId::Quickening) ? QuickeningRegen : 1.0f) : 0.0f;
 		if (mode == BrawlMode::Damage)
 		{
-			traits.BloodRate = HasCard(loadout.Cards, CardId::BloodPact) ? BloodPactRate : 0.0f;
 			traits.OverloadEvery = HasCard(loadout.Cards, CardId::Overload) ? OverloadEvery : uint8_t(0);
 			traits.CritChance = HasCard(loadout.Cards, CardId::Precise) ? PreciseChance : 0.0f;
 			traits.CritMultiplier = PreciseMultiplier;
@@ -916,6 +953,7 @@ namespace Game
 		}
 		traits.Dodge = MakeBrawlSkill(AbilityId::Roll, 1.0f, mode);
 		traits.Dodge.Cooldown = BrawlDodgeCooldown;
+		ApplyCasting(traits, loadout.Cards, mode);
 		if (mode == BrawlMode::Damage)
 			ApplyApex(traits, loadout.Cards);
 		return traits;

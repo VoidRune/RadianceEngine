@@ -15,6 +15,7 @@ namespace Game
 		Seek,
 		Wanderer,
 		Attune,
+		Wardrobe,
 		Count,
 	};
 
@@ -37,6 +38,7 @@ namespace Game
 		{ .Angle = 1.0f, .Tint = { 0.34f, 0.84f, 1.0f }, .Fracture = 1.3f, .Sides = 4.0f, .Meet = 6.0f },
 		{ .Angle = 1.6f, .Tint = { 0.95f, 0.44f, 0.82f }, .Fracture = 1.3f, .Sides = 10.0f, .Meet = 3.0f },
 		{ .Angle = 2.2f, .Tint = { 0.6f, 0.68f, 1.0f }, .Fracture = 1.15f, .Sides = 8.0f, .Meet = 4.0f },
+		{ .Angle = 2.8f, .Tint = { 0.5f, 0.78f, 1.0f }, .Fracture = 1.2f, .Sides = 5.0f, .Meet = 4.0f },
 	};
 	static_assert(std::size(BackdropMoods) == size_t(BackdropMood::Count));
 

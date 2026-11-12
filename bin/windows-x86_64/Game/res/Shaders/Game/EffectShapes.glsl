@@ -27,6 +27,8 @@ const uint DecalStormMark = 16u;
 const uint DecalVoidMark = 17u;
 const uint DecalFirebombMark = 18u;
 const uint DecalContact = 19u;
+const uint DecalAftershockMark = 20u;
+const uint DecalResonanceMark = 21u;
 
 const float Tau = 6.28318531;
 
@@ -483,6 +485,79 @@ vec3 FirebombMarkShape(vec2 p, float radius, float pixel, float progress, float 
 	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4)) * vec3(grow, grow, 1.0);
 }
 
+vec3 AftershockMarkShape(vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
+{
+	float grow = smoothstep(0.0, 1.0, appear);
+	float r = length(p) / mix(0.9, 1.0, grow);
+	float n = r / radius;
+	if (n > 1.12 || grow <= 0.0)
+		return vec3(0.0);
+	float angle = atan(p.y, p.x);
+	bool live = progress >= 0.0;
+	float t = clamp(progress, 0.0, 1.0);
+	const float crater = 0.625;
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.47;
+	float s = (n - crater) / (1.0 - crater);
+	float band = smoothstep(-0.06, 0.04, s) * (1.0 - smoothstep(0.95, 1.0, s));
+	vec3 mark = vec3(max(MarkOutline(r, radius), band * (live ? mix(0.1, 0.5, t * t) : 0.08)), 0.0, 0.0);
+
+	float tremor = live ? (ValueNoise(vec2(angle * 9.0, time * 26.0 + float(seed & 63u))) - 0.5) * 0.03 * t : 0.0;
+	mark = MarkAccumulate(mark, MarkRim(r + tremor, radius, 0.032, pixel) * (0.9 + 0.5 * t), 0.12 * t);
+	mark = MarkRunes(mark, RuneRing(r, angle, radius - 0.48, radius - 0.12, -time * 0.08, seed, pixel, time), 0.45 + 0.4 * t, 0.75);
+
+	float jag = (ValueNoise(vec2(angle * 11.0, 3.0) + offset) - 0.5) * 0.12;
+	float broken = smoothstep(0.3, 0.45, ValueNoise(vec2(angle * 5.0, 9.0) + offset));
+	mark = MarkAccumulate(mark, Line(abs(r - radius * crater + jag), max(0.02, pixel * 0.6), pixel) * 0.5 * broken, 0.0);
+
+	const float count = 13.0;
+	float cell = floor((angle / Tau + 0.5) * count);
+	uint key = uint(cell) + seed * 977u;
+	float centre = (cell + 0.3 + 0.4 * HashUnit(key)) / count * Tau - 0.5 * Tau;
+	float wander = (ValueNoise(vec2(s * 4.0, float(key & 255u) * 1.7)) - 0.5) * 0.3 + (ValueNoise(vec2(s * 13.0, float(key & 255u) * 3.1)) - 0.5) * 0.08;
+	float d = mod(angle - centre - wander + 0.5 * Tau, Tau) - 0.5 * Tau;
+	float span = mix(0.55, 1.0, HashUnit(key ^ 0x5151u));
+	float reach = (live ? 0.15 + 0.85 * smoothstep(0.0, 0.85, t) : 0.35) * span;
+	float along = clamp(s / max(reach, 1e-3), 0.0, 1.0);
+	float crack = Line(abs(d) * r, max(mix(0.06, 0.012, along), pixel * 0.6), pixel) * (1.0 - smoothstep(reach - 0.1, reach, s)) * step(0.0, s);
+	float heat = live ? 0.5 + 0.9 * t : 0.35;
+	mark.x = max(mark.x, crack * 0.85);
+	mark = MarkAccumulate(mark, crack * heat * (0.65 + 0.6 * Fbm(p * 2.0 + offset + vec2(time * 0.3, -time * 0.2))), 0.3 * t);
+
+	if (live)
+	{
+		float wave = fract(s * 2.5 - time * 1.6);
+		float ring = exp(-pow((wave - 0.5) / 0.05, 2.0)) * band * (0.06 + 0.22 * t);
+		mark = MarkAccumulate(mark, ring, 0.0);
+	}
+	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4)) * vec3(grow, grow, 1.0);
+}
+
+vec3 ResonanceMarkShape(vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
+{
+	float grow = smoothstep(0.0, 1.0, appear);
+	float r = length(p) / mix(0.75, 1.0, grow);
+	float n = r / radius;
+	if (n > 1.14 || grow <= 0.0)
+		return vec3(0.0);
+	float angle = atan(p.y, p.x);
+	bool live = progress >= 0.0;
+	float t = clamp(progress, 0.0, 1.0);
+	vec3 mark = vec3(MarkOutline(r, radius) + (1.0 - smoothstep(0.2, 1.0, n)) * 0.12 * t, 0.0, 0.0);
+
+	float hum = sin(time * mix(18.0, 46.0, t)) * (live ? 0.012 + 0.03 * t : 0.01);
+	mark = MarkAccumulate(mark, MarkRim(r, radius + hum, 0.026, pixel), 0.1 * t);
+	mark = MarkAccumulate(mark, MarkRim(r, radius - hum, 0.016, pixel) * 0.55, 0.0);
+	mark = MarkRunes(mark, RuneRing(r, angle, radius - 0.44, radius - 0.12, time * 0.35 * (1.0 + 2.0 * t * t), seed, pixel, time), 0.5 + 0.4 * t, 0.7);
+
+	float inner = max(radius - 0.52, 0.1) / radius;
+	float field = 1.0 - smoothstep(inner - 0.05, inner, n);
+	float phase = fract(n * 3.0 / inner + (live ? time * 0.9 + t * 2.5 : time * 0.5));
+	float ripple = exp(-pow((phase - 0.5) / 0.045, 2.0)) * field * smoothstep(0.08, 0.3, n);
+	float notes = 0.6 + 0.4 * ValueNoise(vec2(angle * 4.0 + float(seed & 31u), n * 6.0 - time));
+	mark = MarkAccumulate(mark, ripple * notes * (live ? 0.15 + 0.5 * t : 0.1), 0.15 * t);
+	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4)) * vec3(grow, grow, 1.0);
+}
+
 vec3 SpellMarkShape(uint shape, vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
 {
 	if (shape == DecalCometMark)
@@ -491,6 +566,10 @@ vec3 SpellMarkShape(uint shape, vec2 p, float radius, float pixel, float progres
 		return StormMarkShape(p, radius, pixel, progress, appear, seed, time);
 	if (shape == DecalFirebombMark)
 		return FirebombMarkShape(p, radius, pixel, progress, appear, seed, time);
+	if (shape == DecalAftershockMark)
+		return AftershockMarkShape(p, radius, pixel, progress, appear, seed, time);
+	if (shape == DecalResonanceMark)
+		return ResonanceMarkShape(p, radius, pixel, progress, appear, seed, time);
 	return VoidMarkShape(p, radius, pixel, progress, appear, seed, time);
 }
 

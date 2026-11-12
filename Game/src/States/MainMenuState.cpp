@@ -106,7 +106,7 @@ namespace Game
 	{
 		if (page == m_Page)
 			return;
-		static constexpr float PageTones[] = { 1.0f, 1.0f, 1.1225f, 0.8409f, 0.7492f };
+		static constexpr float PageTones[] = { 1.0f, 1.0f, 1.1225f, 0.8409f, 0.7492f, 0.9439f };
 		GameAudio& audio = m_App.GetGameAudio();
 		audio.PlayUi(Cue::UiShatter, page == Page::None ? 0.5f : 0.8f);
 		if (page == Page::None)
@@ -132,7 +132,7 @@ namespace Game
 
 	bool MainMenuState::Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t)
 	{
-		static_assert(uint8_t(Page::Host) == uint8_t(BackdropMood::Kindle) && uint8_t(Page::Settings) == uint8_t(BackdropMood::Attune));
+		static_assert(uint8_t(Page::Host) == uint8_t(BackdropMood::Kindle) && uint8_t(Page::Settings) == uint8_t(BackdropMood::Attune) && uint8_t(Page::Wardrobe) == uint8_t(BackdropMood::Wardrobe));
 		BackdropView view = BackdropMoods[size_t(m_Page)];
 		view.Time = m_App.GetUi().GetTime() + 30.0f;
 		view.Focus = m_Page == Page::None ? 0.42f : 0.95f;
@@ -217,6 +217,7 @@ namespace Game
 			{ Page::Host, "Open a Rift", "Host a game for your party" },
 			{ Page::Join, "Follow a Rift", "Join a game someone is hosting" },
 			{ Page::Character, "The Wanderer", wanderer },
+			{ Page::Wardrobe, "Wardrobe", std::string(GetOutfit(m_Style.Body).Name) + "  \xC2\xB7  " + GetFocus(m_Style.Cast).Name },
 			{ Page::Settings, "Attunement", "Sound, visuals and diagnostics" },
 		};
 		const auto reveal = [&](size_t index, const UiRect& rect)
@@ -276,6 +277,9 @@ namespace Game
 			break;
 		case Page::Character:
 			DrawCharacterPage(ui, content);
+			break;
+		case Page::Wardrobe:
+			DrawWardrobePage(ui, content);
 			break;
 		case Page::Settings:
 			DrawSettings(ui, m_App, PageHeader(ui, content, "Attunement", "Changes apply at once and are remembered."));
@@ -374,6 +378,22 @@ namespace Game
 			draw.TextWrapped(area.CutTop(44.0f), "No Steam friends are playing right now. When one is, join them here or from your Steam friends list.", Theme::Body(14.0f, Theme::Faint));
 	}
 
+	void MainMenuState::DrawWardrobePage(Ui& ui, UiRect area)
+	{
+		area = PageHeader(ui, area, "Wardrobe", "How others see you. The pause menu changes it mid-game too.");
+		FieldLabel(ui, area, "OUTFIT");
+		DrawOutfitPicker(ui, area.CutTop(58.0f), m_Style.Body);
+		area.CutTop(18.0f);
+		FieldLabel(ui, area, "CASTING FOCUS");
+		DrawFocusPicker(ui, area.CutTop(58.0f), m_Style.Cast);
+		area.CutTop(18.0f);
+		FieldLabel(ui, area, "AURA");
+		DrawAuraPicker(ui, area.CutTop(58.0f), m_Style.Glow);
+		area.CutTop(18.0f);
+		FieldLabel(ui, area, "HEADWEAR");
+		DrawHeadpiecePicker(ui, area.CutTop(58.0f), m_Style.Crown);
+	}
+
 	void MainMenuState::DrawCharacterPage(Ui& ui, UiRect area)
 	{
 		const bool saving = m_App.GetSettings().SaveProfiles;
@@ -381,9 +401,6 @@ namespace Game
 		UiDrawList& draw = ui.Draw();
 		FieldLabel(ui, area, "NAME");
 		ui.TextField(Ui::MakeId("name"), area.CutTop(44.0f), m_Name, 24, "Your name", NameCharacter);
-		area.CutTop(18.0f);
-		FieldLabel(ui, area, "HEADWEAR");
-		DrawHeadwearPicker(ui, area.CutTop(58.0f), m_Style.Head);
 		area.CutTop(18.0f);
 		if (m_HasSave)
 		{

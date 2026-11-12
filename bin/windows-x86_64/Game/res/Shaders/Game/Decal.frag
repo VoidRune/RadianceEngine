@@ -128,7 +128,7 @@ void main()
 		result = FractureShape(world.xz, pixelWorld, params.x, time);
 	else if (shape == DecalFissure)
 		result = FissureShape(uv, extent.xy, pixelWorld, params.x, params.y, params.z, seed, time);
-	else if (shape >= DecalCometMark && shape <= DecalFirebombMark)
+	else if ((shape >= DecalCometMark && shape <= DecalFirebombMark) || shape == DecalAftershockMark || shape == DecalResonanceMark)
 	{
 		vec3 mark = SpellMarkShape(shape, uv * extent.x, extent.x * params.z, pixelWorld, params.x, params.y, seed, time);
 		result = mark.xy;

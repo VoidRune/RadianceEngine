@@ -1069,6 +1069,52 @@ namespace Game
 		return instance;
 	}
 
+	void WorldRenderer::DrawModelRanges(Rdn::CommandBuffer& cmd, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex, bool characters) const
+	{
+		Rdn::DescriptorWrite write;
+		write.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_ModelInstanceBuffer->GetHandle(), m_ModelInstanceBuffer->GetOffset(frameIndex), uint64_t(modelCount) * sizeof(ModelInstance)));
+		write.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_ModelVertices->GetHandle(), 0, m_ModelVertices->GetSize()));
+		write.AddWrite(Rdn::BufferWrite(2, Rdn::DescriptorType::StorageBuffer, m_PaletteBuffer->GetHandle(), m_PaletteBuffer->GetOffset(frameIndex), uint64_t(paletteCount) * sizeof(glm::mat4)));
+		write.AddWrite(Rdn::BufferWrite(3, Rdn::DescriptorType::StorageBuffer, m_MaterialBuffer->GetHandle(), 0, m_MaterialBuffer->GetSize()));
+		cmd.BindIndexBuffer(m_ModelIndices->GetHandle(), Rdn::IndexType::Uint32);
+		for (Rdn::Pipeline* pipeline : { m_ModelPipeline.get(), m_CrystalPipeline.get() })
+		{
+			const bool crystal = pipeline == m_CrystalPipeline.get();
+			if (!pipeline)
+				continue;
+			cmd.BindPipeline(pipeline->GetHandle());
+			cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline->GetLayout(), 0, write);
+			cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline->GetLayout(), 1, { m_TextureSet->GetHandle() });
+			cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, pipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
+			for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
+			{
+				const DrawMesh& source = m_DrawMeshes[mesh];
+				const auto [first, total] = m_ModelRanges[mesh];
+				const uint32_t skinned = mesh < m_ModelCharacterCounts.size() ? m_ModelCharacterCounts[mesh] : 0;
+				const uint32_t instances = characters ? skinned : total - skinned;
+				if (instances > 0 && ((source.Flags & MeshCrystal) != 0 && m_CrystalPipeline) == crystal && ((source.Flags & MeshIce) == 0 || !m_IceSheetPipeline))
+					cmd.DrawIndexed(source.IndexCount, instances, source.FirstIndex, 0, characters ? first + total - skinned : first);
+			}
+		}
+	}
+
+	void WorldRenderer::RenderCharacters(Rdn::RenderGraph& graph, const GBuffer& gbuffer, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex)
+	{
+		if (modelCount == 0 || !m_TextureSet || std::all_of(m_ModelCharacterCounts.begin(), m_ModelCharacterCounts.end(), [](uint32_t count) { return count == 0; }))
+			return;
+		graph.AddPass("GBuffer characters", Rdn::PassType::Graphics,
+			[&](Rdn::PassBuilder& builder)
+			{
+				for (const Rdn::RGImage attachment : { gbuffer.Albedo, gbuffer.Surface, gbuffer.Emission })
+					builder.AddColorAttachment(attachment, Rdn::AttachmentLoadOp::Load, Rdn::AttachmentStoreOp::Store);
+				builder.SetDepthAttachment(gbuffer.Depth, Rdn::AttachmentLoadOp::Load, Rdn::AttachmentStoreOp::Store);
+			},
+			[this, modelCount, paletteCount, frameIndex](Rdn::CommandBuffer& cmd, const Rdn::PassContext&)
+			{
+				DrawModelRanges(cmd, modelCount, paletteCount, frameIndex, true);
+			});
+	}
+
 	void WorldRenderer::SetDissolve(ModelInstance& instance, const ModelDissolve& dissolve)
 	{
 		instance.Dissolve = glm::vec4(dissolve.Amount, std::max(dissolve.Width, 1e-3f), dissolve.Scale, dissolve.Sweep);
@@ -1173,6 +1219,7 @@ namespace Game
 		}
 
 		m_ModelRanges.resize(m_ModelDraws.size());
+		m_ModelCharacterCounts.assign(m_ModelDraws.size(), 0);
 		m_ModelShadowRanges.resize(m_ModelDraws.size());
 		m_ModelDissolveRanges.resize(m_ModelDraws.size());
 		m_ModelGlassRanges.resize(m_ModelDraws.size());
@@ -1180,8 +1227,11 @@ namespace Game
 		m_PackedModels.clear();
 		for (size_t mesh = 0; mesh < m_ModelDraws.size(); mesh++)
 		{
-			m_ModelRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(m_ModelDraws[mesh].size()) };
-			m_PackedModels.insert(m_PackedModels.end(), m_ModelDraws[mesh].begin(), m_ModelDraws[mesh].end());
+			std::vector<ModelInstance>& draws = m_ModelDraws[mesh];
+			const auto characters = std::stable_partition(draws.begin(), draws.end(), [](const ModelInstance& instance) { return instance.Info.x == NoPalette; });
+			m_ModelCharacterCounts[mesh] = uint32_t(draws.end() - characters);
+			m_ModelRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(draws.size()) };
+			m_PackedModels.insert(m_PackedModels.end(), draws.begin(), draws.end());
 		}
 		for (size_t mesh = 0; mesh < m_ModelShadowDraws.size(); mesh++)
 		{
@@ -1283,23 +1333,7 @@ namespace Game
 					write.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_ModelVertices->GetHandle(), 0, m_ModelVertices->GetSize()));
 					write.AddWrite(Rdn::BufferWrite(2, Rdn::DescriptorType::StorageBuffer, m_PaletteBuffer->GetHandle(), m_PaletteBuffer->GetOffset(frameIndex), uint64_t(paletteCount) * sizeof(glm::mat4)));
 					write.AddWrite(Rdn::BufferWrite(3, Rdn::DescriptorType::StorageBuffer, m_MaterialBuffer->GetHandle(), 0, m_MaterialBuffer->GetSize()));
-					cmd.BindIndexBuffer(m_ModelIndices->GetHandle(), Rdn::IndexType::Uint32);
-					for (Rdn::Pipeline* pipeline : { m_ModelPipeline.get(), m_CrystalPipeline.get() })
-					{
-						const bool crystal = pipeline == m_CrystalPipeline.get();
-						if (!pipeline)
-							continue;
-						cmd.BindPipeline(pipeline->GetHandle());
-						cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline->GetLayout(), 0, write);
-						cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, pipeline->GetLayout(), 1, { m_TextureSet->GetHandle() });
-						cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, pipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
-						for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
-						{
-							const DrawMesh& source = m_DrawMeshes[mesh];
-							if (m_ModelRanges[mesh].second > 0 && ((source.Flags & MeshCrystal) != 0 && m_CrystalPipeline) == crystal && ((source.Flags & MeshIce) == 0 || !m_IceSheetPipeline))
-								cmd.DrawIndexed(source.IndexCount, m_ModelRanges[mesh].second, source.FirstIndex, 0, m_ModelRanges[mesh].first);
-						}
-					}
+					DrawModelRanges(cmd, modelCount, paletteCount, frameIndex, false);
 					if (m_IceSheetPipeline && !m_IceField.empty())
 					{
 						const struct { glm::mat4 ViewProjection; glm::vec4 Focus; glm::vec4 Eye; glm::vec4 FieldSize; } constants{ m_Constants.ViewProjection, m_Constants.Focus, m_Constants.Eye, m_IceFieldSize };
@@ -1348,6 +1382,7 @@ namespace Game
 		RenderShadows(graph, shadowMap, shadow, count, modelCount, paletteCount, frameIndex);
 		m_Particles->Upload(extent, frameIndex, camera);
 		m_Particles->RenderDecals(graph, gbuffer, frameIndex);
+		RenderCharacters(graph, gbuffer, modelCount, paletteCount, frameIndex);
 		m_Particles->Simulate(graph, gbuffer.Depth, frameIndex);
 		const Rdn::Extent2D half = HalfExtent(extent);
 		Rdn::RGImage giSource{};

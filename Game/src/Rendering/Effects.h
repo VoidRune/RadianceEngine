@@ -153,6 +153,15 @@ namespace Game
 		LavaSplash,
 		ForgeSmoke,
 		FallSpray,
+		AuraEmberHands,
+		AuraEmberMantle,
+		AuraEmberRise,
+		AuraAstralDust,
+		AuraCrownMist,
+		AuraFrostHands,
+		AuraFrostMist,
+		AuraFrostFlurry,
+		AuraFrostCrownMist,
 		Count,
 	};
 

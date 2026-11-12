@@ -23,6 +23,8 @@ namespace Game
 		const ModelClip& GetClip(uint32_t index) const { return m_Data.Clips[index]; }
 		float GetStrikeTime(uint32_t clip) const { return clip < m_StrikeTimes.size() ? m_StrikeTimes[clip] : 0.0f; }
 		float GetStrideSpeed(uint32_t clip) const { return clip < m_StrideSpeeds.size() ? m_StrideSpeeds[clip] : 0.0f; }
+		float GetSync(uint32_t clip) const { return clip < m_Gaits.size() ? m_Gaits[clip].Sync : 0.0f; }
+		bool IsPlanted(uint32_t clip, float time, uint32_t side) const;
 
 		std::optional<uint32_t> FindMesh(std::string_view name) const;
 		std::optional<uint32_t> FindSkeleton(std::string_view name) const;
@@ -32,16 +34,24 @@ namespace Game
 		std::optional<uint32_t> FindEnvironment(std::string_view name) const;
 
 	private:
+		struct Gait
+		{
+			float Sync = 0.0f;
+			std::vector<uint8_t> Contacts;
+		};
+
 		static std::string ClipKey(std::string_view name, uint32_t skeleton);
 		void RetargetClips();
 		void MeasureClips();
 		void ExtractRootMotion(size_t authored);
+		void MeasureGaits();
 
 		ModelLibraryData m_Data;
 		std::unordered_map<std::string, uint32_t> m_Meshes;
 		std::unordered_map<std::string, uint32_t> m_Clips;
 		std::vector<float> m_StrikeTimes;
 		std::vector<float> m_StrideSpeeds;
+		std::vector<Gait> m_Gaits;
 		uint32_t m_Shared = 0;
 	};
 }
