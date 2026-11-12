@@ -74,6 +74,7 @@ namespace Game
 		constexpr OutfitModel OutfitModels[] = {
 			{ "Hero", "Hero/" },
 			{ "FrostMage", "FrostMage/" },
+			{ "VoidMage", "VoidMage/" },
 		};
 		static_assert(std::size(OutfitModels) == size_t(Outfit::Count));
 

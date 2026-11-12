@@ -473,7 +473,7 @@ void main()
 		if ((flags & MeshAccentTrim) != 0u)
 			trim = smoothstep(0.3, 0.55, (albedo.r - albedo.b) / max(albedo.r, 1e-4)) * smoothstep(0.05, 0.14, light);
 		if ((flags & MeshAccentDye) != 0u)
-			albedo = min(tone * (light * DyeGain + DyeFloor), vec3(0.95));
+			albedo = mix(albedo, min(tone * (light * DyeGain + DyeFloor), vec3(0.95)), (material.Flags & MaterialAlphaTest) != 0u ? 1.0 : layer.Albedo.a);
 		albedo = mix(albedo, min(tone * TrimLight, vec3(0.95)), trim);
 		heat += inAccent.rgb * (trim * TrimGlow);
 	}

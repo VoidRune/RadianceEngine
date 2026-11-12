@@ -399,7 +399,56 @@ def face_kinds(obj):
     return kinds.tolist()
 
 
-SLOTS = (('Wizard_Garb', 'Coat', 2048), ('Wizard_Cape', 'Cape', 2048), ('Hero_Head', 'Face', 1024))
+def outer_cape_kinds(obj, cape_around, cape_radius, cape_facing, cape_smooth):
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    bm.normal_update()
+    bvh = BVHTree.FromBMesh(bm)
+    (x0, x1), (y0, y1), (z0, z1) = FACE_BOX
+    kinds = np.zeros(len(bm.faces), dtype=np.int32)
+    for face in bm.faces:
+        c = face.calc_center_median()
+        if x0 < c.x < x1 and y0 < c.y < y1 and z0 < c.z < z1:
+            kinds[face.index] = 2
+            continue
+        outward = Vector((c.x - AXIS[0], c.y - AXIS[1], 0.0))
+        if not (CAPE_Z[0] < c.z < CAPE_TOP) or around(c) < cape_around or outward.length > cape_radius:
+            continue
+        outward.normalize()
+        if face.normal.dot(outward) > cape_facing and bvh.ray_cast(c + outward * 0.003, outward, 1.0)[0] is None:
+            kinds[face.index] = 1
+    for _ in range(cape_smooth):
+        votes = kinds.copy()
+        for face in bm.faces:
+            if kinds[face.index] == 2:
+                continue
+            near = [kinds[other.index] for edge in face.edges for other in edge.link_faces if other is not face]
+            if near:
+                cape = sum(1 for k in near if k == 1)
+                if cape * 2 > len(near):
+                    votes[face.index] = 1
+                elif cape * 2 < len(near) and kinds[face.index] == 1:
+                    votes[face.index] = 0
+        kinds = votes
+    bm.free()
+    return kinds.tolist()
+
+
+def segment_distance(co, a, b):
+    ab = b - a
+    t = np.clip((co - a) @ ab / (ab @ ab), 0.0, 1.0)
+    return np.linalg.norm(co - (a + t[:, None] * ab), axis=1)
+
+
+def write_mask(mesh, name, mask):
+    layer = mesh.color_attributes.new(name, 'FLOAT_COLOR', 'POINT')
+    data = np.ones((len(mask), 4), dtype=np.float32)
+    data[:, :3] = np.clip(mask, 0.0, 1.0)[:, None]
+    layer.data.foreach_set('color', data.ravel())
+
+
+SLOTS =(('Wizard_Garb', 'Coat', 2048), ('Wizard_Cape', 'Cape', 2048), ('Hero_Head', 'Face', 1024))
 UV_ANGLE = 85.0
 UV_OVERLAP_PASSES = 5
 METAL_TONE = (0.86, 0.88, 0.92)
@@ -618,7 +667,7 @@ def write_material(node, folder, slot, base, normal, orm, emit=None):
         files['emit'] = os.path.join(folder, f'{NAME}_{slot}_emit.png')
         kit.save_png(files['emit'], np.repeat(emit[..., None], 3, axis=2))
     files['albedo'] = os.path.join(folder, f'{NAME}_{slot}_albedo.png')
-    kit.save_png(files['albedo'], base, srgb=True)
+    kit.save_png(files['albedo'], base, srgb=True, alpha=base[..., 3] if base.shape[-1] == 4 else None)
     files['normal'] = os.path.join(folder, f'{NAME}_{slot}_normal.png')
     kit.save_png(files['normal'], kit.sanitize_normals(normal, max_tilt=60.0))
     files['orm'] = os.path.join(folder, f'{NAME}_{slot}_orm.png')

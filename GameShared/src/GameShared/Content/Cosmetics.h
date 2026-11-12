@@ -8,6 +8,7 @@ namespace Game
 	{
 		Wanderer,
 		Frostwarden,
+		Voidcaller,
 		Count,
 	};
 
@@ -62,6 +63,7 @@ namespace Game
 	inline constexpr OutfitDef Outfits[] = {
 		{ Outfit::Wanderer, "wanderer", "Wanderer's Garb" },
 		{ Outfit::Frostwarden, "frostwarden", "Frostwarden" },
+		{ Outfit::Voidcaller, "voidcaller", "Voidcaller" },
 	};
 	static_assert(std::size(Outfits) == size_t(Outfit::Count));
 

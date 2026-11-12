@@ -360,7 +360,12 @@ namespace Game
 
 	UiIcon IconFor(Outfit outfit)
 	{
-		return outfit == Outfit::Frostwarden ? UiIcon::Snowflake : UiIcon::Hood;
+		switch (outfit)
+		{
+		case Outfit::Frostwarden: return UiIcon::Snowflake;
+		case Outfit::Voidcaller: return UiIcon::VoidShard;
+		default: return UiIcon::Hood;
+		}
 	}
 
 	UiIcon IconFor(Focus focus)

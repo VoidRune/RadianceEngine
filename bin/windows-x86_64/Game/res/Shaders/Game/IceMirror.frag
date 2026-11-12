@@ -39,7 +39,7 @@ void main()
 	vec3 n = normalize(inNormal);
 	vec3 tint = inTint.rgb;
 	if ((inMaterial.z & MeshAccentDye) != 0u)
-		tint = mix(tint, inAccent.rgb, 0.5);
+		tint = mix(tint, inAccent.rgb, (material.Flags & MaterialAlphaTest) != 0u ? 0.5 : 0.5 * sampled.a);
 	albedo *= tint;
 	vec3 lit = albedo * (pc.SunRadiance.rgb * max(dot(n, pc.SunDirection.xyz), 0.0) * 0.318 + pc.SkyRadiance.rgb * (0.65 + 0.35 * n.y));
 	vec4 surface = texture(Textures[nonuniformEXT(material.Surface)], inUv * material.Params.z);

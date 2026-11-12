@@ -86,6 +86,7 @@ namespace Game
 		{ .Path = "Original/Chess", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true },
 		{ .Path = "Original/Hero", .Kind = ModelSourceKind::Scan, .TextureSize = 2048, .SplitNodes = true },
 		{ .Path = "Original/FrostMage", .Kind = ModelSourceKind::Scan, .TextureSize = 2048, .SplitNodes = true },
+		{ .Path = "Original/VoidMage", .Kind = ModelSourceKind::Scan, .TextureSize = 2048, .SplitNodes = true },
 		{ .Path = "Original/Armory", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true, .KeepOrigin = true },
 		{ .Path = "Original/Crown", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true, .KeepOrigin = true },
 		{ .Path = "Original/FrostCrown", .Kind = ModelSourceKind::Scan, .TextureSize = 512, .SplitNodes = true, .KeepOrigin = true },
