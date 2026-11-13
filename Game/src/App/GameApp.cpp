@@ -352,7 +352,7 @@ namespace Game
 		RegisterSpellMeshes(*m_WorldRenderer);
 		RegisterPeakMeshes(*m_WorldRenderer);
 		RegisterLakeMeshes(*m_WorldRenderer);
-		m_MenuBackdrop = std::make_unique<MenuBackdrop>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat());
+		m_MenuBackdrop = std::make_unique<MenuBackdrop>(*m_Device, *m_Allocator, m_PresentQueue->GetSurfaceFormat(), m_UiRenderer->GetTexture(m_UiAssets->GetAtlasTexture()));
 		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
 		m_WorldRenderer->GetDistortion().Enabled = m_Settings.Distortion;
 		m_WorldRenderer->GetTrails().Enabled = m_Settings.Trails;
@@ -404,7 +404,7 @@ namespace Game
 			m_State = std::make_unique<SessionState>(*this, std::move(config));
 		}
 		else
-			m_State = std::make_unique<MainMenuState>(*this);
+			m_State = std::make_unique<MainMenuState>(*this, std::string(), options.MenuPage);
 	}
 
 	CharacterProfile GameApp::LoadCharacter(const std::string& name, StarterKit kit, bool fresh) const
@@ -686,7 +686,7 @@ namespace Game
 		const Rdn::RGImage backbuffer = m_Graph->ImportBackbuffer(*frame);
 		const bool drewScene = m_State->Render(*m_Graph, backbuffer, frame->PresentExtent, frame->FrameIndex);
 		m_Ui->Collect(m_UiPrimitives);
-		m_UiRenderer->Render(*m_Graph, backbuffer, frame->FrameIndex, m_UiPrimitives, m_Ui->GetSize(), m_Ui->GetScale(), m_Ui->GetTime(), !drewScene);
+		m_UiRenderer->Render(*m_Graph, backbuffer, frame->FrameIndex, m_UiPrimitives, m_Ui->GetSize(), m_Ui->GetScale(), m_Ui->GetTime(), !drewScene, m_MenuBackdrop->TakeLight(), m_Ui->GetOpacity());
 		m_DebugUi->Render(*m_Graph, backbuffer, frame->FrameIndex, false);
 		const double due = m_ScreenshotDelay + double(m_Captures.size()) * m_BurstInterval;
 		const bool capture = !m_ScreenshotPath.empty() && ++m_RenderedFrames >= m_ScreenshotFrames && m_Uptime >= due && m_Captures.size() < m_ScreenshotBurst;

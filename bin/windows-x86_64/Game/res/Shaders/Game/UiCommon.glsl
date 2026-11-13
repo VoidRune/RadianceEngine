@@ -17,6 +17,8 @@ layout(push_constant) uniform Constants
 	float Scale;
 	float DistanceRange;
 	float Time;
+	float Backdrop;
+	float Opacity;
 } pc;
 
 layout(location = 0) in vec2 inLocal;
@@ -55,5 +57,5 @@ bool Clipped(Primitive primitive)
 vec4 Finish(Primitive primitive, vec4 result)
 {
 	result.a *= 1.0 - float(primitive.Info.w & 255u) / 255.0;
-	return Clipped(primitive) ? vec4(0.0) : result;
+	return Clipped(primitive) ? vec4(0.0) : result * pc.Opacity;
 }

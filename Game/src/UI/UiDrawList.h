@@ -26,6 +26,7 @@ namespace Game
 		float Seed = 0.0f;
 		float Additive = 0.0f;
 		float Stars = 0.0f;
+		float Lit = 0.0f;
 	};
 
 	struct TextStyle
@@ -115,6 +116,7 @@ namespace Game
 		explicit UiDrawList(const UiAssets& assets) : m_Assets(&assets) {}
 
 		void Reset(float scale);
+		void SetHalo(UiColor halo) { m_Halo = halo; }
 		void PushClip(const UiRect& rect);
 		void PopClip();
 		UiRect GetClip() const;
@@ -126,6 +128,8 @@ namespace Game
 		void Triangle(glm::vec2 center, glm::vec2 size, float rotation, UiColor color, UiColor border = UiColor(0.0f), float borderWidth = 0.0f);
 		void Orb(glm::vec2 center, float radius, float fill, UiColor light, UiColor deep, UiColor glass, UiColor highlight, float phase, float wave = 0.035f);
 		void Sigil(glm::vec2 center, float radius, const SigilStyle& style);
+		void Veil(const UiRect& rect, float appear);
+		void Primitive(const UiPrimitive& primitive) { m_Primitives.push_back(primitive); }
 		void Card(const UiRect& rect, const CardStyle& style);
 		void Diamond(glm::vec2 center, float size, UiColor fill, UiColor border = UiColor(0.0f), float borderWidth = 0.0f);
 		void Icon(UiIcon icon, const UiRect& rect, const IconStyle& style);
@@ -154,6 +158,7 @@ namespace Game
 		std::vector<UiPrimitive> m_Primitives;
 		std::vector<UiRect> m_Clips;
 		float m_Scale = 1.0f;
+		UiColor m_Halo{ 0.0f };
 	};
 
 	uint32_t DecodeUtf8(std::string_view text, size_t& index);

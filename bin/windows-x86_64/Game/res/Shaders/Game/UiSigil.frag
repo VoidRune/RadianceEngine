@@ -19,12 +19,42 @@ vec2 Rotate(vec2 v, vec2 cs)
 	return vec2(v.x * cs.x - v.y * cs.y, v.x * cs.y + v.y * cs.x);
 }
 
-vec4 RuneStroke(uint bits)
+const uvec4 Glyphs[24] = uvec4[](
+	uvec4(0x06u, 0x68u, 0x00u, 0x00u), uvec4(0x17u, 0x35u, 0x00u, 0x00u), uvec4(0x02u, 0x28u, 0x14u, 0x00u), uvec4(0x07u, 0x72u, 0x00u, 0x00u),
+	uvec4(0x61u, 0x18u, 0x35u, 0x00u), uvec4(0x06u, 0x04u, 0x46u, 0x00u), uvec4(0x17u, 0x04u, 0x42u, 0x00u), uvec4(0x06u, 0x28u, 0x35u, 0x00u),
+	uvec4(0x06u, 0x05u, 0x56u, 0x00u), uvec4(0x17u, 0x78u, 0x10u, 0x00u), uvec4(0x02u, 0x17u, 0x00u, 0x00u), uvec4(0x61u, 0x18u, 0x47u, 0x00u),
+	uvec4(0x08u, 0x35u, 0x00u, 0x00u), uvec4(0x26u, 0x04u, 0x00u, 0x00u), uvec4(0x13u, 0x37u, 0x75u, 0x51u), uvec4(0x06u, 0x32u, 0x38u, 0x00u),
+	uvec4(0x60u, 0x04u, 0x42u, 0x28u), uvec4(0x06u, 0x62u, 0x28u, 0x00u), uvec4(0x17u, 0x13u, 0x15u, 0x00u), uvec4(0x02u, 0x35u, 0x68u, 0x00u),
+	uvec4(0x71u, 0x73u, 0x75u, 0x00u), uvec4(0x06u, 0x35u, 0x28u, 0x00u), uvec4(0x06u, 0x68u, 0x82u, 0x00u), uvec4(0x14u, 0x35u, 0x68u, 0x00u));
+
+vec2 GridPoint(uint i)
 {
-	float side = (bits & 1u) != 0u ? 1.0 : -1.0;
-	float start = float((bits >> 1u) & 3u) * 0.66 - 1.0;
-	float rise = (bits & 8u) != 0u ? 0.65 : -0.65;
-	return vec4(0.0, start, side, clamp(start + rise, -1.0, 1.0));
+	return vec2(float(i % 3u) - 1.0, 1.0 - float(i / 3u));
+}
+
+float GlyphDistance(vec2 q, vec2 size, uint glyph)
+{
+	uvec4 strokes = Glyphs[glyph];
+	float d = 1e6;
+	for (int k = 0; k < 4; k++)
+	{
+		uint stroke = strokes[k];
+		uint a = stroke >> 4u;
+		uint b = stroke & 15u;
+		if (a != b)
+			d = min(d, Segment(q, GridPoint(a) * size, GridPoint(b) * size));
+	}
+	return d;
+}
+
+float ScriptCell(vec2 q, vec2 size, uint h)
+{
+	uint kind = h % 9u;
+	if (kind == 0u)
+		return 1e6;
+	if (kind == 1u)
+		return abs(length(q) - size.y * 0.2);
+	return GlyphDistance(q, size, (h >> 4u) % 24u);
 }
 
 void main()
@@ -74,15 +104,8 @@ void main()
 		uint h = HashU(uint(mod(floor(cell), cells)) * 747796405u + seed * 2891336453u + 12345u);
 		float cellWidth = TwoPi * r / cells;
 		vec2 q = vec2((fract(cell) - 0.5) * cellWidth, r - middle);
-		vec2 size = vec2(min(cellWidth, band) * 0.26, band * 0.3);
-		float d = Segment(q, vec2(0.0, -size.y), vec2(0.0, size.y));
-		for (uint k = 0u; k < 3u; k++)
-		{
-			vec4 stroke = RuneStroke(h >> (k * 5u));
-			d = min(d, Segment(q, stroke.xy * size, stroke.zw * size));
-		}
-		if (((h >> 20u) & 7u) == 0u)
-			d = abs(length(q) - size.y * 0.35);
+		vec2 size = vec2(min(cellWidth, band) * 0.24, band * 0.3);
+		float d = ScriptCell(q, size, h);
 		runeNearest = min(runeNearest, d);
 	}
 	if ((layers & SigilStar) != 0u && r < radius * 0.68 + reach)

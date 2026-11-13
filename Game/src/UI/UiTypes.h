@@ -114,6 +114,7 @@ namespace Game
 		Triangle,
 		Sigil,
 		Card,
+		Veil,
 	};
 
 	struct UiPrimitive

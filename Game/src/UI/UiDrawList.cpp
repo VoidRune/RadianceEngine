@@ -1,4 +1,5 @@
 #include "UiDrawList.h"
+#include <algorithm>
 #include <cmath>
 
 namespace Game
@@ -43,6 +44,7 @@ namespace Game
 
 	void UiDrawList::Reset(float scale)
 	{
+		m_Halo = UiColor(0.0f);
 		m_Primitives.clear();
 		m_Clips.clear();
 		m_Scale = scale;
@@ -90,7 +92,7 @@ namespace Game
 		primitive.Uv = glm::vec4(style.Chamfer, style.Flow, style.Aether, style.Seed);
 		primitive.Colors = glm::uvec4(PackColor(style.Fill), PackColor(Resolve(style.FillBottom, style.Fill)), PackColor(style.Border), PackColor(style.Glow));
 		primitive.Shape = glm::vec4(style.Radius, style.BorderWidth, style.Softness, style.Rotation);
-		primitive.Params = glm::vec4(style.Sweep, style.GlowSize, style.Stars, 0.0f);
+		primitive.Params = glm::vec4(style.Sweep, style.GlowSize, style.Stars, style.Lit);
 		primitive.Info.z = style.Horizontal ? 1u : 0u;
 		primitive.Info.w = AdditiveBits(style.Additive);
 	}
@@ -141,6 +143,14 @@ namespace Game
 		primitive.Params = glm::vec4(style.Speed, style.Phase, style.LineWidth, style.Glow);
 		primitive.Info.z = style.Layers << 2;
 		primitive.Info.w = AdditiveBits(style.Additive);
+	}
+
+	void UiDrawList::Veil(const UiRect& rect, float appear)
+	{
+		if (appear <= 0.0f)
+			return;
+		UiPrimitive& primitive = Add(UiMode::Veil, rect.Center(), rect.Size() * 0.5f);
+		primitive.Params = glm::vec4(std::clamp(appear, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f);
 	}
 
 	void UiDrawList::Card(const UiRect& rect, const CardStyle& style)
@@ -273,6 +283,12 @@ namespace Game
 	{
 		const FontFace& font = m_Assets->GetFont(style.Font);
 		const glm::vec2 pen(Snap(topLeft.x), Snap(topLeft.y + font.Ascender * style.Size));
+		if (m_Halo.a > 0.0f)
+		{
+			TextStyle wide = style;
+			wide.Weight += 0.035f * style.Size;
+			Glyphs(pen, text, wide, WithAlpha(m_Halo, m_Halo.a * style.Color.a), WithAlpha(m_Halo, m_Halo.a * style.Color.a), glm::vec2(0.0f), 0.0f, 6.0f);
+		}
 		if (style.ShadowColor.a > 0.0f)
 			Glyphs(pen, text, style, style.ShadowColor, style.ShadowColor, style.ShadowOffset, 0.0f, std::max(style.ShadowBlur, 0.01f));
 		if (style.GlowColor.a > 0.0f)

@@ -63,6 +63,42 @@ namespace Game
 			draw.Rect({ x, y, half, thickness }, { .Fill = WithAlpha(color, 0.0f), .FillBottom = color, .Horizontal = true });
 			draw.Rect({ x + half, y, width - half, thickness }, { .Fill = color, .FillBottom = WithAlpha(color, 0.0f), .Horizontal = true });
 		}
+
+		void Orrery(UiDrawList& draw, glm::vec2 center, float radius, UiColor color, float fill = 0.0f)
+		{
+			draw.Rect(UiRect::Centered(center, glm::vec2(radius * 2.0f)), { .Fill = WithAlpha(color, fill), .Radius = radius, .Border = color, .BorderWidth = 1.0f });
+			draw.Rect(UiRect::Centered(center, glm::vec2(2.2f)), { .Fill = color, .Radius = 1.1f });
+		}
+
+		void Engraving(UiDrawList& draw, const UiRect& rect, float strength)
+		{
+			const UiColor brass = WithAlpha(Theme::Accent, 0.75f * strength);
+			const UiColor faint = WithAlpha(Theme::Edge, 0.7f * strength);
+			const float inset = 6.0f;
+			const glm::vec2 corners[] = { { rect.X + inset, rect.Y + inset }, { rect.Right() - inset, rect.Y + inset }, { rect.X + inset, rect.Bottom() - inset }, { rect.Right() - inset, rect.Bottom() - inset } };
+			for (const glm::vec2 corner : corners)
+			{
+				const float sx = corner.x < rect.Center().x ? 1.0f : -1.0f;
+				const float sy = corner.y < rect.Center().y ? 1.0f : -1.0f;
+				draw.Rect({ std::min(corner.x, corner.x + sx * 18.0f), corner.y - 0.5f, 18.0f, 1.0f }, { .Fill = sx > 0.0f ? brass : WithAlpha(brass, 0.0f), .FillBottom = sx > 0.0f ? WithAlpha(brass, 0.0f) : brass, .Horizontal = true, .Lit = 1.0f });
+				draw.Rect({ corner.x - 0.5f, std::min(corner.y, corner.y + sy * 18.0f), 1.0f, 18.0f }, { .Fill = sy > 0.0f ? brass : WithAlpha(brass, 0.0f), .FillBottom = sy > 0.0f ? WithAlpha(brass, 0.0f) : brass, .Lit = 1.0f });
+				draw.Rect(UiRect::Centered(corner, glm::vec2(5.0f)), { .Fill = WithAlpha(Theme::Ink, 0.9f), .Radius = 2.5f, .Border = brass, .BorderWidth = 1.0f });
+			}
+			if (rect.W < 220.0f)
+				return;
+			const float span = std::min(rect.W * 0.32f, 150.0f);
+			const float left = rect.Center().x - span * 0.5f;
+			const int ticks = int(span / 6.0f);
+			for (int i = 0; i <= ticks; i++)
+			{
+				const float x = std::round(left + span * float(i) / float(ticks));
+				const float fade = 1.0f - std::abs(float(i) / float(ticks) * 2.0f - 1.0f);
+				const float height = i % 5 == 0 ? 6.0f : 3.0f;
+				draw.Rect({ x, rect.Y + 1.0f, 1.0f, height }, { .Fill = WithAlpha(faint, 0.4f + 0.6f * fade) });
+			}
+			draw.Rect(UiRect::Centered({ rect.Center().x, rect.Bottom() }, glm::vec2(9.0f)), { .Fill = Theme::Ink, .Radius = 4.5f });
+			Orrery(draw, { rect.Center().x, rect.Bottom() }, 3.5f, brass);
+		}
 	}
 
 	namespace Theme
@@ -79,7 +115,7 @@ namespace Game
 
 		TextStyle Title(float size)
 		{
-			return { .Font = UiFont::Title, .Size = size, .Color = Hex(0xF7F4FF), .ColorBottom = Hex(0xB8A7EE), .Weight = 0.12f, .ShadowOffset = { 0.0f, 1.5f }, .ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.85f), .ShadowBlur = 2.5f, .GlowColor = WithAlpha(Accent, 0.32f), .GlowBlur = 7.0f };
+			return { .Font = UiFont::Title, .Size = size, .Color = Hex(0xFFF8EA), .ColorBottom = Hex(0xE2CFA6), .Weight = 0.1f, .ShadowOffset = { 0.0f, 1.5f }, .ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.85f), .ShadowBlur = 2.5f, .GlowColor = WithAlpha(Accent, 0.14f), .GlowBlur = 7.0f };
 		}
 
 		TextStyle Label(float size, UiColor color)
@@ -162,6 +198,7 @@ namespace Game
 	{
 		m_DeltaTime = dt;
 		m_Motion = 0.0f;
+		m_Opacity = 1.0f;
 		m_Time += dt;
 		if (framebufferSize.x > 0.0f && framebufferSize.y > 0.0f)
 			m_Scale = std::clamp(std::min(framebufferSize.x / 1600.0f, framebufferSize.y / 900.0f), 0.75f, 3.0f);
@@ -285,20 +322,11 @@ namespace Game
 	void Ui::Panel(const UiRect& rect, float chamfer, bool blocks)
 	{
 		UiDrawList& draw = Draw();
-		const float seed = std::fmod(std::abs(rect.X * 0.0131f + rect.Y * 0.0077f + rect.W * 0.0019f), 1.0f);
-		draw.Rect(rect.Translate({ 0.0f, 10.0f }).Expand(4.0f), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.6f), .Softness = 24.0f, .Chamfer = chamfer + 4.0f });
-		draw.Rect(rect, { .Fill = Theme::PanelTop, .FillBottom = Theme::PanelBottom, .Border = WithAlpha(Theme::Edge, 0.95f), .BorderWidth = 1.2f, .Glow = WithAlpha(Theme::Accent, 0.06f), .GlowSize = 48.0f, .Chamfer = chamfer, .Flow = 0.75f * m_Motion, .Aether = 1.0f, .Seed = seed, .Stars = m_Motion });
-		draw.Rect(rect.Shrink(5.0f), { .Border = WithAlpha(Theme::AccentLight, 0.07f), .BorderWidth = 1.0f, .Chamfer = std::max(chamfer - 2.0f, 0.0f) });
-		FadedLine(draw, rect.X + chamfer + 8.0f, rect.Y + 0.5f, rect.W - 2.0f * chamfer - 16.0f, WithAlpha(Theme::AccentLight, 0.35f));
-		if (chamfer >= 6.0f)
-		{
-			const float half = chamfer * 0.5f;
-			for (const glm::vec2 corner : { glm::vec2(rect.X + half, rect.Y + half), glm::vec2(rect.Right() - half, rect.Y + half), glm::vec2(rect.X + half, rect.Bottom() - half), glm::vec2(rect.Right() - half, rect.Bottom() - half) })
-			{
-				draw.Rect(UiRect::Centered(corner, glm::vec2(12.0f)), { .Fill = WithAlpha(Theme::Accent, 0.5f), .Radius = 6.0f, .Softness = 5.0f, .Additive = 1.0f });
-				draw.Diamond(corner, 9.0f, Theme::AccentLight, WithAlpha(Theme::Ink, 0.9f), 1.2f);
-			}
-		}
+		draw.Rect(rect.Translate({ 0.0f, 12.0f }).Expand(6.0f), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.55f), .Softness = 28.0f });
+		draw.Rect(rect, { .Fill = Theme::PanelTop, .FillBottom = Theme::PanelBottom, .Radius = 2.0f, .Border = WithAlpha(Theme::Edge, 0.9f), .BorderWidth = 1.0f, .Lit = 1.0f });
+		draw.Rect(rect.Shrink(6.0f), { .Radius = 1.0f, .Border = WithAlpha(Theme::Edge, 0.28f), .BorderWidth = 1.0f, .Lit = 0.6f });
+		FadedLine(draw, rect.X + 24.0f, rect.Y, rect.W - 48.0f, WithAlpha(Theme::AccentLight, 0.45f));
+		Engraving(draw, rect, chamfer >= 6.0f ? 1.0f : 0.6f);
 		if (blocks)
 			Block(rect);
 	}
@@ -306,11 +334,21 @@ namespace Game
 	void Ui::Card(const UiRect& rect, float hover, float selected, UiColor accent)
 	{
 		UiDrawList& draw = Draw();
-		const float seed = std::fmod(std::abs(rect.X * 0.0173f + rect.Y * 0.0091f), 1.0f);
 		if (selected > 0.01f)
-			draw.Rect(rect.Expand(2.0f), { .Fill = WithAlpha(accent, 0.2f * selected), .Softness = 12.0f, .Chamfer = 10.0f, .Additive = 1.0f });
-		draw.Rect(rect, { .Fill = glm::mix(Theme::CardTop, Hex(0x251C4A, 0.94f), selected), .FillBottom = glm::mix(Theme::CardBottom, Hex(0x110C27, 0.95f), selected), .Border = glm::mix(WithAlpha(Theme::Edge, 0.5f + 0.4f * hover), accent, selected),
-			.BorderWidth = 1.2f + 0.5f * selected, .Glow = WithAlpha(glm::mix(Theme::Astral, accent, selected), 0.05f * hover + 0.1f * selected), .GlowSize = 18.0f, .Chamfer = 8.0f, .Flow = 0.8f * selected * m_Motion, .Aether = 0.25f + 0.5f * selected, .Seed = seed });
+			draw.Rect(rect.Expand(3.0f), { .Fill = WithAlpha(accent, 0.12f * selected), .Softness = 12.0f, .Additive = 1.0f });
+		draw.Rect(rect, { .Fill = glm::mix(Theme::CardTop, Hex(0x1C1912, 0.9f), selected), .FillBottom = glm::mix(Theme::CardBottom, Hex(0x0E0C09, 0.92f), selected), .Radius = 2.0f, .Border = glm::mix(WithAlpha(Theme::Edge, 0.45f + 0.4f * hover), accent, selected),
+			.BorderWidth = 1.0f, .Glow = WithAlpha(glm::mix(Theme::Astral, accent, selected), 0.04f * hover + 0.08f * selected), .GlowSize = 16.0f, .Lit = 0.8f });
+		if (selected > 0.01f)
+		{
+			const UiColor mark = WithAlpha(accent, selected);
+			for (const glm::vec2 corner : { rect.Min(), glm::vec2(rect.Right(), rect.Y), glm::vec2(rect.X, rect.Bottom()), rect.Max() })
+			{
+				const float sx = corner.x < rect.Center().x ? 1.0f : -1.0f;
+				const float sy = corner.y < rect.Center().y ? 1.0f : -1.0f;
+				draw.Rect({ std::min(corner.x, corner.x + sx * 10.0f), corner.y - (sy > 0.0f ? 0.0f : 2.0f), 10.0f, 2.0f }, { .Fill = mark });
+				draw.Rect({ corner.x - (sx > 0.0f ? 0.0f : 2.0f), std::min(corner.y, corner.y + sy * 10.0f), 2.0f, 10.0f }, { .Fill = mark });
+			}
+		}
 	}
 
 	UiRect Ui::Window(UiId id, std::string_view title, UiRect rect, bool* open)
@@ -328,13 +366,14 @@ namespace Game
 		const UiId dragId = id ^ 0x5DEECE66Dull;
 		if (Interact(dragId, header).Held && m_ActiveId == dragId)
 			state.Offset += m_Mouse - m_PreviousMouse;
-		draw.Rect(header.Shrink(3.0f, 3.0f), { .Fill = WithAlpha(Theme::Accent, 0.1f), .FillBottom = WithAlpha(Theme::Accent, 0.0f), .Chamfer = 13.0f });
-		draw.Sigil({ rect.X + 34.0f, header.Center().y }, 14.0f, { .Color = WithAlpha(Theme::AccentLight, 0.85f), .Accent = WithAlpha(Theme::Astral, 0.9f), .Speed = 0.25f, .Phase = float(id % 1000) / 1000.0f, .LineWidth = 1.0f, .Glow = 0.45f, .Layers = SigilRings | SigilStar, .Points = 5, .Skip = 2 });
+		draw.Rect(header.Shrink(3.0f, 3.0f), { .Fill = WithAlpha(Theme::Accent, 0.1f), .FillBottom = WithAlpha(Theme::Accent, 0.0f) });
+		Orrery(draw, { rect.X + 34.0f, header.Center().y }, 5.0f, Theme::AccentLight);
 		TextStyle titleStyle = Theme::Title(21.0f);
 		titleStyle.Tracking = 1.5f;
 		draw.TextAligned({ rect.X + 58.0f, header.Y, header.W - 110.0f, header.H }, title, titleStyle, { 0.0f, 0.5f });
 		FadedLine(draw, rect.X + 16.0f, header.Bottom() - 1.0f, rect.W - 32.0f, WithAlpha(Theme::Edge, 0.95f));
-		draw.Diamond({ rect.Center().x, header.Bottom() - 0.5f }, 7.0f, Theme::AccentLight, WithAlpha(Theme::Ink, 0.9f), 1.0f);
+		draw.Rect(UiRect::Centered({ rect.Center().x, header.Bottom() - 0.5f }, glm::vec2(9.0f)), { .Fill = Theme::Ink, .Radius = 4.5f });
+		Orrery(draw, { rect.Center().x, header.Bottom() - 0.5f }, 3.5f, Theme::Accent);
 		if (open)
 		{
 			const UiRect close{ rect.Right() - 44.0f, rect.Y + 9.0f, 28.0f, 28.0f };
@@ -342,7 +381,7 @@ namespace Game
 			const UiInteraction interaction = Interact(closeId, close);
 			const float hover = Animate(closeId, interaction.Hovered);
 			const glm::vec2 center = close.Center();
-			draw.Diamond(center, 26.0f, Rgba(0.94f, 0.39f, 0.43f, 0.16f * hover), WithAlpha(glm::mix(Theme::Edge, Theme::Danger, hover), 0.6f + 0.4f * hover), 1.0f);
+			draw.Rect(UiRect::Centered(center, glm::vec2(24.0f)), { .Fill = Rgba(0.94f, 0.39f, 0.43f, 0.14f * hover), .Radius = 12.0f, .Border = WithAlpha(glm::mix(Theme::Edge, Theme::Danger, hover), 0.6f + 0.4f * hover), .BorderWidth = 1.0f });
 			const UiColor cross = glm::mix(Theme::Muted, Hex(0xFFB8C0), hover);
 			draw.Line(center - glm::vec2(4.5f), center + glm::vec2(4.5f), 1.6f, cross);
 			draw.Line(center + glm::vec2(-4.5f, 4.5f), center + glm::vec2(4.5f, -4.5f), 1.6f, cross);
@@ -359,11 +398,12 @@ namespace Game
 		if (label.empty())
 		{
 			FadedLine(draw, rect.X, y, rect.W, WithAlpha(Theme::Edge, 0.95f));
-			draw.Diamond({ rect.Center().x, y + 0.5f }, 7.0f, Theme::AccentLight, WithAlpha(Theme::Ink, 0.9f), 1.0f);
+			draw.Rect(UiRect::Centered({ rect.Center().x, y + 0.5f }, glm::vec2(9.0f)), { .Fill = Theme::Ink, .Radius = 4.5f });
+			Orrery(draw, { rect.Center().x, y + 0.5f }, 3.5f, Theme::Accent);
 			return;
 		}
 		const TextStyle style = Theme::Caps(13.5f, Theme::AccentLight, 1.6f);
-		draw.Diamond({ rect.X + 4.0f, y + 0.5f }, 7.0f, Theme::Accent);
+		Orrery(draw, { rect.X + 4.0f, y + 0.5f }, 3.5f, Theme::Accent);
 		const float width = draw.MeasureWidth(label, style);
 		draw.TextAligned({ rect.X + 14.0f, rect.Y, width, rect.H }, label, style, { 0.0f, 0.5f });
 		const float start = rect.X + width + 24.0f;
@@ -380,15 +420,15 @@ namespace Game
 			Block(rect);
 		const float hover = Animate(id, interaction.Hovered);
 		const bool pressed = interaction.Held && interaction.Hovered;
-		UiColor top = Hex(0x1D1836, 0.92f);
-		UiColor bottom = Hex(0x0D0B1B, 0.94f);
+		UiColor top = Hex(0x16171F, 0.9f);
+		UiColor bottom = Hex(0x0A0A10, 0.92f);
 		UiColor border = Theme::Edge;
 		UiColor light = Theme::Astral;
 		UiColor text = Theme::Text;
 		if (kind == ButtonKind::Primary)
 		{
-			top = Hex(0x3C2C74);
-			bottom = Hex(0x1A1241);
+			top = Hex(0x3A2E18);
+			bottom = Hex(0x17120A);
 			border = Theme::Gold;
 			light = Theme::Gold;
 			text = Theme::GoldLight;
@@ -418,27 +458,18 @@ namespace Game
 		}
 		UiDrawList& draw = Draw();
 		const UiRect body = rect.Translate({ 0.0f, pressed ? 1.0f : 0.0f });
-		const float chamfer = std::min(8.0f, body.H * 0.3f);
-		const float seed = float(id % 997u) / 997.0f;
-		draw.Rect(rect.Translate({ 0.0f, 3.0f }), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.5f), .Softness = 6.0f, .Chamfer = chamfer });
+		draw.Rect(rect.Translate({ 0.0f, 4.0f }), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.5f), .Softness = 8.0f });
 		if (enabled && hover > 0.01f)
-			draw.Rect(body.Expand(3.0f), { .Fill = WithAlpha(light, 0.16f * hover), .Softness = 10.0f, .Chamfer = chamfer + 3.0f, .Additive = 1.0f });
-		const float flow = enabled ? ((kind == ButtonKind::Primary ? 0.55f : 0.0f) + 0.6f * hover) * m_Motion : 0.0f;
-		draw.Rect(body, { .Fill = top, .FillBottom = bottom, .Border = border, .BorderWidth = 1.2f, .Glow = WithAlpha(light, enabled ? 0.07f + 0.15f * hover : 0.0f), .GlowSize = 12.0f, .Chamfer = chamfer, .Flow = flow, .Seed = seed });
-		if (enabled && hover > 0.01f)
+			draw.Rect(body.Expand(4.0f), { .Fill = WithAlpha(light, 0.1f * hover), .Softness = 12.0f, .Additive = 1.0f });
+		draw.Rect(body, { .Fill = top, .FillBottom = bottom, .Radius = 2.0f, .Border = border, .BorderWidth = 1.0f, .Glow = WithAlpha(light, enabled ? 0.05f + 0.12f * hover : 0.0f), .GlowSize = 12.0f, .Lit = 0.7f });
+		if (kind == ButtonKind::Primary)
+			draw.Rect(body.Shrink(3.0f), { .Radius = 1.0f, .Border = WithAlpha(border, 0.35f + 0.3f * hover), .BorderWidth = 1.0f });
+		if (enabled)
 		{
-			const float cycle = std::fmod(Since(id ^ 0x9E3779B97F4A7C15ull, interaction.Hovered), 2.6f) / 0.9f;
-			if (cycle < 1.0f)
-			{
-				const float band = std::max(body.H * 1.2f, 30.0f);
-				const float x = body.X - band + cycle * (body.W + 2.0f * band);
-				draw.PushClip(body.Shrink(1.5f));
-				draw.Rect({ x, body.Y, band * 0.5f, body.H }, { .Fill = WithAlpha(light, 0.0f), .FillBottom = WithAlpha(light, 0.2f * hover), .Horizontal = true, .Additive = 1.0f });
-				draw.Rect({ x + band * 0.5f, body.Y, band * 0.5f, body.H }, { .Fill = WithAlpha(light, 0.2f * hover), .FillBottom = WithAlpha(light, 0.0f), .Horizontal = true, .Additive = 1.0f });
-				draw.PopClip();
-			}
+			const float reach = (body.W * 0.5f - 10.0f) * (0.25f + 0.75f * hover);
+			FadedLine(draw, body.Center().x - reach, body.Bottom() - 1.0f, reach * 2.0f, WithAlpha(light, 0.15f + 0.6f * hover));
 		}
-		FadedLine(draw, body.X + chamfer, body.Y + 1.0f, body.W - 2.0f * chamfer, Rgba(0.9f, 0.88f, 1.0f, 0.08f + 0.1f * hover));
+		FadedLine(draw, body.X + 10.0f, body.Y + 1.0f, body.W - 20.0f, Rgba(1.0f, 0.95f, 0.85f, 0.06f + 0.08f * hover));
 		const float iconSize = icon ? 19.0f : 0.0f;
 		const float gap = icon && !label.empty() ? 8.0f : 0.0f;
 		TextStyle style = Theme::Caps(15.5f, text, 0.9f);
@@ -476,49 +507,56 @@ namespace Game
 		const float hover = Animate(id, interaction.Hovered, 9.0f);
 		const float chosen = Animate(id ^ 0xA5A5A5A55A5A5A5Aull, selected, 8.0f);
 		const float lit = std::max(hover, chosen);
-		const UiColor tone = selected ? Theme::Gold : Theme::Accent;
+		const UiColor tone = selected ? Theme::Gold : Theme::Astral;
 		UiDrawList& draw = Draw();
-		TextStyle titleStyle = Theme::Caps(25.0f, glm::mix(Theme::Text, selected ? Theme::GoldLight : Hex(0xFFFFFF), lit), 2.0f + 0.8f * hover);
-		titleStyle.ColorBottom = glm::mix(Theme::Muted, selected ? Theme::Gold : Theme::AccentLight, lit);
+		TextStyle titleStyle = Theme::Caps(26.0f, glm::mix(Theme::Text, selected ? Theme::GoldLight : Hex(0xFFFFFF), lit), 1.6f + 1.4f * hover);
+		titleStyle.ColorBottom = glm::mix(Hex(0xC9C0B0), selected ? Theme::Gold : Theme::AccentLight, lit);
 		titleStyle.ShadowOffset = { 0.0f, 2.0f };
 		titleStyle.ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.8f);
 		titleStyle.ShadowBlur = 3.0f;
-		titleStyle.GlowColor = WithAlpha(tone, 0.5f * lit);
-		titleStyle.GlowBlur = 9.0f;
-		titleStyle.Shimmer = 0.45f * hover;
+		titleStyle.GlowColor = WithAlpha(tone, 0.35f * lit);
+		titleStyle.GlowBlur = 10.0f;
 		const TextStyle subtitleStyle = Theme::Body(14.5f, glm::mix(Theme::Faint, Theme::Muted, lit));
 		const float titleWidth = draw.MeasureWidth(title, titleStyle);
 		const float top = subtitle.empty() ? rect.Center().y - 16.0f : rect.Y + 2.0f;
-		const float middle = top + 16.0f;
-		const float x = centered ? rect.Center().x - titleWidth * 0.5f : rect.X + 34.0f + 8.0f * lit;
+		const float middle = top + 17.0f;
+		const float x = centered ? rect.Center().x - titleWidth * 0.5f : rect.X + 34.0f + 6.0f * lit;
 		draw.TextAligned({ x, top, titleWidth + 4.0f, 32.0f }, title, titleStyle, { 0.0f, 0.5f });
 		if (!subtitle.empty())
 		{
 			const float subtitleWidth = draw.MeasureWidth(subtitle, subtitleStyle);
-			draw.Text({ centered ? rect.Center().x - subtitleWidth * 0.5f : x + 2.0f, top + 33.0f }, subtitle, subtitleStyle);
+			draw.Text({ centered ? rect.Center().x - subtitleWidth * 0.5f : x + 2.0f, top + 34.0f }, subtitle, subtitleStyle);
 		}
-		const auto marker = [&](glm::vec2 at)
+		const auto marker = [&](glm::vec2 at, float spin)
 		{
 			if (lit > 0.01f)
-				draw.Rect(UiRect::Centered(at, glm::vec2(18.0f)), { .Fill = WithAlpha(tone, 0.45f * lit), .Radius = 9.0f, .Softness = 7.0f, .Additive = 1.0f });
-			draw.Diamond(at, 10.0f + 3.0f * lit, glm::mix(WithAlpha(Theme::Ink, 0.6f), selected ? Theme::Gold : Theme::AccentLight, lit), glm::mix(Theme::Edge, Theme::AccentLight, lit), 1.2f);
-			if (chosen > 0.01f)
-				draw.Sigil(at, 15.0f, { .Color = WithAlpha(Theme::Gold, 0.85f * chosen), .Accent = WithAlpha(Theme::AccentLight, 0.85f * chosen), .Speed = 2.0f, .LineWidth = 1.0f, .Glow = 0.5f, .Layers = SigilRings, .Progress = chosen });
+				draw.Rect(UiRect::Centered(at, glm::vec2(26.0f)), { .Fill = WithAlpha(tone, 0.22f * lit), .Radius = 13.0f, .Softness = 9.0f, .Additive = 1.0f });
+			const UiColor ring = glm::mix(WithAlpha(Theme::Edge, 0.9f), tone, lit);
+			draw.Rect(UiRect::Centered(at, glm::vec2(9.0f)), { .Fill = glm::mix(WithAlpha(Theme::Ink, 0.7f), WithAlpha(tone, 0.9f), chosen), .Radius = 4.5f, .Border = ring, .BorderWidth = 1.0f });
+			if (lit > 0.01f)
+			{
+				const float orbit = 9.0f + 2.0f * lit;
+				draw.Rect(UiRect::Centered(at, glm::vec2(orbit * 2.0f)), { .Radius = orbit, .Border = WithAlpha(ring, 0.45f * lit), .BorderWidth = 1.0f });
+				const float angle = m_Time * 1.7f * spin + float(id % 628u) * 0.01f;
+				draw.Rect(UiRect::Centered(at + orbit * glm::vec2(std::cos(angle), std::sin(angle)), glm::vec2(3.2f)), { .Fill = WithAlpha(Lighten(tone, 0.4f), lit), .Radius = 1.6f });
+			}
 		};
 		if (!centered)
-			marker({ rect.X + 14.0f, middle });
+		{
+			marker({ rect.X + 14.0f, middle }, 1.0f);
+		}
 		else
 		{
-			marker({ x - 24.0f, middle });
-			marker({ x + titleWidth + 24.0f, middle });
+			marker({ x - 26.0f, middle }, 1.0f);
+			marker({ x + titleWidth + 26.0f, middle }, -1.0f);
 		}
 		if (lit > 0.01f)
 		{
 			const float width = (titleWidth + 30.0f) * lit;
 			if (!centered)
-				draw.Rect({ x - 6.0f, top + 30.0f, width, 1.0f }, { .Fill = WithAlpha(Theme::AccentLight, 0.75f * lit), .FillBottom = WithAlpha(Theme::AccentLight, 0.0f), .Horizontal = true });
+				draw.Rect({ x - 6.0f, top + 31.0f, width, 1.0f }, { .Fill = WithAlpha(Theme::AccentLight, 0.6f * lit), .FillBottom = WithAlpha(Theme::AccentLight, 0.0f), .Horizontal = true });
 			else
-				FadedLine(draw, rect.Center().x - width * 0.5f, top + 30.0f, width, WithAlpha(Theme::AccentLight, 0.75f * lit));
+				FadedLine(draw, rect.Center().x - width * 0.5f, top + 31.0f, width, WithAlpha(Theme::AccentLight, 0.6f * lit));
 		}
 		const bool clicked = interaction.Clicked;
 		m_Clicks += clicked ? 1u : 0u;
@@ -534,9 +572,9 @@ namespace Game
 		const glm::vec2 center(rect.X + 10.0f, rect.Center().y);
 		if (on > 0.01f)
 			draw.Rect(UiRect::Centered(center, glm::vec2(22.0f)), { .Fill = WithAlpha(Theme::Accent, 0.35f * on), .Radius = 11.0f, .Softness = 8.0f, .Additive = 1.0f });
-		draw.Diamond(center, 19.0f, Theme::SlotBottom, glm::mix(Theme::Edge, Theme::Astral, hover), 1.3f);
+		draw.Rect(UiRect::Centered(center, glm::vec2(16.0f)), { .Fill = Theme::SlotBottom, .Radius = 8.0f, .Border = glm::mix(Theme::Edge, Theme::Astral, hover), .BorderWidth = 1.0f });
 		if (on > 0.01f)
-			draw.Diamond(center, 10.0f * on, glm::mix(Theme::Accent, Theme::AccentLight, 0.45f));
+			draw.Rect(UiRect::Centered(center, glm::vec2(8.0f * on)), { .Fill = glm::mix(Theme::Accent, Theme::AccentLight, 0.45f), .Radius = 4.0f * on });
 		draw.TextAligned({ rect.X + 28.0f, rect.Y, rect.W - 28.0f, rect.H }, label, Theme::Body(16.0f, glm::mix(Theme::Text, Theme::AccentLight, hover * 0.7f)), { 0.0f, 0.5f });
 		if (interaction.Clicked)
 		{
@@ -575,7 +613,8 @@ namespace Game
 		draw.Rect({ track.X, track.Center().y - 4.0f, track.W * fraction, 8.0f }, { .Fill = WithAlpha(Theme::Accent, 0.0f), .FillBottom = WithAlpha(Theme::Accent, 0.35f), .Softness = 3.0f, .Horizontal = true, .Additive = 1.0f });
 		const glm::vec2 knob(track.X + track.W * fraction, track.Center().y);
 		draw.Rect(UiRect::Centered(knob, glm::vec2(22.0f)), { .Fill = WithAlpha(Theme::Astral, 0.22f + 0.3f * hover), .Radius = 11.0f, .Softness = 7.0f, .Additive = 1.0f });
-		draw.Diamond(knob, 15.0f + 2.0f * hover, glm::mix(Theme::AccentLight, Theme::Astral, hover * 0.5f), Theme::Ink, 1.2f);
+		draw.Rect(UiRect::Centered(knob, glm::vec2(18.0f + 2.0f * hover)), { .Radius = 9.0f + hover, .Border = WithAlpha(glm::mix(Theme::Accent, Theme::Astral, hover), 0.7f), .BorderWidth = 1.0f });
+		draw.Rect(UiRect::Centered(knob, glm::vec2(8.0f)), { .Fill = glm::mix(Theme::AccentLight, Theme::Astral, hover * 0.5f), .Radius = 4.0f, .Border = Theme::Ink, .BorderWidth = 1.0f });
 		draw.TextAligned(label, text, Theme::Body(15.0f, Theme::Muted), { 1.0f, 0.5f });
 		return changed;
 	}
@@ -594,7 +633,7 @@ namespace Game
 		const UiInteraction next = Interact(id ^ 0x2E2E2E2E2E2Eull, right);
 		const UiInteraction middle = Interact(id, area);
 		const float hover = Animate(id, middle.Hovered);
-		draw.Rect(area.Shrink(2.0f, 2.0f), { .Fill = Hex(0x0A0816, 0.8f), .FillBottom = Hex(0x15102B, 0.8f), .Border = WithAlpha(glm::mix(Theme::Edge, Theme::Astral, hover), 0.75f), .BorderWidth = 1.0f, .Chamfer = 6.0f });
+		draw.Rect(area.Shrink(2.0f, 2.0f), { .Fill = Hex(0x08080F, 0.8f), .FillBottom = Hex(0x111220, 0.8f), .Radius = 2.0f, .Border = WithAlpha(glm::mix(Theme::Edge, Theme::Astral, hover), 0.75f), .BorderWidth = 1.0f });
 		const float leftHover = Animate(id ^ 0x1F1F1F1F1F1Full, previous.Hovered);
 		const float rightHover = Animate(id ^ 0x2E2E2E2E2E2Eull, next.Hovered);
 		draw.Triangle(left.Center(), { 10.0f, 9.0f }, -Pi * 0.5f, glm::mix(Theme::Muted, Theme::Astral, leftHover));
@@ -604,7 +643,7 @@ namespace Game
 		for (int i = 0; i < count; i++)
 		{
 			const glm::vec2 pip(area.Center().x + (float(i) - float(count - 1) * 0.5f) * 10.0f, pipY);
-			draw.Diamond(pip, 5.0f, i == index ? Theme::Accent : WithAlpha(Theme::Edge, 0.6f));
+			draw.Rect(UiRect::Centered(pip, glm::vec2(4.0f)), { .Fill = i == index ? Theme::Accent : WithAlpha(Theme::Edge, 0.6f), .Radius = 2.0f });
 		}
 		int step = 0;
 		if (previous.Clicked)
@@ -638,13 +677,13 @@ namespace Game
 			const float on = Animate(tabId ^ 0x5A17ED7AB5ull, i == index, 14.0f);
 			if (on > 0.01f)
 			{
-				draw.Rect({ tab.X + 8.0f, tab.Y + 4.0f, tab.W - 16.0f, line - tab.Y - 4.0f }, { .Fill = WithAlpha(Theme::Accent, 0.0f), .FillBottom = WithAlpha(Theme::Accent, 0.16f * on), .Chamfer = 6.0f });
+				draw.Rect({ tab.X + 8.0f, tab.Y + 4.0f, tab.W - 16.0f, line - tab.Y - 4.0f }, { .Fill = WithAlpha(Theme::Accent, 0.0f), .FillBottom = WithAlpha(Theme::Accent, 0.12f * on) });
 				const float underline = (tab.W - 28.0f) * (0.4f + 0.6f * on);
 				draw.Rect({ tab.Center().x - underline * 0.5f, line - 1.0f, underline, 3.0f }, { .Fill = WithAlpha(Theme::GoldLight, on), .FillBottom = WithAlpha(Theme::Gold, on), .Glow = WithAlpha(Theme::Gold, 0.35f * on), .GlowSize = 8.0f });
-				draw.Diamond({ tab.Center().x, line + 0.5f }, 8.0f * on, WithAlpha(Theme::GoldLight, on), WithAlpha(Theme::Ink, 0.9f * on), 1.0f);
+				draw.Rect(UiRect::Centered({ tab.Center().x, line + 0.5f }, glm::vec2(6.0f * on)), { .Fill = WithAlpha(Theme::GoldLight, on), .Radius = 3.0f * on, .Border = WithAlpha(Theme::Ink, 0.9f * on), .BorderWidth = 1.0f });
 			}
 			else if (hover > 0.01f)
-				draw.Rect({ tab.X + 8.0f, tab.Y + 4.0f, tab.W - 16.0f, line - tab.Y - 4.0f }, { .Fill = WithAlpha(Theme::Astral, 0.0f), .FillBottom = WithAlpha(Theme::Astral, 0.08f * hover), .Chamfer = 6.0f });
+				draw.Rect({ tab.X + 8.0f, tab.Y + 4.0f, tab.W - 16.0f, line - tab.Y - 4.0f }, { .Fill = WithAlpha(Theme::Astral, 0.0f), .FillBottom = WithAlpha(Theme::Astral, 0.07f * hover) });
 			const UiColor color = glm::mix(glm::mix(Theme::Muted, Theme::AccentLight, hover), Theme::GoldLight, on);
 			draw.TextAligned({ tab.X, tab.Y, tab.W, line - tab.Y }, labels[size_t(i)], Theme::Caps(14.5f, color, 2.0f), { 0.5f, 0.5f });
 			if (interaction.Clicked && i != index)
@@ -830,8 +869,8 @@ namespace Game
 		}
 
 		const float hover = Animate(id, interaction.Hovered || focused);
-		draw.Rect(rect, { .Fill = Hex(0x07060E, 0.88f), .FillBottom = Hex(0x120E24, 0.88f), .Border = focused ? Theme::Astral : glm::mix(WithAlpha(Theme::Edge, 0.75f), Lighten(Theme::Edge, 0.2f), hover), .BorderWidth = 1.2f,
-			.Glow = focused ? WithAlpha(Theme::Astral, 0.1f) : UiColor(0.0f), .GlowSize = 10.0f, .Chamfer = 7.0f, .Flow = focused ? 0.7f * m_Motion : 0.0f, .Seed = 0.37f });
+		draw.Rect(rect, { .Fill = Hex(0x06060B, 0.88f), .FillBottom = Hex(0x10111C, 0.88f), .Border = focused ? Theme::Astral : glm::mix(WithAlpha(Theme::Edge, 0.75f), Lighten(Theme::Edge, 0.2f), hover), .BorderWidth = 1.2f,
+			.Glow = focused ? WithAlpha(Theme::Astral, 0.1f) : UiColor(0.0f), .GlowSize = 10.0f });
 		draw.PushClip(area);
 		if (focused)
 		{
@@ -911,11 +950,11 @@ namespace Game
 		position = glm::max(position, glm::vec2(8.0f));
 		const UiRect box{ position.x, position.y, width, height };
 
-		draw.Rect(box.Translate({ 0.0f, 6.0f }).Expand(2.0f), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.65f), .Softness = 16.0f, .Chamfer = 10.0f });
-		draw.Rect(box, { .Fill = Hex(0x120E22, 0.97f), .FillBottom = Hex(0x07060E, 0.97f), .Border = m_Tooltip.Accent, .BorderWidth = 1.3f, .Glow = WithAlpha(m_Tooltip.Accent, 0.08f), .GlowSize = 20.0f, .Chamfer = 8.0f, .Aether = 0.5f, .Seed = 0.71f });
+		draw.Rect(box.Translate({ 0.0f, 6.0f }).Expand(2.0f), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.65f), .Softness = 16.0f });
+		draw.Rect(box, { .Fill = Hex(0x10111B, 0.97f), .FillBottom = Hex(0x07070D, 0.97f), .Radius = 2.0f, .Border = m_Tooltip.Accent, .BorderWidth = 1.0f, .Glow = WithAlpha(m_Tooltip.Accent, 0.06f), .GlowSize = 20.0f });
 		const bool header = !m_Tooltip.Lines.empty() && (m_Tooltip.Lines.front().Image || m_Tooltip.Lines.front().Icon || m_Tooltip.Lines.front().Style.Font == UiFont::Bold);
 		if (header)
-			draw.Rect({ box.X + 2.0f, box.Y + 2.0f, box.W - 4.0f, m_Tooltip.Lines.front().Height + Padding + 4.0f }, { .Fill = WithAlpha(m_Tooltip.Accent, 0.28f), .FillBottom = WithAlpha(m_Tooltip.Accent, 0.0f), .Chamfer = 7.0f });
+			draw.Rect({ box.X + 2.0f, box.Y + 2.0f, box.W - 4.0f, m_Tooltip.Lines.front().Height + Padding + 4.0f }, { .Fill = WithAlpha(m_Tooltip.Accent, 0.28f), .FillBottom = WithAlpha(m_Tooltip.Accent, 0.0f) });
 
 		float y = box.Y + Padding;
 		const float x = box.X + Padding;

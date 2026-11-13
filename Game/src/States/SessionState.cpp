@@ -2409,9 +2409,12 @@ namespace Game
 		{
 			if (m_Client.GetState() == ClientState::InGame)
 				return false;
-			BackdropView view = BackdropMoods[size_t(m_Config.Host ? BackdropMood::Kindle : BackdropMood::Seek)];
+			BackdropView view;
 			view.Time = m_App.GetUi().GetTime() + 30.0f;
-			return m_App.GetMenuBackdrop().Render(graph, target, extent, view);
+			view.Mood = m_Config.Host ? BackdropMood::Kindle : BackdropMood::Seek;
+			view.Dive = m_Time;
+			view.UiScale = m_App.GetUi().GetScale();
+			return m_App.GetMenuBackdrop().Render(graph, target, extent, frameIndex, view);
 		}
 		if (extent != m_Extent)
 		{
@@ -2548,6 +2551,8 @@ namespace Game
 			}
 		}
 		renderer.Render(graph, target, extent, frameIndex, { 0.05f, 0.055f, 0.07f, 1.0f });
+		if (m_Paused)
+			m_App.GetMenuBackdrop().RenderVeil(graph, extent, m_App.GetUi().GetTime());
 		return true;
 	}
 
@@ -4491,7 +4496,11 @@ namespace Game
 		const glm::vec2 center = ui.GetSize() * 0.5f + glm::vec2(0.0f, -40.0f);
 		const float time = ui.GetTime();
 		draw.Rect(UiRect::Centered(center, glm::vec2(330.0f)), { .Fill = Rgba(0.01f, 0.008f, 0.03f, 0.6f), .Radius = 165.0f, .Softness = 60.0f });
-		draw.Sigil(center, 112.0f, { .Color = WithAlpha(Theme::AccentLight, 0.75f), .Accent = WithAlpha(Theme::Astral, 0.85f), .Speed = 3.0f, .Phase = 0.21f, .LineWidth = 1.2f, .Glow = 0.8f, .Points = 7, .Skip = 3 });
+		draw.Rect(UiRect::Centered(center, glm::vec2(208.0f)), { .Radius = 104.0f, .Border = WithAlpha(Theme::Accent, 0.45f), .BorderWidth = 1.0f, .Glow = WithAlpha(Theme::Astral, 0.08f), .GlowSize = 18.0f });
+		draw.Rect(UiRect::Centered(center, glm::vec2(136.0f)), { .Radius = 68.0f, .Border = WithAlpha(Theme::Edge, 0.35f), .BorderWidth = 1.0f });
+		const float pulse = 0.75f + 0.25f * std::sin(time * 2.2f);
+		draw.Rect(UiRect::Centered(center, glm::vec2(90.0f * pulse)), { .Fill = WithAlpha(Theme::Astral, 0.22f), .Radius = 45.0f * pulse, .Softness = 30.0f * pulse, .Additive = 1.0f });
+		draw.Rect(UiRect::Centered(center, glm::vec2(10.0f)), { .Fill = Rgba(0.95f, 1.0f, 1.0f, 0.95f), .Radius = 5.0f, .Softness = 2.0f, .Additive = 1.0f });
 		for (int i = 0; i < 3; i++)
 		{
 			const float angle = time * 1.7f + float(i) * 2.0943951f;
@@ -4501,7 +4510,6 @@ namespace Game
 		}
 		TextStyle title = Theme::Title(30.0f);
 		title.Tracking = 4.0f;
-		title.Shimmer = 0.5f;
 		draw.TextAligned({ 0.0f, center.y + 136.0f, ui.GetSize().x, 40.0f }, m_Config.Host ? "Opening the Rift" : "Following the Rift", title, { 0.5f, 0.5f });
 		const std::string detail = m_Config.Host ? "Binding UDP port " + std::to_string(m_Config.Port)
 			: m_Config.RelayHost != 0 ? "Reaching " + (m_Config.HostName.empty() ? std::string("your friend") : m_Config.HostName) + " through Steam" : "Reaching " + m_Config.Address;
@@ -5874,10 +5882,8 @@ namespace Game
 		const float appear = std::min(m_PauseTime / 0.3f, 1.0f);
 		const UiRect screen = ui.GetScreen();
 		const glm::vec2 center = screen.Center();
-		draw.Rect(screen, { .Fill = Rgba(0.02f, 0.012f, 0.05f, 0.64f * appear), .Glow = Rgba(0.0f, 0.0f, 0.02f, 0.75f * appear), .GlowSize = 320.0f });
+		draw.Veil(screen, appear);
 		ui.Block(screen);
-		draw.Sigil(center, std::min(screen.H * 0.46f, 400.0f), { .Color = WithAlpha(Theme::AccentLight, 0.13f * appear), .Accent = WithAlpha(Theme::Astral, 0.17f * appear), .Speed = 0.5f, .Phase = 0.53f, .LineWidth = 1.2f, .Glow = 0.35f,
-			.Points = 9, .Skip = 4, .Progress = std::min(m_PauseTime / 1.1f, 1.0f) });
 
 		if (m_PauseInvite)
 			return DrawInvitePage(center);
@@ -5886,9 +5892,8 @@ namespace Game
 		const bool subpage = m_PauseSettings || m_PauseWardrobe;
 		TextStyle title = Theme::Title(subpage ? 30.0f : 44.0f);
 		title.Tracking = subpage ? 2.5f : 7.0f;
-		title.GlowColor = WithAlpha(Theme::Accent, 0.55f);
+		title.GlowColor = WithAlpha(Theme::Accent, 0.2f);
 		title.GlowBlur = 10.0f;
-		title.Shimmer = 0.5f;
 		if (m_PauseSettings)
 		{
 			const UiRect panel = UiRect::Centered(center, { 600.0f, std::min(872.0f, screen.H - 40.0f) });

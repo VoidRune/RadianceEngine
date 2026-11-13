@@ -27,7 +27,7 @@ namespace Game
 	inline constexpr UiFontFile UiFontFiles[] = {
 		{ "res/Fonts/AlegreyaSans-Medium.ttf", UiTextRanges },
 		{ "res/Fonts/AlegreyaSans-Bold.ttf", UiTextRanges },
-		{ "res/Fonts/Cinzel.ttf", UiTitleRanges },
+		{ "res/Fonts/CormorantSC-SemiBold.ttf", UiTitleRanges },
 	};
 
 	inline constexpr const char* UiIconFiles[] = {

@@ -58,24 +58,24 @@ namespace Game
 
 	namespace Theme
 	{
-		inline const UiColor Text = Hex(0xECE8F6);
-		inline const UiColor Muted = Hex(0xA59EBD);
-		inline const UiColor Faint = Hex(0x6F688A);
-		inline const UiColor Edge = Hex(0x6D61A8);
-		inline const UiColor Accent = Hex(0xA48BFF);
-		inline const UiColor AccentLight = Hex(0xDDD3FF);
-		inline const UiColor AccentDark = Hex(0x3F3274);
-		inline const UiColor Astral = Hex(0x8CE7F4);
-		inline const UiColor Gold = Hex(0xE8C47E);
-		inline const UiColor GoldLight = Hex(0xF8E8C0);
+		inline const UiColor Text = Hex(0xEEE8DC);
+		inline const UiColor Muted = Hex(0xA8A1B2);
+		inline const UiColor Faint = Hex(0x6E687E);
+		inline const UiColor Edge = Hex(0x857455);
+		inline const UiColor Accent = Hex(0xD6BC84);
+		inline const UiColor AccentLight = Hex(0xF3E5C2);
+		inline const UiColor AccentDark = Hex(0x3A3122);
+		inline const UiColor Astral = Hex(0x9FDCEA);
+		inline const UiColor Gold = Hex(0xF2C978);
+		inline const UiColor GoldLight = Hex(0xFFF1CF);
 		inline const UiColor GoldDark = Hex(0x8E6C36);
-		inline const UiColor Ink = Hex(0x06050D);
-		inline const UiColor PanelTop = Hex(0x15112A, 0.93f);
-		inline const UiColor PanelBottom = Hex(0x090714, 0.95f);
-		inline const UiColor CardTop = Hex(0x17132C, 0.9f);
-		inline const UiColor CardBottom = Hex(0x0C0A19, 0.92f);
-		inline const UiColor SlotTop = Hex(0x120F23);
-		inline const UiColor SlotBottom = Hex(0x08070F);
+		inline const UiColor Ink = Hex(0x05050A);
+		inline const UiColor PanelTop = Hex(0x0D0E1A, 0.86f);
+		inline const UiColor PanelBottom = Hex(0x07070F, 0.9f);
+		inline const UiColor CardTop = Hex(0x13141F, 0.82f);
+		inline const UiColor CardBottom = Hex(0x0B0B13, 0.86f);
+		inline const UiColor SlotTop = Hex(0x12131D);
+		inline const UiColor SlotBottom = Hex(0x08080D);
 		inline const UiColor Danger = Hex(0xF0646E);
 		inline const UiColor Success = Hex(0x83E0A6);
 		inline const UiColor Warning = Hex(0xF2C46A);
@@ -146,6 +146,8 @@ namespace Game
 		float GetTime() const { return m_Time; }
 		float GetDeltaTime() const { return m_DeltaTime; }
 		void SetMotion(float motion) { m_Motion = motion; }
+		void SetOpacity(float opacity) { m_Opacity = opacity; }
+		float GetOpacity() const { return m_Opacity; }
 		glm::vec2 GetMouse() const { return m_Mouse; }
 		glm::vec2 ToLogical(glm::vec2 pixels) const { return pixels / m_Scale; }
 
@@ -212,6 +214,7 @@ namespace Game
 		float m_Time = 0.0f;
 		float m_DeltaTime = 0.0f;
 		float m_Motion = 0.0f;
+		float m_Opacity = 1.0f;
 		glm::vec2 m_Mouse{ 0.0f };
 		glm::vec2 m_PreviousMouse{ 0.0f };
 		glm::vec2 m_PressPosition{ 0.0f };

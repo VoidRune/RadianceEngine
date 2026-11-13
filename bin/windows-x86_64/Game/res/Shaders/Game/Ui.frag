@@ -3,6 +3,7 @@
 #include "UiCommon.glsl"
 
 layout(set = 0, binding = 1) uniform sampler2D Textures[8];
+layout(set = 0, binding = 2) uniform sampler2D BackdropLight;
 
 const uint ModeRect = 0u;
 const uint ModeGlyph = 1u;
@@ -125,6 +126,13 @@ void main()
 		float d = Frame(inLocal, extent, primitive.Shape.x, primitive.Uv.x);
 		float softness = primitive.Shape.z;
 		float coverage = softness > 0.0 ? 1.0 - smoothstep(-softness, softness, d) : Coverage(d, pixel);
+		if (primitive.Params.w > 0.0 && pc.Backdrop > 0.5)
+		{
+			vec3 environment = texture(BackdropLight, inScreen / pc.ScreenSize).rgb;
+			float glance = dot(environment, vec3(0.3, 0.55, 0.15));
+			border.rgb = border.rgb * (0.6 + 1.6 * glance * primitive.Params.w) + environment * 0.5 * primitive.Params.w;
+			border.a = min(border.a * (0.75 + 1.2 * glance * primitive.Params.w), 1.0);
+		}
 		if (primitive.Uv.z > 0.0)
 			fill.rgb += Aether(inScreen, border.a > 0.0 ? border.rgb : extra.rgb, primitive.Uv.w, primitive.Params.z) * primitive.Uv.z;
 		vec4 color = Premultiply(fill);

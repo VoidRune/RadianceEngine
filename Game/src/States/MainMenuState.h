@@ -4,6 +4,7 @@
 #include <GameShared/Content/Cosmetics.h>
 #include <GameShared/Save/CharacterProfile.h>
 #include <string>
+#include <vector>
 
 namespace Game
 {
@@ -13,7 +14,7 @@ namespace Game
 	class MainMenuState final : public AppState
 	{
 	public:
-		explicit MainMenuState(GameApp& app, std::string message = {});
+		explicit MainMenuState(GameApp& app, std::string message = {}, uint8_t page = 0);
 
 		void Update(float dt) override;
 		void DrawUi() override;
@@ -35,7 +36,6 @@ namespace Game
 		void DrawFriendGames(Ui& ui, UiRect area);
 		void RefreshCharacter();
 		void OpenPage(Page page);
-		void DrawMotes(Ui& ui);
 		void DrawTitle(Ui& ui);
 		void DrawMenu(Ui& ui, UiRect area);
 		void DrawPage(Ui& ui);
@@ -61,5 +61,18 @@ namespace Game
 		float m_Reveal = 0.0f;
 		float m_Time = 0.0f;
 		glm::vec2 m_Parallax{ 0.0f };
+		std::vector<UiPrimitive> m_TitleGlyphs;
+		std::vector<float> m_TitleWarmth;
+		UiRect m_PageRect;
+		float m_PageShown = 0.0f;
+		float m_Idle = 0.0f;
+		float m_Tour = 0.0f;
+		glm::vec2 m_Orbit{ 0.0f };
+		glm::vec2 m_OrbitTarget{ 0.0f };
+		glm::vec2 m_OrbitVelocity{ 0.0f };
+		glm::vec2 m_OrbitFling{ 0.0f };
+		bool m_Dragging = false;
+		float m_SinceDrag = 10.0f;
+		glm::vec2 m_LastPointer{ 0.0f };
 	};
 }

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <optional>
 
 namespace Game
 {
@@ -19,13 +20,13 @@ namespace Game
 	{
 		constexpr float MenuX = 64.0f;
 		constexpr float MenuTop = 300.0f;
-		constexpr float EntryHeight = 60.0f;
-		constexpr float PageX = 520.0f;
-		constexpr float PageWidth = 560.0f;
+		constexpr float PageX = 648.0f;
+		constexpr float IdleSeconds = 20.0f;
+		constexpr float OrbitHold = 2.5f;
+		constexpr float PageWidth = 480.0f;
 		constexpr float PageTop = 112.0f;
 		constexpr float PageHeight = 676.0f;
 		constexpr float SettingsPageHeight = 814.0f;
-		constexpr uint32_t Motes = 44;
 
 		bool NameCharacter(uint32_t codepoint)
 		{
@@ -42,16 +43,6 @@ namespace Game
 			return codepoint > 32 && codepoint < 127;
 		}
 
-		float Noise(uint32_t seed)
-		{
-			seed = (seed ^ 61u) ^ (seed >> 16);
-			seed *= 9u;
-			seed ^= seed >> 4;
-			seed *= 0x27D4EB2Du;
-			seed ^= seed >> 15;
-			return float(seed & 0xFFFFFF) / float(0xFFFFFF);
-		}
-
 		UiRect PageHeader(Ui& ui, UiRect area, std::string_view title, std::string_view subtitle)
 		{
 			UiDrawList& draw = ui.Draw();
@@ -66,13 +57,13 @@ namespace Game
 
 		void FieldLabel(Ui& ui, UiRect& area, std::string_view text)
 		{
-			ui.Draw().Text({ area.X, area.Y }, text, Theme::Caps(13.0f, Theme::Muted, 1.6f));
+			ui.Draw().Text({ area.X, area.Y }, text, Theme::Caps(13.0f, Theme::Accent, 1.6f));
 			area.CutTop(24.0f);
 		}
 	}
 
-	MainMenuState::MainMenuState(GameApp& app, std::string message)
-		: m_App(app), m_Message(std::move(message))
+	MainMenuState::MainMenuState(GameApp& app, std::string message, uint8_t page)
+		: m_App(app), m_Message(std::move(message)), m_Page(Page(page))
 	{
 		const Settings& settings = app.GetSettings();
 		m_Name = settings.PlayerName;
@@ -125,20 +116,77 @@ namespace Game
 		if (std::string error = steam.TakeError(); !error.empty())
 			m_Message = std::move(error);
 		const Ui& ui = m_App.GetUi();
-		const glm::vec2 mouse = glm::clamp(ui.GetMouse() / glm::max(ui.GetSize(), glm::vec2(1.0f)) * 2.0f - 1.0f, glm::vec2(-1.0f), glm::vec2(1.0f));
+		const glm::vec2 pointer = ui.GetMouse();
+		const glm::vec2 mouse = glm::clamp(pointer / glm::max(ui.GetSize(), glm::vec2(1.0f)) * 2.0f - 1.0f, glm::vec2(-1.0f), glm::vec2(1.0f));
 		m_Parallax += (mouse - m_Parallax) * (1.0f - std::exp(-dt * 1.2f));
-		m_Reveal = std::min(m_Reveal + dt / 0.42f, 1.0f);
+		m_Reveal = std::min(m_Reveal + dt / 0.6f, 1.0f);
+		const bool open = m_Page != Page::None;
+		m_PageShown += (float(open) - m_PageShown) * (1.0f - std::exp(-dt * (open ? 3.2f : 5.0f)));
+
+		const bool rightDown = Rdn::Input::IsKeyDown(Rdn::KeyCode::MouseRight);
+		const bool moved = glm::length(pointer - m_LastPointer) > 0.5f;
+		const bool active = moved || rightDown || Rdn::Input::IsKeyDown(Rdn::KeyCode::MouseLeft) || !Rdn::Input::GetTypedCharacters().empty()
+			|| Rdn::Input::IsKeyPressed(Rdn::KeyCode::Escape) || Rdn::Input::IsKeyPressed(Rdn::KeyCode::Enter) || Rdn::Input::GetScrollVertical() != 0.0f;
+		m_Idle = active ? 0.0f : m_Idle + dt;
+		const bool touring = !open && m_Idle > IdleSeconds;
+		m_Tour += ((touring ? 1.0f : 0.0f) - m_Tour) * (1.0f - std::exp(-dt * (touring ? 0.45f : 6.0f)));
+
+		if (rightDown && (m_Dragging || !ui.WantsMouse()))
+		{
+			if (m_Dragging && dt > 0.0f)
+			{
+				const glm::vec2 step = (pointer - m_LastPointer) * glm::vec2(0.0025f, 0.0018f);
+				m_OrbitTarget += step;
+				m_OrbitFling = glm::mix(m_OrbitFling, step / dt, 1.0f - std::exp(-dt * 12.0f));
+			}
+			m_Dragging = true;
+			m_SinceDrag = 0.0f;
+		}
+		else
+		{
+			m_Dragging = false;
+			m_SinceDrag += dt;
+			m_OrbitTarget += m_OrbitFling * 0.35f * dt;
+			m_OrbitFling *= std::exp(-dt * 3.5f);
+		}
+		m_OrbitTarget.y = std::clamp(m_OrbitTarget.y, -0.55f, 0.7f);
+		const bool returning = !m_Dragging && m_Tour < 0.02f && m_SinceDrag > OrbitHold;
+		if (returning)
+		{
+			const float turns = std::round(m_OrbitTarget.x / 6.2831853f) * 6.2831853f;
+			m_OrbitTarget.x -= turns;
+			m_Orbit.x -= turns;
+			m_OrbitTarget = glm::vec2(0.0f);
+			m_OrbitFling = glm::vec2(0.0f);
+		}
+		const float omega = returning ? 2.4f : 5.5f;
+		const glm::vec2 pull = omega * omega * (m_OrbitTarget - m_Orbit) - 2.0f * omega * m_OrbitVelocity;
+		m_OrbitVelocity += pull * dt;
+		m_Orbit += m_OrbitVelocity * dt;
+
+		m_LastPointer = pointer;
 	}
 
-	bool MainMenuState::Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t)
+	bool MainMenuState::Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex)
 	{
 		static_assert(uint8_t(Page::Host) == uint8_t(BackdropMood::Kindle) && uint8_t(Page::Settings) == uint8_t(BackdropMood::Attune) && uint8_t(Page::Wardrobe) == uint8_t(BackdropMood::Wardrobe));
-		BackdropView view = BackdropMoods[size_t(m_Page)];
-		view.Time = m_App.GetUi().GetTime() + 30.0f;
-		view.Focus = m_Page == Page::None ? 0.42f : 0.95f;
-		view.Mouse = { m_Parallax.x, -m_Parallax.y };
-		view.Fade = std::min(m_Time / 1.8f, 1.0f);
-		return m_App.GetMenuBackdrop().Render(graph, target, extent, view);
+		const Ui& ui = m_App.GetUi();
+		BackdropView view;
+		view.Time = ui.GetTime() + 30.0f;
+		view.Mood = BackdropMood(m_Page);
+		view.Mouse = ui.GetMouse();
+		view.Parallax = m_Parallax;
+		view.Fade = std::min(m_Time / 1.6f, 1.0f);
+		view.UiScale = ui.GetScale();
+		view.Title = m_TitleGlyphs;
+		view.TitleTime = m_Time;
+		view.Cloud = glm::vec4(m_PageRect.X - 34.0f, m_PageRect.Y - 30.0f, m_PageRect.W + 68.0f, m_PageRect.H + 60.0f);
+		view.PageShown = m_PageShown;
+		view.Orbit = m_Orbit;
+		const float tour = glm::smoothstep(0.0f, 1.0f, m_Tour);
+		view.Tour = tour;
+		view.TitleShown = 1.0f - tour;
+		return m_App.GetMenuBackdrop().Render(graph, target, extent, frameIndex, view);
 	}
 
 	void MainMenuState::DrawUi()
@@ -146,10 +194,9 @@ namespace Game
 		RefreshCharacter();
 		Ui& ui = m_App.GetUi();
 		ui.SetMotion(1.0f);
+		ui.SetOpacity(1.0f - glm::smoothstep(0.0f, 1.0f, m_Tour));
 		if (m_Page != Page::None && !ui.WantsKeyboard() && Rdn::Input::IsKeyPressed(Rdn::KeyCode::Escape))
 			OpenPage(Page::None);
-		ui.SetLayer(UiLayer::Background);
-		DrawMotes(ui);
 		ui.SetLayer(UiLayer::Hud);
 		DrawTitle(ui);
 		DrawMenu(ui, { MenuX, MenuTop, 420.0f, ui.GetSize().y - MenuTop - 24.0f });
@@ -160,97 +207,127 @@ namespace Game
 		}
 	}
 
-	void MainMenuState::DrawMotes(Ui& ui)
-	{
-		UiDrawList& draw = ui.Draw();
-		const UiRect screen = ui.GetScreen();
-		draw.Rect({ 0.0f, 0.0f, 640.0f, screen.H }, { .Fill = Rgba(0.01f, 0.008f, 0.03f, 0.72f), .FillBottom = Rgba(0.01f, 0.008f, 0.03f, 0.0f), .Horizontal = true });
-		for (uint32_t i = 0; i < Motes; i++)
-		{
-			const float speed = 5.0f + 15.0f * Noise(i * 3u + 1u);
-			const float travel = screen.H + 80.0f;
-			const float y = screen.H + 40.0f - std::fmod(m_Time * speed + Noise(i * 3u + 2u) * travel, travel);
-			const float x = Noise(i * 3u) * screen.W + std::sin(m_Time * (0.15f + 0.3f * Noise(i * 5u)) + float(i)) * 34.0f;
-			const float twinkle = 0.5f + 0.5f * std::sin(m_Time * (0.8f + Noise(i) * 2.4f) + float(i) * 1.7f);
-			const float size = 0.7f + 1.9f * Noise(i * 7u + 5u);
-			const float fade = std::clamp((screen.H - y) / 220.0f, 0.0f, 1.0f) * std::clamp(y / 160.0f, 0.0f, 1.0f) * std::min(m_Time / 2.0f, 1.0f);
-			const UiColor color = glm::mix(Theme::Astral, Theme::Accent, Noise(i * 11u));
-			const float alpha = (0.2f + 0.6f * twinkle) * fade;
-			draw.Rect(UiRect::Centered({ x, y }, glm::vec2(size * 7.0f)), { .Fill = WithAlpha(color, 0.3f * alpha), .Radius = size * 3.5f, .Softness = size * 3.0f, .Additive = 1.0f });
-			draw.Rect(UiRect::Centered({ x, y }, glm::vec2(size * 1.2f)), { .Fill = WithAlpha(Lighten(color, 0.6f), alpha), .Radius = size * 0.6f, .Additive = 1.0f });
-		}
-	}
-
 	void MainMenuState::DrawTitle(Ui& ui)
 	{
 		UiDrawList& draw = ui.Draw();
-		const glm::vec2 anchor(MenuX + 214.0f, 148.0f);
-		const float height = ui.GetSize().y;
-		draw.Sigil({ -90.0f, height * 0.56f }, height * 0.64f, { .Color = WithAlpha(Theme::AccentLight, 0.075f), .Accent = WithAlpha(Theme::Astral, 0.1f), .Speed = 0.35f, .Phase = 0.31f, .LineWidth = 1.2f, .Glow = 0.3f, .Points = 7, .Skip = 3, .Progress = std::min(m_Time / 3.0f, 1.0f) });
-		draw.Sigil({ -90.0f, height * 0.56f }, height * 0.42f, { .Color = WithAlpha(Theme::Accent, 0.07f), .Speed = -0.5f, .Phase = 0.77f, .LineWidth = 1.0f, .Glow = 0.25f, .Layers = SigilRings | SigilRunes, .Progress = std::min(m_Time / 3.6f, 1.0f) });
-		TextStyle title = Theme::Title(66.0f);
-		title.Tracking = 8.0f;
-		title.Weight = 0.2f;
-		title.ShadowOffset = { 0.0f, 3.0f };
-		title.ShadowBlur = 5.0f;
-		title.GlowColor = WithAlpha(Theme::Accent, 0.6f);
-		title.GlowBlur = 12.0f;
-		title.Shimmer = 0.6f;
-		draw.TextAligned({ anchor.x - 300.0f, anchor.y - 46.0f, 600.0f, 70.0f }, "RADIANCE", title, { 0.5f, 0.5f });
+		const glm::vec2 anchor(MenuX + 300.0f, 140.0f);
+		const UiRect titleRect{ anchor.x - 320.0f, anchor.y - 52.0f, 640.0f, 84.0f };
+		TextStyle title = Theme::Title(78.0f);
+		title.Tracking = 10.0f;
+		title.ShadowColor = UiColor(0.0f);
+		title.GlowColor = UiColor(0.0f);
+		UiDrawList glyphs(draw.GetAssets());
+		glyphs.Reset(ui.GetScale());
+		glyphs.TextAligned(titleRect, "RADIANCE", title, { 0.5f, 0.5f });
+		m_TitleGlyphs = glyphs.GetPrimitives();
+		m_TitleWarmth.resize(m_TitleGlyphs.size(), 0.0f);
+		const float cooling = std::exp(-ui.GetDeltaTime() * 1.2f);
+		for (size_t i = 0; i < m_TitleGlyphs.size(); i++)
+		{
+			UiPrimitive glyph = m_TitleGlyphs[i];
+			const float progress = std::clamp((m_Time - 0.5f - 0.13f * float(i)) / 1.6f, 0.0f, 1.0f);
+			const glm::vec2 offset = glm::vec2(glyph.Rect) - ui.GetMouse();
+			m_TitleWarmth[i] = std::max(std::exp(-glm::dot(offset, offset) / (2.0f * 110.0f * 110.0f)), m_TitleWarmth[i] * cooling);
+			if (progress <= 0.0f)
+				continue;
+			const float warmth = m_TitleWarmth[i];
+			const float ease = 1.0f - (1.0f - progress) * (1.0f - progress) * (1.0f - progress);
+			glyph.Rect.y += (1.0f - ease) * 12.0f;
+			const float flare = std::sin(3.14159265f * std::min(progress * 1.3f, 1.0f));
+			UiPrimitive halo = glyph;
+			const UiColor haloColor = WithAlpha(glm::mix(Hex(0xC8DCFF), Hex(0xFFC27A), warmth), (0.6f * flare + 0.1f * ease + 0.3f * warmth) * ease);
+			halo.Colors.x = PackColor(haloColor);
+			halo.Colors.y = PackColor(haloColor);
+			halo.Params = glm::vec4(0.0f, 0.0f, 9.0f, 0.0f);
+			halo.Info.z = 0u;
+			halo.Info.w = 255u;
+			draw.Primitive(halo);
+			const float alpha = glm::smoothstep(0.1f, 0.8f, progress);
+			glyph.Colors.x = PackColor(WithAlpha(glm::mix(Hex(0xFFF8EC), Hex(0xFFDDA6), warmth), (0.9f + 0.1f * warmth) * alpha));
+			glyph.Colors.y = PackColor(WithAlpha(glm::mix(Hex(0xEAD7AE), Hex(0xF5B860), warmth), (0.82f + 0.18f * warmth) * alpha));
+			draw.Primitive(glyph);
+		}
 		TextStyle subtitle = Theme::Caps(15.0f, Theme::Muted, 6.0f);
 		subtitle.ColorBottom = Theme::Faint;
+		draw.SetHalo(Rgba(0.0f, 0.0f, 0.02f, 0.45f));
 		draw.TextAligned({ anchor.x - 200.0f, anchor.y + 34.0f, 400.0f, 22.0f }, "co-op action rpg", subtitle, { 0.5f, 0.5f });
+		draw.SetHalo(UiColor(0.0f));
 		ui.Separator({ anchor.x - 140.0f, anchor.y + 64.0f, 280.0f, 10.0f });
 	}
 
-	void MainMenuState::DrawMenu(Ui& ui, UiRect area)
+	void MainMenuState::DrawMenu(Ui& ui, UiRect)
 	{
 		UiDrawList& draw = ui.Draw();
+		const float height = ui.GetSize().y;
+		const glm::vec2 hub(-470.0f, height * 0.56f);
+		constexpr float Radius = 640.0f;
+		constexpr float Step = 0.105f;
 		const std::string wanderer = (m_Name.empty() ? std::string("Nameless") : m_Name) + "  \xC2\xB7  " + (m_HasSave && !m_Fresh ? std::string("saved character") : std::string(GetKit(StarterKit(m_Kit)).Name));
 		struct Entry
 		{
 			Page Target;
 			const char* Title;
 			std::string Subtitle;
+			float Angle;
 		};
 		const Entry entries[] = {
-			{ Page::Host, "Open a Rift", "Host a game for your party" },
-			{ Page::Join, "Follow a Rift", "Join a game someone is hosting" },
-			{ Page::Character, "The Wanderer", wanderer },
-			{ Page::Wardrobe, "Wardrobe", std::string(GetOutfit(m_Style.Body).Name) + "  \xC2\xB7  " + GetFocus(m_Style.Cast).Name },
-			{ Page::Settings, "Attunement", "Sound, visuals and diagnostics" },
+			{ Page::Host, "Open a Rift", "Host a game for your party", -0.3f },
+			{ Page::Join, "Follow a Rift", "Join a game someone is hosting", -0.3f + Step },
+			{ Page::Character, "The Wanderer", wanderer, -0.3f + Step * 2.0f },
+			{ Page::Wardrobe, "Wardrobe", std::string(GetOutfit(m_Style.Body).Name) + "  \xC2\xB7  " + GetFocus(m_Style.Cast).Name, -0.3f + Step * 3.0f },
+			{ Page::Settings, "Attunement", "Sound, visuals and diagnostics", -0.3f + Step * 4.0f },
+			{ Page::None, "Depart", "Quit to desktop", -0.3f + Step * 5.0f + 0.05f },
 		};
-		const auto reveal = [&](size_t index, const UiRect& rect)
+		const auto direction = [](float angle) { return glm::vec2(std::cos(angle), std::sin(angle)); };
+		const auto entryRect = [&](const Entry& entry)
 		{
-			const float appear = std::clamp((m_Time - 0.3f - 0.12f * float(index)) / 0.7f, 0.0f, 1.0f);
-			const float ease = 1.0f - (1.0f - appear) * (1.0f - appear);
-			draw.PushClip({ rect.X - 20.0f, rect.Y - 12.0f, (rect.W + 40.0f) * ease, rect.H + 24.0f });
-			return rect.Translate({ -20.0f * (1.0f - ease), 0.0f });
+			const glm::vec2 node = hub + direction(entry.Angle) * Radius;
+			return UiRect{ node.x - 14.0f, node.y - 19.0f, 430.0f, 58.0f };
 		};
+
+		draw.Rect({ 0.0f, 0.0f, 760.0f, height }, { .Fill = Rgba(0.0f, 0.0f, 0.015f, 0.62f), .FillBottom = Rgba(0.0f, 0.0f, 0.015f, 0.0f), .Horizontal = true });
+		const float intro = glm::smoothstep(0.2f, 2.6f, m_Time);
+		const UiRect orbit = UiRect::Centered(hub, glm::vec2(Radius * 2.0f));
+		draw.Rect(orbit, { .Radius = Radius, .Glow = WithAlpha(Theme::Astral, 0.1f * intro), .GlowSize = 4.0f, .Additive = 1.0f });
+		draw.Rect(orbit, { .Radius = Radius, .Border = WithAlpha(Theme::Accent, 0.32f * intro), .BorderWidth = 1.0f });
+		draw.Rect(orbit.Expand(46.0f), { .Radius = Radius + 46.0f, .Border = WithAlpha(Theme::Edge, 0.12f * intro), .BorderWidth = 1.0f });
+		for (int i = 0; i < 3; i++)
+		{
+			const float angle = std::fmod(m_Time * (0.014f + 0.006f * float(i)) + float(i) * 0.31f, 1.4f) - 0.7f;
+			const float fade = intro * glm::smoothstep(0.7f, 0.5f, std::abs(angle));
+			const glm::vec2 moon = hub + direction(angle) * (Radius + (i == 1 ? 46.0f : 0.0f));
+			draw.Rect(UiRect::Centered(moon, glm::vec2(18.0f)), { .Fill = WithAlpha(Theme::Astral, 0.28f * fade), .Radius = 9.0f, .Softness = 7.0f, .Additive = 1.0f });
+			draw.Rect(UiRect::Centered(moon, glm::vec2(3.0f)), { .Fill = WithAlpha(Lighten(Theme::Astral, 0.6f), 0.9f * fade), .Radius = 1.5f });
+		}
+
 		for (size_t i = 0; i < std::size(entries); i++)
 		{
-			const UiRect rect = reveal(i, area.CutTop(EntryHeight));
-			if (ui.MenuEntry(Ui::MakeId("menu", i), rect, entries[i].Title, entries[i].Subtitle, m_Page == entries[i].Target))
-				OpenPage(m_Page == entries[i].Target ? Page::None : entries[i].Target);
+			const Entry& entry = entries[i];
+			const float appear = std::clamp((m_Time - 0.6f - 0.12f * float(i)) / 0.7f, 0.0f, 1.0f);
+			const float ease = 1.0f - (1.0f - appear) * (1.0f - appear);
+			const UiRect rect = entryRect(entry);
+			draw.PushClip({ rect.X - 20.0f, rect.Y - 14.0f, (rect.W + 40.0f) * ease, rect.H + 28.0f });
+			const bool quit = entry.Target == Page::None;
+			if (ui.MenuEntry(quit ? Ui::MakeId("menu.quit") : Ui::MakeId("menu", i), rect, entry.Title, entry.Subtitle, !quit && m_Page == entry.Target))
+			{
+				if (quit)
+					m_App.Quit();
+				else
+					OpenPage(m_Page == entry.Target ? Page::None : entry.Target);
+			}
 			draw.PopClip();
-			area.CutTop(6.0f);
 		}
-		area.CutTop(14.0f);
-		const UiRect quit = reveal(std::size(entries), area.CutTop(EntryHeight));
-		if (ui.MenuEntry(Ui::MakeId("menu.quit"), quit, "Depart", "Quit to desktop"))
-			m_App.Quit();
-		draw.PopClip();
 
 		if (!m_Message.empty())
 		{
-			area.CutTop(18.0f);
+			const UiRect last = entryRect(entries[std::size(entries) - 1]);
 			const TextStyle style = Theme::Body(15.5f, Hex(0xFFB8C2));
 			const float width = 330.0f;
-			const float height = float(draw.WrapText(m_Message, style, width).size()) * draw.LineHeight(style);
-			const UiRect box{ area.X + 20.0f, area.Y, width + 34.0f, height + 22.0f };
-			draw.Rect(box, { .Fill = Rgba(0.3f, 0.04f, 0.1f, 0.45f), .FillBottom = Rgba(0.15f, 0.02f, 0.06f, 0.45f), .Border = WithAlpha(Theme::Danger, 0.65f), .BorderWidth = 1.0f, .Chamfer = 8.0f });
-			draw.Diamond({ box.X, box.Center().y }, 9.0f, Theme::Danger, WithAlpha(Theme::Ink, 0.9f), 1.0f);
-			draw.TextWrapped({ box.X + 18.0f, box.Y + 11.0f, width, height }, m_Message, style);
+			const float lines = float(draw.WrapText(m_Message, style, width).size()) * draw.LineHeight(style);
+			const UiRect box{ last.X + 20.0f, last.Bottom() + 18.0f, width + 34.0f, lines + 22.0f };
+			draw.Rect(box, { .Fill = Rgba(0.3f, 0.04f, 0.1f, 0.45f), .FillBottom = Rgba(0.15f, 0.02f, 0.06f, 0.45f), .Radius = 2.0f, .Border = WithAlpha(Theme::Danger, 0.65f), .BorderWidth = 1.0f });
+			draw.Rect(UiRect::Centered({ box.X, box.Center().y }, glm::vec2(10.0f)), { .Fill = Theme::Ink, .Radius = 5.0f, .Border = Theme::Danger, .BorderWidth = 1.0f });
+			draw.TextWrapped({ box.X + 18.0f, box.Y + 11.0f, width, lines }, m_Message, style);
 		}
 		if (!m_App.GetSettings().SaveProfiles)
 			draw.Text({ MenuX + 34.0f, ui.GetSize().y - 36.0f }, "Saving is off for this run", Theme::Body(13.5f, Theme::Faint));
@@ -265,7 +342,9 @@ namespace Game
 		const float height = panel.H * ease;
 		UiDrawList& draw = ui.Draw();
 		draw.PushClip({ panel.X - 40.0f, panel.Center().y - height * 0.5f - 40.0f, panel.W + 80.0f, height + 80.0f });
-		ui.Panel(panel, 18.0f);
+		ui.Block(panel);
+		m_PageRect = panel;
+		draw.SetHalo(Rgba(0.0f, 0.0f, 0.02f, 0.4f));
 		const UiRect content = panel.Shrink(34.0f, 30.0f);
 		switch (m_Page)
 		{
@@ -287,6 +366,7 @@ namespace Game
 		default:
 			break;
 		}
+		draw.SetHalo(UiColor(0.0f));
 		draw.PopClip();
 	}
 
@@ -298,7 +378,7 @@ namespace Game
 		const UiRect hub = area.CutTop(108.0f);
 		ui.Card(hub, 0.0f, 0.0f);
 		const glm::vec2 seal(hub.X + 50.0f, hub.Center().y);
-		draw.Sigil(seal, 36.0f, { .Color = WithAlpha(Theme::Gold, 0.55f), .Accent = WithAlpha(Theme::AccentLight, 0.5f), .Speed = 0.8f, .LineWidth = 1.0f, .Glow = 0.45f, .Layers = SigilRings | SigilRunes });
+		draw.Sigil(seal, 36.0f, { .Color = WithAlpha(Theme::Gold, 0.55f), .Accent = WithAlpha(Theme::AccentLight, 0.5f), .Speed = 0.8f, .LineWidth = 1.0f, .Glow = 0.45f, .Layers = SigilRings });
 		draw.Icon(UiIcon::AnvilImpact, UiRect::Centered(seal, glm::vec2(32.0f)), { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .GlowColor = WithAlpha(Theme::Gold, 0.3f) });
 		draw.Text({ hub.X + 102.0f, hub.Y + 14.0f }, GetMapDef(MapKind::Hub).Name, Theme::Caps(19.0f, Theme::GoldLight, 1.5f));
 		draw.TextWrapped({ hub.X + 102.0f, hub.Y + 44.0f, hub.W - 116.0f, hub.H - 48.0f }, "Your party gathers in the hub town. Store loot in the stash, craft at the forge and lapidary, and choose missions at the board.", Theme::Body(14.5f, Theme::Muted));
@@ -307,7 +387,7 @@ namespace Game
 		UiRect portRow = area.CutTop(44.0f);
 		ui.TextField(Ui::MakeId("port"), portRow.CutLeft(140.0f), m_Port, 5, "27020", DigitCharacter);
 		portRow.CutLeft(18.0f);
-		draw.TextWrapped({ portRow.X, portRow.Y + 3.0f, portRow.W, portRow.H }, "UDP. Others need to reach it to follow you in.", Theme::Body(14.0f, Theme::Faint));
+		draw.TextWrapped({ portRow.X, portRow.Y + 3.0f, portRow.W, portRow.H }, "UDP. Others need to reach it to follow you in.", Theme::Body(14.0f, Theme::Muted));
 		area.CutTop(20.0f);
 		if (ui.Checkbox(Ui::MakeId("unlimited"), area.CutTop(30.0f), "Unlimited crafting materials (testing)", m_Unlimited))
 			m_App.GetSettings().UnlimitedMaterials = m_Unlimited;
@@ -330,7 +410,7 @@ namespace Game
 		FieldLabel(ui, area, "HOST ADDRESS");
 		ui.TextField(Ui::MakeId("address"), area.CutTop(44.0f), m_Address, 63, "Address, like 192.168.1.20", AddressCharacter);
 		area.CutTop(12.0f);
-		draw.TextWrapped(area.CutTop(44.0f), "Add :port after the address when the host doesn't use the default port.", Theme::Body(14.0f, Theme::Faint));
+		draw.TextWrapped(area.CutTop(44.0f), "Add :port after the address when the host doesn't use the default port.", Theme::Body(14.0f, Theme::Muted));
 		const UiRect go = area.CutBottom(54.0f);
 		const std::string who = "You enter as " + (m_Name.empty() ? std::string("Player") : m_Name) + ", " + (m_HasSave && !m_Fresh ? std::string("with your saved gear") : std::string("the ") + GetKit(StarterKit(m_Kit)).Name);
 		draw.TextAligned(area.CutBottom(34.0f), who, Theme::Body(14.5f, Theme::Muted), { 0.5f, 0.5f });
@@ -375,7 +455,7 @@ namespace Game
 			shown++;
 		}
 		if (shown == 0)
-			draw.TextWrapped(area.CutTop(44.0f), "No Steam friends are playing right now. When one is, join them here or from your Steam friends list.", Theme::Body(14.0f, Theme::Faint));
+			draw.TextWrapped(area.CutTop(44.0f), "No Steam friends are playing right now. When one is, join them here or from your Steam friends list.", Theme::Body(14.0f, Theme::Muted));
 	}
 
 	void MainMenuState::DrawWardrobePage(Ui& ui, UiRect area)
@@ -412,7 +492,7 @@ namespace Game
 			area.CutTop(16.0f);
 			if (!m_Fresh)
 			{
-				draw.TextWrapped(area, "Your saved gear, gems and backpack come with you.", Theme::Body(14.5f, Theme::Faint));
+				draw.TextWrapped(area, "Your saved gear, gems and backpack come with you.", Theme::Body(14.5f, Theme::Muted));
 				return;
 			}
 		}
@@ -439,7 +519,7 @@ namespace Game
 			ui.Card(card, hover, chosen, Theme::Gold);
 			const glm::vec2 seal(card.Center().x, card.Y + 56.0f);
 			draw.Sigil(seal, 38.0f, { .Color = WithAlpha(glm::mix(Theme::AccentLight, Theme::Gold, chosen), 0.25f + 0.3f * hover + 0.4f * chosen), .Accent = WithAlpha(Theme::Astral, 0.3f + 0.4f * chosen), .Speed = 0.6f + 1.2f * chosen,
-				.Phase = float(i) * 0.17f, .LineWidth = 1.0f, .Glow = 0.3f + 0.4f * chosen, .Layers = SigilRings | SigilRunes });
+				.Phase = float(i) * 0.17f, .LineWidth = 1.0f, .Glow = 0.3f + 0.4f * chosen, .Layers = SigilRings });
 			const float lit = std::max(chosen, hover * 0.7f);
 			draw.Icon(IconFor(kit.Id), UiRect::Centered(seal, glm::vec2(40.0f)), { .Color = glm::mix(Theme::Muted, chosen > 0.5f ? Theme::GoldLight : Theme::AccentLight, lit), .ColorBottom = glm::mix(Theme::Faint, chosen > 0.5f ? Theme::Gold : Theme::Accent, lit),
 				.ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .GlowColor = WithAlpha(chosen > 0.5f ? Theme::Gold : Theme::Accent, 0.35f * lit) });

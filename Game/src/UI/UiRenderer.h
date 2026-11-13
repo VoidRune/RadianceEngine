@@ -23,7 +23,8 @@ namespace Game
 
 		std::optional<uint32_t> CreateTexture(uint32_t width, uint32_t height, const void* rgba, uint32_t mipLevels = 1);
 		void SetDistanceRange(float range) { m_DistanceRange = range; }
-		void Render(Rdn::RenderGraph& graph, Rdn::RGImage target, uint32_t frameIndex, std::span<const UiPrimitive> primitives, glm::vec2 screenSize, float scale, float time, bool clear);
+		void Render(Rdn::RenderGraph& graph, Rdn::RGImage target, uint32_t frameIndex, std::span<const UiPrimitive> primitives, glm::vec2 screenSize, float scale, float time, bool clear, Rdn::RGImage backdrop = {}, float opacity = 1.0f);
+		const Rdn::GpuImage* GetTexture(uint32_t slot) const { return slot < m_TextureCount ? m_Textures[slot].get() : nullptr; }
 
 	private:
 		bool CreatePipeline(Rdn::Format targetFormat);
@@ -35,6 +36,8 @@ namespace Game
 			float Scale;
 			float DistanceRange;
 			float Time;
+			float Backdrop;
+			float Opacity;
 		};
 
 		enum class Program : uint8_t
@@ -42,6 +45,7 @@ namespace Game
 			Main,
 			Sigil,
 			Card,
+			Veil,
 		};
 
 		struct Run
@@ -57,9 +61,11 @@ namespace Game
 		std::unique_ptr<Rdn::Shader> m_FragmentShader;
 		std::unique_ptr<Rdn::Shader> m_SigilShader;
 		std::unique_ptr<Rdn::Shader> m_CardShader;
+		std::unique_ptr<Rdn::Shader> m_VeilShader;
 		std::unique_ptr<Rdn::Pipeline> m_Pipeline;
 		std::unique_ptr<Rdn::Pipeline> m_SigilPipeline;
 		std::unique_ptr<Rdn::Pipeline> m_CardPipeline;
+		std::unique_ptr<Rdn::Pipeline> m_VeilPipeline;
 		std::vector<Run> m_Runs;
 		std::unique_ptr<Rdn::Sampler> m_Sampler;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_Buffer;

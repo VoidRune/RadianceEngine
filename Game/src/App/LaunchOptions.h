@@ -46,6 +46,7 @@ namespace Game
 		double BurstInterval = 0.0;
 		float ScreenshotDelay = 0.0f;
 		uint8_t DebugView = 0;
+		uint8_t MenuPage = 0;
 		std::optional<uint8_t> Tonemap;
 		std::optional<uint8_t> Shadows;
 		std::optional<uint8_t> Gi;
