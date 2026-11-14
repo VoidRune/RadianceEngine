@@ -1,7 +1,10 @@
 #pragma once
-#include "GameShared/Content/Missions.h"
+#include "GameShared/Content/Brawl.h"
+#include "GameShared/Content/GameMode.h"
+#include "GameShared/World/Level.h"
 #include "GameShared/Entity/Components.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 
@@ -100,5 +103,75 @@ namespace Game
 	inline float TrashHealth(float minutes, uint32_t players)
 	{
 		return (1.0f + 0.2f * minutes + 0.02f * minutes * minutes) * (1.0f + 0.15f * float(std::max(players, 1u) - 1));
+	}
+
+	using SpellLoadout = std::array<AbilityId, SkillSlots>;
+
+	struct RunSpellDef
+	{
+		AbilityId Spell = AbilityId::EmberBolt;
+		int32_t Damage = 0;
+		float Cooldown = 0.0f;
+		float Mana = 0.0f;
+	};
+
+	inline constexpr RunSpellDef RunSpells[] = {
+		{ AbilityId::EmberBolt, 15, 0.55f, 0.0f },
+		{ AbilityId::Comet, 60, 4.5f, 25.0f },
+		{ AbilityId::Warp, 0, 9.0f, 15.0f },
+		{ AbilityId::GlacialNova, 12, 7.0f, 25.0f },
+		{ AbilityId::GravityWell, 30, 5.0f, 25.0f },
+		{ AbilityId::ArcLightning, 26, 3.5f, 20.0f },
+		{ AbilityId::DiamondWard, 0, 14.0f, 30.0f },
+		{ AbilityId::FrostSpear, 20, 3.0f, 15.0f },
+		{ AbilityId::ChainHook, 40, 4.0f, 12.0f },
+		{ AbilityId::Firebomb, 30, 3.5f, 20.0f },
+		{ AbilityId::ObsidianBlades, 7, 1.8f, 20.0f },
+		{ AbilityId::StormStrike, 22, 4.0f, 25.0f },
+		{ AbilityId::EarthSpike, 30, 5.0f, 25.0f },
+		{ AbilityId::PurpleFireball, 21, 4.5f, 20.0f },
+		{ AbilityId::HexShield, 0, 0.6f, 6.0f },
+	};
+
+	inline const RunSpellDef* FindRunSpell(AbilityId spell)
+	{
+		for (const RunSpellDef& def : RunSpells)
+			if (def.Spell == spell)
+				return &def;
+		return nullptr;
+	}
+
+	inline SpellLoadout MakeRunLoadout(const BrawlSpells& chosen)
+	{
+		SpellLoadout loadout;
+		loadout.fill(AbilityId::Count);
+		std::copy(chosen.begin(), chosen.end(), loadout.begin());
+		return loadout;
+	}
+
+	inline SkillTraits MakeRunSkill(AbilityId id)
+	{
+		SkillTraits skill = MakeBrawlSkill(id, 1.0f, BrawlMode::Damage);
+		if (const RunSpellDef* def = FindRunSpell(id))
+		{
+			const int32_t base = GetAbility(id).BrawlDamage;
+			skill.DamageScale = base > 0 ? float(def->Damage) / float(base) : 1.0f;
+			skill.Cooldown = def->Cooldown;
+			skill.ManaCost = def->Mana;
+		}
+		return skill;
+	}
+
+	inline PlayerTraits MakeRunTraits(const SpellLoadout& spells, uint32_t level)
+	{
+		PlayerTraits traits = MakeBrawlTraits(BrawlLoadout{}, BrawlMode::Damage);
+		traits.Skills[0] = MakeRunSkill(BrawlBasic);
+		for (uint32_t i = 0; i < SkillSlots; i++)
+			traits.Skills[i + 1] = IsBrawlSpell(spells[i]) ? MakeRunSkill(spells[i]) : SkillTraits{};
+		const uint32_t gained = level > 0 ? level - 1 : 0;
+		traits.MaxHealth += LevelHealth * int32_t(gained);
+		for (SkillTraits& skill : traits.Skills)
+			skill.DamageScale *= 1.0f + LevelDamage * float(gained);
+		return traits;
 	}
 }

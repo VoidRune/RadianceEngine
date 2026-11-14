@@ -230,7 +230,7 @@ namespace Game
 			std::copy(std::begin(BrawlSpellPool), std::end(BrawlSpellPool), pool.begin());
 			for (size_t i = pool.size(); i > 1; i--)
 				std::swap(pool[i - 1], pool[random.Below(uint32_t(i))]);
-			std::copy(pool.begin(), pool.begin() + SkillSlots, spells.begin());
+			std::copy(pool.begin(), pool.begin() + BrawlSlots, spells.begin());
 			return spells;
 		}
 		switch (style)
@@ -252,7 +252,7 @@ namespace Game
 		{
 			const AbilityId swap = BrawlSpellPool[random.Below(uint32_t(std::size(BrawlSpellPool)))];
 			if (std::find(spells.begin(), spells.end(), swap) == spells.end())
-				spells[random.Below(SkillSlots)] = swap;
+				spells[random.Below(BrawlSlots)] = swap;
 		}
 		return spells;
 	}
@@ -654,7 +654,7 @@ namespace Game
 		if (brawl.Phase == BrawlPhase::Draft && !m_Drafted)
 		{
 			const BrawlSpells spells = PickBotSpells(m_Profile.Style, m_Random, m_Profile.RandomSpells);
-			for (uint32_t slot = 0; slot < SkillSlots; slot++)
+			for (uint32_t slot = 0; slot < BrawlSlots; slot++)
 				world.PickBrawlSpell(self, slot, spells[slot]);
 			m_Drafted = true;
 		}

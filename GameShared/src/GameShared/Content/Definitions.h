@@ -20,43 +20,8 @@ namespace Game
 		Shield,
 	};
 
-	enum class Requirement : uint8_t
-	{
-		None,
-		Caster,
-		Melee,
-		Bow,
-	};
-
-	namespace Affinity
-	{
-		constexpr uint8_t Caster = 1 << 0;
-		constexpr uint8_t Melee = 1 << 1;
-		constexpr uint8_t Bow = 1 << 2;
-	}
-
 	enum class AbilityId : uint8_t
 	{
-		Bolt,
-		Orb,
-		Slash,
-		Chop,
-		Stab,
-		Thrust,
-		Arrow,
-		Quarrel,
-		Fireball,
-		Meteor,
-		FrostNova,
-		IceSpear,
-		ChainLightning,
-		Blink,
-		Cyclone,
-		GroundSlam,
-		Volley,
-		RainOfArrows,
-		PiercingShot,
-		Rejuvenate,
 		Roll,
 		Bite,
 		Spit,
@@ -113,14 +78,12 @@ namespace Game
 
 	struct AbilityDef
 	{
-		AbilityId Id = AbilityId::Bolt;
+		AbilityId Id = AbilityId::Roll;
 		const char* Name = "";
 		const char* Description = "";
 		AbilityKind Kind = AbilityKind::Projectile;
 		Element Damages = Element::Physical;
-		Requirement Needs = Requirement::None;
 		bool Spell = false;
-		bool Gem = false;
 		float CastTime = 0.0f;
 		float CastMove = 1.0f;
 		float ManaCost = 0.0f;
@@ -161,26 +124,6 @@ namespace Game
 	};
 
 	inline constexpr AbilityDef Abilities[] = {
-		{ .Id = AbilityId::Bolt, .Name = "Spark Bolt", .Description = "Fires a crackling bolt.", .Damages = Element::Lightning, .CastTime = 0.2f, .CastMove = 0.65f, .Cooldown = 0.28f, .Damage = 22, .ProjectileSpeed = 17.0f, .ProjectileRadius = 0.14f, .ProjectileRange = 9.0f },
-		{ .Id = AbilityId::Orb, .Name = "Frost Orb", .Description = "Lobs a slow orb of frost that passes through one enemy and chills.", .Damages = Element::Cold, .CastTime = 0.35f, .CastMove = 0.5f, .Cooldown = 0.35f, .Damage = 40, .ProjectileSpeed = 11.0f, .ProjectileRadius = 0.24f, .ProjectileRange = 8.5f, .Pierce = 1, .Chill = 0.8f },
-		{ .Id = AbilityId::Slash, .Name = "Slash", .Description = "Steps into a sweep of the blade in a wide arc.", .Kind = AbilityKind::Melee, .CastTime = 0.18f, .CastMove = 0.55f, .Cooldown = 0.3f, .Damage = 30, .Reach = 2.8f, .HalfArc = 1.1f, .Lunge = 0.7f },
-		{ .Id = AbilityId::Chop, .Name = "Chop", .Description = "A heavy overhead chop that staggers.", .Kind = AbilityKind::Melee, .CastTime = 0.35f, .CastMove = 0.4f, .Cooldown = 0.4f, .Damage = 50, .Reach = 2.8f, .HalfArc = 0.9f, .Lunge = 0.6f, .EffectDuration = 0.18f, .Stun = 0.3f, .PvpScale = 0.9f },
-		{ .Id = AbilityId::Stab, .Name = "Stab", .Description = "A quick thrust.", .Kind = AbilityKind::Melee, .CastTime = 0.08f, .CastMove = 0.75f, .Cooldown = 0.22f, .Damage = 15, .Reach = 2.4f, .HalfArc = 0.5f, .Lunge = 0.5f, .EffectDuration = 0.1f },
-		{ .Id = AbilityId::Thrust, .Name = "Thrust", .Description = "Lunges forward and drives the spear through everything in a long line.", .Kind = AbilityKind::Melee, .CastTime = 0.22f, .CastMove = 0.5f, .Cooldown = 0.32f, .Damage = 30, .Reach = 3.6f, .Lunge = 1.0f, .EffectDuration = 0.14f, .Shape = StrikeShape::Line, .Width = 0.9f },
-		{ .Id = AbilityId::Arrow, .Name = "Arrow", .Description = "Looses an arrow that pierces one enemy.", .CastTime = 0.3f, .CastMove = 0.5f, .Cooldown = 0.15f, .Damage = 26, .ProjectileSpeed = 22.0f, .ProjectileRadius = 0.12f, .ProjectileRange = 10.0f, .Pierce = 1 },
-		{ .Id = AbilityId::Quarrel, .Name = "Quarrel", .Description = "Fires a heavy bolt that pierces two enemies.", .CastTime = 0.5f, .CastMove = 0.35f, .Cooldown = 0.25f, .Damage = 55, .ProjectileSpeed = 28.0f, .ProjectileRadius = 0.1f, .ProjectileRange = 11.0f, .Pierce = 2, .PvpScale = 0.85f },
-		{ .Id = AbilityId::Fireball, .Name = "Fireball", .Description = "Hurls a fireball that explodes on impact. Roots you while casting.", .Damages = Element::Fire, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.5f, .CastMove = 0.0f, .ManaCost = 16.0f, .Cooldown = 0.3f, .Damage = 55, .ProjectileSpeed = 13.0f, .ProjectileRadius = 0.22f, .ProjectileRange = 9.0f, .EffectDuration = 0.3f, .ImpactRadius = 1.8f, .PvpScale = 0.8f },
-		{ .Id = AbilityId::Meteor, .Name = "Meteor", .Description = "Calls a meteor down on the target area after a short delay. Stuns. Roots you while casting.", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.8f, .CastMove = 0.0f, .ManaCost = 35.0f, .Cooldown = 5.0f, .Damage = 150, .EffectDuration = 0.4f, .ImpactRadius = 2.4f, .ImpactDelay = 0.7f, .Range = 9.0f, .Stun = 0.5f, .PvpScale = 0.5f },
-		{ .Id = AbilityId::FrostNova, .Name = "Frost Nova", .Description = "Blasts frost around you, chilling enemies. Works with any weapon.", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Spell = true, .Gem = true, .CastTime = 0.25f, .CastMove = 0.3f, .ManaCost = 22.0f, .Cooldown = 5.0f, .Damage = 30, .Reach = 4.2f, .EffectDuration = 0.35f, .Chill = 2.5f },
-		{ .Id = AbilityId::IceSpear, .Name = "Ice Spear", .Description = "A fast shard of ice that pierces three enemies and chills them.", .Damages = Element::Cold, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.35f, .CastMove = 0.4f, .ManaCost = 10.0f, .Cooldown = 0.0f, .Damage = 38, .ProjectileSpeed = 20.0f, .ProjectileRadius = 0.15f, .ProjectileRange = 10.0f, .Pierce = 3, .Chill = 1.2f },
-		{ .Id = AbilityId::ChainLightning, .Name = "Chain Lightning", .Description = "A bolt of lightning that jumps to 3 more enemies.", .Damages = Element::Lightning, .Needs = Requirement::Caster, .Spell = true, .Gem = true, .CastTime = 0.4f, .CastMove = 0.5f, .ManaCost = 14.0f, .Cooldown = 0.5f, .Damage = 30, .ProjectileSpeed = 24.0f, .ProjectileRadius = 0.15f, .ProjectileRange = 9.0f, .Chain = 3, .PvpScale = 0.85f },
-		{ .Id = AbilityId::Blink, .Name = "Blink", .Description = "Teleports you up to 6 units toward the cursor. Works with any weapon.", .Kind = AbilityKind::Dash, .Spell = true, .Gem = true, .CastTime = 0.1f, .CastMove = 0.0f, .ManaCost = 15.0f, .Cooldown = 2.5f, .DashDistance = 6.0f, .Invulnerability = 0.2f, .Range = 6.0f },
-		{ .Id = AbilityId::Cyclone, .Name = "Cyclone", .Description = "Spins with your weapon, hitting everything around you. You keep most of your speed.", .Kind = AbilityKind::Nova, .Needs = Requirement::Melee, .Gem = true, .CastTime = 0.2f, .CastMove = 0.8f, .ManaCost = 10.0f, .Cooldown = 0.9f, .Damage = 34, .Reach = 2.8f, .EffectDuration = 0.25f },
-		{ .Id = AbilityId::GroundSlam, .Name = "Ground Slam", .Description = "Slams the ground in a long cone after a heavy windup. Stuns. Roots you while casting.", .Kind = AbilityKind::Melee, .Needs = Requirement::Melee, .Gem = true, .CastTime = 0.6f, .CastMove = 0.0f, .ManaCost = 20.0f, .Cooldown = 3.0f, .Damage = 110, .Reach = 4.0f, .HalfArc = 0.7f, .EffectDuration = 0.3f, .Stun = 1.2f, .PvpScale = 0.55f },
-		{ .Id = AbilityId::Volley, .Name = "Volley", .Description = "Fires five arrows in a spread.", .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.35f, .CastMove = 0.5f, .ManaCost = 12.0f, .Cooldown = 1.0f, .Damage = 24, .ProjectileSpeed = 21.0f, .ProjectileRadius = 0.12f, .ProjectileRange = 8.0f, .ProjectileCount = 5, .ProjectileSpread = 0.6f, .PvpScale = 0.75f },
-		{ .Id = AbilityId::RainOfArrows, .Name = "Rain of Arrows", .Description = "Arrows rain on the target area after a short delay.", .Kind = AbilityKind::Ground, .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.45f, .CastMove = 0.3f, .ManaCost = 20.0f, .Cooldown = 4.0f, .Damage = 70, .EffectDuration = 0.35f, .ImpactRadius = 2.3f, .ImpactDelay = 0.45f, .Range = 9.5f, .PvpScale = 0.75f },
-		{ .Id = AbilityId::PiercingShot, .Name = "Piercing Shot", .Description = "A fully drawn shot that pierces six enemies and staggers them. Roots you while drawing.", .Needs = Requirement::Bow, .Gem = true, .CastTime = 0.75f, .CastMove = 0.0f, .ManaCost = 16.0f, .Cooldown = 2.0f, .Damage = 130, .ProjectileSpeed = 32.0f, .ProjectileRadius = 0.14f, .ProjectileRange = 11.5f, .Pierce = 6, .Stun = 0.4f, .PvpScale = 0.6f },
-		{ .Id = AbilityId::Rejuvenate, .Name = "Rejuvenate", .Description = "Restores 35% of your health. Works with any weapon. Roots you while casting.", .Kind = AbilityKind::Heal, .Spell = true, .Gem = true, .CastTime = 0.6f, .CastMove = 0.0f, .ManaCost = 30.0f, .Cooldown = 12.0f, .EffectDuration = 0.5f, .Heal = 0.35f },
 		{ .Id = AbilityId::Roll, .Name = "Dodge", .Description = "Dodge roll, briefly invulnerable.", .Kind = AbilityKind::Dash, .Cooldown = 1.1f, .DashDistance = 3.2f, .DashDuration = 0.22f, .Invulnerability = 0.28f },
 		{ .Id = AbilityId::Bite, .Name = "Bite", .Kind = AbilityKind::Melee, .Cooldown = 1.4f, .Damage = 14, .Reach = 2.0f, .HalfArc = 0.9f, .EffectDuration = 0.15f },
 		{ .Id = AbilityId::Spit, .Name = "Spit", .Damages = Element::Poison, .Cooldown = 2.2f, .Damage = 13, .ProjectileSpeed = 8.0f, .ProjectileRadius = 0.2f, .ProjectileRange = 8.5f, .SpawnOffset = 0.4f },
@@ -259,36 +202,6 @@ namespace Game
 		return speed > 0.0f ? ability.ProjectileRange / speed : 0.0f;
 	}
 
-	inline bool MeetsRequirement(Requirement needs, uint8_t affinity)
-	{
-		switch (needs)
-		{
-		case Requirement::Caster:
-			return (affinity & Affinity::Caster) != 0;
-		case Requirement::Melee:
-			return (affinity & Affinity::Melee) != 0;
-		case Requirement::Bow:
-			return (affinity & Affinity::Bow) != 0;
-		default:
-			return true;
-		}
-	}
-
-	inline const char* DescribeRequirement(Requirement needs)
-	{
-		switch (needs)
-		{
-		case Requirement::Caster:
-			return "a wand, staff or dagger";
-		case Requirement::Melee:
-			return "a sword, axe, spear or dagger";
-		case Requirement::Bow:
-			return "a bow or crossbow";
-		default:
-			return "any weapon";
-		}
-	}
-
 	inline const char* GetElementName(Element element)
 	{
 		constexpr const char* Names[] = { "physical", "fire", "cold", "lightning", "poison" };
@@ -315,9 +228,7 @@ namespace Game
 		AbilityId Attack = AbilityId::Bite;
 		float AttackRange = 1.4f;
 		float Windup = 0.5f;
-		float LootWeight = 1.0f;
 		float OrbChance = 0.12f;
-		float BuffChance = 0.015f;
 		bool Boss = false;
 		const char* Title = "";
 		EnemyBehavior Behavior = EnemyBehavior::Hunter;
@@ -331,18 +242,18 @@ namespace Game
 
 	inline constexpr EnemyDef EnemyDefs[] = {
 		{ .Kind = EntityKind::Chaser, .Name = "Ghoul" },
-		{ .Kind = EntityKind::Shooter, .Name = "Spitter", .Health = 45, .Radius = 0.34f, .Speed = 2.7f, .Attack = AbilityId::Spit, .AttackRange = 6.5f, .Windup = 0.65f, .LootWeight = 1.2f },
-		{ .Kind = EntityKind::Brute, .Name = "Ogre", .Health = 220, .Radius = 0.6f, .Speed = 2.2f, .Attack = AbilityId::Slam, .AttackRange = 1.6f, .Windup = 1.0f, .LootWeight = 3.0f, .OrbChance = 0.45f, .BuffChance = 0.12f },
-		{ .Kind = EntityKind::Caster, .Name = "Pyromancer", .Health = 55, .Radius = 0.36f, .Speed = 2.5f, .Attack = AbilityId::Firestrike, .AttackRange = 7.0f, .Windup = 0.8f, .LootWeight = 1.5f, .OrbChance = 0.2f },
-		{ .Kind = EntityKind::Archivist, .Name = "The Archivist", .Health = 6000, .Radius = 0.85f, .Speed = 2.6f, .Attack = AbilityId::TomeVolley, .AttackRange = 10.0f, .Windup = 0.7f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Boss = true, .Title = "Keeper of the Burned Library" },
-		{ .Kind = EntityKind::Wyrm, .Name = "Crystal Wyrm", .Health = 7500, .Radius = 1.0f, .Speed = 3.0f, .Attack = AbilityId::CrystalSpike, .AttackRange = 9.0f, .Windup = 0.8f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Boss = true, .Title = "Devourer of the Deep Veins" },
-		{ .Kind = EntityKind::QuartzCrawler, .Name = "Quartz Crawler", .Health = 30, .Radius = 0.32f, .Speed = 3.7f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.85f, .Windup = 0.45f, .LootWeight = 0.0f, .OrbChance = 0.02f, .BuffChance = 0.0f, .Tier = 1, .Cost = 1, .Xp = 1, .Lunge = 0.7f },
-		{ .Kind = EntityKind::JadeCrawler, .Name = "Jade Crawler", .Health = 60, .Radius = 0.36f, .Speed = 3.3f, .Attack = AbilityId::Pounce, .AttackRange = 2.6f, .Windup = 0.6f, .LootWeight = 0.0f, .OrbChance = 0.04f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Pouncer, .Tier = 2, .Cost = 3, .Xp = 3, .Lunge = 3.0f },
-		{ .Kind = EntityKind::SapphireCrawler, .Name = "Sapphire Crawler", .Health = 85, .Radius = 0.4f, .Speed = 2.7f, .Attack = AbilityId::ShardSpit, .AttackRange = 6.5f, .Windup = 0.5f, .LootWeight = 0.0f, .OrbChance = 0.05f, .BuffChance = 0.0f, .Tier = 3, .Cost = 5, .Xp = 8, .Keep = 4.5f },
-		{ .Kind = EntityKind::RubyCrawler, .Name = "Ruby Crawler", .Health = 120, .Radius = 0.44f, .Speed = 3.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 1.0f, .Windup = 0.5f, .LootWeight = 0.0f, .OrbChance = 0.07f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Volatile, .Tier = 4, .Cost = 8, .Xp = 20, .Lunge = 0.8f },
-		{ .Kind = EntityKind::AmethystCrawler, .Name = "Amethyst Brood Mother", .Health = 260, .Radius = 0.5f, .Speed = 2.0f, .Attack = AbilityId::ShardSpit, .AttackRange = 7.5f, .Windup = 0.7f, .LootWeight = 0.0f, .OrbChance = 0.2f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Brood, .Tier = 5, .Cost = 16, .Xp = 50, .Keep = 6.0f, .Volley = 2 },
-		{ .Kind = EntityKind::PrismaticCrawler, .Name = "Prismatic Crawler", .Health = 160, .Radius = 0.4f, .Speed = 4.6f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .LootWeight = 0.0f, .OrbChance = 0.5f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Treasure, .Tier = 3, .Cost = 6, .Xp = 30 },
-		{ .Kind = EntityKind::CrawlerEgg, .Name = "Crawler Egg", .Health = 18, .Radius = 0.24f, .Speed = 0.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .LootWeight = 0.0f, .OrbChance = 0.0f, .BuffChance = 0.0f, .Behavior = EnemyBehavior::Egg, .Xp = 1 },
+		{ .Kind = EntityKind::Shooter, .Name = "Spitter", .Health = 45, .Radius = 0.34f, .Speed = 2.7f, .Attack = AbilityId::Spit, .AttackRange = 6.5f, .Windup = 0.65f },
+		{ .Kind = EntityKind::Brute, .Name = "Ogre", .Health = 220, .Radius = 0.6f, .Speed = 2.2f, .Attack = AbilityId::Slam, .AttackRange = 1.6f, .Windup = 1.0f, .OrbChance = 0.45f },
+		{ .Kind = EntityKind::Caster, .Name = "Pyromancer", .Health = 55, .Radius = 0.36f, .Speed = 2.5f, .Attack = AbilityId::Firestrike, .AttackRange = 7.0f, .Windup = 0.8f, .OrbChance = 0.2f },
+		{ .Kind = EntityKind::Archivist, .Name = "The Archivist", .Health = 6000, .Radius = 0.85f, .Speed = 2.6f, .Attack = AbilityId::TomeVolley, .AttackRange = 10.0f, .Windup = 0.7f, .OrbChance = 0.0f, .Boss = true, .Title = "Keeper of the Burned Library" },
+		{ .Kind = EntityKind::Wyrm, .Name = "Crystal Wyrm", .Health = 7500, .Radius = 1.0f, .Speed = 3.0f, .Attack = AbilityId::CrystalSpike, .AttackRange = 9.0f, .Windup = 0.8f, .OrbChance = 0.0f, .Boss = true, .Title = "Devourer of the Deep Veins" },
+		{ .Kind = EntityKind::QuartzCrawler, .Name = "Quartz Crawler", .Health = 30, .Radius = 0.32f, .Speed = 3.7f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.85f, .Windup = 0.45f, .OrbChance = 0.02f, .Tier = 1, .Cost = 1, .Xp = 1, .Lunge = 0.7f },
+		{ .Kind = EntityKind::JadeCrawler, .Name = "Jade Crawler", .Health = 60, .Radius = 0.36f, .Speed = 3.3f, .Attack = AbilityId::Pounce, .AttackRange = 2.6f, .Windup = 0.6f, .OrbChance = 0.04f, .Behavior = EnemyBehavior::Pouncer, .Tier = 2, .Cost = 3, .Xp = 3, .Lunge = 3.0f },
+		{ .Kind = EntityKind::SapphireCrawler, .Name = "Sapphire Crawler", .Health = 85, .Radius = 0.4f, .Speed = 2.7f, .Attack = AbilityId::ShardSpit, .AttackRange = 6.5f, .Windup = 0.5f, .OrbChance = 0.05f, .Tier = 3, .Cost = 5, .Xp = 8, .Keep = 4.5f },
+		{ .Kind = EntityKind::RubyCrawler, .Name = "Ruby Crawler", .Health = 120, .Radius = 0.44f, .Speed = 3.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 1.0f, .Windup = 0.5f, .OrbChance = 0.07f, .Behavior = EnemyBehavior::Volatile, .Tier = 4, .Cost = 8, .Xp = 20, .Lunge = 0.8f },
+		{ .Kind = EntityKind::AmethystCrawler, .Name = "Amethyst Brood Mother", .Health = 260, .Radius = 0.5f, .Speed = 2.0f, .Attack = AbilityId::ShardSpit, .AttackRange = 7.5f, .Windup = 0.7f, .OrbChance = 0.2f, .Behavior = EnemyBehavior::Brood, .Tier = 5, .Cost = 16, .Xp = 50, .Keep = 6.0f, .Volley = 2 },
+		{ .Kind = EntityKind::PrismaticCrawler, .Name = "Prismatic Crawler", .Health = 160, .Radius = 0.4f, .Speed = 4.6f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .OrbChance = 0.5f, .Behavior = EnemyBehavior::Treasure, .Tier = 3, .Cost = 6, .Xp = 30 },
+		{ .Kind = EntityKind::CrawlerEgg, .Name = "Crawler Egg", .Health = 18, .Radius = 0.24f, .Speed = 0.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .OrbChance = 0.0f, .Behavior = EnemyBehavior::Egg, .Xp = 1 },
 	};
 
 	inline const EnemyDef* FindEnemyDef(EntityKind kind)
@@ -378,18 +289,36 @@ namespace Game
 	inline constexpr float EliteSize = 1.2f;
 	inline constexpr float EliteAreaScale = 1.3f;
 	inline constexpr uint8_t EliteExtraProjectiles = 2;
+	inline constexpr uint32_t MaxMonsterLevel = 30;
+	inline constexpr float EliteHealthScale = 1.4f;
+	inline constexpr float EliteHealthBonus = 200.0f;
 
-	inline EnemyScaling GetEnemyScaling(uint32_t wave, uint32_t players, bool elite)
+	inline float LevelScale(uint32_t level)
 	{
-		const float steps = float(wave > 0 ? wave - 1 : 0);
+		return std::pow(1.075f, float(std::clamp(level, 1u, MaxMonsterLevel) - 1));
+	}
+
+	inline float MonsterDamageScale(uint32_t level)
+	{
+		return std::pow(LevelScale(level), 0.6f);
+	}
+
+	inline float MonsterToughness(uint32_t level)
+	{
+		return 1.0f + 0.025f * float(std::clamp(level, 1u, MaxMonsterLevel) - 1);
+	}
+
+	inline EnemyScaling GetMonsterScaling(EntityKind kind, uint32_t level, uint32_t players, bool elite)
+	{
 		const float crowd = float(players > 0 ? players - 1 : 0);
+		const EnemyDef* def = FindEnemyDef(kind);
+		const float base = def ? float(std::max(def->Health, 1)) : 60.0f;
 		EnemyScaling scaling;
-		scaling.Health = (1.0f + 0.08f * steps + 0.012f * steps * steps) * (1.0f + 0.5f * crowd) * (elite ? 2.5f : 1.0f);
-		scaling.Damage = (1.0f + 0.06f * steps + 0.004f * steps * steps) * (elite ? 1.4f : 1.0f);
-		scaling.Speed = std::min(1.0f + 0.02f * steps, 1.3f) * (elite ? 1.1f : 1.0f);
-		scaling.Cooldown = std::max(1.0f - 0.02f * steps, 0.6f);
+		scaling.Health = LevelScale(level) * (1.0f + 0.6f * crowd) * (elite ? MonsterToughness(level) * (base * EliteHealthScale + EliteHealthBonus) / base : 1.0f);
+		scaling.Damage = MonsterDamageScale(level) * (elite ? 1.5f : 1.0f);
+		scaling.Speed = elite ? 1.1f : 1.0f;
 		scaling.Elite = elite;
-		scaling.Level = std::clamp(wave, 1u, 30u);
+		scaling.Level = std::clamp(level, 1u, MaxMonsterLevel);
 		return scaling;
 	}
 
@@ -398,17 +327,11 @@ namespace Game
 		LootKind Kind = LootKind::Health;
 		const char* Name = "";
 		const char* Effect = "";
-		uint8_t MaxStacks = 0;
 	};
 
 	inline constexpr LootDef LootDefs[] = {
-		{ LootKind::Health, "Health orb", "heals 35", 0 },
-		{ LootKind::Might, "Might", "+8% damage", 10 },
-		{ LootKind::Haste, "Haste", "+6% attack and cast speed", 10 },
-		{ LootKind::Swiftness, "Swiftness", "+4% move speed", 8 },
-		{ LootKind::Vitality, "Vitality", "+15 max health", 10 },
-		{ LootKind::Mana, "Mana orb", "restores 40 mana", 0 },
-		{ LootKind::Item, "Item", "", 0 },
+		{ LootKind::Health, "Health orb", "heals 35" },
+		{ LootKind::Mana, "Mana orb", "restores 40 mana" },
 	};
 	static_assert(std::size(LootDefs) == size_t(LootKind::Count));
 
@@ -420,12 +343,7 @@ namespace Game
 	inline constexpr float BaseMoveSpeed = 4.5f;
 	inline constexpr int32_t HealthOrbHeal = 35;
 	inline constexpr float ManaOrbRestore = 40.0f;
-	inline constexpr int32_t VitalityHealth = 15;
-	inline constexpr float MightPerStack = 0.08f;
-	inline constexpr float HastePerStack = 0.06f;
-	inline constexpr float SwiftnessPerStack = 0.04f;
 	inline constexpr float LootLifetime = 30.0f;
-	inline constexpr float ItemLootLifetime = 300.0f;
 	inline constexpr float LootPickupRadius = 0.8f;
 
 	inline int32_t ScaleDamage(int32_t damage, float scale)

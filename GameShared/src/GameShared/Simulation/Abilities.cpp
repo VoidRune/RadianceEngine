@@ -29,7 +29,7 @@ namespace Game
 	void ExecuteAbility(World& world, AbilityId id, const AbilityContext& context)
 	{
 		const AbilityDef& ability = GetAbility(id);
-		const bool brawlDamage = world.UsesBrawlDamage();
+		const bool brawlDamage = world.UsesBrawlDamage() && context.Side == Team::Players;
 		const int32_t damage = ScaleDamage(brawlDamage ? ability.BrawlDamage : ability.Damage, context.DamageScale);
 		if (HasCard(context.Cards, CardId::ResonantGround) && ability.Spell && IsAreaSpell(id) && ability.Kind != AbilityKind::Projectile && id != AbilityId::GlacialNova)
 			Resonate(world, ability, damage, context);

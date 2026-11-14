@@ -41,7 +41,7 @@ namespace Game
 	}
 
 	LevelBuilder::LevelBuilder(MapKind kind, uint32_t seed, int32_t width, int32_t height, TerrainId fill)
-		: m_Random(uint64_t(seed) * 0x2545F4914F6CDD1DULL + uint64_t(kind) + 7), m_Reserved(size_t(width) * size_t(height), 0)
+		: m_Random(uint64_t(seed) * 0x2545F4914F6CDD1DULL + uint64_t(GetMapDef(kind).Salt) + 7), m_Reserved(size_t(width) * size_t(height), 0)
 	{
 		m_Level.Kind = kind;
 		m_Level.Seed = seed;
@@ -221,14 +221,7 @@ namespace Game
 	void LevelBuilder::SetPlayerSpawn(Vec2 position)
 	{
 		m_Level.PlayerSpawn = position;
-		m_Level.MissionStart = position;
 		Reserve(position, 4.0f);
-	}
-
-	void LevelBuilder::SetMissionStart(Vec2 position)
-	{
-		m_Level.MissionStart = position;
-		Reserve(position, 3.0f);
 	}
 
 	void LevelBuilder::SetBossArena(Vec2 center, float radius)
@@ -257,18 +250,6 @@ namespace Game
 	{
 		m_Level.Sockets.push_back(position);
 		Reserve(position, 1.5f);
-	}
-
-	void LevelBuilder::LootSpot(Vec2 position, bool vault)
-	{
-		m_Level.LootSpots.push_back({ position, vault });
-		Reserve(position, vault ? 2.0f : 1.2f);
-	}
-
-	void LevelBuilder::Pad(Vec2 position, PadKind kind)
-	{
-		m_Level.Pads.push_back({ position, kind });
-		Reserve(position, 1.2f);
 	}
 
 	void LevelBuilder::Roof(const TileRect& area, float height)

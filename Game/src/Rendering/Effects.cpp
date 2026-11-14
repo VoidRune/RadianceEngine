@@ -764,25 +764,12 @@ namespace Game
 	{
 		switch (ability)
 		{
-		case AbilityId::Fireball:
 		case AbilityId::EmberBolt:
 			return Fx::FireTrail;
-		case AbilityId::Orb:
-			return Fx::FrostTrail;
-		case AbilityId::Bolt:
-		case AbilityId::ChainLightning:
-			return Fx::BoltTrail;
-		case AbilityId::IceSpear:
-			return Fx::IceTrail;
 		case AbilityId::FrostSpear:
 			return Fx::SpearTrail;
 		case AbilityId::PurpleFireball:
 			return Fx::FireballTrail;
-		case AbilityId::Arrow:
-		case AbilityId::Volley:
-		case AbilityId::Quarrel:
-		case AbilityId::PiercingShot:
-			return Fx::ArrowTrail;
 		case AbilityId::Spit:
 			return Fx::PoisonTrail;
 		case AbilityId::TomeVolley:
@@ -801,12 +788,8 @@ namespace Game
 	{
 		switch (ability)
 		{
-		case AbilityId::Bolt:
-		case AbilityId::ChainLightning:
 		case AbilityId::ArcLightning:
 			return Fx::LightningBurst;
-		case AbilityId::Orb:
-		case AbilityId::IceSpear:
 		case AbilityId::ShardBurst:
 			return Fx::FrostBurst;
 		case AbilityId::FrostSpear:
@@ -815,11 +798,6 @@ namespace Game
 			return Fx::ObsidianCrumble;
 		case AbilityId::EmberBolt:
 			return Fx::FireBurst;
-		case AbilityId::Arrow:
-		case AbilityId::Volley:
-		case AbilityId::Quarrel:
-		case AbilityId::PiercingShot:
-			return Fx::ArrowImpact;
 		case AbilityId::Spit:
 			return Fx::PoisonSplash;
 		case AbilityId::TomeVolley:
@@ -838,15 +816,10 @@ namespace Game
 		case AbilityId::FirebombSkip:
 		case AbilityId::FirebombSkip2:
 			return Fx::BombBurst;
-		case AbilityId::Fireball:
-			return Fx::Explosion;
 		case AbilityId::PurpleFireball:
 			return Fx::FireballBlast;
-		case AbilityId::Meteor:
 		case AbilityId::Comet:
 			return Fx::MeteorImpact;
-		case AbilityId::FrostNova:
-			return Fx::FrostNova;
 		case AbilityId::Gust:
 			return Fx::Cyclone;
 		case AbilityId::StormJump:
@@ -863,15 +836,6 @@ namespace Game
 			return Fx::FireBurst;
 		case AbilityId::Slam:
 			return Fx::Slam;
-		case AbilityId::GroundSlam:
-			return Fx::GroundSlam;
-		case AbilityId::Cyclone:
-			return Fx::Cyclone;
-		case AbilityId::Blink:
-			return Fx::Blink;
-		case AbilityId::Rejuvenate:
-			return Fx::Heal;
-		case AbilityId::RainOfArrows:
 		case AbilityId::TailSweep:
 			return Fx::Debris;
 		case AbilityId::PageStorm:
@@ -1212,10 +1176,6 @@ namespace Game
 		};
 		switch (ability)
 		{
-		case AbilityId::Fireball:
-			scorch(ground, radius * 0.75f, 6.0f, 2.0f);
-			shock(radius, 0.35f);
-			break;
 		case AbilityId::Firebomb:
 		case AbilityId::FirebombSkip:
 		case AbilityId::FirebombSkip2:
@@ -1278,7 +1238,6 @@ namespace Game
 		case AbilityId::HookAnchor:
 			cracks(ground, 0.5f, 1.4f, 0.0f);
 			break;
-		case AbilityId::Meteor:
 		case AbilityId::Comet:
 			scorch(ground, radius * 0.85f, 9.0f, 0.8f);
 			cracks(ground, radius * 1.05f, 8.0f, 1.0f);
@@ -1315,11 +1274,6 @@ namespace Game
 			scorch(ground, radius * 0.7f, 7.0f, 1.0f);
 			cracks(ground, radius, 6.0f, 0.9f);
 			break;
-		case AbilityId::FrostNova:
-			frost(ground, reach * 0.9f, 3.5f);
-			runes(ground, reach, 0.9f, 0.0f, 0.4f, 1.0f);
-			spikeRing(16, reach * 0.5f, reach * 0.95f, 0.5f, 1.1f, 1.6f, 0.3f, 0.65f);
-			break;
 		case AbilityId::FrostSpear:
 			frost(ground, 0.5f * scale, 2.8f);
 			if (scale >= SpearFullSize - 0.05f)
@@ -1355,12 +1309,6 @@ namespace Game
 			cracks(ground, reach, 3.5f, 0.0f);
 			shock(reach, 0.3f);
 			break;
-		case AbilityId::GroundSlam:
-			cracks(ground + forward * (reach * 0.45f), reach * 0.65f, 3.5f, 0.0f);
-			flash(DecalShape::Sector, ground, glm::vec2(reach), facing, def.HalfArc, 0.4f);
-			break;
-		case AbilityId::RainOfArrows:
-			break;
 		case AbilityId::PageStorm:
 		case AbilityId::ArcaneBurst:
 			runes(ground, radius, 0.8f, 0.0f, 0.85f, 1.05f);
@@ -1368,12 +1316,6 @@ namespace Game
 			break;
 		case AbilityId::ArcaneRing:
 			runes(ground, radius, 0.8f, def.InnerRadius / std::max(def.ImpactRadius, 0.01f), 0.95f, 1.0f);
-			break;
-		case AbilityId::Blink:
-			runes(ground, 1.1f, 0.6f, 0.0f, 0.6f, 1.0f);
-			break;
-		case AbilityId::Rejuvenate:
-			runes(ground, 1.3f, 1.1f, 0.0f, 0.7f, 1.0f);
 			break;
 		default:
 			break;

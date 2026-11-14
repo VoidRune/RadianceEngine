@@ -12,7 +12,6 @@ namespace Game
 	namespace
 	{
 		constexpr float NavigationInterval = 0.25f;
-		constexpr float DroppedItemBlockSeconds = 2.0f;
 		constexpr float SpotSearchStep = 0.5f;
 		constexpr int32_t SpotSearchRings = 40;
 
@@ -28,7 +27,6 @@ namespace Game
 		constexpr float BalloonFirstDelay = 75.0f;
 		constexpr float BalloonInterval = 210.0f;
 		constexpr uint32_t BalloonJitter = 150;
-		constexpr uint32_t VoidGiftOdds = 12;
 
 		constexpr const char* LandingLines[] = {
 			"A gust catches you and sets you back on the island.",
@@ -61,42 +59,18 @@ namespace Game
 		{
 			return uint8_t(std::clamp(std::lround(scale * 16.0f), 1l, 255l));
 		}
-
-		void ApplyRunLevel(PlayerTraits& traits, uint32_t level)
-		{
-			const uint32_t gained = level > 0 ? level - 1 : 0;
-			traits.MaxHealth += LevelHealth * int32_t(gained);
-			for (SkillTraits& skill : traits.Skills)
-				skill.DamageScale *= 1.0f + LevelDamage * float(gained);
-		}
-
-		void ApplyPenalties(PlayerTraits& traits, ModifierMask mask)
-		{
-			const PlayerPenalties penalties = GetPlayerPenalties(mask);
-			traits.Regeneration *= penalties.Regeneration;
-			traits.LifeSteal *= penalties.Regeneration;
-			traits.ManaRegen *= penalties.ManaRegen;
-			traits.Armor *= penalties.Armor;
-			for (float& resist : traits.Resist)
-				resist -= penalties.Resist;
-		}
 	}
 
 	World::World(const WorldSettings& settings)
 		: m_Settings(settings),
 		  m_Level(BuildLevel(settings.Map, settings.Seed)),
-		  m_Director(settings.IntermissionSeconds, settings.FirstWave),
 		  m_Random(uint64_t(settings.Seed) * 0x9E3779B97F4A7C15ULL + 1)
 	{
-		m_Settings.Tier = uint8_t(std::clamp<uint32_t>(m_Settings.Tier, 1u, MaxMissionTier));
-		m_Settings.Modifiers &= AllModifiers;
 		m_Settings.Rules = SanitizeRules(m_Settings.Rules);
 		m_Settings.Run = SanitizeRunRules(m_Settings.Run);
 		m_NavGrid.Build(m_Level);
-		m_HubSpells.fill(DefaultBrawlSpells);
-		if (m_Settings.Mode == GameMode::Mission)
-			m_Mission.Begin(*this);
-		else if (IsShardfall())
+		m_Chosen.fill(DefaultBrawlSpells);
+		if (IsShardfall())
 			m_Run.Begin(m_Settings.Run);
 		else if (IsPvp())
 			m_Match.Begin(*this);
@@ -119,8 +93,7 @@ namespace Game
 		const float dt = GetTickSeconds();
 		MarkTargetsMoved();
 		UpdateNavigation(dt);
-		if (m_Settings.Mode != GameMode::Horde || m_Director.GetStatus().Phase != GamePhase::Defeat)
-			UpdateRespawns(*this, dt);
+		UpdateRespawns(*this, dt);
 		UpdateRegeneration(*this, dt);
 		UpdateEnemies(*this, dt);
 		MarkTargetsMoved();
@@ -129,11 +102,7 @@ namespace Game
 		UpdateStrikes(*this, dt);
 		UpdateEffects(*this, dt);
 		UpdateLoot(*this, dt);
-		if (m_Settings.Mode == GameMode::Horde)
-			m_Director.Update(*this, dt);
-		else if (m_Settings.Mode == GameMode::Mission)
-			m_Mission.Update(*this, dt);
-		else if (IsPvp())
+		if (IsPvp())
 			m_Match.Update(*this, dt);
 		else if (IsHub())
 			UpdateHub(dt);
@@ -149,14 +118,10 @@ namespace Game
 
 	GameStatus World::GetStatus() const
 	{
-		GameStatus status = m_Settings.Mode == GameMode::Horde ? m_Director.GetStatus() : GameStatus{};
+		GameStatus status;
 		status.Mode = m_Settings.Mode;
 		status.Map = m_Settings.Map;
-		status.Tier = m_Settings.Tier;
-		status.Modifiers = m_Settings.Modifiers;
-		if (m_Settings.Mode == GameMode::Mission)
-			m_Mission.Describe(*this, status);
-		else if (IsPvp())
+		if (IsPvp())
 			m_Match.Describe(*this, status);
 		else if (IsHub())
 			status.HubFalls = uint16_t(std::min<uint32_t>(m_HubFalls, UINT16_MAX));
@@ -181,13 +146,6 @@ namespace Game
 			return false;
 		const uint8_t team = m_Match.GetTeam(a);
 		return team == NoTeam || team != m_Match.GetTeam(b);
-	}
-
-	MissionRewards World::GetRewards() const
-	{
-		MissionRewards rewards = m_Settings.Mode == GameMode::Mission ? GetMissionRewards(m_Settings.Tier, m_Settings.Modifiers) : MissionRewards{};
-		rewards.Quantity *= m_Settings.LootRate;
-		return rewards;
 	}
 
 	PlayerActions World::ApplyPlayerInput(Entity player, const PlayerInput& input)
@@ -384,41 +342,11 @@ namespace Game
 		});
 	}
 
-	Entity World::SpawnPlayer(uint32_t playerId, const GearSet& gear)
+	Entity World::SpawnPlayer(uint32_t playerId, const BrawlSpells& spells)
 	{
-		Inventory inventory;
-		inventory.Gear = gear.Gear;
-		inventory.Gems = gear.Gems;
-		inventory.Pack = gear.Pack;
-		inventory.Stash = gear.Stash;
-		inventory.Materials = gear.Materials;
-		return SpawnPlayer(playerId, inventory);
-	}
-
-	Entity World::SpawnPlayer(uint32_t playerId, const Inventory& source)
-	{
-		Inventory inventory = source;
-		const auto adopt = [&](Item& item)
-		{
-			if (item.IsValid())
-				item.Id = AllocateItemId();
-		};
-		for (Item& item : inventory.Gear)
-			adopt(item);
-		for (Item& item : inventory.Gems)
-			adopt(item);
-		for (Item& item : inventory.Pack)
-			adopt(item);
-		for (Item& item : inventory.Stash)
-			adopt(item);
-		if (!inventory.Gear[size_t(GearSlot::Weapon)].IsValid())
-			inventory.Gear[size_t(GearSlot::Weapon)] = MakeItem(ItemBase::Wand, AllocateItemId());
-
-		PlayerTraits traits = m_Settings.Mode == GameMode::Brawl ? m_Match.GetBrawlTraits(playerId) : IsHub() ? HubTraits(playerId) : ComputeTraits(inventory.Gear, inventory.Gems, {}, inventory.Upgrades);
-		if (m_Settings.Mode == GameMode::Mission)
-			ApplyPenalties(traits, m_Settings.Modifiers);
-		if (IsShardfall())
-			ApplyRunLevel(traits, m_Run.GetLevel());
+		if (playerId < MaxPlayers)
+			m_Chosen[playerId] = spells;
+		const PlayerTraits traits = ComputeTraits(playerId);
 		PlayerController controller{ .PlayerId = playerId, .Traits = traits };
 		controller.State.Mana = traits.MaxMana;
 		const Vec2 position = IsPvp() ? m_Match.FindSpawn(*this, playerId) : FindSpawnPosition(playerId);
@@ -429,7 +357,6 @@ namespace Game
 		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Player, .Owner = playerId });
 		m_Entities.Add<Health>(entity, traits.MaxHealth, traits.MaxHealth, Team::Players);
 		m_Entities.Add<PlayerController>(entity, controller);
-		m_Entities.Add<Inventory>(entity, inventory);
 		MotionHistory history;
 		history.Positions.fill(position);
 		history.FirstTick = m_Tick + 1;
@@ -437,11 +364,6 @@ namespace Game
 		if (IsPvp())
 			m_Match.OnPlayerSpawned(*this, entity, playerId);
 		return entity;
-	}
-
-	Entity World::SpawnPlayer(uint32_t playerId, StarterKit kit)
-	{
-		return SpawnPlayer(playerId, MakeStarterGear(kit));
 	}
 
 	void World::RespawnPlayer(Entity player)
@@ -454,14 +376,7 @@ namespace Game
 
 		Vec2 position;
 		if (IsPvp())
-		{
 			position = m_Match.FindSpawn(*this, controller->PlayerId);
-			if (std::any_of(controller->Buffs.begin(), controller->Buffs.end(), [](uint8_t stacks) { return stacks > 0; }))
-			{
-				controller->Buffs = {};
-				RefreshTraits(player);
-			}
-		}
 		else
 		{
 			std::optional<Vec2> teammate;
@@ -519,7 +434,7 @@ namespace Game
 		controller->State.CastSlot = -1;
 		controller->State.Stun = 0.0f;
 		controller->State.Chill = 0.0f;
-		controller->RespawnTimer = IsPvp() ? ArenaRespawnDelay : RespawnDelay;
+		controller->RespawnTimer = IsPvp() ? PvpRespawnDelay : RespawnDelay;
 		controller->LastAttacker = NoPlayer;
 		controller->KilledBy = killer;
 		if (Health* health = m_Entities.TryGet<Health>(player))
@@ -572,7 +487,7 @@ namespace Game
 			return false;
 		if (IsHub())
 		{
-			if (controller->PlayerId >= MaxPlayers || !AssignSpell(m_HubSpells[controller->PlayerId], slot, spell))
+			if (controller->PlayerId >= MaxPlayers || !AssignSpell(m_Chosen[controller->PlayerId], slot, spell))
 				return false;
 			RefreshTraits(player);
 			return true;
@@ -580,9 +495,14 @@ namespace Game
 		return m_Settings.Mode == GameMode::Brawl && m_Match.PickSpell(*this, player, controller->PlayerId, slot, spell);
 	}
 
-	PlayerTraits World::HubTraits(uint32_t playerId) const
+	PlayerTraits World::ComputeTraits(uint32_t playerId) const
 	{
-		return MakeBrawlTraits({ .Spells = playerId < MaxPlayers ? m_HubSpells[playerId] : DefaultBrawlSpells }, BrawlMode::Damage);
+		const BrawlSpells& chosen = GetChosenSpells(playerId);
+		if (m_Settings.Mode == GameMode::Brawl)
+			return m_Match.GetBrawlTraits(playerId);
+		if (IsShardfall())
+			return MakeRunTraits(MakeRunLoadout(chosen), m_Run.GetLevel());
+		return MakeBrawlTraits({ .Spells = chosen }, BrawlMode::Damage);
 	}
 
 	void World::SpawnDummy(uint32_t spot, DummyKind kind)
@@ -688,29 +608,13 @@ namespace Game
 	bool World::MakeWish(Entity player)
 	{
 		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		if (!controller || !inventory || controller->PlayerId >= MaxPlayers || !controller->State.Alive || controller->State.IsFalling() || !IsNearStation(player, StationKind::WishingVoid))
+		if (!controller || controller->PlayerId >= MaxPlayers || !controller->State.Alive || controller->State.IsFalling() || !IsNearStation(player, StationKind::WishingVoid))
 			return false;
 		float& cooldown = m_WishCooldowns[controller->PlayerId];
 		if (cooldown > 0.0f)
 			return false;
-		MaterialStock cost{};
-		cost[size_t(Material::Gold)] = WishCost;
-		if (!PayFor(*inventory, cost))
-		{
-			Notify(controller->PlayerId, "You have no gold to offer. The void waits.", false);
-			return false;
-		}
 		cooldown = WishCooldownSeconds;
-		Emit({ WorldEventType::MaterialsChanged, controller->PlayerId });
 		Notify(controller->PlayerId, Fortunes[m_Random.Below(uint32_t(std::size(Fortunes)))], true);
-		if (m_Random.Below(VoidGiftOdds) == 0)
-		{
-			MaterialStock gift{};
-			gift[size_t(Material::Shard) + m_Random.Below(uint32_t(Material::Count) - uint32_t(Material::Shard))] = 1;
-			GrantMaterials(player, gift);
-			Notify(controller->PlayerId, "Something comes flying back up out of the void and lands at your feet.", true);
-		}
 		return true;
 	}
 
@@ -980,16 +884,11 @@ namespace Game
 	void World::RefreshTraits(Entity player)
 	{
 		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
 		Health* health = m_Entities.TryGet<Health>(player);
-		if (!controller || !inventory || !health)
+		if (!controller || !health)
 			return;
 		const int32_t previousMax = controller->Traits.MaxHealth;
-		controller->Traits = m_Settings.Mode == GameMode::Brawl ? m_Match.GetBrawlTraits(controller->PlayerId) : IsHub() ? HubTraits(controller->PlayerId) : ComputeTraits(inventory->Gear, inventory->Gems, controller->Buffs, inventory->Upgrades);
-		if (m_Settings.Mode == GameMode::Mission)
-			ApplyPenalties(controller->Traits, m_Settings.Modifiers);
-		if (IsShardfall())
-			ApplyRunLevel(controller->Traits, m_Run.GetLevel());
+		controller->Traits = ComputeTraits(controller->PlayerId);
 		controller->State.Mana = std::min(controller->State.Mana, controller->Traits.MaxMana);
 		health->Max = controller->Traits.MaxHealth;
 		if (controller->State.Alive)
@@ -1020,9 +919,8 @@ namespace Game
 	Entity World::SpawnBoss(EntityKind kind, Vec2 position, uint32_t level)
 	{
 		const uint32_t players = std::max(CountPlayers(), 1u);
-		EnemyScaling scaling = GetMonsterScaling(kind, level, players, false, m_Settings.Modifiers);
-		scaling.Health = LevelScale(scaling.Level) * MonsterToughness(scaling.Level) * (1.0f + BossHealthPerPlayer * float(players - 1)) * (HasModifier(m_Settings.Modifiers, MissionModifier::Fortified) ? 1.6f : 1.0f);
-		scaling.Speed = HasModifier(m_Settings.Modifiers, MissionModifier::Frenzied) ? 1.1f : 1.0f;
+		EnemyScaling scaling = GetMonsterScaling(kind, level, players, false);
+		scaling.Health = LevelScale(scaling.Level) * MonsterToughness(scaling.Level) * (1.0f + BossHealthPerPlayer * float(players - 1));
 		const Entity entity = SpawnEnemy(kind, position, scaling);
 		if (!entity.IsValid())
 			return entity;
@@ -1215,59 +1113,11 @@ namespace Game
 		return entity;
 	}
 
-	Entity World::SpawnItem(const Item& item, Vec2 position, uint32_t blockedPlayer, uint32_t forPlayer)
-	{
-		const Entity entity = m_Entities.Create();
-		m_Entities.Add<Transform>(entity, position, m_Random.Float() * 2.0f * Pi);
-		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Loot, .Owner = blockedPlayer, .Tag = EncodeItemTag(item), .Variant = uint8_t(LootKind::Item), .Visibility = forPlayer });
-		m_Entities.Add<Loot>(entity, Loot{
-			.Kind = LootKind::Item,
-			.Lifetime = ItemLootLifetime,
-			.Drop = item,
-			.BlockedPlayer = blockedPlayer,
-			.BlockTimer = blockedPlayer != NoPlayer ? DroppedItemBlockSeconds : 0.0f,
-			.ForPlayer = forPlayer,
-		});
-		return entity;
-	}
-
-	Entity World::SpawnChest(Vec2 position, const Chest& chest)
-	{
-		const Entity entity = m_Entities.Create();
-		m_Entities.Add<Transform>(entity, position, m_Random.Float() * 2.0f * Pi);
-		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Chest, .Tag = uint16_t(chest.Kind) });
-		m_Entities.Add<Chest>(entity, chest);
-		return entity;
-	}
-
-	Entity World::SpawnGateway(Vec2 position)
-	{
-		const Entity entity = m_Entities.Create();
-		m_Entities.Add<Transform>(entity, position, 0.0f);
-		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Gateway });
-		m_Entities.Add<Gateway>(entity, Gateway{});
-		return entity;
-	}
-
-	Item* World::FindFreePackSlot(Inventory& inventory)
-	{
-		const auto slot = std::find_if(inventory.Pack.begin(), inventory.Pack.end(), [](const Item& item) { return !item.IsValid(); });
-		return slot != inventory.Pack.end() ? &*slot : nullptr;
-	}
-
-	void World::InventoryChanged(Entity player)
-	{
-		RefreshTraits(player);
-		if (const PlayerController* controller = m_Entities.TryGet<PlayerController>(player))
-			Emit({ WorldEventType::InventoryChanged, controller->PlayerId });
-	}
-
 	bool World::ApplyLoot(Entity player, const Loot& loot)
 	{
 		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
 		Health* health = m_Entities.TryGet<Health>(player);
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		if (!controller || !health || !inventory || !controller->State.Alive)
+		if (!controller || !health || !controller->State.Alive)
 			return false;
 		switch (loot.Kind)
 		{
@@ -1281,162 +1131,10 @@ namespace Game
 				return false;
 			controller->State.Mana = std::min(controller->Traits.MaxMana, controller->State.Mana + ManaOrbRestore);
 			break;
-		case LootKind::Item:
-		{
-			Item* slot = FindFreePackSlot(*inventory);
-			if (!slot)
-				return false;
-			*slot = loot.Drop;
-			Emit({ WorldEventType::InventoryChanged, controller->PlayerId });
-			if (m_Settings.Mode == GameMode::Royale)
-				AutoEquip(player, uint32_t(slot - inventory->Pack.data()));
-			break;
-		}
 		default:
-		{
-			uint8_t& stacks = controller->Buffs[size_t(loot.Kind)];
-			if (stacks >= LootDefs[size_t(loot.Kind)].MaxStacks)
-				return false;
-			stacks++;
-			RefreshTraits(player);
-			break;
-		}
+			return false;
 		}
 		Emit({ WorldEventType::LootPicked, controller->PlayerId, uint8_t(loot.Kind) });
-		return true;
-	}
-
-	void World::AutoEquip(Entity player, uint32_t packSlot)
-	{
-		const Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		if (!inventory || packSlot >= BackpackSize)
-			return;
-		const Item& item = inventory->Pack[packSlot];
-		if (item.IsGem())
-		{
-			const Item& weapon = inventory->Gear[size_t(GearSlot::Weapon)];
-			if (!MeetsRequirement(GetAbility(item.Skill).Needs, weapon.IsValid() ? GetItemBase(weapon.Base).Affinity : 0))
-				return;
-			for (uint32_t gem = 0; gem < SkillSlots; gem++)
-				if (!inventory->Gems[gem].IsValid())
-				{
-					SlotGem(player, packSlot, gem);
-					return;
-				}
-			return;
-		}
-		const std::optional<GearSlot> slot = PreferredGearSlot(item, inventory->Gear);
-		if (slot && !inventory->Gear[size_t(*slot)].IsValid())
-			EquipItemTo(player, packSlot, *slot);
-	}
-
-	bool World::EquipItem(Entity player, uint32_t packSlot)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		if (!inventory || packSlot >= BackpackSize)
-			return false;
-		const Item& item = inventory->Pack[packSlot];
-		if (item.IsGem())
-		{
-			for (uint32_t gem = 0; gem < SkillSlots; gem++)
-				if (!inventory->Gems[gem].IsValid())
-					return SlotGem(player, packSlot, gem);
-			return SlotGem(player, packSlot, SkillSlots - 1);
-		}
-		const std::optional<GearSlot> slot = PreferredGearSlot(item, inventory->Gear);
-		return slot && EquipItemTo(player, packSlot, *slot);
-	}
-
-	bool World::EquipItemTo(Entity player, uint32_t packSlot, GearSlot slot)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		if (!inventory || packSlot >= BackpackSize || slot >= GearSlot::Count || !CanEquip(inventory->Pack[packSlot], slot))
-			return false;
-		std::swap(inventory->Gear[size_t(slot)], inventory->Pack[packSlot]);
-		InventoryChanged(player);
-		return true;
-	}
-
-	bool World::UnequipItem(Entity player, GearSlot slot)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		if (!inventory || slot >= GearSlot::Count || slot == GearSlot::Weapon || !inventory->Gear[size_t(slot)].IsValid())
-			return false;
-		Item* free = FindFreePackSlot(*inventory);
-		if (!free)
-			return false;
-		std::swap(*free, inventory->Gear[size_t(slot)]);
-		InventoryChanged(player);
-		return true;
-	}
-
-	bool World::DropItem(Entity player, uint32_t packSlot)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		const Transform* transform = m_Entities.TryGet<Transform>(player);
-		if (!inventory || !controller || !transform || packSlot >= BackpackSize || !inventory->Pack[packSlot].IsValid())
-			return false;
-		SpawnItem(inventory->Pack[packSlot], PlaceDrop(transform->Position, transform->Position + FromAngle(transform->Facing) * 0.7f), controller->PlayerId);
-		inventory->Pack[packSlot] = {};
-		Emit({ WorldEventType::InventoryChanged, controller->PlayerId });
-		return true;
-	}
-
-	bool World::SlotGem(Entity player, uint32_t packSlot, uint32_t gemSlot)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!inventory || !controller || packSlot >= BackpackSize || gemSlot >= SkillSlots || !inventory->Pack[packSlot].IsGem())
-			return false;
-		std::swap(inventory->Gems[gemSlot], inventory->Pack[packSlot]);
-		controller->State.Cooldowns[gemSlot + 1] = 0.0f;
-		if (controller->State.CastSlot == int8_t(gemSlot + 1))
-			controller->State.CastSlot = -1;
-		InventoryChanged(player);
-		return true;
-	}
-
-	bool World::UnslotGem(Entity player, uint32_t gemSlot)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!inventory || !controller || gemSlot >= SkillSlots || !inventory->Gems[gemSlot].IsValid())
-			return false;
-		Item* free = FindFreePackSlot(*inventory);
-		if (!free)
-			return false;
-		std::swap(*free, inventory->Gems[gemSlot]);
-		if (controller->State.CastSlot == int8_t(gemSlot + 1))
-			controller->State.CastSlot = -1;
-		InventoryChanged(player);
-		return true;
-	}
-
-	Item* World::ResolveItem(Inventory& inventory, ItemRef ref)
-	{
-		switch (ref.Location)
-		{
-		case ItemLocation::Pack:
-			return ref.Index < BackpackSize ? &inventory.Pack[ref.Index] : nullptr;
-		case ItemLocation::Gear:
-			return ref.Index < GearSlotCount ? &inventory.Gear[ref.Index] : nullptr;
-		case ItemLocation::Gem:
-			return ref.Index < SkillSlots ? &inventory.Gems[ref.Index] : nullptr;
-		case ItemLocation::Stash:
-			return ref.Index < StashSize ? &inventory.Stash[ref.Index] : nullptr;
-		default:
-			return nullptr;
-		}
-	}
-
-	bool World::PayFor(Inventory& inventory, const MaterialStock& cost)
-	{
-		if (m_Settings.UnlimitedMaterials)
-			return true;
-		if (!CanAfford(inventory.Materials, cost))
-			return false;
-		Spend(inventory.Materials, cost);
 		return true;
 	}
 
@@ -1445,226 +1143,6 @@ namespace Game
 		const Station* station = m_Level.FindStation(kind);
 		const Transform* transform = m_Entities.TryGet<Transform>(player);
 		return IsHub() && station && transform && Length(transform->Position - station->Position) <= station->Radius + StationSlack;
-	}
-
-	bool World::StashItem(Entity player, uint32_t packSlot, uint32_t stashSlot)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!inventory || !controller || !IsNearStation(player, StationKind::Stash) || packSlot >= BackpackSize)
-			return false;
-		if (stashSlot >= StashSize)
-		{
-			const auto free = std::find_if(inventory->Stash.begin(), inventory->Stash.end(), [](const Item& item) { return !item.IsValid(); });
-			if (free == inventory->Stash.end())
-				return false;
-			stashSlot = uint32_t(free - inventory->Stash.begin());
-		}
-		if (!inventory->Pack[packSlot].IsValid() && !inventory->Stash[stashSlot].IsValid())
-			return false;
-		std::swap(inventory->Pack[packSlot], inventory->Stash[stashSlot]);
-		Emit({ WorldEventType::StashChanged, controller->PlayerId });
-		Emit({ WorldEventType::InventoryChanged, controller->PlayerId });
-		return true;
-	}
-
-	bool World::TakeFromStash(Entity player, uint32_t stashSlot, uint32_t packSlot)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		if (!inventory || stashSlot >= StashSize)
-			return false;
-		if (packSlot >= BackpackSize)
-		{
-			Item* free = FindFreePackSlot(*inventory);
-			if (!free)
-				return false;
-			packSlot = uint32_t(free - inventory->Pack.data());
-		}
-		return StashItem(player, packSlot, stashSlot);
-	}
-
-	bool World::SalvageItem(Entity player, ItemRef ref)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!inventory || !controller || m_Settings.Mode == GameMode::Royale)
-			return false;
-		if (ref.Location != ItemLocation::Pack && !(ref.Location == ItemLocation::Stash && IsNearStation(player, StationKind::Stash)))
-			return false;
-		Item* item = ResolveItem(*inventory, ref);
-		if (!item || !item->IsValid())
-			return false;
-		const MaterialStock value = GetSalvageValue(*item);
-		Notify(controller->PlayerId, "Salvaged " + GetItemName(*item), true);
-		*item = {};
-		Emit({ ref.Location == ItemLocation::Stash ? WorldEventType::StashChanged : WorldEventType::InventoryChanged, controller->PlayerId });
-		GrantMaterials(player, value);
-		return true;
-	}
-
-	CraftResult World::ForgeItem(Entity player, ItemRef ref, ForgeAction action, uint32_t affix, StatCategory category)
-	{
-		CraftResult result;
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!inventory || !controller || action >= ForgeAction::Count)
-			return result;
-		Item* item = ResolveItem(*inventory, ref);
-		if (!IsNearStation(player, StationKind::Forge))
-			result.Message = "Stand at the forge";
-		else if (!item || !item->IsValid() || item->IsGem())
-			result.Message = "Place a weapon or armor piece on the anvil";
-		else if (const std::optional<std::string> reason = CheckForge(*item, action, affix, category))
-			result.Message = *reason;
-		else if (!PayFor(*inventory, GetForgeCost(*item, action, affix)))
-			result.Message = "Not enough materials";
-		else
-		{
-			result = ApplyForge(m_Random, *item, action, affix, category);
-			Emit({ WorldEventType::MaterialsChanged, controller->PlayerId });
-			if (ref.Location == ItemLocation::Stash)
-				Emit({ WorldEventType::StashChanged, controller->PlayerId });
-			else if (ref.Location == ItemLocation::Gear)
-				InventoryChanged(player);
-			else
-				Emit({ WorldEventType::InventoryChanged, controller->PlayerId });
-		}
-		Notify(controller->PlayerId, result.Message, result.Applied && result.Success);
-		return result;
-	}
-
-	CraftResult World::CraftGem(Entity player, ItemRef ref, GemAction action)
-	{
-		CraftResult result;
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!inventory || !controller || action >= GemAction::Count)
-			return result;
-		Item* gem = ResolveItem(*inventory, ref);
-		if (!IsNearStation(player, StationKind::Lapidary))
-			result.Message = "Stand at the lapidary";
-		else if (!gem || !gem->IsGem())
-			result.Message = "Place a skill gem on the altar";
-		else if (const std::optional<std::string> reason = CheckGemCraft(*gem, action))
-			result.Message = *reason;
-		else if (!PayFor(*inventory, GetGemCost(*gem, action)))
-			result.Message = "Not enough materials";
-		else
-		{
-			result = ApplyGemCraft(m_Random, *gem, action);
-			Emit({ WorldEventType::MaterialsChanged, controller->PlayerId });
-			if (ref.Location == ItemLocation::Stash)
-				Emit({ WorldEventType::StashChanged, controller->PlayerId });
-			else if (ref.Location == ItemLocation::Gem)
-			{
-				controller->State.Cooldowns[ref.Index + 1] = 0.0f;
-				InventoryChanged(player);
-			}
-			else
-				Emit({ WorldEventType::InventoryChanged, controller->PlayerId });
-		}
-		Notify(controller->PlayerId, result.Message, result.Applied && result.Success);
-		return result;
-	}
-
-	void World::GrantMaterials(Entity player, const MaterialStock& materials)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!inventory || !controller || std::all_of(materials.begin(), materials.end(), [](uint32_t amount) { return amount == 0; }))
-			return;
-		Gain(inventory->Materials, materials);
-		Emit({ WorldEventType::MaterialsChanged, controller->PlayerId });
-	}
-
-	bool World::OpenChest(Entity player)
-	{
-		const Transform* transform = m_Entities.TryGet<Transform>(player);
-		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!transform || !controller || !controller->State.Alive)
-			return false;
-		const uint16_t bit = uint16_t(1u << (controller->PlayerId % 16));
-		Entity found;
-		float best = InteractRange * InteractRange;
-		m_Entities.Each<Chest>([&](Entity entity, Chest& chest)
-		{
-			const Transform* chestTransform = m_Entities.TryGet<Transform>(entity);
-			if (!chestTransform || (chest.Opened & bit))
-				return;
-			const float distance = LengthSquared(chestTransform->Position - transform->Position);
-			if (distance <= best)
-			{
-				best = distance;
-				found = entity;
-			}
-		});
-		Chest* chest = m_Entities.TryGet<Chest>(found);
-		if (!chest)
-			return false;
-		const Vec2 origin = m_Entities.TryGet<Transform>(found)->Position;
-		if (chest->Kind != ChestKind::Boss)
-		{
-			chest->Opened = 0xFFFF;
-			OpenMatchChest(player, *chest, origin);
-			return true;
-		}
-		chest->Opened |= bit;
-		for (uint32_t i = 0; i < chest->Items; i++)
-		{
-			const Vec2 spot = PlaceDrop(origin, origin + FromAngle(m_Random.Float() * 2.0f * Pi) * (1.0f + 0.8f * m_Random.Float()));
-			SpawnItem(GenerateItem(m_Random, AllocateItemId(), chest->Level, chest->RarityBonus, Rarity::Rare), spot, NoPlayer, controller->PlayerId);
-		}
-		MaterialStock materials{};
-		materials[size_t(Material::Gold)] = uint32_t(std::lround(150.0f * (1.0f + 0.15f * float(chest->Level - 1)) * chest->Quantity));
-		materials[size_t(Material::Shard)] = 2 + m_Random.Below(3);
-		materials[size_t(Material::ArcaneDust)] = 1 + m_Random.Below(3);
-		materials[size_t(Material::Starsteel)] = m_Random.Below(2);
-		GrantMaterials(player, materials);
-		Emit({ WorldEventType::ChestOpened, controller->PlayerId });
-		return true;
-	}
-
-	void World::OpenMatchChest(Entity player, const Chest& chest, Vec2 origin)
-	{
-		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		const Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		if (!controller || !inventory)
-			return;
-		const uint32_t playerId = controller->PlayerId;
-		const Item& weapon = inventory->Gear[size_t(GearSlot::Weapon)];
-		const uint8_t affinity = weapon.IsValid() ? GetItemBase(weapon.Base).Affinity : 0;
-		const ChestDef& def = GetChestDef(chest.Kind);
-		const uint32_t level = std::min(RoyaleItemLevel(m_Match.GetStorm().Stage) + def.LevelBonus + m_Random.Below(3), MaxItemLevel);
-		const auto scatter = [&](float reach) { return PlaceDrop(origin, origin + FromAngle(m_Random.Float() * 2.0f * Pi) * (reach + 0.6f * m_Random.Float())); };
-		for (uint32_t i = 0; i < def.Items; i++)
-			SpawnItem(GenerateItem(m_Random, AllocateItemId(), level, def.RarityBonus, def.Minimum), scatter(1.0f), NoPlayer);
-		if (m_Random.Float() < def.GemChance)
-		{
-			std::vector<AbilityId> gems;
-			const bool fitting = m_Random.Float() < 0.7f;
-			for (const AbilityDef& ability : Abilities)
-				if (ability.Gem && (!fitting || MeetsRequirement(ability.Needs, affinity)))
-					gems.push_back(ability.Id);
-			const uint32_t gemLevel = std::min(1u + level / 7u + (m_Random.Below(100) < 30 ? 1u : 0u), uint32_t(MaxGemLevel));
-			SpawnItem(MakeGem(gems[m_Random.Below(uint32_t(gems.size()))], AllocateItemId(), gemLevel), scatter(1.2f), NoPlayer);
-		}
-		if (m_Random.Float() < def.OrbChance)
-			SpawnLoot(m_Random.Below(4) == 0 ? LootKind(1 + m_Random.Below(uint32_t(BuffKinds) - 1)) : LootKind::Health, scatter(0.8f));
-		Emit({ WorldEventType::ChestOpened, playerId, uint8_t(chest.Kind) });
-	}
-
-	bool World::IsNearGateway(Entity player) const
-	{
-		const Transform* transform = m_Entities.TryGet<Transform>(player);
-		if (!transform)
-			return false;
-		bool near = false;
-		const_cast<EntityRegistry&>(m_Entities).Each<Gateway>([&](Entity entity, Gateway& gateway)
-		{
-			if (const Transform* gate = m_Entities.TryGet<Transform>(entity))
-				near = near || Length(gate->Position - transform->Position) <= gateway.Radius + InteractRange * 0.5f;
-		});
-		return near;
 	}
 
 	void World::WakePack(uint16_t pack)
@@ -1680,8 +1158,6 @@ namespace Game
 
 	void World::OnEnemyKilled(Entity entity, const Enemy& enemy, Vec2 position, uint32_t)
 	{
-		if (m_Settings.Mode == GameMode::Mission)
-			m_Mission.OnKilled(*this, position, IsBossKind(enemy.Type));
 		const EnemyDef* def = FindEnemyDef(enemy.Type);
 		if (def && def->Behavior == EnemyBehavior::Volatile)
 		{
@@ -1703,77 +1179,15 @@ namespace Game
 	{
 		m_Entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
 		{
-			Inventory* inventory = m_Entities.TryGet<Inventory>(entity);
-			if (!inventory)
-				return;
-			std::vector<UpgradeId> open;
-			for (const UpgradeDef& upgrade : Upgrades)
-				if (inventory->Upgrades[size_t(upgrade.Id)] < upgrade.MaxPicks)
-					open.push_back(upgrade.Id);
-			std::string text = "Level " + std::to_string(level);
-			if (!open.empty())
-			{
-				const UpgradeDef& picked = GetUpgrade(open[m_Random.Below(uint32_t(open.size()))]);
-				inventory->Upgrades[size_t(picked.Id)]++;
-				text += ": " + std::string(picked.Name);
-			}
 			RefreshTraits(entity);
 			if (announce)
-				Notify(controller.PlayerId, text, true);
+				Notify(controller.PlayerId, "Level " + std::to_string(level), true);
 		});
 	}
 
 	bool World::ConsumeRevive(uint32_t playerId)
 	{
-		if (IsPvp())
-			return m_Match.CanRespawn(playerId);
-		return m_Settings.Mode != GameMode::Mission || m_Mission.ConsumeRevive();
-	}
-
-	void World::OfferUpgrades()
-	{
-		m_Entities.Each<Inventory>([&](Entity entity, Inventory& inventory)
-		{
-			const PlayerController* controller = m_Entities.TryGet<PlayerController>(entity);
-			if (!controller)
-				return;
-			std::vector<UpgradeId> candidates;
-			for (const UpgradeDef& upgrade : Upgrades)
-				if (inventory.Upgrades[size_t(upgrade.Id)] < upgrade.MaxPicks)
-					candidates.push_back(upgrade.Id);
-			if (candidates.empty())
-				return;
-			for (size_t i = candidates.size(); i > 1; i--)
-				std::swap(candidates[i - 1], candidates[m_Random.Below(uint32_t(i))]);
-			for (size_t i = 0; i < UpgradeChoices; i++)
-				inventory.Offer[i] = i < candidates.size() ? candidates[i] : UpgradeId::Count;
-			inventory.OfferPending = true;
-			Emit({ WorldEventType::UpgradesOffered, controller->PlayerId });
-		});
-	}
-
-	bool World::ChooseUpgrade(Entity player, uint32_t choice)
-	{
-		Inventory* inventory = m_Entities.TryGet<Inventory>(player);
-		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!inventory || !controller || !inventory->OfferPending || choice >= UpgradeChoices || inventory->Offer[choice] == UpgradeId::Count)
-			return false;
-		const UpgradeDef& upgrade = GetUpgrade(inventory->Offer[choice]);
-		uint8_t& stacks = inventory->Upgrades[size_t(upgrade.Id)];
-		if (stacks >= upgrade.MaxPicks)
-			return false;
-		stacks++;
-		inventory->OfferPending = false;
-		RefreshTraits(player);
-		Emit({ WorldEventType::InventoryChanged, controller->PlayerId, uint8_t(upgrade.Id) });
-		return true;
-	}
-
-	uint32_t World::CountPendingUpgrades() const
-	{
-		uint32_t pending = 0;
-		const_cast<EntityRegistry&>(m_Entities).Each<Inventory>([&](Entity, Inventory& inventory) { pending += inventory.OfferPending ? 1 : 0; });
-		return pending;
+		return !IsPvp() || m_Match.CanRespawn(playerId);
 	}
 
 	uint32_t World::CountPlayers() const
@@ -1787,29 +1201,6 @@ namespace Game
 	{
 		m_Entities.Destroy(entity);
 		MarkTargetsMoved();
-	}
-
-	void World::ResetRun()
-	{
-		m_Entities.Each<Enemy>([&](Entity entity, Enemy&) { QueueDestroy(entity); });
-		m_Entities.Each<Projectile>([&](Entity entity, Projectile&) { QueueDestroy(entity); });
-		m_Entities.Each<Effect>([&](Entity entity, Effect&) { QueueDestroy(entity); });
-		m_Entities.Each<PendingStrike>([&](Entity entity, PendingStrike&) { QueueDestroy(entity); });
-		m_Entities.Each<Loot>([&](Entity entity, Loot&) { QueueDestroy(entity); });
-		m_Entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
-		{
-			if (Inventory* inventory = m_Entities.TryGet<Inventory>(entity))
-			{
-				inventory->Upgrades = {};
-				inventory->Offer = {};
-				inventory->OfferPending = false;
-			}
-			controller.Buffs = {};
-			RefreshTraits(entity);
-			Emit({ WorldEventType::InventoryChanged, controller.PlayerId });
-			controller.State.Alive = false;
-		});
-		m_Entities.Each<PlayerController>([&](Entity entity, PlayerController&) { RespawnPlayer(entity); });
 	}
 
 	bool World::GetPastPosition(Entity entity, double tick, Vec2& position) const
@@ -1837,7 +1228,7 @@ namespace Game
 	Vec2 World::FindSpawnPosition(uint32_t playerId) const
 	{
 		const Vec2 offsets[4] = { { -1.0f, -1.0f }, { 1.0f, -1.0f }, { -1.0f, 1.0f }, { 1.0f, 1.0f } };
-		const Vec2 origin = m_Settings.Mode == GameMode::Mission ? m_Level.MissionStart : m_Level.PlayerSpawn;
+		const Vec2 origin = m_Level.PlayerSpawn;
 		return FindFreeSpotNear(origin + offsets[playerId % 4], PlayerRadius);
 	}
 

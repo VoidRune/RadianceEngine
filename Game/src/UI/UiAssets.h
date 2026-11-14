@@ -4,8 +4,6 @@
 #include <GameShared/Content/Brawl.h>
 #include <GameShared/Content/Cosmetics.h>
 #include <GameShared/Content/Definitions.h>
-#include <GameShared/Content/Items.h>
-#include <GameShared/Content/Upgrades.h>
 #include <GameShared/World/Level.h>
 #include <array>
 #include <cstdint>
@@ -184,18 +182,12 @@ namespace Game
 		std::array<UiImageRegion, size_t(UiImage::Count)> m_Images{};
 	};
 
-	UiIcon IconFor(ItemBase base);
 	UiIcon IconFor(AbilityId ability);
-	UiIcon IconFor(UpgradeId upgrade);
 	UiIcon IconFor(CardId card);
 	UiIcon IconFor(LootKind loot);
-	UiIcon IconFor(GearSlot slot);
-	UiIcon IconFor(StarterKit kit);
-	UiIcon IconFor(Material material);
 	UiIcon IconFor(StationKind station);
 	UiIcon IconFor(Outfit outfit);
 	UiIcon IconFor(Focus focus);
 	UiIcon IconFor(Aura aura);
 	UiIcon IconFor(Headpiece headpiece);
-	const UiImage* RarityGem(Rarity rarity);
 }

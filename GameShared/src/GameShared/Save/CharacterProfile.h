@@ -2,7 +2,6 @@
 #include "GameShared/Content/Achievements.h"
 #include "GameShared/Content/Brawl.h"
 #include "GameShared/Content/Cosmetics.h"
-#include "GameShared/Content/Items.h"
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -12,8 +11,6 @@ namespace Game
 	struct CharacterProfile
 	{
 		std::string Name;
-		StarterKit Kit = StarterKit::Arcanist;
-		GearSet Gear;
 		BrawlSpells Spells = DefaultBrawlSpells;
 		uint32_t Falls = 0;
 		uint64_t Starlit = 0;
@@ -25,7 +22,7 @@ namespace Game
 
 	inline constexpr const char* ProfileDirectory = "Saves";
 
-	CharacterProfile MakeNewProfile(std::string name, StarterKit kit);
+	CharacterProfile MakeNewProfile(std::string name);
 	std::filesystem::path GetProfilePath(const std::string& name);
 	std::optional<CharacterProfile> LoadProfile(const std::filesystem::path& path, std::string& error);
 	bool SaveProfile(const std::filesystem::path& path, const CharacterProfile& profile, std::string& error);

@@ -32,11 +32,6 @@ namespace Game
 			return input;
 		}
 
-		ItemBase LookOf(const Item& item)
-		{
-			return item.IsValid() ? item.Base : ItemBase::Count;
-		}
-
 		uint8_t HealthFraction(const Health& health)
 		{
 			if (health.Current <= 0)
@@ -44,66 +39,24 @@ namespace Game
 			return uint8_t(std::clamp((health.Current * 255 + health.Max - 1) / std::max(health.Max, 1), 1, 255));
 		}
 
-		Inventory ToInventory(const GearSet& gear)
+		BrawlSpells SanitizeSpells(const BrawlSpells& spells)
 		{
-			Inventory inventory;
-			inventory.Gear = gear.Gear;
-			inventory.Gems = gear.Gems;
-			inventory.Pack = gear.Pack;
-			inventory.Stash = gear.Stash;
-			inventory.Materials = gear.Materials;
-			return inventory;
-		}
-
-		Inventory MakeRoyaleLoadout(const Inventory& real)
-		{
-			Inventory loadout;
-			loadout.Stash = real.Stash;
-			loadout.Materials = real.Materials;
-			const Item& weapon = real.Gear[size_t(GearSlot::Weapon)];
-			loadout.Gear[size_t(GearSlot::Weapon)] = MakeItem(weapon.IsValid() && IsWeapon(weapon.Base) ? weapon.Base : ItemBase::Wand, 1);
-			for (const Item& gem : real.Gems)
-				if (gem.IsGem())
-				{
-					loadout.Gems[0] = MakeGem(gem.Skill, 1);
-					break;
-				}
-			return loadout;
-		}
-
-		std::string ApplyReward(Inventory& inventory, const MatchReward& reward)
-		{
-			const std::pair<Material, uint32_t> grants[] = { { Material::Gold, reward.Gold }, { Material::Shard, reward.Shards }, { Material::ArcaneDust, reward.Dust }, { Material::Starsteel, reward.Starsteel } };
-			std::string text;
-			for (const auto& [material, amount] : grants)
-			{
-				if (amount == 0)
-					continue;
-				uint32_t& stock = inventory.Materials[size_t(material)];
-				stock = std::min(stock + amount, MaxMaterialStack);
-				text += std::string(text.empty() ? "Match reward: " : ", ") + "+" + std::to_string(amount) + " " + GetMaterial(material).Name;
-			}
-			return text;
+			BrawlSpells chosen = DefaultBrawlSpells;
+			for (uint32_t slot = 0; slot < BrawlSlots; slot++)
+				AssignSpell(chosen, slot, spells[slot]);
+			return chosen;
 		}
 
 		const char* DescribeMode(GameMode mode)
 		{
 			switch (mode)
 			{
-			case GameMode::Hub:
-				return "hub";
-			case GameMode::Horde:
-				return "horde";
-			case GameMode::Arena:
-				return "arena";
-			case GameMode::Royale:
-				return "battle royale";
 			case GameMode::Brawl:
 				return "spellbrawl";
 			case GameMode::Shardfall:
 				return "shardfall";
 			default:
-				return "mission";
+				return "hub";
 			}
 		}
 	}
@@ -133,64 +86,48 @@ namespace Game
 		if (m_Config.Listen && m_Config.Relay && !m_Net.ListenRelay())
 			RDN_LOG_WARNING("Friends can only join with the address while the Steam relay is unavailable");
 		MapKind map = m_Config.Map;
-		if (m_Config.StartMode == GameMode::Hub)
-			map = MapKind::Hub;
-		else if (m_Config.StartMode == GameMode::Arena && !IsArenaMap(map))
-			map = MapKind::Crucible;
-		else if (m_Config.StartMode == GameMode::Royale && !IsRoyaleMap(map))
-			map = MapKind::Ashlands;
-		else if (m_Config.StartMode == GameMode::Brawl && !IsBrawlMap(map))
+		if (m_Config.StartMode == GameMode::Brawl && !IsBrawlMap(map))
 			map = map == RandomBrawlMap ? BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))] : MapKind::Caldera;
 		else if (m_Config.StartMode == GameMode::Shardfall && !IsShardfallMap(map))
 			map = MapKind::ProvingHollow;
+		else if (m_Config.StartMode == GameMode::Hub)
+			map = MapKind::Hub;
 		CreateWorld({
 			.Mode = m_Config.StartMode,
 			.Map = map,
 			.MapSeed = m_Config.MapSeed,
-			.Tier = m_Config.Tier,
-			.Modifiers = m_Config.Modifiers,
 			.Rules = m_Config.Rules,
 			.Run = m_Config.Run,
 		});
-		RDN_LOG("Server started: {} (seed {}), {} props, {} portals, {} Hz, {}{}", GetMapDef(m_Session.Map).Name, m_Session.MapSeed, m_World->GetLevel().Props.size(), m_World->GetLevel().Portals.size(), m_Config.TickRate, m_Config.Listen ? "accepting players" : "local only", m_Config.UnlimitedMaterials ? ", unlimited crafting materials" : "");
+		RDN_LOG("Server started: {} (seed {}), {} props, {} portals, {} Hz, {}", GetMapDef(m_Session.Map).Name, m_Session.MapSeed, m_World->GetLevel().Props.size(), m_World->GetLevel().Portals.size(), m_Config.TickRate, m_Config.Listen ? "accepting players" : "local only");
 		return true;
 	}
 
 	void GameServer::CreateWorld(const SessionInfo& session)
 	{
 		m_Session = session;
-		m_Session.Tier = uint8_t(std::clamp<uint32_t>(session.Tier, 1u, MaxMissionTier));
-		m_Session.Modifiers = session.Mode == GameMode::Mission ? ModifierMask(session.Modifiers & AllModifiers) : ModifierMask(0);
 		m_Session.Rules = SanitizeRules(session.Rules);
 		m_Session.Run = session.Mode == GameMode::Shardfall ? SanitizeRunRules(session.Run) : RunRules{};
 		m_Session.Epoch = ++m_TravelCount;
-		m_Session.UnlimitedMaterials = m_Config.UnlimitedMaterials;
 		m_World = std::make_unique<World>(WorldSettings{
 			.Seed = m_Session.MapSeed,
 			.Map = m_Session.Map,
 			.Mode = m_Session.Mode,
-			.Tier = m_Session.Tier,
-			.Modifiers = m_Session.Modifiers,
 			.Rules = m_Session.Rules,
 			.Run = m_Session.Run,
 			.Players = std::max(GetPlayerCount(), 1u),
 			.TickRate = m_Config.TickRate,
-			.IntermissionSeconds = m_Config.IntermissionSeconds,
-			.FirstWave = m_Config.FirstWave,
-			.LootRate = m_Config.LootRate,
 			.LagCompensation = m_Config.LagCompensation,
-			.UnlimitedMaterials = m_Config.UnlimitedMaterials,
-			.RestartOnDefeat = m_Config.StartMode == GameMode::Horde,
 		});
 		m_ReturnTimer = 0.0f;
 	}
 
-	void GameServer::Travel(GameMode mode, MapKind map, uint8_t tier, ModifierMask modifiers, MatchRules rules, RunRules run)
+	void GameServer::Travel(GameMode mode, MapKind map, MatchRules rules, RunRules run)
 	{
 		if (!m_World)
 			return;
 		const bool hub = mode == GameMode::Hub;
-		const bool valid = hub || (mode == GameMode::Arena ? IsArenaMap(map) : mode == GameMode::Royale ? IsRoyaleMap(map) : mode == GameMode::Brawl ? IsBrawlMap(map) : mode == GameMode::Shardfall ? IsShardfallMap(map) : IsMissionMap(map));
+		const bool valid = hub || (mode == GameMode::Brawl ? IsBrawlMap(map) : mode == GameMode::Shardfall && IsShardfallMap(map));
 		if (!valid)
 			return;
 		if (GetPlayerCount() > GetPlayerCap(mode))
@@ -199,18 +136,7 @@ namespace Game
 			return;
 		}
 		const uint32_t seed = hub ? m_Config.MapSeed : (uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()) ^ (m_TravelCount * 0x9E3779B9u)) | 1u;
-		m_PendingTravel = SessionInfo{ .Mode = mode, .Map = hub ? MapKind::Hub : map, .MapSeed = seed, .Tier = tier, .Modifiers = modifiers, .Rules = rules, .Run = run };
-	}
-
-	Entity GameServer::SpawnClient(Client& client, const Inventory& inventory)
-	{
-		if (m_Session.Mode == GameMode::Royale)
-		{
-			client.Saved = inventory;
-			return m_World->SpawnPlayer(client.PlayerId, MakeRoyaleLoadout(inventory));
-		}
-		client.Saved.reset();
-		return m_World->SpawnPlayer(client.PlayerId, inventory);
+		m_PendingTravel = SessionInfo{ .Mode = mode, .Map = hub ? MapKind::Hub : map, .MapSeed = seed, .Rules = rules, .Run = run };
 	}
 
 	void GameServer::ApplyTravel()
@@ -220,67 +146,25 @@ namespace Game
 		const SessionInfo next = *m_PendingTravel;
 		m_PendingTravel.reset();
 		const GameMode previous = m_Session.Mode;
-
-		struct Carry
-		{
-			uint32_t PlayerId = 0;
-			Inventory Items;
-			uint32_t Rescued = 0;
-			MatchReward Reward;
-		};
-		std::vector<Carry> carried;
-		EntityRegistry& entities = m_World->GetEntities();
 		for (Client& client : m_Clients)
-		{
-			if (!client.Joined)
-				continue;
-			const Inventory* inventory = entities.TryGet<Inventory>(client.Player);
-			if (!client.Saved && !inventory)
-				continue;
-			Carry carry{ client.PlayerId, client.Saved ? *client.Saved : *inventory };
-			carry.Items.Upgrades = {};
-			carry.Items.Offer = {};
-			carry.Items.OfferPending = false;
-			if (m_World->IsPvp())
-				carry.Reward = m_World->GetMatch().GetReward(*m_World, client.PlayerId);
-			client.Saved.reset();
-			carried.push_back(carry);
-		}
-		entities.Each<Loot>([&](Entity, Loot& loot)
-		{
-			if (loot.Kind != LootKind::Item || !loot.Drop.IsValid() || loot.ForPlayer == NoPlayer)
-				return;
-			const auto owner = std::find_if(carried.begin(), carried.end(), [&](const Carry& carry) { return carry.PlayerId == loot.ForPlayer; });
-			if (owner == carried.end())
-				return;
-			const auto free = [](auto& items) { return std::find_if(items.begin(), items.end(), [](const Item& item) { return !item.IsValid(); }); };
-			if (const auto slot = free(owner->Items.Stash); slot != owner->Items.Stash.end())
-				*slot = loot.Drop;
-			else if (const auto pack = free(owner->Items.Pack); pack != owner->Items.Pack.end())
-				*pack = loot.Drop;
-			else
-				return;
-			owner->Rescued++;
-		});
+			if (client.Joined)
+				client.Spells = m_World->GetChosenSpells(client.PlayerId);
 
 		m_Bots.clear();
 		m_Squad.Clear();
 		CreateWorld(next);
-		RDN_LOG("Travelled to {} ({}{})", GetMapDef(m_Session.Map).Name, m_Session.Mode == GameMode::Mission ? "mission tier " + std::to_string(m_Session.Tier) : std::string(DescribeMode(m_Session.Mode)), m_Session.Modifiers ? ", " + std::to_string(CountModifiers(m_Session.Modifiers)) + " modifiers" : "");
+		RDN_LOG("Travelled to {} ({})", GetMapDef(m_Session.Map).Name, DescribeMode(m_Session.Mode));
 		const bool resetScores = IsPvpMode(previous) || IsPvpMode(m_Session.Mode);
 		for (Client& client : m_Clients)
 		{
 			if (!client.Joined)
 				continue;
-			const auto carry = std::find_if(carried.begin(), carried.end(), [&](const Carry& entry) { return entry.PlayerId == client.PlayerId; });
-			Inventory inventory = carry != carried.end() ? carry->Items : ToInventory(MakeStarterGear(StarterKit::Arcanist));
-			const std::string reward = carry != carried.end() ? ApplyReward(inventory, carry->Reward) : std::string();
 			if (resetScores)
 			{
 				client.Kills = 0;
 				client.Deaths = 0;
 			}
-			client.Player = SpawnClient(client, inventory);
+			client.Player = m_World->SpawnPlayer(client.PlayerId, client.Spells);
 			client.PendingInputs.clear();
 			client.Buffering = true;
 			ServerTravel travel;
@@ -288,12 +172,7 @@ namespace Game
 			travel.Session = m_Session;
 			travel.ServerTick = m_World->GetTick();
 			Send(client, travel, SendMode::Reliable);
-			SendInventory(client);
-			SendStash(client);
 			SendChess(client);
-			if (carry != carried.end() && carry->Rescued > 0)
-				SendNotice(client, std::to_string(carry->Rescued) + (carry->Rescued == 1 ? " item you left behind was" : " items you left behind were") + " sent to your stash", true);
-			SendNotice(client, reward, true);
 		}
 		FillBots();
 		m_World->TakeEvents();
@@ -304,16 +183,14 @@ namespace Game
 	void GameServer::CheckReturn(float dt)
 	{
 		const GameStatus status = m_World->GetStatus();
-		const bool failed = (status.Mode == GameMode::Mission && status.Mission == MissionPhase::Failed) || (status.Mode == GameMode::Horde && !m_World->GetSettings().RestartOnDefeat && status.Phase == GamePhase::Defeat);
-		const bool finished = IsPvpMode(status.Mode) && status.Match == MatchPhase::Ended;
-		if (!failed && !finished)
+		if (!IsPvpMode(status.Mode) || status.Match != MatchPhase::Ended)
 		{
 			m_ReturnTimer = 0.0f;
 			return;
 		}
 		m_ReturnTimer += dt;
-		if (m_ReturnTimer >= (finished ? MatchEndSeconds : m_Config.ReturnDelay) && !m_PendingTravel)
-			Travel(GameMode::Hub, MapKind::Hub, 1, 0);
+		if (m_ReturnTimer >= MatchEndSeconds && !m_PendingTravel)
+			Travel(GameMode::Hub, MapKind::Hub);
 	}
 
 	void GameServer::Stop()
@@ -443,11 +320,11 @@ namespace Game
 		client.Name = hello.Name.empty() ? "Player " + std::to_string(playerId + 1) : hello.Name.substr(0, 24);
 		client.Honors = hello.Honors & AllHonors;
 		client.Style = SanitizeCosmetics(hello.Style);
-		const StarterKit kit = hello.Kit < uint8_t(StarterKit::Count) ? StarterKit(hello.Kit) : StarterKit::Arcanist;
+		client.Spells = SanitizeSpells(hello.Spells);
 		client.Host = client.Connection == m_LocalConnection;
 		if (client.Host)
 			client.BufferTarget = MinBufferTarget;
-		client.Player = SpawnClient(client, ToInventory(hello.HasGear ? SanitizeGear(hello.Gear) : MakeStarterGear(kit)));
+		client.Player = m_World->SpawnPlayer(client.PlayerId, client.Spells);
 
 		ServerWelcome welcome;
 		welcome.PlayerId = playerId;
@@ -458,11 +335,8 @@ namespace Game
 		welcome.ServerTick = m_World->GetTick();
 		welcome.PropHash = GetPropLibraryHash();
 		Send(client, welcome, SendMode::Reliable);
-		SendInventory(client);
-		SendStash(client);
 		SendChess(client);
-		const Inventory* inventory = m_World->GetEntities().TryGet<Inventory>(client.Player);
-		RDN_LOG("{} joined as player {} with a {}", client.Name, playerId + 1, inventory ? GetItemName(inventory->Gear[size_t(GearSlot::Weapon)]) : "weapon");
+		RDN_LOG("{} joined as player {}", client.Name, playerId + 1);
 		FillBots();
 		BroadcastPlayerList();
 	}
@@ -472,55 +346,9 @@ namespace Game
 		bool changed = false;
 		switch (action.Action)
 		{
-		case ActionType::Equip:
-			changed = m_World->EquipItem(client.Player, action.Value);
-			break;
-		case ActionType::EquipTo:
-			changed = m_World->EquipItemTo(client.Player, action.Value, GearSlot(std::min<uint32_t>(action.Target, uint32_t(GearSlot::Count))));
-			break;
-		case ActionType::Unequip:
-			changed = m_World->UnequipItem(client.Player, GearSlot(std::min<uint32_t>(action.Value, uint32_t(GearSlot::Count))));
-			break;
-		case ActionType::Drop:
-			changed = m_World->DropItem(client.Player, action.Value);
-			break;
-		case ActionType::SlotGem:
-			changed = m_World->SlotGem(client.Player, action.Value, action.Target);
-			break;
-		case ActionType::UnslotGem:
-			changed = m_World->UnslotGem(client.Player, action.Value);
-			break;
-		case ActionType::ChooseUpgrade:
-			changed = m_World->ChooseUpgrade(client.Player, action.Value);
-			break;
-		case ActionType::StashDeposit:
-			changed = m_World->StashItem(client.Player, action.Value, action.Target);
-			break;
-		case ActionType::StashWithdraw:
-			changed = m_World->TakeFromStash(client.Player, action.Value, action.Target);
-			break;
-		case ActionType::Salvage:
-			changed = m_World->SalvageItem(client.Player, DecodeItemRef(action.Value));
-			break;
-		case ActionType::Forge:
-			m_World->ForgeItem(client.Player, DecodeItemRef(action.Target), ForgeAction(std::min<uint32_t>(action.Value, uint32_t(ForgeAction::Count))), action.Extra & 0xFFu, StatCategory(std::min<uint32_t>((action.Extra >> 8) & 0xFFu, uint32_t(StatCategory::Count))));
-			changed = true;
-			break;
-		case ActionType::GemCraft:
-			m_World->CraftGem(client.Player, DecodeItemRef(action.Target), GemAction(std::min<uint32_t>(action.Value, uint32_t(GemAction::Count))));
-			changed = true;
-			break;
-		case ActionType::StartMission:
-			if (m_World->IsHub() && IsMissionMap(MapKind(std::min<uint32_t>(action.Value, uint32_t(MapKind::Count)))))
-			{
-				const GameMode mode = GameMode((action.Target >> 8) & 0xFFu) == GameMode::Horde ? GameMode::Horde : GameMode::Mission;
-				Travel(mode, MapKind(action.Value), uint8_t(action.Target & 0xFFu), ModifierMask(action.Extra));
-				RDN_LOG("{} opened a {} to {}", client.Name, mode == GameMode::Horde ? "horde" : "tier " + std::to_string(action.Target & 0xFFu) + " mission", GetMapDef(MapKind(action.Value)).Name);
-			}
-			break;
 		case ActionType::ReturnToHub:
 			if (!m_World->IsHub() && (!m_World->IsPvp() || client.Host || m_World->GetMatch().GetPhase() == MatchPhase::Ended))
-				Travel(GameMode::Hub, MapKind::Hub, 1, 0);
+				Travel(GameMode::Hub, MapKind::Hub);
 			break;
 		case ActionType::StartMatch:
 			if (m_World->IsHub())
@@ -529,18 +357,12 @@ namespace Game
 				MapKind map = MapKind(std::min<uint32_t>(action.Target, uint32_t(MapKind::Count)));
 				if (mode == GameMode::Brawl && map == RandomBrawlMap)
 					map = BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))];
-				if ((mode == GameMode::Arena && IsArenaMap(map)) || (mode == GameMode::Royale && IsRoyaleMap(map)) || (mode == GameMode::Brawl && IsBrawlMap(map)))
+				if (mode == GameMode::Brawl && IsBrawlMap(map))
 				{
-					MatchRules rules = action.Rules;
-					if (mode != GameMode::Brawl)
-					{
-						rules.Teams = rules.Teams >= 2 ? 2 : 0;
-						rules.Seats = AutoSeats;
-						rules = SanitizeRules(rules);
-					}
-					Travel(mode, map, 1, 0, rules);
+					const MatchRules rules = action.Rules;
+					Travel(mode, map, rules);
 					const std::string teams = rules.Teams >= 2 ? std::to_string(rules.Teams) + " team " : std::string();
-					RDN_LOG("{} started {} on {}", client.Name, mode == GameMode::Royale ? "a battle royale" : mode == GameMode::Brawl ? "a " + std::to_string(rules.Rounds) + " round " + teams + "spellbrawl" : rules.Teams ? "a team arena match" : "a free for all arena match", GetMapDef(map).Name);
+					RDN_LOG("{} started a {} round {}spellbrawl on {}", client.Name, rules.Rounds, teams, GetMapDef(map).Name);
 				}
 			}
 			break;
@@ -548,7 +370,7 @@ namespace Game
 			if (m_World->IsHub())
 			{
 				const RunRules run = UnpackRunRules(action);
-				Travel(GameMode::Shardfall, MapKind::ProvingHollow, 1, 0, {}, run);
+				Travel(GameMode::Shardfall, MapKind::ProvingHollow, {}, run);
 				RDN_LOG("{} opened a Shardfall run{}", client.Name, run == RunRules{} ? "" : " with test settings");
 			}
 			break;
@@ -591,13 +413,6 @@ namespace Game
 		case ActionType::BrawlReady:
 			m_World->SetBrawlReady(client.Player, action.Value != 0);
 			break;
-		case ActionType::OpenChest:
-			changed = m_World->OpenChest(client.Player);
-			break;
-		case ActionType::UseGateway:
-			if (m_World->IsNearGateway(client.Player))
-				Travel(GameMode::Hub, MapKind::Hub, 1, 0);
-			break;
 		default:
 			break;
 		}
@@ -606,25 +421,6 @@ namespace Game
 			HandleWorldEvents();
 			FlushNotices();
 		}
-	}
-
-	void GameServer::SendInventory(const Client& client)
-	{
-		const Inventory* inventory = m_World->GetEntities().TryGet<Inventory>(client.Player);
-		if (!inventory)
-			return;
-		ServerInventory message;
-		message.Gear = inventory->Gear;
-		message.Gems = inventory->Gems;
-		message.Pack = inventory->Pack;
-		message.Upgrades = inventory->Upgrades;
-		Send(client, message, SendMode::Reliable);
-	}
-
-	void GameServer::SendStash(const Client& client)
-	{
-		if (const Inventory* inventory = m_World->GetEntities().TryGet<Inventory>(client.Player))
-			Send(client, ServerStash{ .Stash = inventory->Stash }, SendMode::Reliable);
 	}
 
 	void GameServer::SendChess(const Client& client)
@@ -793,9 +589,6 @@ namespace Game
 					RDN_LOG("The match is over without a winner");
 				statsChanged = true;
 				break;
-			case WorldEventType::StormClosing:
-				RDN_LOG("The ash storm closes in (stage {})", event.Detail + 1);
-				break;
 			case WorldEventType::RoundStarted:
 				RDN_LOG("Round {} of {} begins with {} players", event.Detail, m_World->GetMatch().GetBrawl().Rounds, m_World->GetMatch().GetEntrants());
 				break;
@@ -808,50 +601,13 @@ namespace Game
 					RDN_LOG("Round {} ends without a winner", event.Detail);
 				statsChanged = true;
 				break;
-			case WorldEventType::CacheDropped:
-				break;
 			case WorldEventType::LootPicked:
 				statsChanged = statsChanged || event.Detail != uint8_t(LootKind::Health);
-				break;
-			case WorldEventType::InventoryChanged:
-				if (client)
-					SendInventory(*client);
-				statsChanged = true;
-				break;
-			case WorldEventType::StashChanged:
-				if (client)
-					SendStash(*client);
 				break;
 			case WorldEventType::ChessChanged:
 				for (const Client& watcher : m_Clients)
 					if (watcher.Joined)
 						SendChess(watcher);
-				break;
-			case WorldEventType::MaterialsChanged:
-			case WorldEventType::ChestOpened:
-				break;
-			case WorldEventType::BossAwakened:
-				if (const EnemyDef* def = FindEnemyDef(EntityKind(event.Detail)))
-					RDN_LOG("{} awakens", def->Name);
-				break;
-			case WorldEventType::BossDefeated:
-				RDN_LOG("The boss is dead, mission complete");
-				break;
-			case WorldEventType::MissionFailed:
-				RDN_LOG("Mission failed, no revives left");
-				break;
-			case WorldEventType::UpgradesOffered:
-				if (client)
-					RDN_LOG("{} gets to choose an upgrade", client->Name);
-				break;
-			case WorldEventType::WaveStarted:
-				RDN_LOG("Wave {} started", m_World->GetStatus().Wave);
-				break;
-			case WorldEventType::WaveCleared:
-				RDN_LOG("Wave {} cleared", m_World->GetStatus().Wave);
-				break;
-			case WorldEventType::Defeat:
-				RDN_LOG("Everyone died on wave {}", m_World->GetStatus().Wave);
 				break;
 			case WorldEventType::Teleported:
 				if (const Portal* portal = m_World->GetLevel().FindPortal(event.Detail); client && portal)
@@ -895,9 +651,6 @@ namespace Game
 		struct Visibility
 		{
 			uint32_t Player = NoPlayer;
-			uint16_t Opened = 0;
-			bool Chest = false;
-			bool Landmark = false;
 		};
 		std::vector<EntityState> states;
 		std::vector<Visibility> visibility;
@@ -994,11 +747,9 @@ namespace Game
 				state.Flags |= uint16_t(EntityFlags::Pending);
 				state.Charge = PackLead(pending->Lead);
 			}
-			const Chest* chest = entities.TryGet<Chest>(entity);
 			states.push_back(state);
-			visibility.push_back({ replicated.Visibility, chest ? chest->Opened : uint16_t(0), chest != nullptr, chest && chest->Kind == ChestKind::Cache && chest->Opened == 0 });
+			visibility.push_back({ replicated.Visibility });
 		});
-		const bool cull = m_Session.Mode == GameMode::Royale;
 		for (Client& client : m_Clients)
 		{
 			if (!client.Joined)
@@ -1023,11 +774,7 @@ namespace Game
 			{
 				if (visibility[i].Player != NoPlayer && visibility[i].Player != client.PlayerId)
 					continue;
-				if (cull && !visibility[i].Landmark && states[i].NetId != self && states[i].NetId != watched && LengthSquared(states[i].Position - focus) > RoyaleRelevance * RoyaleRelevance)
-					continue;
 				snapshot.Entities.push_back(states[i]);
-				if (visibility[i].Chest)
-					snapshot.Entities.back().Variant = uint8_t((visibility[i].Opened >> (client.PlayerId % 16)) & 1u);
 			}
 			snapshot.LastProcessedInput = client.LastProcessedInput;
 			snapshot.LocalPlayer = DescribeLocalPlayer(client);
@@ -1045,20 +792,15 @@ namespace Game
 		const Transform* transform = entities.TryGet<Transform>(client.Player);
 		const PlayerController* controller = entities.TryGet<PlayerController>(client.Player);
 		const Health* health = entities.TryGet<Health>(client.Player);
-		const Inventory* inventory = entities.TryGet<Inventory>(client.Player);
-		if (!transform || !controller || !health || !inventory)
+		if (!transform || !controller || !health)
 			return local;
 		local.Valid = true;
 		local.Motion = *transform;
 		local.State = controller->State;
-		local.Buffs = controller->Buffs;
 		local.Traits = controller->Traits;
-		local.Offer = inventory->Offer;
-		local.OfferPending = inventory->OfferPending;
 		local.Health = health->Current;
 		local.MaxHealth = health->Max;
 		local.RespawnTime = controller->State.Alive ? 0.0f : controller->RespawnTimer;
-		local.Materials = inventory->Materials;
 		local.Watching = controller->Watching;
 		local.KilledBy = controller->KilledBy;
 		if (m_Session.Mode == GameMode::Brawl)
@@ -1075,23 +817,10 @@ namespace Game
 	{
 		m_PlayerListTimer = 0.0f;
 		ServerPlayerList list;
-		const EntityRegistry& entities = m_World->GetEntities();
 		const bool pvp = m_World->IsPvp();
-		const auto describe = [&](uint32_t playerId, const std::string& name, Entity player, const Cosmetics& style)
+		const auto describe = [&](uint32_t playerId, const std::string& name, const Cosmetics& style)
 		{
-			const PlayerController* controller = entities.TryGet<PlayerController>(player);
-			const Inventory* inventory = entities.TryGet<Inventory>(player);
-			PlayerLook look;
-			look.Style = style;
-			if (inventory)
-			{
-				const Item& weapon = inventory->Gear[size_t(GearSlot::Weapon)];
-				look.Weapon = weapon.IsValid() ? weapon.Base : ItemBase::Wand;
-				look.WeaponQuality = weapon.Quality;
-				look.Head = LookOf(inventory->Gear[size_t(GearSlot::Head)]);
-				look.Body = LookOf(inventory->Gear[size_t(GearSlot::Body)]);
-				look.Feet = LookOf(inventory->Gear[size_t(GearSlot::Feet)]);
-			}
+			const PlayerLook look{ .Style = style };
 			const MatchScore& score = m_World->GetMatch().GetScore(playerId);
 			return PlayerInfo{
 				.PlayerId = playerId,
@@ -1100,7 +829,6 @@ namespace Game
 				.Deaths = score.Deaths,
 				.Assists = score.Assists,
 				.Damage = score.Damage,
-				.Buffs = controller ? controller->Buffs : BuffStacks{},
 				.Look = look,
 				.Team = m_World->GetTeam(playerId),
 				.Placement = pvp ? score.Placement : uint8_t(0),
@@ -1115,7 +843,7 @@ namespace Game
 		{
 			if (!client.Joined)
 				continue;
-			PlayerInfo info = describe(client.PlayerId, client.Name, client.Player, client.Style);
+			PlayerInfo info = describe(client.PlayerId, client.Name, client.Style);
 			if (!pvp)
 			{
 				info.Kills = client.Kills;
@@ -1128,7 +856,7 @@ namespace Game
 		}
 		for (const Bot& bot : m_Bots)
 		{
-			PlayerInfo info = describe(bot.PlayerId, bot.Name, m_World->FindPlayer(bot.PlayerId), bot.Style);
+			PlayerInfo info = describe(bot.PlayerId, bot.Name, bot.Style);
 			info.Ping = 0;
 			info.Bot = true;
 			list.Players.push_back(info);
@@ -1210,7 +938,7 @@ namespace Game
 		}
 		const BotStyle style = bot.Personality;
 		m_World->SeatPlayer(playerId, team);
-		m_World->SpawnPlayer(playerId, ToInventory(MakeStarterGear(StarterKit::Arcanist)));
+		m_World->SpawnPlayer(playerId);
 		m_Squad.Add(playerId, BotProfile{ .Skill = skill, .Style = style, .Seed = m_BotRandom.Next() });
 		m_Bots.push_back(bot);
 		if (team != NoTeam)

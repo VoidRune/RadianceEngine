@@ -758,7 +758,7 @@ namespace Game
 
 	bool MatchDirector::PickSpell(World& world, Entity player, uint32_t playerId, uint32_t slot, AbilityId spell)
 	{
-		if (m_Mode != GameMode::Brawl || m_Rules.RandomSpells || playerId >= MaxPlayers || slot >= SkillSlots || !IsBrawlSpell(spell) || m_Phase == MatchPhase::Ended)
+		if (m_Mode != GameMode::Brawl || m_Rules.RandomSpells || playerId >= MaxPlayers || slot >= BrawlSlots || !IsBrawlSpell(spell) || m_Phase == MatchPhase::Ended)
 			return false;
 		if (m_Brawl.Phase != BrawlPhase::Draft && m_Brawl.Phase != BrawlPhase::Pick)
 			return false;

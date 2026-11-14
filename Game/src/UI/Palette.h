@@ -1,5 +1,4 @@
 #pragma once
-#include <GameShared/Content/Items.h>
 #include <glm/glm.hpp>
 #include <cmath>
 #include <cstdint>
@@ -31,21 +30,8 @@ namespace Game
 		{ 1.00f, 0.76f, 0.22f },
 	};
 
-	inline constexpr glm::vec3 RarityColors[] = {
-		{ 0.85f, 0.85f, 0.85f },
-		{ 0.35f, 0.90f, 0.35f },
-		{ 0.35f, 0.60f, 1.00f },
-		{ 1.00f, 0.60f, 0.15f },
-		{ 1.00f, 0.30f, 0.55f },
-	};
-	static_assert(std::size(RarityColors) == size_t(Rarity::Count));
-
 	inline constexpr glm::vec3 LootColors[] = {
 		{ 0.95f, 0.25f, 0.30f },
-		{ 1.00f, 0.55f, 0.15f },
-		{ 1.00f, 0.90f, 0.25f },
-		{ 0.30f, 0.90f, 1.00f },
-		{ 0.35f, 0.95f, 0.40f },
 		{ 0.25f, 0.45f, 1.00f },
 	};
 
@@ -67,11 +53,6 @@ namespace Game
 	inline glm::vec3 TeamColor(uint8_t team)
 	{
 		return team < std::size(TeamColors) ? TeamColors[team] : glm::vec3(0.8f);
-	}
-
-	inline glm::vec3 RarityColor(Rarity rarity)
-	{
-		return RarityColors[size_t(rarity) < std::size(RarityColors) ? size_t(rarity) : 0];
 	}
 
 	inline constexpr glm::vec3 ApexHues[] = {

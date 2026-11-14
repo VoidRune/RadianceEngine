@@ -27,7 +27,7 @@ namespace Game
 	};
 
 	using CardOffer = std::array<CardId, CardChoices>;
-	using BrawlSpells = std::array<AbilityId, SkillSlots>;
+	using BrawlSpells = std::array<AbilityId, BrawlSlots>;
 
 	inline constexpr AbilityId BrawlBasic = AbilityId::EmberBolt;
 	inline constexpr AbilityId BrawlSpellPool[] = {
@@ -936,7 +936,7 @@ namespace Game
 			traits.CritMultiplier = PreciseMultiplier;
 		}
 		traits.Skills[0] = MakeBrawlSkill(BrawlBasic, 1.0f, mode);
-		for (uint32_t i = 0; i < SkillSlots; i++)
+		for (uint32_t i = 0; i < BrawlSlots; i++)
 		{
 			traits.Skills[i + 1] = IsBrawlSpell(loadout.Spells[i]) ? MakeBrawlSkill(loadout.Spells[i], 1.0f, mode) : SkillTraits{};
 			if (loadout.Spells[i] == AbilityId::ChainHook && HasCard(loadout.Cards, CardId::LongChain))
@@ -976,7 +976,7 @@ namespace Game
 		std::array<AbilityId, std::size(BrawlSpellPool)> pool{};
 		std::copy(std::begin(BrawlSpellPool), std::end(BrawlSpellPool), pool.begin());
 		BrawlSpells spells{};
-		for (uint32_t slot = 0; slot < SkillSlots; slot++)
+		for (uint32_t slot = 0; slot < BrawlSlots; slot++)
 		{
 			const uint32_t pick = slot + random.Below(uint32_t(pool.size()) - slot);
 			std::swap(pool[slot], pool[pick]);

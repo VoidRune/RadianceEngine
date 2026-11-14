@@ -13,7 +13,8 @@ namespace Game
 	constexpr uint32_t HistoryLength = 32;
 	constexpr float MaxRewindTicks = 28.0f;
 	constexpr float MaxPlayerRewindTicks = 8.0f;
-	constexpr uint32_t SkillSlots = 3;
+	constexpr uint32_t SkillSlots = 4;
+	constexpr uint32_t BrawlSlots = 3;
 	constexpr uint32_t AbilitySlots = SkillSlots + 1;
 
 	enum class EntityKind : uint8_t
@@ -28,8 +29,6 @@ namespace Game
 		Projectile,
 		Effect,
 		Loot,
-		Chest,
-		Gateway,
 		Dummy,
 		QuartzCrawler,
 		JadeCrawler,
@@ -60,17 +59,9 @@ namespace Game
 	enum class LootKind : uint8_t
 	{
 		Health,
-		Might,
-		Haste,
-		Swiftness,
-		Vitality,
 		Mana,
-		Item,
 		Count,
 	};
-
-	constexpr size_t BuffKinds = size_t(LootKind::Mana);
-	using BuffStacks = std::array<uint8_t, BuffKinds>;
 
 	struct Transform
 	{
@@ -300,30 +291,6 @@ namespace Game
 		float ArenaRadius = 10.0f;
 		uint32_t Level = 1;
 		float Leash = 0.0f;
-	};
-
-	enum class ChestKind : uint8_t
-	{
-		Boss,
-		Common,
-		Vault,
-		Cache,
-		Count,
-	};
-
-	struct Chest
-	{
-		uint16_t Opened = 0;
-		uint32_t Level = 1;
-		float RarityBonus = 0.0f;
-		float Quantity = 1.0f;
-		uint8_t Items = 2;
-		ChestKind Kind = ChestKind::Boss;
-	};
-
-	struct Gateway
-	{
-		float Radius = 1.8f;
 	};
 
 	struct MotionHistory

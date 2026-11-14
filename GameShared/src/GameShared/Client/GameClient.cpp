@@ -87,8 +87,6 @@ namespace Game
 		m_Level.reset();
 		m_Players.clear();
 		m_LocalPlayer = {};
-		m_Inventory = {};
-		m_HasInventory = false;
 		m_StarvedFrames = 0;
 		m_Accumulator = 0.0f;
 		m_InputSequence = 0;
@@ -134,8 +132,6 @@ namespace Game
 		m_Session = travel.Session;
 		m_Status.Mode = m_Session.Mode;
 		m_Status.Map = m_Session.Map;
-		m_Status.Tier = m_Session.Tier;
-		m_Status.Modifiers = m_Session.Modifiers;
 		m_Level = std::make_unique<Level>(BuildLevel(m_Session.Map, m_Session.MapSeed));
 		m_InterpolationDelay = double(m_Welcome.SnapshotInterval) + StartDelayMargin;
 		m_Travels++;
@@ -184,87 +180,6 @@ namespace Game
 		ReleaseHits();
 		Interpolate();
 		ComposeView(m_Accumulator / GetTickSeconds());
-	}
-
-	void GameClient::EquipItem(uint32_t packSlot)
-	{
-		SendAction(ActionType::Equip, packSlot);
-	}
-
-	void GameClient::EquipItemTo(uint32_t packSlot, GearSlot slot)
-	{
-		SendAction(ActionType::EquipTo, packSlot, uint32_t(slot));
-	}
-
-	void GameClient::UnequipItem(GearSlot slot)
-	{
-		SendAction(ActionType::Unequip, uint32_t(slot));
-	}
-
-	void GameClient::DropItem(uint32_t packSlot)
-	{
-		SendAction(ActionType::Drop, packSlot);
-	}
-
-	void GameClient::SlotGem(uint32_t packSlot, uint32_t gemSlot)
-	{
-		SendAction(ActionType::SlotGem, packSlot, gemSlot);
-	}
-
-	void GameClient::UnslotGem(uint32_t gemSlot)
-	{
-		SendAction(ActionType::UnslotGem, gemSlot);
-	}
-
-	void GameClient::ChooseUpgrade(uint32_t choice)
-	{
-		SendAction(ActionType::ChooseUpgrade, choice);
-	}
-
-	void GameClient::DepositItem(uint32_t packSlot, uint32_t stashSlot)
-	{
-		SendAction(ActionType::StashDeposit, packSlot, stashSlot);
-	}
-
-	void GameClient::WithdrawItem(uint32_t stashSlot, uint32_t packSlot)
-	{
-		SendAction(ActionType::StashWithdraw, stashSlot, packSlot);
-	}
-
-	void GameClient::SalvageItem(ItemRef item)
-	{
-		SendAction(ActionType::Salvage, EncodeItemRef(item));
-	}
-
-	void GameClient::ForgeItem(ItemRef item, ForgeAction action, uint32_t affix, StatCategory category)
-	{
-		SendAction(ActionType::Forge, uint32_t(action), EncodeItemRef(item), (affix & 0xFFu) | (uint32_t(category) << 8));
-	}
-
-	void GameClient::CraftGem(ItemRef gem, GemAction action)
-	{
-		SendAction(ActionType::GemCraft, uint32_t(action), EncodeItemRef(gem));
-	}
-
-	void GameClient::StartMission(MapKind map, uint8_t tier, ModifierMask modifiers)
-	{
-		SendAction(ActionType::StartMission, uint32_t(map), tier | (uint32_t(GameMode::Mission) << 8), modifiers);
-	}
-
-	void GameClient::StartHorde(MapKind map)
-	{
-		SendAction(ActionType::StartMission, uint32_t(map), 1u | (uint32_t(GameMode::Horde) << 8));
-	}
-
-	void GameClient::StartArena(MapKind map, const MatchRules& rules)
-	{
-		if (m_State == ClientState::InGame)
-			Send(ClientAction{ .Action = ActionType::StartMatch, .Value = uint16_t(GameMode::Arena), .Target = uint16_t(map), .Rules = rules }, SendMode::Reliable);
-	}
-
-	void GameClient::StartRoyale(MapKind map)
-	{
-		SendAction(ActionType::StartMatch, uint32_t(GameMode::Royale), uint32_t(map));
 	}
 
 	void GameClient::StartBrawl(MapKind map, const MatchRules& rules)
@@ -359,16 +274,6 @@ namespace Game
 	void GameClient::ReturnToHub()
 	{
 		SendAction(ActionType::ReturnToHub, 0);
-	}
-
-	void GameClient::OpenChest()
-	{
-		SendAction(ActionType::OpenChest, 0);
-	}
-
-	void GameClient::UseGateway()
-	{
-		SendAction(ActionType::UseGateway, 0);
 	}
 
 	void GameClient::MakeWish()
@@ -489,7 +394,7 @@ namespace Game
 		if (event.Type == NetEventType::Connected)
 		{
 			m_State = ClientState::Joining;
-			Send(ClientHello{ .Name = m_Profile.Name, .Kit = uint8_t(m_Profile.Kit), .Honors = m_Profile.Honors, .Style = m_Profile.Style, .HasGear = true, .Gear = m_Profile.Gear }, SendMode::Reliable);
+			Send(ClientHello{ .Name = m_Profile.Name, .Honors = m_Profile.Honors, .Style = m_Profile.Style, .Spells = m_Profile.Spells }, SendMode::Reliable);
 			return;
 		}
 		std::string reason = m_DisconnectReason.empty() ? event.Reason : m_DisconnectReason;
@@ -519,10 +424,8 @@ namespace Game
 				m_Session = welcome.Session;
 				m_Status.Mode = m_Session.Mode;
 				m_Status.Map = m_Session.Map;
-				m_Status.Tier = m_Session.Tier;
-				m_Status.Modifiers = m_Session.Modifiers;
 				m_Level = std::make_unique<Level>(BuildLevel(m_Session.Map, m_Session.MapSeed));
-				m_LocalPlayer.Traits = ComputeTraits(m_Profile.Gear.Gear, m_Profile.Gear.Gems, {}, {});
+				m_LocalPlayer.Traits = MakeBrawlTraits({ .Spells = m_Profile.Spells }, BrawlMode::Damage);
 				m_InterpolationDelay = double(welcome.SnapshotInterval) + StartDelayMargin;
 				m_State = ClientState::InGame;
 				RDN_LOG("Joined as player {} in {} ({} Hz, a snapshot every {} ticks, map seed {})", welcome.PlayerId + 1, GetMapDef(m_Session.Map).Name, welcome.TickRate, welcome.SnapshotInterval, m_Session.MapSeed);
@@ -531,13 +434,6 @@ namespace Game
 		case MessageType::ServerTravel:
 			if (ServerTravel travel; m_State == ClientState::InGame && Decode(message.Data, travel))
 				OnTravel(travel);
-			break;
-		case MessageType::ServerStash:
-			if (ServerStash stash; m_State == ClientState::InGame && Decode(message.Data, stash))
-			{
-				m_Profile.Gear.Stash = stash.Stash;
-				m_StashVersion++;
-			}
 			break;
 		case MessageType::ServerChess:
 			if (ServerChess chess; m_State == ClientState::InGame && Decode(message.Data, chess))
@@ -588,19 +484,6 @@ namespace Game
 			if (ServerSnapshot snapshot; m_State == ClientState::InGame && m_Decoder.Decode(message.Data, snapshot))
 				OnSnapshot(std::move(snapshot));
 			break;
-		case MessageType::ServerInventory:
-			if (ServerInventory inventory; m_State == ClientState::InGame && Decode(message.Data, inventory))
-			{
-				m_Inventory = inventory;
-				m_HasInventory = true;
-				if (m_Session.Mode == GameMode::Royale)
-					break;
-				m_InventoryVersion++;
-				m_Profile.Gear.Gear = inventory.Gear;
-				m_Profile.Gear.Gems = inventory.Gems;
-				m_Profile.Gear.Pack = inventory.Pack;
-			}
-			break;
 		default:
 			break;
 		}
@@ -610,8 +493,6 @@ namespace Game
 	{
 		if (snapshot.Epoch != m_Session.Epoch || (!m_Snapshots.empty() && snapshot.Tick <= m_Snapshots.back().Tick))
 			return;
-		if (snapshot.LocalPlayer.Valid && m_Session.Mode != GameMode::Royale)
-			m_Profile.Gear.Materials = snapshot.LocalPlayer.Materials;
 		TrackFeats(snapshot.LocalPlayer);
 		m_SnapshotAge = 0.0f;
 		std::sort(snapshot.Entities.begin(), snapshot.Entities.end(), [](const EntityState& a, const EntityState& b) { return a.NetId < b.NetId; });

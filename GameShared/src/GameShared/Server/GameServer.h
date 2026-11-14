@@ -22,18 +22,11 @@ namespace Game
 		uint32_t SnapshotInterval = 1;
 		uint32_t MapSeed = 0;
 		GameMode StartMode = GameMode::Hub;
-		MapKind Map = MapKind::Town;
-		uint8_t Tier = 1;
-		ModifierMask Modifiers = 0;
+		MapKind Map = MapKind::Hub;
 		MatchRules Rules;
 		RunRules Run;
 		uint32_t MaxPlayers = Game::MaxPlayers;
-		float IntermissionSeconds = 6.0f;
-		uint32_t FirstWave = 1;
-		float LootRate = 1.0f;
 		bool LagCompensation = true;
-		bool UnlimitedMaterials = false;
-		float ReturnDelay = 6.0f;
 	};
 
 	struct ServerPlayerStats
@@ -64,7 +57,7 @@ namespace Game
 		const World* GetWorld() const { return m_World.get(); }
 		World* GetWorld() { return m_World.get(); }
 		const SessionInfo& GetSession() const { return m_Session; }
-		void Travel(GameMode mode, MapKind map, uint8_t tier, ModifierMask modifiers, MatchRules rules = {}, RunRules run = {});
+		void Travel(GameMode mode, MapKind map, MatchRules rules = {}, RunRules run = {});
 		uint32_t GetPlayerCount() const;
 		uint32_t GetBotCount() const { return uint32_t(m_Bots.size()); }
 		uint32_t GetStarvedTicks() const { return m_StarvedTicks; }
@@ -91,7 +84,7 @@ namespace Game
 			uint32_t Kills = 0;
 			uint32_t Deaths = 0;
 			bool Host = false;
-			std::optional<Inventory> Saved;
+			BrawlSpells Spells = DefaultBrawlSpells;
 			SnapshotEncoder Encoder;
 			uint8_t Honors = 0;
 			Cosmetics Style;
@@ -113,11 +106,8 @@ namespace Game
 		void OnHello(Client& client, const ClientHello& hello);
 		void OnInput(Client& client, const ClientInput& input);
 		void OnAction(Client& client, const ClientAction& action);
-		void SendInventory(const Client& client);
-		void SendStash(const Client& client);
 		void SendChess(const Client& client);
 		void SendNotice(const Client& client, const std::string& text, bool success);
-		Entity SpawnClient(Client& client, const Inventory& inventory);
 		void CreateWorld(const SessionInfo& session);
 		void ApplyTravel();
 		void CheckReturn(float dt);

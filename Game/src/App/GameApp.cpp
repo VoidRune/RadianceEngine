@@ -110,12 +110,6 @@ namespace Game
 				m_Settings.FriendsCanJoin = value == "1";
 			else if (uint16_t port = 0; key == "Port" && ParseNumber(value, port) && port >= 1024)
 				m_Settings.Port = port;
-			else if (key == "Kit")
-			{
-				for (const KitDef& kit : Kits)
-					if (value == kit.Name)
-						m_Settings.Kit = kit.Id;
-			}
 			else if (key == "Volume")
 				ReadVolume(value, m_Settings.Volume);
 			else if (key == "MusicVolume")
@@ -176,7 +170,6 @@ namespace Game
 			m_Stored.PlayerName = m_Settings.PlayerName;
 			m_Stored.JoinAddress = m_Settings.JoinAddress;
 			m_Stored.Port = m_Settings.Port;
-			m_Stored.Kit = m_Settings.Kit;
 			m_Stored.FriendsCanJoin = m_Settings.FriendsCanJoin;
 			break;
 		}
@@ -188,7 +181,7 @@ namespace Game
 	{
 		m_PreferencesDirty = false;
 		std::ofstream file(PreferencesPath);
-		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nFriendsCanJoin=" << (m_Stored.FriendsCanJoin ? 1 : 0) << "\nKit=" << GetKit(m_Stored.Kit).Name
+		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nFriendsCanJoin=" << (m_Stored.FriendsCanJoin ? 1 : 0)
 			<< "\nVolume=" << m_Stored.Volume << "\nMusicVolume=" << m_Stored.MusicVolume << "\nEffectsVolume=" << m_Stored.EffectsVolume << "\nMuted=" << (m_Stored.Muted ? 1 : 0)
 			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0) << "\nVsync=" << (m_Stored.Vsync ? 1 : 0)
 			<< "\nFrameCap=" << m_Stored.FrameCap << "\nRenderScale=" << m_Stored.RenderScale << "\nAntiAliasing=" << AntiAliasingNames[size_t(m_Stored.Aa)] << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\nScreenShake=" << m_Stored.ScreenShake << "\n";
@@ -213,8 +206,6 @@ namespace Game
 			m_Settings.JoinAddress = *options.JoinAddress;
 		if (options.HostPort)
 			m_Settings.Port = *options.HostPort;
-		if (options.Kit)
-			m_Settings.Kit = *options.Kit;
 		if (options.Map)
 			m_Settings.Map = *options.Map;
 		if (options.Volume)
@@ -225,17 +216,12 @@ namespace Game
 			m_Settings.EffectsVolume = *options.EffectsVolume;
 		if (options.Muted)
 			m_Settings.Muted = true;
-		m_Settings.FirstWave = options.FirstWave;
-		m_Settings.Peaceful = options.Peaceful;
 		m_Settings.Leviathan = options.Leviathan;
 		m_Settings.ShotCamera = options.ShotCamera;
 		m_Settings.Distortion = options.Distortion;
 		m_Settings.Trails = options.Trails;
 		m_Settings.DistortionStage = options.DistortionStage;
-		m_Settings.LootRate = options.LootRate;
 		m_Settings.StartMode = options.StartMode;
-		m_Settings.Tier = options.Tier;
-		m_Settings.Modifiers = options.Modifiers;
 		m_Settings.Rules = options.Rules;
 		m_Settings.Run = options.Run;
 		m_ScreenshotPath = options.ScreenshotPath;
@@ -244,7 +230,6 @@ namespace Game
 		m_BurstInterval = options.BurstInterval;
 		m_ScreenshotDelay = options.ScreenshotDelay;
 		m_AudioCapturePath = options.AudioCapturePath;
-		m_Settings.UnlimitedMaterials = options.UnlimitedMaterials;
 		NetLibrary::Initialize();
 		NetLibrary::SetSimulation(m_Settings.Simulation);
 		m_Steam = std::make_unique<SteamPlatform>(options.Steam);
@@ -392,7 +377,7 @@ namespace Game
 			config.Address = m_Settings.JoinAddress;
 			config.Map = m_Settings.Map;
 			config.StartMode = m_Settings.StartMode;
-			config.Profile = LoadCharacter(m_Settings.PlayerName, m_Settings.Kit, options.NewCharacter);
+			config.Profile = LoadCharacter(m_Settings.PlayerName, options.NewCharacter);
 			if (options.WornOutfit)
 				config.Profile.Style.Body = *options.WornOutfit;
 			if (options.CastFocus)
@@ -407,7 +392,7 @@ namespace Game
 			m_State = std::make_unique<MainMenuState>(*this, std::string(), options.MenuPage);
 	}
 
-	CharacterProfile GameApp::LoadCharacter(const std::string& name, StarterKit kit, bool fresh) const
+	CharacterProfile GameApp::LoadCharacter(const std::string& name, bool fresh) const
 	{
 		if (!fresh && m_Settings.SaveProfiles)
 		{
@@ -420,7 +405,7 @@ namespace Game
 			if (std::filesystem::exists(GetProfilePath(name)))
 				RDN_LOG_ERROR("Starting a new character because the save didn't load: {}", error);
 		}
-		return MakeNewProfile(name, kit);
+		return MakeNewProfile(name);
 	}
 
 	void GameApp::JoinFriend(const LobbyJoin& join)
@@ -432,7 +417,7 @@ namespace Game
 		config.RelayHost = join.Host;
 		config.HostName = join.HostName;
 		config.LobbyTicket = join.Ticket;
-		config.Profile = LoadCharacter(m_Settings.PlayerName, m_Settings.Kit, false);
+		config.Profile = LoadCharacter(m_Settings.PlayerName, false);
 		m_GameAudio->PlayUi(Cue::UiRift, 0.9f);
 		m_State = std::make_unique<SessionState>(*this, std::move(config));
 	}

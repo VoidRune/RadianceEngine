@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Audio/MusicDirector.h"
 #include "Audio/SoundBank.h"
 #include "Audio/Soundscape.h"
@@ -44,7 +44,7 @@ namespace Game
 		void Reset();
 		void Update(float dt);
 		void Observe(const GameClient& client, float dt, const glm::vec3& focus, const glm::vec3& eye);
-		void SetOverlay(bool inventory, bool station, bool paused);
+		void SetOverlay(bool station, bool paused);
 		void PlayStation(StationKind kind);
 		void PlayNotice(bool success, std::optional<StationKind> station);
 		void PlayEvent(AudioEvent event);
@@ -105,12 +105,9 @@ namespace Game
 		void PlayBossChange(const EntityState& entity, const EntityState& before);
 		void AnnounceBoss(const EntityState& boss);
 		void PlayEnemyDeath(const EntityState& last);
-		void PlayLootDrop(const EntityState& entity, const GameClient& client);
 		void PlayLootTaken(const EntityState& last);
 		void PlayHits();
-		void PlayItemGain(const Item& item, bool equipped);
 		void ObserveLocalPlayer(const GameClient& client);
-		void ObserveInventory(const GameClient& client);
 		void ObserveStatus(const GameClient& client);
 
 		Timbre::AudioEngine& m_Engine;
@@ -132,8 +129,6 @@ namespace Game
 		const Level* m_SceneLevel = nullptr;
 		GameStatus m_Status;
 		LocalPlayerState m_Local;
-		ServerInventory m_Inventory;
-		MaterialStock m_Materials{};
 		Vec2 m_Focus;
 		float m_Ground = 0.0f;
 		uint32_t m_Self = 0;
@@ -144,7 +139,6 @@ namespace Game
 		float m_EffectsVolume = 1.0f;
 		float m_ReverbLevel = 0.0f;
 		float m_LastGrowl = -10.0f;
-		float m_LastCoins = -10.0f;
 		float m_LastBossVoice = -10.0f;
 		float m_NextThunder = 0.0f;
 		float m_CrackCooldown = 0.0f;
@@ -155,7 +149,6 @@ namespace Game
 		bool m_Storm = false;
 		bool m_Trace = false;
 		bool m_Overlaid = false;
-		bool m_InventoryOpen = false;
 		bool m_StationOpen = false;
 		bool m_PauseOpen = false;
 	};

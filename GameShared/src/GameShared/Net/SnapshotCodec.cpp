@@ -294,7 +294,7 @@ namespace Game
 				record(base.Bodies[b++].NetId, Removed);
 			const bool known = b < base.Bodies.size() && base.Bodies[b].NetId == state->NetId;
 			const NetBody old = known ? base.Bodies[b++] : NetBody{ .NetId = state->NetId, .Motion = { .Tick = tick } };
-			const bool near = state->Kind == EntityKind::Player || state->NetId == snapshot.Status.BossNetId || nearby(state->Position);
+			const bool near = state->Kind == EntityKind::Player || nearby(state->Position);
 			const int32_t x = QuantizePosition(state->Position.x);
 			const int32_t y = QuantizePosition(state->Position.y);
 			m_NextBodies.push_back({ state->NetId, x, y });

@@ -13,15 +13,16 @@ namespace Game
 		Skill2 = 1 << 2,
 		Skill3 = 1 << 3,
 		Dodge = 1 << 4,
+		Skill4 = 1 << 5,
 	};
 
-	constexpr uint8_t KnownInputButtons = 0x1F;
+	constexpr uint8_t KnownInputButtons = 0x3F;
 	constexpr float MaxAimDistance = 60.0f;
 
 	inline InputButton SlotButton(uint32_t slot)
 	{
-		constexpr InputButton Buttons[] = { InputButton::Primary, InputButton::Skill1, InputButton::Skill2, InputButton::Skill3 };
-		return Buttons[std::min<uint32_t>(slot, 3)];
+		constexpr InputButton Buttons[] = { InputButton::Primary, InputButton::Skill1, InputButton::Skill2, InputButton::Skill3, InputButton::Skill4 };
+		return Buttons[std::min<uint32_t>(slot, 4)];
 	}
 
 	inline float QuantizeAimDistance(float distance)

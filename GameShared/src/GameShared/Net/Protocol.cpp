@@ -20,22 +20,6 @@ namespace Game
 				value = reader.Read<T>();
 		}
 
-		template<size_t Size>
-		void WriteItems(ByteWriter& writer, const std::array<Item, Size>& items)
-		{
-			for (const Item& item : items)
-				WriteItem(writer, item);
-		}
-
-		template<size_t Size>
-		bool ReadItems(ByteReader& reader, std::array<Item, Size>& items)
-		{
-			for (Item& item : items)
-				if (!ReadItem(reader, item))
-					return false;
-			return true;
-		}
-
 		void WriteSkill(ByteWriter& writer, const SkillTraits& skill)
 		{
 			writer.Write(skill.Ability);
@@ -336,60 +320,6 @@ namespace Game
 		}
 	}
 
-	void WriteItem(ByteWriter& writer, const Item& item)
-	{
-		writer.Write(item.Id);
-		if (!item.IsValid())
-			return;
-		writer.Write(item.Base);
-		writer.Write(item.Quality);
-		writer.Write(item.Level);
-		writer.Write(item.Power);
-		writer.Write(item.Skill);
-		writer.Write(item.GemQuality);
-		writer.Write(item.Mod);
-		writer.Write(uint8_t(item.Corrupted ? 1 : 0));
-		writer.Write(item.Pity);
-		writer.Write(item.AffixCount);
-		for (uint8_t i = 0; i < item.AffixCount; i++)
-		{
-			writer.Write(item.Affixes[i].Kind);
-			writer.Write(item.Affixes[i].Value);
-			writer.Write(item.Affixes[i].Tier);
-		}
-	}
-
-	bool ReadItem(ByteReader& reader, Item& item)
-	{
-		item = {};
-		item.Id = reader.Read<uint32_t>();
-		if (!item.IsValid())
-			return !reader.Failed();
-		item.Base = reader.Read<ItemBase>();
-		item.Quality = reader.Read<Rarity>();
-		item.Level = reader.Read<uint8_t>();
-		item.Power = reader.Read<float>();
-		item.Skill = reader.Read<AbilityId>();
-		item.GemQuality = reader.Read<uint8_t>();
-		item.Mod = reader.Read<GemMod>();
-		item.Corrupted = reader.Read<uint8_t>() != 0;
-		item.Pity = reader.Read<uint8_t>();
-		item.AffixCount = reader.Read<uint8_t>();
-		if (item.Base >= ItemBase::Count || item.Quality >= Rarity::Count || item.Skill > AbilityId::Count || item.AffixCount > MaxAffixes || item.Mod >= GemMod::Count)
-			return false;
-		if (item.Base == ItemBase::Gem && item.Skill >= AbilityId::Count)
-			return false;
-		for (uint8_t i = 0; i < item.AffixCount; i++)
-		{
-			item.Affixes[i].Kind = reader.Read<Stat>();
-			item.Affixes[i].Value = reader.Read<float>();
-			item.Affixes[i].Tier = reader.Read<uint8_t>();
-			if (item.Affixes[i].Kind >= Stat::Count)
-				return false;
-		}
-		return !reader.Failed();
-	}
-
 	namespace
 	{
 		void WriteRules(ByteWriter& writer, const MatchRules& rules)
@@ -448,8 +378,6 @@ namespace Game
 			writer.Write(session.Mode);
 			writer.Write(session.Map);
 			writer.Write(session.MapSeed);
-			writer.Write(session.Tier);
-			writer.Write(session.Modifiers);
 			WriteRules(writer, session.Rules);
 			writer.Write(session.Run.StartMinute);
 			writer.Write(session.Run.StartLevel);
@@ -458,7 +386,6 @@ namespace Game
 			writer.Write(session.Run.Only);
 			writer.Write(uint8_t(session.Run.Immortal ? 1 : 0));
 			writer.Write(session.Epoch);
-			writer.Write(uint8_t(session.UnlimitedMaterials ? 1 : 0));
 		}
 
 		bool ReadSession(ByteReader& reader, SessionInfo& session)
@@ -466,8 +393,6 @@ namespace Game
 			session.Mode = reader.Read<GameMode>();
 			session.Map = reader.Read<MapKind>();
 			session.MapSeed = reader.Read<uint32_t>();
-			session.Tier = reader.Read<uint8_t>();
-			session.Modifiers = reader.Read<ModifierMask>();
 			session.Rules = ReadRules(reader);
 			session.Run.StartMinute = reader.Read<uint8_t>();
 			session.Run.StartLevel = reader.Read<uint8_t>();
@@ -477,7 +402,6 @@ namespace Game
 			session.Run.Immortal = reader.Read<uint8_t>() != 0;
 			session.Run = SanitizeRunRules(session.Run);
 			session.Epoch = reader.Read<uint32_t>();
-			session.UnlimitedMaterials = reader.Read<uint8_t>() != 0;
 			return !reader.Failed() && session.Mode < GameMode::Count && session.Map < MapKind::Count;
 		}
 	}
@@ -493,17 +417,9 @@ namespace Game
 	{
 		writer.Write(message.Version);
 		writer.Write(message.Name);
-		writer.Write(message.Kit);
 		writer.Write(message.Honors);
 		writer.Write(PackCosmetics(message.Style));
-		writer.Write(uint8_t(message.HasGear ? 1 : 0));
-		if (!message.HasGear)
-			return;
-		WriteItems(writer, message.Gear.Gear);
-		WriteItems(writer, message.Gear.Gems);
-		WriteItems(writer, message.Gear.Pack);
-		WriteItems(writer, message.Gear.Stash);
-		WriteBytes(writer, message.Gear.Materials);
+		WriteBytes(writer, message.Spells);
 	}
 
 	bool Read(ByteReader& reader, ClientHello& message)
@@ -512,15 +428,10 @@ namespace Game
 		if (reader.Failed() || message.Version != ProtocolVersion)
 			return !reader.Failed();
 		message.Name = reader.ReadString();
-		message.Kit = reader.Read<uint8_t>();
 		message.Honors = reader.Read<uint8_t>();
 		message.Style = UnpackCosmetics(reader.Read<uint32_t>());
-		message.HasGear = reader.Read<uint8_t>() != 0;
-		if (message.HasGear && (!ReadItems(reader, message.Gear.Gear) || !ReadItems(reader, message.Gear.Gems) || !ReadItems(reader, message.Gear.Pack) || !ReadItems(reader, message.Gear.Stash)))
-			return false;
-		if (message.HasGear)
-			ReadBytes(reader, message.Gear.Materials);
-		return !reader.Failed();
+		ReadBytes(reader, message.Spells);
+		return !reader.Failed() && std::all_of(message.Spells.begin(), message.Spells.end(), [](AbilityId id) { return id < AbilityId::Count; });
 	}
 
 	void Write(ByteWriter& writer, const ClientInput& message)
@@ -618,16 +529,6 @@ namespace Game
 			return false;
 		message.ServerTick = reader.Read<uint32_t>();
 		return !reader.Failed();
-	}
-
-	void Write(ByteWriter& writer, const ServerStash& message)
-	{
-		WriteItems(writer, message.Stash);
-	}
-
-	bool Read(ByteReader& reader, ServerStash& message)
-	{
-		return ReadItems(reader, message.Stash) && !reader.Failed();
 	}
 
 	void Write(ByteWriter& writer, const ServerNotice& message)
@@ -734,12 +635,6 @@ namespace Game
 			writer.Write(player.Assists);
 			writer.Write(player.Damage);
 			writer.Write(player.Ping);
-			WriteBytes(writer, player.Buffs);
-			writer.Write(player.Look.Weapon);
-			writer.Write(player.Look.Head);
-			writer.Write(player.Look.Body);
-			writer.Write(player.Look.Feet);
-			writer.Write(player.Look.WeaponQuality);
 			writer.Write(PackCosmetics(player.Look.Style));
 			writer.Write(player.Team);
 			writer.Write(player.Placement);
@@ -763,12 +658,6 @@ namespace Game
 			player.Assists = reader.Read<uint16_t>();
 			player.Damage = reader.Read<uint32_t>();
 			player.Ping = reader.Read<int32_t>();
-			ReadBytes(reader, player.Buffs);
-			player.Look.Weapon = reader.Read<ItemBase>();
-			player.Look.Head = reader.Read<ItemBase>();
-			player.Look.Body = reader.Read<ItemBase>();
-			player.Look.Feet = reader.Read<ItemBase>();
-			player.Look.WeaponQuality = reader.Read<Rarity>();
 			player.Look.Style = UnpackCosmetics(reader.Read<uint32_t>());
 			player.Team = reader.Read<uint8_t>();
 			player.Placement = reader.Read<uint8_t>();
@@ -781,8 +670,6 @@ namespace Game
 			player.Rounds = reader.Read<uint8_t>();
 			player.Honors = reader.Read<uint8_t>();
 			player.Cards = reader.Read<CardMask>();
-			if (player.Look.Weapon >= ItemBase::Count || player.Look.Head > ItemBase::Count || player.Look.Body > ItemBase::Count || player.Look.Feet > ItemBase::Count || player.Look.WeaponQuality >= Rarity::Count)
-				return false;
 		}
 		return !reader.Failed();
 	}
@@ -792,20 +679,6 @@ namespace Game
 		const GameStatus& status = message.Status;
 		writer.Write(status.Mode);
 		writer.Write(status.Map);
-		writer.Write(status.Tier);
-		writer.Write(status.Modifiers);
-		writer.Write(status.Phase);
-		writer.Write(status.Wave);
-		writer.Write(status.EnemiesLeft);
-		writer.Write(status.PhaseTime);
-		writer.Write(status.PendingChoices);
-		writer.Write(status.Mission);
-		writer.Write(status.Kills);
-		writer.Write(status.KillGoal);
-		writer.Write(status.Revives);
-		writer.Write(status.BossNetId);
-		writer.Write(status.BossHealth);
-		writer.Write(status.MissionTime);
 		if (IsPvpMode(status.Mode))
 		{
 			writer.Write(status.Match);
@@ -815,18 +688,6 @@ namespace Game
 			writer.Write(status.WinningTeam);
 			writer.Write(status.Alive);
 			writer.Write(status.Entrants);
-		}
-		if (status.Mode == GameMode::Royale)
-		{
-			const StormState& storm = status.Storm;
-			writer.Write(storm.Center);
-			writer.Write(storm.Radius);
-			writer.Write(storm.Target);
-			writer.Write(storm.TargetRadius);
-			writer.Write(storm.Stage);
-			writer.Write(storm.Timer);
-			writer.Write(uint8_t(storm.Shrinking ? 1 : 0));
-			writer.Write(storm.Damage);
 		}
 		if (status.Mode == GameMode::Brawl)
 			WriteBrawlStatus(writer, status.Brawl);
@@ -853,14 +714,10 @@ namespace Game
 			writer.Write(local.Motion.Position);
 			writer.Write(local.Motion.Facing);
 			WriteState(writer, local.State);
-			WriteBytes(writer, local.Buffs);
 			WriteTraits(writer, local.Traits);
-			WriteBytes(writer, local.Offer);
-			writer.Write(uint8_t(local.OfferPending ? 1 : 0));
 			writer.Write(local.Health);
 			writer.Write(local.MaxHealth);
 			writer.Write(local.RespawnTime);
-			WriteBytes(writer, local.Materials);
 			writer.Write(QuantizeOwner(local.Watching));
 			writer.Write(QuantizeOwner(local.KilledBy));
 			if (status.Mode == GameMode::Brawl)
@@ -878,21 +735,7 @@ namespace Game
 		GameStatus& status = message.Status;
 		status.Mode = reader.Read<GameMode>();
 		status.Map = reader.Read<MapKind>();
-		status.Tier = reader.Read<uint8_t>();
-		status.Modifiers = reader.Read<ModifierMask>();
-		status.Phase = reader.Read<GamePhase>();
-		status.Wave = reader.Read<uint16_t>();
-		status.EnemiesLeft = reader.Read<uint16_t>();
-		status.PhaseTime = reader.Read<float>();
-		status.PendingChoices = reader.Read<uint8_t>();
-		status.Mission = reader.Read<MissionPhase>();
-		status.Kills = reader.Read<uint16_t>();
-		status.KillGoal = reader.Read<uint16_t>();
-		status.Revives = reader.Read<uint8_t>();
-		status.BossNetId = reader.Read<uint32_t>();
-		status.BossHealth = reader.Read<uint8_t>();
-		status.MissionTime = reader.Read<float>();
-		if (uint8_t(status.Phase) > uint8_t(GamePhase::Defeat) || status.Mode >= GameMode::Count || status.Map >= MapKind::Count || uint8_t(status.Mission) > uint8_t(MissionPhase::Failed))
+		if (status.Mode >= GameMode::Count || status.Map >= MapKind::Count)
 			return false;
 		if (IsPvpMode(status.Mode))
 		{
@@ -905,18 +748,6 @@ namespace Game
 			status.Entrants = reader.Read<uint8_t>();
 			if (uint8_t(status.Match) > uint8_t(MatchPhase::Ended))
 				return false;
-		}
-		if (status.Mode == GameMode::Royale)
-		{
-			StormState& storm = status.Storm;
-			storm.Center = reader.ReadVec2();
-			storm.Radius = reader.Read<float>();
-			storm.Target = reader.ReadVec2();
-			storm.TargetRadius = reader.Read<float>();
-			storm.Stage = reader.Read<uint8_t>();
-			storm.Timer = reader.Read<float>();
-			storm.Shrinking = reader.Read<uint8_t>() != 0;
-			storm.Damage = reader.Read<float>();
 		}
 		if (status.Mode == GameMode::Hub)
 			status.HubFalls = reader.Read<uint16_t>();
@@ -946,19 +777,13 @@ namespace Game
 			local.Motion.Facing = reader.Read<float>();
 			if (!ReadState(reader, local.State))
 				return false;
-			ReadBytes(reader, local.Buffs);
 			if (!ReadTraits(reader, local.Traits))
 				return false;
-			ReadBytes(reader, local.Offer);
-			local.OfferPending = reader.Read<uint8_t>() != 0;
 			local.Health = reader.Read<int32_t>();
 			local.MaxHealth = reader.Read<int32_t>();
 			local.RespawnTime = reader.Read<float>();
-			ReadBytes(reader, local.Materials);
 			local.Watching = DequantizeOwner(reader.Read<uint8_t>());
 			local.KilledBy = DequantizeOwner(reader.Read<uint8_t>());
-			if (std::any_of(local.Offer.begin(), local.Offer.end(), [](UpgradeId id) { return id > UpgradeId::Count; }))
-				return false;
 			if (status.Mode == GameMode::Hub)
 				local.Starlit = reader.Read<uint16_t>();
 			if (status.Mode == GameMode::Brawl)
@@ -971,19 +796,4 @@ namespace Game
 		return !reader.Failed();
 	}
 
-	void Write(ByteWriter& writer, const ServerInventory& message)
-	{
-		WriteItems(writer, message.Gear);
-		WriteItems(writer, message.Gems);
-		WriteItems(writer, message.Pack);
-		WriteBytes(writer, message.Upgrades);
-	}
-
-	bool Read(ByteReader& reader, ServerInventory& message)
-	{
-		if (!ReadItems(reader, message.Gear) || !ReadItems(reader, message.Gems) || !ReadItems(reader, message.Pack))
-			return false;
-		ReadBytes(reader, message.Upgrades);
-		return !reader.Failed();
-	}
 }

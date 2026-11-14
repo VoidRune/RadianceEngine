@@ -10,7 +10,6 @@
 		"#Status_Brawl"		"Spellbrawl: %map%, round %round% of %rounds%"
 		"#Status_Watching"	"Watching a Spellbrawl on %map%"
 		"#Status_Results"	"Spellbrawl results on %map%"
-		"#Status_Arena"		"Fighting in the %map%"
-		"#Status_Mission"	"On a mission in %map%"
+		"#Status_Shardfall"	"Shardfall run in %map%"
 	}
 }

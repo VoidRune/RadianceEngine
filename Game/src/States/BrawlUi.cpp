@@ -26,7 +26,7 @@ namespace Game
 		constexpr float CardBurnDelay = 0.2f;
 		constexpr float CardBurnSeconds = 0.85f;
 		constexpr const char* SpellKeys[] = { "RMB", "Q", "R" };
-		static_assert(std::size(SpellKeys) == SkillSlots);
+		static_assert(std::size(SpellKeys) == BrawlSlots);
 		constexpr Rdn::KeyCode CardKeys[] = { Rdn::KeyCode::Key1, Rdn::KeyCode::Key2, Rdn::KeyCode::Key3 };
 		static_assert(std::size(CardKeys) == CardChoices);
 		constexpr float CardNewsSeconds = 9.0f;
@@ -1483,11 +1483,11 @@ namespace Game
 		std::optional<AbilityId> spell;
 		if (const std::optional<int> dropped = ui.AcceptDrop(rect, SpellPayload))
 			spell = AbilityId(*dropped);
-		else if (const std::optional<int> moved = ui.AcceptDrop(rect, KeyPayload); moved && uint32_t(*moved) < SkillSlots)
+		else if (const std::optional<int> moved = ui.AcceptDrop(rect, KeyPayload); moved && uint32_t(*moved) < BrawlSlots)
 			spell = spells[size_t(*moved)];
 		else if (clicked && m_SelectedSpell)
 			spell = m_SelectedSpell;
-		if (!spell || slot >= SkillSlots)
+		if (!spell || slot >= BrawlSlots)
 			return false;
 		if (spells[slot] != *spell)
 		{
@@ -1511,7 +1511,7 @@ namespace Game
 		const UiPayload* drag = ui.GetDrag();
 		if (!drag || (drag->Type != SpellPayload && drag->Type != KeyPayload))
 			return;
-		const AbilityId spell = drag->Type == SpellPayload ? AbilityId(drag->Value) : m_Client.GetPreferredSpells()[size_t(std::clamp(drag->Value, 0, int(SkillSlots) - 1))];
+		const AbilityId spell = drag->Type == SpellPayload ? AbilityId(drag->Value) : m_Client.GetPreferredSpells()[size_t(std::clamp(drag->Value, 0, int(BrawlSlots) - 1))];
 		const UiColor color = WithAlpha(SkillColor(spell));
 		ui.SetLayer(UiLayer::Overlay);
 		UiDrawList& draw = ui.Draw();
@@ -1717,7 +1717,7 @@ namespace Game
 		UiRect slots = left.CutTop(88.0f);
 		constexpr float SlotWidth = 141.0f;
 		constexpr float SlotGap = 12.0f;
-		for (uint32_t slot = 0; slot <= SkillSlots; slot++)
+		for (uint32_t slot = 0; slot <= BrawlSlots; slot++)
 		{
 			const UiRect rect = slots.CutLeft(SlotWidth);
 			slots.CutLeft(SlotGap);
@@ -2178,7 +2178,7 @@ namespace Game
 		{
 			UiRect icons = right.CutTop(40.0f);
 			const BrawlSpells& spells = m_Client.GetPreferredSpells();
-			for (uint32_t slot = 0; slot <= SkillSlots; slot++)
+			for (uint32_t slot = 0; slot <= BrawlSlots; slot++)
 			{
 				const AbilityId spell = slot == 0 ? BrawlBasic : spells[slot - 1];
 				const UiRect icon = icons.CutLeft(40.0f);
@@ -2502,11 +2502,8 @@ namespace Game
 		}
 		draw.TextFit(area.CutTop(22.0f), party, Theme::Body(14.0f, playing + bots >= 2 ? Theme::Success : Theme::Muted));
 		const std::string custom = CustomSummary(rules);
-		const MatchReward reward = GetBrawlReward(true, std::max(playing + bots, 2u), 15);
 		if (!custom.empty())
 			draw.TextFit(area.CutTop(20.0f), "Custom rules: " + custom, Theme::Body(13.5f, Theme::Gold));
-		else
-			draw.TextAligned(area.CutTop(20.0f), Format("Winning with 15 points pays about %u gold", unsigned(reward.Gold)), Theme::Body(13.5f, Theme::Faint), { 0.0f, 0.5f });
 		area.CutTop(10.0f);
 		if (ui.Button(Ui::MakeId("gateenter"), area.CutTop(48.0f), EnterLabel(), ButtonKind::Primary, playing + bots > 0, UiIcon::Whirlwind))
 		{

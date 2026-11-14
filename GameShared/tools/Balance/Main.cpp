@@ -262,7 +262,7 @@ namespace
 		std::array<BotSkill, MaxPlayers> skills{};
 		for (uint32_t id = 0; id < options.Players; id++)
 		{
-			world.SpawnPlayer(id, StarterKit::Arcanist);
+			world.SpawnPlayer(id);
 			skills[id] = options.MixedSkill ? BotSkill(random.Below(uint32_t(BotSkill::Count))) : options.Skill;
 			squad.Add(id, BotProfile{ .Skill = skills[id], .Style = BotStyle(random.Below(uint32_t(BotStyle::Count))), .Seed = random.Next(), .RandomSpells = true, .Patient = false });
 		}
@@ -770,7 +770,7 @@ int main(int argc, char** argv)
 	}
 	{
 		World warmup(WorldSettings{ .Seed = 1, .Map = MapKind::Caldera, .Mode = GameMode::Brawl });
-		warmup.SpawnPlayer(0, StarterKit::Arcanist);
+		warmup.SpawnPlayer(0);
 		BotSquad squad;
 		squad.Add(0, {});
 		for (int tick = 0; tick < 4; tick++)

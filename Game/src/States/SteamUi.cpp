@@ -114,15 +114,9 @@ namespace Game
 				presence.Status = "Spellbrawl: " + map + ", round " + std::to_string(presence.Round) + " of " + std::to_string(presence.Rounds);
 			}
 			break;
-		case GameMode::Arena:
-		case GameMode::Royale:
-			presence.Token = "#Status_Arena";
-			presence.Status = "Fighting in the " + map;
-			presence.Map = map;
-			break;
 		default:
-			presence.Token = "#Status_Mission";
-			presence.Status = "On a mission in " + map;
+			presence.Token = "#Status_Shardfall";
+			presence.Status = "Shardfall run in " + map;
 			presence.Map = map;
 			break;
 		}

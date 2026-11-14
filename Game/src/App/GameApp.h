@@ -38,7 +38,6 @@ namespace Game
 		std::string PlayerName = "Player";
 		std::string JoinAddress = "127.0.0.1";
 		uint16_t Port = DefaultPort;
-		StarterKit Kit = StarterKit::Arcanist;
 		bool FriendsCanJoin = true;
 		bool SaveProfiles = true;
 		float Volume = 0.8f;
@@ -55,21 +54,15 @@ namespace Game
 		float ScreenShake = 1.0f;
 		bool ShowControls = true;
 		bool ShowPerformance = false;
-		MapKind Map = MapKind::Town;
+		MapKind Map = MapKind::Hub;
 		GameMode StartMode = GameMode::Hub;
-		uint8_t Tier = 1;
-		ModifierMask Modifiers = 0;
 		MatchRules Rules;
 		RunRules Run;
-		bool UnlimitedMaterials = false;
-		bool Peaceful = false;
 		bool Leviathan = false;
 		std::optional<std::array<float, 6>> ShotCamera;
 		bool Distortion = true;
 		bool Trails = true;
 		uint8_t DistortionStage = 0;
-		uint32_t FirstWave = 1;
-		float LootRate = 1.0f;
 		NetworkSimulation Simulation;
 	};
 
@@ -113,7 +106,7 @@ namespace Game
 		Rdn::MemoryUsage GetMemoryUsage() const { return m_Allocator->GetDeviceLocalUsage(); }
 		GraphicsTier GetRecommendedGraphics() const { return m_RecommendedGraphics; }
 		void ApplyRecommendedGraphics();
-		CharacterProfile LoadCharacter(const std::string& name, StarterKit kit, bool fresh) const;
+		CharacterProfile LoadCharacter(const std::string& name, bool fresh) const;
 		void SaveCharacter(const CharacterProfile& profile) const;
 
 	private:

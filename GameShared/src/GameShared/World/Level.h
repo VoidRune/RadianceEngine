@@ -18,11 +18,7 @@ namespace Game
 {
 	enum class MapKind : uint8_t
 	{
-		Town,
-		Caves,
 		Hub,
-		Crucible,
-		Ashlands,
 		Caldera,
 		FrozenLake,
 		SkyRuins,
@@ -33,22 +29,19 @@ namespace Game
 
 	struct MapDef
 	{
-		MapKind Id = MapKind::Town;
+		MapKind Id = MapKind::Hub;
 		const char* Name = "";
 		const char* Description = "";
+		uint8_t Salt = 0;
 	};
 
 	inline constexpr MapDef Maps[] = {
-		{ MapKind::Town, "Old Town", "A paved square below a grand library raised on a terrace, a wooded grove and the old quarter. The Archivist haunts the square." },
-		{ MapKind::Caves, "Caves", "Random caverns joined by tunnels, with raised ledges, pools, pillars and glowing crystals. A crystal wyrm sleeps in the deepest cavern." },
-		{ MapKind::Hub, "Emberhold", "The camp between expeditions, with a stash, a forge, a lapidary, the mission board and the proving grounds." },
-		{ MapKind::Crucible, "The Crucible", "A walled fighting pit around a low dais, with broken colonnades, cover walls and pools of black water. Shrines hand out healing and power." },
-		{ MapKind::Ashlands, "The Ashlands", "A burned island: a ruined village, a drowned chapel, a walled graveyard, crystal hollows, a sunken library, farmland and the watchtower hill. Chests everywhere, and the ash storm closes in." },
-		{ MapKind::Caldera, "Molten Heart", "The Forge of the Titans: an iron mold plate chained above a molten pit. The titan's crucible pours molten metal down a sword-shaped trench, and late in the round the forge floods the plate from the edge inward." },
-		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes." },
-		{ MapKind::SkyRuins, "Sky Observatory", "The domed observatory of a vanished sky civilization, high above the clouds. There is no lava, only a long fall: a hole gapes in the middle of its star-chart floor, and the old core's burning field closes in around it." },
-		{ MapKind::StormPeak, "Storm Peak", "A wide summit plateau high above the clouds, crowned by the old Stormcallers' ritual circle and its monoliths. Lightning falls at random, the storm closes in on the circle, and a shove off the edge is a long way down." },
-		{ MapKind::ProvingHollow, "Proving Hollow", "A grassy hollow ringed by cliffs, with a worn road around four crystal-studded pillar clusters, a stone boss ring to the north and a vault sealed behind an iron gate." },
+		{ MapKind::Hub, "Emberhold", "The floating island between battles, with the spellbook, the Caldera Gate, the Shard Rift, the chess loft and the practice dummies.", 2 },
+		{ MapKind::Caldera, "Molten Heart", "The Forge of the Titans: an iron mold plate chained above a molten pit. The titan's crucible pours molten metal down a sword-shaped trench, and late in the round the forge floods the plate from the edge inward.", 5 },
+		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes.", 6 },
+		{ MapKind::SkyRuins, "Sky Observatory", "The domed observatory of a vanished sky civilization, high above the clouds. There is no lava, only a long fall: a hole gapes in the middle of its star-chart floor, and the old core's burning field closes in around it.", 7 },
+		{ MapKind::StormPeak, "Storm Peak", "A wide summit plateau high above the clouds, crowned by the old Stormcallers' ritual circle and its monoliths. Lightning falls at random, the storm closes in on the circle, and a shove off the edge is a long way down.", 8 },
+		{ MapKind::ProvingHollow, "Proving Hollow", "A grassy hollow ringed by cliffs, with a worn road around four crystal-studded pillar clusters, a stone boss ring to the north and a vault sealed behind an iron gate.", 9 },
 	};
 	static_assert(std::size(Maps) == size_t(MapKind::Count));
 
@@ -58,21 +51,6 @@ namespace Game
 	inline const MapDef& GetMapDef(MapKind kind)
 	{
 		return Maps[size_t(kind) < std::size(Maps) ? size_t(kind) : 0];
-	}
-
-	inline bool IsMissionMap(MapKind kind)
-	{
-		return kind == MapKind::Town || kind == MapKind::Caves;
-	}
-
-	inline bool IsArenaMap(MapKind kind)
-	{
-		return kind == MapKind::Crucible;
-	}
-
-	inline bool IsRoyaleMap(MapKind kind)
-	{
-		return kind == MapKind::Ashlands || IsMissionMap(kind);
 	}
 
 	inline bool IsBrawlMap(MapKind kind)
@@ -87,11 +65,6 @@ namespace Game
 
 	enum class StationKind : uint8_t
 	{
-		Stash,
-		Forge,
-		Lapidary,
-		MissionBoard,
-		ProvingGrounds,
 		Spellbook,
 		CalderaGate,
 		WishingVoid,
@@ -102,20 +75,15 @@ namespace Game
 
 	struct StationDef
 	{
-		StationKind Id = StationKind::Stash;
+		StationKind Id = StationKind::Spellbook;
 		const char* Name = "";
 		const char* Action = "";
 	};
 
 	inline constexpr StationDef Stations[] = {
-		{ StationKind::Stash, "Stash", "open the stash" },
-		{ StationKind::Forge, "Forge", "work at the forge" },
-		{ StationKind::Lapidary, "Lapidary", "cut and corrupt gems" },
-		{ StationKind::MissionBoard, "Mission Board", "choose a mission" },
-		{ StationKind::ProvingGrounds, "Proving Grounds", "fight other players" },
 		{ StationKind::Spellbook, "Spellbook", "choose your spells" },
 		{ StationKind::CalderaGate, "Caldera Gate", "start a Spellbrawl" },
-		{ StationKind::WishingVoid, "Wishing Void", "toss a gold coin into the void" },
+		{ StationKind::WishingVoid, "Wishing Void", "toss a wish into the void" },
 		{ StationKind::Chess, "Chess Table", "play chess" },
 		{ StationKind::ShardRift, "Shard Rift", "begin a Shardfall run" },
 	};
@@ -128,7 +96,7 @@ namespace Game
 
 	struct Station
 	{
-		StationKind Kind = StationKind::Stash;
+		StationKind Kind = StationKind::Spellbook;
 		Vec2 Position;
 		float Radius = 2.4f;
 	};
@@ -218,26 +186,6 @@ namespace Game
 		bool Contains(Vec2 position) const { return position.x >= Min.x && position.y >= Min.y && position.x < Max.x && position.y < Max.y; }
 		float GetArea() const { return (Max.x - Min.x) * (Max.y - Min.y); }
 		Vec2 GetCenter() const { return (Min + Max) * 0.5f; }
-	};
-
-	enum class PadKind : uint8_t
-	{
-		Health,
-		Mana,
-		Power,
-		Count,
-	};
-
-	struct PickupPad
-	{
-		Vec2 Position;
-		PadKind Kind = PadKind::Health;
-	};
-
-	struct LootSpot
-	{
-		Vec2 Position;
-		bool Vault = false;
 	};
 
 	struct Roof
@@ -438,7 +386,7 @@ namespace Game
 
 	struct Level
 	{
-		MapKind Kind = MapKind::Caves;
+		MapKind Kind = MapKind::Hub;
 		uint32_t Seed = 0;
 		TileMap Map;
 		std::vector<PlacedProp> Props;
@@ -448,8 +396,6 @@ namespace Game
 		std::vector<Station> Stations;
 		std::vector<Vec2> SpawnPoints;
 		std::vector<Vec2> Sockets;
-		std::vector<LootSpot> LootSpots;
-		std::vector<PickupPad> Pads;
 		std::vector<Roof> Roofs;
 		std::vector<DummySpot> Dummies;
 		std::vector<Landmark> Landmarks;
@@ -466,7 +412,6 @@ namespace Game
 		bool Bouncy = false;
 		bool Skyborne = false;
 		Vec2 PlayerSpawn;
-		Vec2 MissionStart;
 		Vec2 BossArena;
 		float BossArenaRadius = 0.0f;
 		std::vector<Shape> Shapes;
@@ -520,11 +465,7 @@ namespace Game
 	void AppendPropShapes(const PlacedProp& prop, std::vector<Shape>& shapes);
 	Shape MakeWallShape(const WallSegment& wall);
 	Level BuildLevel(MapKind kind, uint32_t seed);
-	Level BuildTownLevel(uint32_t seed);
-	Level BuildCavesLevel(uint32_t seed);
 	Level BuildHubLevel(uint32_t seed);
-	Level BuildCrucibleLevel(uint32_t seed);
-	Level BuildAshlandsLevel(uint32_t seed);
 	Level BuildCalderaLevel(uint32_t seed);
 	Level BuildFrozenLakeLevel(uint32_t seed);
 	Level BuildSkyRuinsLevel(uint32_t seed);

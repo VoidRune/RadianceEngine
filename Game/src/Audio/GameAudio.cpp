@@ -2,7 +2,6 @@
 #include "Rendering/SpellVisuals.h"
 #include <GameShared/Content/Brawl.h>
 #include <GameShared/Content/Definitions.h>
-#include <GameShared/Content/Items.h>
 #include <GameShared/Content/Terrain.h>
 #include <RadianceEngine/Core/Log.h>
 #include <algorithm>
@@ -63,15 +62,8 @@ namespace Game
 			{
 			case MapKind::Hub:
 				return AmbienceScene::Hub;
-			case MapKind::Town:
-				return AmbienceScene::Town;
-			case MapKind::Caves:
-				return AmbienceScene::Caves;
-			case MapKind::Crucible:
 			case MapKind::ProvingHollow:
 				return AmbienceScene::Crucible;
-			case MapKind::Ashlands:
-				return AmbienceScene::Ashlands;
 			case MapKind::Caldera:
 				return AmbienceScene::Caldera;
 			case MapKind::FrozenLake:
@@ -181,7 +173,6 @@ namespace Game
 		ApplyReverb(AmbienceScene::Menu);
 		m_Overlay.Stop(0.3f);
 		m_Overlaid = false;
-		m_InventoryOpen = false;
 		m_StationOpen = false;
 		m_PauseOpen = false;
 	}
@@ -197,8 +188,6 @@ namespace Game
 		m_PreviousHits.clear();
 		m_Status = {};
 		m_Local = {};
-		m_Inventory = {};
-		m_Materials = {};
 		m_SceneLevel = nullptr;
 		m_AnnouncedBoss = 0;
 		m_Primed = false;
@@ -336,13 +325,10 @@ namespace Game
 		{
 			PlayHits();
 			ObserveLocalPlayer(client);
-			ObserveInventory(client);
 			ObserveStatus(client);
 		}
 		m_Status = client.GetStatus();
 		m_Local = client.GetLocalPlayer();
-		m_Inventory = client.GetInventory();
-		m_Materials = client.GetMaterials();
 		m_Primed = true;
 		m_Level = nullptr;
 	}
@@ -364,19 +350,11 @@ namespace Game
 		MusicMood mood = MusicMood::Hub;
 		switch (session.Mode)
 		{
-		case GameMode::Mission:
-			mood = status.Mission == MissionPhase::Boss ? MusicMood::Boss : session.Map == MapKind::Caves ? MusicMood::Caves : MusicMood::Town;
-			break;
-		case GameMode::Horde:
 		case GameMode::Shardfall:
 			mood = MusicMood::Horde;
 			break;
-		case GameMode::Arena:
 		case GameMode::Brawl:
 			mood = MusicMood::Arena;
-			break;
-		case GameMode::Royale:
-			mood = MusicMood::Royale;
 			break;
 		default:
 			break;
@@ -386,18 +364,6 @@ namespace Game
 		m_Music->SetMood(mood);
 
 		float storm = 0.0f;
-		if (session.Mode == GameMode::Royale && status.Match == MatchPhase::Fight && status.Storm.Radius > 0.0f)
-		{
-			const float outside = Length(m_Focus - status.Storm.Center) - status.Storm.Radius;
-			storm = std::clamp((outside + 6.0f) / 9.0f, 0.0f, 1.0f);
-			m_NextThunder -= dt;
-			if (outside > 0.0f && m_NextThunder <= 0.0f)
-			{
-				const float angle = m_Random.Float() * 6.2831853f;
-				PlayAt(Cue::Thunder, m_Focus + FromAngle(angle) * 14.0f, 0.65f, 0.8f + 0.25f * m_Random.Float(), 0.0f, 10.0f);
-				m_NextThunder = 5.0f + 7.0f * m_Random.Float();
-			}
-		}
 		if (session.Mode == GameMode::Brawl && session.Map == MapKind::StormPeak)
 		{
 			const bool live = status.Brawl.Phase == BrawlPhase::Fight || status.Brawl.Phase == BrawlPhase::Over;
@@ -409,9 +375,9 @@ namespace Game
 		m_Soundscape->SetStorm(storm);
 	}
 
-	void GameAudio::SetOverlay(bool inventory, bool station, bool paused)
+	void GameAudio::SetOverlay(bool station, bool paused)
 	{
-		const bool open = inventory || station || paused;
+		const bool open = station || paused;
 		if (open != m_Overlaid)
 		{
 			m_Overlaid = open;
@@ -419,13 +385,6 @@ namespace Game
 				m_Overlay = m_Engine.StartSnapshot({ .Buses = { { m_Buses.World, -4.0f, 4500.0f }, { m_Buses.Ambience, -3.0f, 5000.0f } } }, 0.25f);
 			else
 				m_Overlay.Stop(0.35f);
-		}
-		if (inventory != m_InventoryOpen)
-		{
-			m_InventoryOpen = inventory;
-			PlayUi(Cue::Leather, 0.8f, inventory ? 1.0f : 0.85f);
-			if (inventory)
-				PlayUi(Cue::Belt, 0.45f, 1.0f, 0.05f);
 		}
 		if (m_StationOpen && !station)
 			PlayUi(Cue::BookClose, 0.5f);
@@ -441,24 +400,6 @@ namespace Game
 	{
 		switch (kind)
 		{
-		case StationKind::Stash:
-			PlayUi(Cue::Creak, 0.8f);
-			PlayUi(Cue::DoorOpen, 0.45f, 1.3f, 0.1f);
-			break;
-		case StationKind::Forge:
-			PlayUi(Cue::Anvil, 0.7f);
-			break;
-		case StationKind::Lapidary:
-			PlayUi(Cue::GlassLight, 0.6f, 1.2f);
-			PlayUi(Cue::GlassLight, 0.5f, 1.5f, 0.1f);
-			break;
-		case StationKind::MissionBoard:
-			PlayUi(Cue::BookOpen, 0.8f);
-			PlayUi(Cue::BookFlip, 0.6f, 1.0f, 0.08f);
-			break;
-		case StationKind::ProvingGrounds:
-			PlayUi(Cue::Unsheathe, 0.7f);
-			break;
 		case StationKind::WishingVoid:
 			PlayUi(Cue::Coins, 0.7f, 1.1f);
 			PlayUi(Cue::WhooshLight, 0.35f, 0.7f, 0.25f);
@@ -475,22 +416,7 @@ namespace Game
 
 	void GameAudio::PlayNotice(bool success, std::optional<StationKind> station)
 	{
-		if (station == StationKind::Forge)
-		{
-			PlayUi(Cue::Anvil, 0.8f, success ? 1.0f : 0.75f);
-			if (success)
-				PlayUi(Cue::Anvil, 0.6f, 1.05f, 0.22f);
-			PlayUi(success ? Cue::UiSuccess : Cue::UiFail, 0.6f, 1.0f, success ? 0.3f : 0.1f);
-		}
-		else if (station == StationKind::Lapidary)
-		{
-			PlayUi(success ? Cue::GlassLight : Cue::Glass, 0.7f, success ? 1.3f : 0.8f);
-			if (success)
-				PlayUi(Cue::GlassLight, 0.5f, 1.6f, 0.12f);
-			PlayUi(success ? Cue::UiSuccess : Cue::UiFail, 0.6f, 1.0f, 0.2f);
-		}
-		else
-			PlayUi(success ? Cue::UiSuccess : Cue::UiError, 0.6f);
+		PlayUi(success ? Cue::UiSuccess : Cue::UiError, 0.6f);
 	}
 
 	void GameAudio::PlayEvent(AudioEvent event)
@@ -627,9 +553,6 @@ namespace Game
 			else
 				PlayStrike(entity);
 			break;
-		case EntityKind::Loot:
-			PlayLootDrop(entity, client);
-			break;
 		case EntityKind::Chaser:
 		case EntityKind::Shooter:
 		case EntityKind::Brute:
@@ -640,19 +563,6 @@ namespace Game
 			break;
 		case EntityKind::Archivist:
 		case EntityKind::Wyrm:
-			if (m_Status.Mission == MissionPhase::Boss)
-				AnnounceBoss(entity);
-			break;
-		case EntityKind::Chest:
-			if (ChestKind(entity.Tag) == ChestKind::Boss)
-			{
-				PlayAt(Cue::UiRare, entity.Position, 1.0f);
-				PlayAt(Cue::Shield, entity.Position, 0.6f, 0.9f, 0.1f);
-			}
-			break;
-		case EntityKind::Gateway:
-			PlayAt(Cue::TeleportIn, entity.Position, 0.9f, 0.8f);
-			tracked.Loop = PlayAt(Cue::GatewayHum, entity.Position, 0.8f);
 			break;
 		default:
 			break;
@@ -724,17 +634,6 @@ namespace Game
 				tracked.Loop.Stop(0.1f);
 				tracked.Loop = {};
 				PlayStrike(entity);
-			}
-			return;
-		}
-
-		if (entity.Kind == EntityKind::Chest)
-		{
-			if (before.Variant == 0 && entity.Variant != 0)
-			{
-				PlayAt(Cue::Creak, entity.Position, 0.9f);
-				PlayAt(Cue::DoorOpen, entity.Position, 0.5f, 1.35f, 0.08f);
-				PlayAt(Cue::Coins, entity.Position, 0.7f, 1.0f, 0.3f);
 			}
 			return;
 		}
@@ -822,43 +721,6 @@ namespace Game
 		const float loud = own ? 1.0f : 0.8f;
 		switch (AbilityOf(entity))
 		{
-		case AbilityId::Bolt:
-			PlayAt(Cue::ShockLaunch, at, 0.55f * loud, 1.3f);
-			break;
-		case AbilityId::Orb:
-			PlayAt(Cue::IceLaunch, at, 0.65f * loud, 0.8f);
-			break;
-		case AbilityId::Arrow:
-			PlayAt(Cue::BowShoot, at, 0.85f * loud);
-			break;
-		case AbilityId::Quarrel:
-			PlayAt(Cue::BowShoot, at, 0.8f * loud, 0.75f);
-			PlayAt(Cue::Latch, at, 0.7f * loud, 0.9f);
-			break;
-		case AbilityId::Volley:
-			PlayAt(Cue::BowShoot, at, 0.8f * loud);
-			PlayAt(Cue::BowShoot, at, 0.6f * loud, 1.08f, 0.03f);
-			PlayAt(Cue::BowShoot, at, 0.6f * loud, 0.93f, 0.06f);
-			break;
-		case AbilityId::PiercingShot:
-			PlayAt(Cue::BowShoot, at, loud, 0.8f);
-			PlayAt(Cue::WhooshHeavy, at, 0.5f * loud, 1.3f);
-			break;
-		case AbilityId::Fireball:
-			PlayAt(Cue::FireLaunch, at, 0.9f * loud);
-			break;
-		case AbilityId::IceSpear:
-			PlayAt(Cue::IceLaunch, at, 0.8f * loud, 1.15f);
-			break;
-		case AbilityId::ChainLightning:
-		{
-			const auto caster = std::find_if(client.GetEntities().begin(), client.GetEntities().end(), [&](const EntityState& other) { return other.Kind == EntityKind::Player && other.Owner == entity.Owner; });
-			if (caster != client.GetEntities().end() && LengthSquared(caster->Position - at) > 6.0f)
-				PlayAt(Cue::ShockHit, at, 0.5f * loud, 1.25f);
-			else
-				PlayAt(Cue::ShockLaunch, at, 0.8f * loud);
-			break;
-		}
 		case AbilityId::Spit:
 			PlayAt(Cue::Spit, at, 0.6f);
 			PlayAt(Cue::WhooshLight, at, 0.3f, 1.4f);
@@ -925,18 +787,6 @@ namespace Game
 		const Vec2 at = entity.Position;
 		switch (ability)
 		{
-		case AbilityId::Bolt:
-			PlayAt(Cue::ShockHit, at, 0.45f, 1.25f);
-			break;
-		case AbilityId::Orb:
-			PlayAt(Cue::IceImpact, at, 0.6f, 0.9f);
-			break;
-		case AbilityId::IceSpear:
-			PlayAt(Cue::IceImpact, at, 0.75f, 1.1f);
-			break;
-		case AbilityId::ChainLightning:
-			PlayAt(Cue::ShockHit, at, 0.6f);
-			break;
 		case AbilityId::ObsidianBlades:
 		{
 			const float order = float(m_FrameImpacts - 1);
@@ -954,13 +804,6 @@ namespace Game
 			break;
 		}
 		case AbilityId::ChainHook:
-			break;
-		case AbilityId::Arrow:
-		case AbilityId::Quarrel:
-		case AbilityId::Volley:
-		case AbilityId::PiercingShot:
-			if (!HitNear(at, 1.6f))
-				PlayAt(Cue::ArrowHit, at, 0.5f);
 			break;
 		case AbilityId::Spit:
 			PlayAt(Cue::Soft, at, 0.45f, 1.5f);
@@ -1016,44 +859,14 @@ namespace Game
 			PlayAt(Cue::ShockHit, at, 0.5f, 0.6f);
 			PlayAt(Cue::Bell, at, 0.35f, 0.8f, 0.02f);
 			break;
-		case AbilityId::Slash:
-		case AbilityId::Chop:
-		case AbilityId::Stab:
-		case AbilityId::Thrust:
-		{
-			const auto it = m_LastSwing.find(entity.Owner);
-			if (it == m_LastSwing.end() || m_Time - it->second > 0.6f)
-				PlayAt(ability == AbilityId::Chop ? Cue::HeavySwing : ability == AbilityId::Slash ? Cue::SwordSwing : Cue::DaggerSwing, at, 0.8f, ability == AbilityId::Thrust ? 0.8f : 1.0f);
-			break;
-		}
 		case AbilityId::Bite:
 			PlayAt(Cue::DaggerSwing, at, 0.5f, 0.7f);
-			break;
-		case AbilityId::GroundSlam:
-			PlayAt(Cue::Rock, at, 0.9f, 0.8f);
-			PlayAt(Cue::Rock, at + forward * 2.0f, 0.7f, 0.6f, 0.05f);
-			PlayAt(Cue::Rumble, at, 0.45f);
-			PlayAt(Cue::Body, at, 0.7f, 0.7f);
 			break;
 		case AbilityId::Slam:
 			PlayAt(Cue::Rock, at, 1.0f, 0.75f);
 			PlayAt(Cue::Body, at, 0.8f, 0.6f);
 			PlayAt(Cue::Rumble, at, 0.45f);
 			PlayAt(Cue::Bone, at, 0.4f);
-			break;
-		case AbilityId::FrostNova:
-			PlayAt(Cue::IceImpact, at, 0.9f, 0.8f);
-			PlayAt(Cue::IceImpact, at, 0.6f, 1.05f, 0.06f);
-			PlayAt(Cue::WhooshHeavy, at, 0.5f, 1.4f);
-			break;
-		case AbilityId::Cyclone:
-			PlayAt(Cue::WhooshHeavy, at, 0.75f);
-			PlayAt(Cue::HeavySwing, at, 0.5f, 1.1f, 0.05f);
-			PlayAt(Cue::WhooshHeavy, at, 0.55f, 1.2f, 0.12f);
-			break;
-		case AbilityId::Fireball:
-			PlayAt(Cue::FireImpact, at, 0.95f);
-			PlayAt(Cue::Explosion, at, 0.4f, 1.2f);
 			break;
 		case AbilityId::PurpleFireball:
 		{
@@ -1107,19 +920,6 @@ namespace Game
 			PlayAt(Cue::WhooshHeavy, at, 0.7f, 0.9f);
 			PlayAt(Cue::Coins, at, 0.35f, 1.0f, 0.02f);
 			break;
-		case AbilityId::Meteor:
-			PlayAt(Cue::Explosion, at, 1.0f, 0.85f);
-			PlayAt(Cue::FireImpact, at, 1.0f, 0.8f);
-			PlayAt(Cue::Rock, at, 0.8f, 0.7f, 0.04f);
-			PlayAt(Cue::Thunder, at, 0.45f, 0.8f, 0.05f);
-			break;
-		case AbilityId::RainOfArrows:
-			for (int i = 0; i < 6; i++)
-			{
-				const Vec2 offset = FromAngle(m_Random.Float() * 6.2831853f) * (def.ImpactRadius * scale * std::sqrt(m_Random.Float()));
-				PlayAt(Cue::ArrowHit, at + offset, 0.55f, 0.9f + 0.2f * m_Random.Float(), 0.05f * float(i) + 0.05f * m_Random.Float());
-			}
-			break;
 		case AbilityId::Firestrike:
 			PlayAt(Cue::FireImpact, at, 0.85f, 1.05f);
 			break;
@@ -1162,15 +962,10 @@ namespace Game
 			PlayAt(Cue::IceImpact, at, 0.75f, 1.1f);
 			PlayAt(Cue::GlassLight, at, 0.6f);
 			break;
-		case AbilityId::Rejuvenate:
-			PlayAt(Cue::Heal, at, 0.8f);
-			PlayAt(Cue::Shield, at, 0.35f, 1.3f);
-			break;
 		case AbilityId::Roll:
 			PlayAt(Cue::WhooshLight, at, 0.6f);
 			PlayAt(Cue::Cloth, at, 0.55f);
 			break;
-		case AbilityId::Blink:
 		case AbilityId::Warp:
 			PlayAt(Cue::TeleportOut, at, 0.75f);
 			break;
@@ -1232,7 +1027,6 @@ namespace Game
 		const float lead = UnpackLead(entity.Charge);
 		switch (AbilityOf(entity))
 		{
-		case AbilityId::Meteor:
 		case AbilityId::Comet:
 			PlayAt(Cue::FireLaunch, at, 1.0f, 0.6f, lead);
 			break;
@@ -1259,10 +1053,6 @@ namespace Game
 			break;
 		case AbilityId::Firestrike:
 			tracked.Loop = PlayAt(Cue::FireLoop, at, 0.5f);
-			break;
-		case AbilityId::RainOfArrows:
-			PlayAt(Cue::WhooshLight, at, 0.5f, 1.5f, 0.15f);
-			PlayAt(Cue::WhooshLight, at, 0.4f, 1.3f, 0.28f);
 			break;
 		case AbilityId::PageStorm:
 			tracked.Loop = PlayAt(Cue::ShockLoop, at, 0.45f);
@@ -1311,56 +1101,6 @@ namespace Game
 		};
 		switch (ability)
 		{
-		case AbilityId::Slash:
-			swing(Cue::SwordSwing, 1.0f, 0.14f);
-			break;
-		case AbilityId::Chop:
-			swing(Cue::HeavySwing, 1.0f, 0.18f);
-			break;
-		case AbilityId::Stab:
-			swing(Cue::DaggerSwing, 1.0f, 0.1f);
-			break;
-		case AbilityId::Thrust:
-			swing(Cue::DaggerSwing, 0.8f, 0.1f);
-			PlayAt(Cue::WhooshLight, at, 0.45f * loud, 0.8f, std::max(0.0f, cast - 0.08f));
-			break;
-		case AbilityId::GroundSlam:
-			PlayAt(Cue::HeavySwing, at, loud, 0.7f, 0.3f);
-			break;
-		case AbilityId::Arrow:
-		case AbilityId::Volley:
-			tracked.Loop = PlayAt(Cue::BowDraw, at, 0.8f * loud);
-			break;
-		case AbilityId::PiercingShot:
-			tracked.Loop = PlayAt(Cue::BowDraw, at, loud, 0.9f);
-			break;
-		case AbilityId::Quarrel:
-			PlayAt(Cue::Click, at, 0.7f * loud, 0.85f);
-			break;
-		case AbilityId::Fireball:
-			tracked.Loop = PlayAt(Cue::FireBuildup, at, loud);
-			break;
-		case AbilityId::Meteor:
-			tracked.Loop = PlayAt(Cue::FireBuildup, at, loud, 0.8f);
-			break;
-		case AbilityId::FrostNova:
-			tracked.Loop = PlayAt(Cue::IceBuildup, at, loud, 1.25f);
-			break;
-		case AbilityId::IceSpear:
-			tracked.Loop = PlayAt(Cue::IceBuildup, at, 0.8f * loud, 1.1f);
-			break;
-		case AbilityId::Orb:
-			tracked.Loop = PlayAt(Cue::IceBuildup, at, 0.5f * loud, 0.95f);
-			break;
-		case AbilityId::ChainLightning:
-			tracked.Loop = PlayAt(Cue::ShockBuildup, at, loud);
-			break;
-		case AbilityId::Bolt:
-			tracked.Loop = PlayAt(Cue::ShockBuildup, at, 0.35f * loud, 1.3f);
-			break;
-		case AbilityId::Rejuvenate:
-			tracked.Loop = PlayAt(Cue::ManaStart, at, loud);
-			break;
 		case AbilityId::EmberBolt:
 			tracked.Loop = PlayAt(Cue::FireBuildup, at, 0.45f * loud, 1.35f);
 			break;
@@ -1763,18 +1503,6 @@ namespace Game
 			PlayAt(Cue::BeastDeath, at, 0.5f);
 	}
 
-	void GameAudio::PlayLootDrop(const EntityState& entity, const GameClient& client)
-	{
-		if (LootKind(entity.Variant) != LootKind::Item || (entity.Owner != NoPlayer && entity.Owner != client.GetPlayerId()))
-			return;
-		const Rarity rarity = ItemTagRarity(entity.Tag);
-		PlayAt(Cue::Drop, entity.Position, 0.5f, 1.0f, 0.0f, 0.2f);
-		if (rarity >= Rarity::Rare)
-			PlayAt(Cue::UiRare, entity.Position, rarity == Rarity::Rare ? 0.6f : 0.9f, rarity == Rarity::Mythic ? 1.2f : 1.0f, 0.05f);
-		if (rarity >= Rarity::Legendary)
-			PlayAt(Cue::Shield, entity.Position, 0.5f, 1.25f, 0.1f);
-	}
-
 	void GameAudio::PlayLootTaken(const EntityState& last)
 	{
 		switch (LootKind(last.Variant))
@@ -1784,8 +1512,6 @@ namespace Game
 			break;
 		case LootKind::Mana:
 			PlayUi(Cue::ManaStart, 0.6f, 1.1f);
-			break;
-		case LootKind::Item:
 			break;
 		default:
 			PlayUi(Cue::Shield, 0.6f, 1.1f);
@@ -1866,31 +1592,6 @@ namespace Game
 		}
 	}
 
-	void GameAudio::PlayItemGain(const Item& item, bool equipped)
-	{
-		switch (GetItemBase(item.Base).Slot)
-		{
-		case EquipSlot::Weapon:
-			PlayUi(Cue::Unsheathe, equipped ? 0.7f : 0.6f);
-			break;
-		case EquipSlot::Head:
-		case EquipSlot::Body:
-		case EquipSlot::Feet:
-			PlayUi(Cue::Belt, 0.6f);
-			PlayUi(Cue::Cloth, equipped ? 0.5f : 0.4f, 1.0f, 0.05f);
-			break;
-		case EquipSlot::Amulet:
-		case EquipSlot::Ring:
-			PlayUi(Cue::Coins, 0.45f, 1.4f);
-			PlayUi(Cue::GlassLight, 0.4f, 1.3f, 0.05f);
-			break;
-		default:
-			PlayUi(Cue::GlassLight, 0.6f, 1.2f);
-			PlayUi(equipped ? Cue::Click : Cue::GlassLight, 0.4f, 1.5f, 0.08f);
-			break;
-		}
-	}
-
 	void GameAudio::ObserveLocalPlayer(const GameClient& client)
 	{
 		const LocalPlayerState& local = client.GetLocalPlayer();
@@ -1917,79 +1618,12 @@ namespace Game
 		}
 		else if (m_Danger.IsActive())
 			m_Danger.Stop(0.8f);
-
-		const MaterialStock& materials = client.GetMaterials();
-		if (m_Local.Valid && m_Time - m_LastCoins > 0.3f && client.GetSession().Mode != GameMode::Royale)
-			for (size_t i = 0; i < materials.size(); i++)
-				if (materials[i] > m_Materials[i])
-				{
-					PlayUi(Cue::Coins, 0.45f, Material(i) == Material::Gold ? 1.0f : 1.15f);
-					m_LastCoins = m_Time;
-					break;
-				}
-	}
-
-	void GameAudio::ObserveInventory(const GameClient& client)
-	{
-		const ServerInventory& inventory = client.GetInventory();
-		const auto has = [](const auto& items, uint32_t id) { return std::any_of(items.begin(), items.end(), [id](const Item& item) { return item.Id == id; }); };
-		const auto heldBefore = [&](uint32_t id) { return has(m_Inventory.Pack, id) || has(m_Inventory.Gear, id) || has(m_Inventory.Gems, id); };
-		for (size_t i = 0; i < inventory.Upgrades.size(); i++)
-			if (inventory.Upgrades[i] > m_Inventory.Upgrades[i])
-			{
-				PlayUi(Cue::UiReward, 0.7f);
-				return;
-			}
-		for (const Item& item : inventory.Pack)
-			if (item.IsValid() && !heldBefore(item.Id))
-			{
-				PlayItemGain(item, false);
-				return;
-			}
-		const auto equipped = [&](const auto& now, const auto& before) -> const Item*
-		{
-			for (size_t i = 0; i < now.size(); i++)
-				if (now[i].IsValid() && now[i].Id != before[i].Id && has(m_Inventory.Pack, now[i].Id))
-					return &now[i];
-			return nullptr;
-		};
-		if (const Item* item = equipped(inventory.Gear, m_Inventory.Gear))
-			PlayItemGain(*item, true);
-		else if (const Item* gem = equipped(inventory.Gems, m_Inventory.Gems))
-			PlayItemGain(*gem, true);
 	}
 
 	void GameAudio::ObserveStatus(const GameClient& client)
 	{
 		const GameStatus& status = client.GetStatus();
-		if (status.Mode == GameMode::Mission && status.Mission != m_Status.Mission)
-		{
-			if (status.Mission == MissionPhase::Boss)
-			{
-				for (const auto& [netId, tracked] : m_Tracked)
-					if (IsBossKind(tracked.Last.Kind))
-						AnnounceBoss(tracked.Last);
-				PlayFlat(Cue::Gong, m_Buses.Stingers, 0.6f, 0.7f);
-			}
-			else if (status.Mission == MissionPhase::Victory)
-			{
-				PlayStinger(MusicStinger::Victory);
-				PlayUi(Cue::UiReward, 0.8f, 1.0f, 0.2f);
-			}
-			else if (status.Mission == MissionPhase::Failed)
-				PlayStinger(MusicStinger::Defeat);
-		}
-		if (status.Mode == GameMode::Horde && status.Phase != m_Status.Phase)
-		{
-			if (status.Phase == GamePhase::Wave)
-				PlayFlat(Cue::Horn, m_Buses.Stingers, 0.8f);
-			else if (status.Phase == GamePhase::Defeat)
-				PlayStinger(MusicStinger::Defeat);
-			else if (m_Status.Phase == GamePhase::Wave)
-			{
-				PlayUi(Cue::UiReward, 0.8f);
-				PlayFlat(Cue::Drum, m_Buses.Stingers, 0.6f, 1.0f, 0.1f);
-			}
-		}
+		if (status.Mode == GameMode::Shardfall && status.Run.Level > m_Status.Run.Level && m_Status.Mode == GameMode::Shardfall)
+			PlayUi(Cue::UiReward, 0.7f);
 	}
 }

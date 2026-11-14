@@ -2,7 +2,6 @@
 #include "Rendering/Animation.h"
 #include "Rendering/WorldRenderer.h"
 #include <GameShared/Content/Definitions.h>
-#include <GameShared/Content/Items.h>
 #include <GameShared/Core/Math.h>
 #include <GameShared/Net/Protocol.h>
 #include <array>
@@ -214,9 +213,7 @@ namespace Game
 
 		const CharacterLook& ForPlayer(const PlayerLook& look) const;
 		const CharacterLook* ForEnemy(EntityKind kind) const;
-		std::vector<uint32_t> WeaponMeshes(ItemBase base) const;
-		std::vector<uint32_t> ArmorMeshes(ItemBase base) const;
-		std::optional<uint32_t> ArrowMesh(AbilityId ability) const;
+		std::vector<uint32_t> WeaponMeshes(Focus focus) const;
 
 	private:
 		std::optional<uint32_t> Mesh(const char* name) const;
@@ -241,7 +238,6 @@ namespace Game
 
 	AttackAnim PlayerAttackAnim(AbilityId ability);
 	AttackAnim EnemyAttackAnim(EntityKind kind);
-	Stance PlayerStance(ItemBase weapon);
 
 	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f), const glm::vec4& flash = glm::vec4(0.0f), const ModelDissolve& dissolve = {});
 	glm::mat4 ModelTransform(const glm::vec3& base, float facing, float scale);

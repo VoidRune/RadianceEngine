@@ -1771,7 +1771,6 @@ namespace Game
 		switch (ability)
 		{
 		case AbilityId::EmberBolt:
-		case AbilityId::Fireball:
 		{
 			DrawGlow(renderer, center, 0.6f, { 0.5f, 0.18f, 0.05f });
 			renderer.DrawSprite(Stretched(ParticleShape::Beam, center - forward * 0.75f, center, 0.2f, { 1.2f, 0.5f, 0.12f }));
@@ -1781,30 +1780,9 @@ namespace Game
 			DrawGlow(renderer, center, marked ? 0.13f : 0.08f, marked ? heart : glm::vec3(1.2f, 1.0f, 0.7f));
 			break;
 		}
-		case AbilityId::Orb:
-		{
-			DrawGlow(renderer, center, 0.55f, { 0.06f, 0.14f, 0.32f });
-			ParticleSprite flake = Sprite(ParticleShape::Snowflake, center, 0.46f, { 0.45f, 0.8f, 1.3f });
-			flake.Rotation = time * 1.4f;
-			renderer.DrawSprite(flake);
-			ParticleSprite core = Sprite(ParticleShape::Orb, center, 0.15f, { 0.6f, 0.95f, 1.4f });
-			core.Seed = seed;
-			renderer.DrawSprite(core);
-			for (uint32_t i = 0; i < 3; i++)
-			{
-				const float angle = time * 4.5f + float(i) * 2.0944f;
-				ParticleSprite shard = Sprite(ParticleShape::Shard, center + Heading(angle) * 0.38f + Up * (0.1f * std::sin(angle * 2.0f + float(i))), 0.1f, { 0.6f, 1.0f, 1.5f });
-				shard.Rotation = angle;
-				shard.Additive = 0.6f;
-				renderer.DrawSprite(shard);
-			}
-			break;
-		}
-		case AbilityId::Bolt:
-		case AbilityId::ChainLightning:
 		case AbilityId::ArcLightning:
 		{
-			const float scale = ability == AbilityId::Bolt ? 1.0f : 1.35f;
+			const float scale = 1.35f;
 			DrawGlow(renderer, center, 0.42f * scale, { 0.1f, 0.15f, 0.45f });
 			const uint32_t frame = uint32_t(time * 30.0f);
 			for (uint32_t i = 0; i < 3; i++)
@@ -1821,7 +1799,6 @@ namespace Game
 				DrawGlow(renderer, center, 0.1f * scale, heart);
 			break;
 		}
-		case AbilityId::IceSpear:
 		case AbilityId::ShardBurst:
 		case AbilityId::FrostSpear:
 		{
@@ -1868,10 +1845,6 @@ namespace Game
 			renderer.DrawSprite(RingSprite(center, 0.255f, 0.036f, { 0.6f, 0.22f, 0.95f }));
 			break;
 		}
-		case AbilityId::PiercingShot:
-			DrawStreak(renderer, center - forward * 1.1f, center, 0.07f, { 0.6f, 1.8f, 0.5f });
-			DrawGlow(renderer, center, 0.25f, { 0.4f, 1.2f, 0.35f });
-			break;
 		case AbilityId::ChainHook:
 		{
 			DrawGlow(renderer, center, 0.5f, { 0.32f, 0.18f, 0.07f });
@@ -1892,10 +1865,6 @@ namespace Game
 			DrawStar(renderer, center + forward * 0.38f, 0.15f, marked ? heart : glm::vec3(2.3f, 2.0f, 1.5f), time * 4.0f);
 			break;
 		}
-		case AbilityId::Arrow:
-		case AbilityId::Volley:
-		case AbilityId::Quarrel:
-			break;
 		default:
 		{
 			DrawGlow(renderer, center, 0.45f, color * 0.6f);
@@ -1946,7 +1915,6 @@ namespace Game
 			style.Spacing = 0.12f;
 			break;
 		}
-		case AbilityId::IceSpear:
 		case AbilityId::FrostSpear:
 			style.Look = TrailLook::Frost;
 			style.Head = { 0.55f, 0.85f, 1.25f };

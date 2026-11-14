@@ -1,6 +1,5 @@
 #include "EnemyAI.h"
 #include "GameShared/Content/Definitions.h"
-#include "GameShared/Content/Missions.h"
 #include "GameShared/Simulation/Abilities.h"
 #include "GameShared/Simulation/World.h"
 #include "GameShared/World/Collision.h"
@@ -151,8 +150,7 @@ namespace Game
 			EntityRegistry& entities = context.Sim.GetEntities();
 			uint32_t alive = 0;
 			entities.Each<Enemy>([&](Entity entity, Enemy&) { alive += entities.Has<Boss>(entity) ? 0 : 1; });
-			const WorldSettings& settings = context.Sim.GetSettings();
-			const EnemyScaling scaling = GetMonsterScaling(kind, context.State.Level, std::max(context.Sim.CountPlayers(), 1u), false, settings.Modifiers);
+			const EnemyScaling scaling = GetMonsterScaling(kind, context.State.Level, std::max(context.Sim.CountPlayers(), 1u), false);
 			const EnemyDef* def = FindEnemyDef(kind);
 			for (uint32_t i = 0; i < count && alive < MaxMinions; i++, alive++)
 			{

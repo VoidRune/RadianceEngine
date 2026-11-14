@@ -1,11 +1,9 @@
 #pragma once
 #include "GameShared/Content/Achievements.h"
 #include "GameShared/Content/Cosmetics.h"
-#include "GameShared/Content/Crafting.h"
-#include "GameShared/Content/Items.h"
-#include "GameShared/Content/Missions.h"
+#include "GameShared/Content/Brawl.h"
+#include "GameShared/Content/GameMode.h"
 #include "GameShared/Content/Traits.h"
-#include "GameShared/Content/Upgrades.h"
 #include "GameShared/Core/ByteStream.h"
 #include "GameShared/Entity/Components.h"
 #include "GameShared/Simulation/GameStatus.h"
@@ -23,7 +21,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 88;
+	constexpr uint32_t ProtocolVersion = 89;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -36,9 +34,7 @@ namespace Game
 		ServerReject,
 		ServerPlayerList,
 		ServerSnapshot,
-		ServerInventory,
 		ServerTravel,
-		ServerStash,
 		ServerNotice,
 		ServerKillFeed,
 		ServerChess,
@@ -72,22 +68,7 @@ namespace Game
 
 	enum class ActionType : uint8_t
 	{
-		Equip,
-		EquipTo,
-		Unequip,
-		Drop,
-		SlotGem,
-		UnslotGem,
-		ChooseUpgrade,
-		StashDeposit,
-		StashWithdraw,
-		Salvage,
-		Forge,
-		GemCraft,
-		StartMission,
 		ReturnToHub,
-		OpenChest,
-		UseGateway,
 		StartMatch,
 		Spectate,
 		BrawlSpell,
@@ -107,11 +88,9 @@ namespace Game
 		static constexpr MessageType Type = MessageType::ClientHello;
 		uint32_t Version = ProtocolVersion;
 		std::string Name;
-		uint8_t Kit = 0;
 		uint8_t Honors = 0;
 		Cosmetics Style;
-		bool HasGear = false;
-		GearSet Gear;
+		BrawlSpells Spells = DefaultBrawlSpells;
 	};
 
 	struct ClientInput
@@ -124,7 +103,7 @@ namespace Game
 	struct ClientAction
 	{
 		static constexpr MessageType Type = MessageType::ClientAction;
-		ActionType Action = ActionType::Equip;
+		ActionType Action = ActionType::ReturnToHub;
 		uint16_t Value = 0;
 		uint16_t Target = 0;
 		uint32_t Extra = 0;
@@ -164,27 +143,14 @@ namespace Game
 		return SanitizeRunRules({ .StartMinute = uint8_t(action.Value & 0xFFu), .StartLevel = uint8_t(action.Value >> 8), .Spawns = action.Target, .Xp = uint16_t(action.Extra & 0xFFFFu), .Only = uint8_t((action.Extra >> 16) & 0xFFu), .Immortal = (action.Extra >> 24) != 0 });
 	}
 
-	inline uint16_t EncodeItemRef(ItemRef ref)
-	{
-		return uint16_t((uint32_t(ref.Location) << 8) | (ref.Index & 0xFFu));
-	}
-
-	inline ItemRef DecodeItemRef(uint16_t value)
-	{
-		return { ItemLocation(std::min<uint32_t>(value >> 8, uint32_t(ItemLocation::Count))), uint16_t(value & 0xFFu) };
-	}
-
 	struct SessionInfo
 	{
 		GameMode Mode = GameMode::Hub;
 		MapKind Map = MapKind::Hub;
 		uint32_t MapSeed = 0;
-		uint8_t Tier = 1;
-		ModifierMask Modifiers = 0;
 		MatchRules Rules;
 		RunRules Run;
 		uint32_t Epoch = 0;
-		bool UnlimitedMaterials = false;
 	};
 
 	struct ServerWelcome
@@ -205,12 +171,6 @@ namespace Game
 		uint32_t PlayerNetId = 0;
 		SessionInfo Session;
 		uint32_t ServerTick = 0;
-	};
-
-	struct ServerStash
-	{
-		static constexpr MessageType Type = MessageType::ServerStash;
-		StashTab Stash{};
 	};
 
 	struct ServerNotice
@@ -252,11 +212,6 @@ namespace Game
 
 	struct PlayerLook
 	{
-		ItemBase Weapon = ItemBase::Wand;
-		ItemBase Head = ItemBase::Count;
-		ItemBase Body = ItemBase::Count;
-		ItemBase Feet = ItemBase::Count;
-		Rarity WeaponQuality = Rarity::Common;
 		Cosmetics Style;
 	};
 
@@ -269,7 +224,6 @@ namespace Game
 		uint16_t Assists = 0;
 		uint32_t Damage = 0;
 		int32_t Ping = -1;
-		BuffStacks Buffs{};
 		PlayerLook Look;
 		uint8_t Team = NoTeam;
 		uint8_t Placement = 0;
@@ -343,14 +297,10 @@ namespace Game
 		bool Valid = false;
 		Transform Motion;
 		PlayerState State;
-		BuffStacks Buffs{};
 		PlayerTraits Traits;
-		UpgradeOffer Offer{};
-		bool OfferPending = false;
 		int32_t Health = 0;
 		int32_t MaxHealth = 0;
 		float RespawnTime = 0.0f;
-		MaterialStock Materials{};
 		uint32_t Watching = NoPlayer;
 		uint32_t KilledBy = NoPlayer;
 		BrawlLoadout Brawl;
@@ -371,17 +321,6 @@ namespace Game
 		std::vector<Orb> Orbs;
 	};
 
-	struct ServerInventory
-	{
-		static constexpr MessageType Type = MessageType::ServerInventory;
-		Equipment Gear{};
-		GemSlots Gems{};
-		Backpack Pack{};
-		UpgradeStacks Upgrades{};
-	};
-
-	void WriteItem(ByteWriter& writer, const Item& item);
-	bool ReadItem(ByteReader& reader, Item& item);
 	void WriteSnapshotBlock(ByteWriter& writer, const ServerSnapshot& message);
 	bool ReadSnapshotBlock(ByteReader& reader, ServerSnapshot& message);
 
@@ -391,9 +330,7 @@ namespace Game
 	void Write(ByteWriter& writer, const ServerWelcome& message);
 	void Write(ByteWriter& writer, const ServerReject& message);
 	void Write(ByteWriter& writer, const ServerPlayerList& message);
-	void Write(ByteWriter& writer, const ServerInventory& message);
 	void Write(ByteWriter& writer, const ServerTravel& message);
-	void Write(ByteWriter& writer, const ServerStash& message);
 	void Write(ByteWriter& writer, const ServerNotice& message);
 	void Write(ByteWriter& writer, const ServerKillFeed& message);
 	void Write(ByteWriter& writer, const ServerChess& message);
@@ -405,9 +342,7 @@ namespace Game
 	bool Read(ByteReader& reader, ServerWelcome& message);
 	bool Read(ByteReader& reader, ServerReject& message);
 	bool Read(ByteReader& reader, ServerPlayerList& message);
-	bool Read(ByteReader& reader, ServerInventory& message);
 	bool Read(ByteReader& reader, ServerTravel& message);
-	bool Read(ByteReader& reader, ServerStash& message);
 	bool Read(ByteReader& reader, ServerNotice& message);
 	bool Read(ByteReader& reader, ServerKillFeed& message);
 	bool Read(ByteReader& reader, ServerChess& message);

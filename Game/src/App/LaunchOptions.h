@@ -1,7 +1,6 @@
 #pragma once
 #include <GameShared/Content/Cosmetics.h>
-#include <GameShared/Content/Items.h>
-#include <GameShared/Content/Missions.h>
+#include <GameShared/Content/GameMode.h>
 #include <GameShared/Content/Pvp.h>
 #include <GameShared/Content/Shardfall.h>
 #include <GameShared/Net/Transport.h>
@@ -18,21 +17,14 @@ namespace Game
 		std::string Name;
 		std::optional<uint16_t> HostPort;
 		std::optional<std::string> JoinAddress;
-		std::optional<StarterKit> Kit;
 		std::optional<MapKind> Map;
 		std::optional<float> Volume;
 		std::optional<float> MusicVolume;
 		std::optional<float> EffectsVolume;
 		GameMode StartMode = GameMode::Hub;
-		uint8_t Tier = 1;
-		ModifierMask Modifiers = 0;
 		MatchRules Rules;
 		RunRules Run;
-		uint32_t FirstWave = 1;
-		float LootRate = 1.0f;
 		bool Muted = false;
-		bool Peaceful = false;
-		bool UnlimitedMaterials = false;
 		bool SaveProfile = true;
 		bool NewCharacter = false;
 		bool ExportProps = false;

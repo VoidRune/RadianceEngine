@@ -1,8 +1,5 @@
 #pragma once
 #include "GameShared/Content/Definitions.h"
-#include "GameShared/Content/Items.h"
-#include "GameShared/Content/Stats.h"
-#include "GameShared/Content/Upgrades.h"
 #include <array>
 #include <cstdint>
 
@@ -70,8 +67,6 @@ namespace Game
 	inline constexpr float ArmorConstant = 120.0f;
 	inline constexpr float MaxArmorReduction = 0.7f;
 
-	StatBlock CollectStats(const Equipment& gear, const BuffStacks& buffs, const UpgradeStacks& upgrades);
-	PlayerTraits ComputeTraits(const Equipment& gear, const GemSlots& gems, const BuffStacks& buffs, const UpgradeStacks& upgrades);
 	float DamageTakenScale(const PlayerTraits& traits, Element element, float maxArmor = MaxArmorReduction);
 	ProjectilePattern GetProjectilePattern(const AbilityDef& ability, uint8_t extraProjectiles, uint8_t extraPierce, float speedScale);
 	float ProjectileOffset(const ProjectilePattern& pattern, uint32_t index);

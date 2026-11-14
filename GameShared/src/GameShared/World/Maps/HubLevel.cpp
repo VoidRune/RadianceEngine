@@ -175,17 +175,14 @@ namespace Game
 		builder.Prop(PropId::Barrel, { 5.8f, 13.8f });
 		builder.Prop(PropId::CrateStack, { 6.2f, 17.2f });
 		builder.Prop(PropId::Banner, { 5.5f, 16.4f }, FaceSouth);
-		builder.Station(StationKind::Stash, { 7.4f, 15.4f }, 2.4f);
 
 		builder.Prop(PropId::Forge, { 8.2f, 11.6f }, FaceNorth);
 		builder.Prop(PropId::Anvil, { 10.6f, 12.2f }, FaceSouth);
 		builder.Prop(PropId::Brazier, { 6.6f, 12.4f });
-		builder.Station(StationKind::Forge, { 8.6f, 13.4f }, 2.6f);
 
 		builder.Prop(PropId::GemAltar, { 13.4f, 17.2f });
 		for (const Vec2 crystal : { Vec2(12.2f, 18.4f), Vec2(14.8f, 18.5f), Vec2(15.2f, 16.0f) })
 			builder.Prop(PropId::Crystal, crystal, crystal.x);
-		builder.Station(StationKind::Lapidary, { 13.2f, 15.8f }, 2.4f);
 
 		for (int i = 0; i < 3; i++)
 		{
@@ -198,7 +195,6 @@ namespace Game
 		builder.Prop(PropId::MissionBoard, { 14.2f, 12.0f }, FaceNorth);
 		builder.Prop(PropId::Brazier, { 12.6f, 11.8f });
 		builder.Prop(PropId::Brazier, { 15.8f, 12.2f });
-		builder.Station(StationKind::MissionBoard, { 14.2f, 13.8f }, 2.6f);
 		builder.Reserve({ 5, 11, 11, 8 });
 
 		builder.Prop(PropId::Lectern, LoftCenter + Vec2(1.3f, 0.3f), FaceEast);
@@ -236,7 +232,6 @@ namespace Game
 		builder.Prop(PropId::Statue, ProvingCenter + Vec2(2.2f, 0.2f), -FaceEast);
 		builder.Prop(PropId::Banner, ProvingCenter + Vec2(2.0f, 1.6f), -0.5f * FaceEast);
 		builder.Prop(PropId::Banner, ProvingCenter + Vec2(2.2f, -1.4f), -0.5f * FaceEast);
-		builder.Station(StationKind::ProvingGrounds, ProvingCenter + Vec2(-0.1f, 0.0f), 2.6f);
 		builder.Reserve(ProvingCenter, 3.2f);
 
 		builder.Prop(PropId::Statue, ShrineCenter + Vec2(0.0f, 1.4f), FaceSouth);

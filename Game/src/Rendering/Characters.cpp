@@ -129,42 +129,10 @@ namespace Game
 
 		uint64_t LookKey(const PlayerLook& look)
 		{
-			return uint64_t(look.Weapon) | uint64_t(look.Head) << 8 | uint64_t(look.Body) << 16 | uint64_t(look.Feet) << 24 | uint64_t(PackCosmetics(look.Style)) << 32;
+			return uint64_t(PackCosmetics(look.Style));
 		}
 
-		glm::mat4 GripOf(ItemBase base)
-		{
-			switch (base)
-			{
-			case ItemBase::Axe:
-			case ItemBase::Dagger:
-				return glm::rotate(glm::mat4(1.0f), Pi, glm::vec3(0.0f, 1.0f, 0.0f));
-			case ItemBase::Bow:
-				return glm::rotate(glm::mat4(1.0f), Pi, glm::vec3(0.0f, 0.0f, 1.0f));
-			case ItemBase::Crossbow:
-				return glm::rotate(glm::mat4(1.0f), -0.5f * Pi, glm::vec3(0.0f, 1.0f, 0.0f));
-			default:
-				return glm::mat4(1.0f);
-			}
-		}
-
-		const char* OutfitOf(ItemBase base)
-		{
-			switch (base)
-			{
-			case ItemBase::Robe:
-			case ItemBase::Sandals:
-				return "Mage";
-			case ItemBase::Tunic:
-			case ItemBase::Boots:
-				return "Ranger";
-			case ItemBase::Plate:
-			case ItemBase::Greaves:
-				return "Knight";
-			default:
-				return "Barbarian";
-			}
-		}
+		const glm::mat4 CrossbowGrip = glm::rotate(glm::mat4(1.0f), -0.5f * Pi, glm::vec3(0.0f, 1.0f, 0.0f));
 	}
 
 	CharacterLibrary::CharacterLibrary(const ModelLibrary& models)
@@ -305,7 +273,7 @@ namespace Game
 			return std::ref(look);
 		};
 		enemy(EntityKind::Chaser, "Skeleton_Minion_", 0.72f, Stance::Skeleton);
-		Attach(enemy(EntityKind::Shooter, "Skeleton_Rogue_", 0.8f, Stance::Shambling), "Skeleton_Crossbow", rightHand, GripOf(ItemBase::Crossbow));
+		Attach(enemy(EntityKind::Shooter, "Skeleton_Rogue_", 0.8f, Stance::Shambling), "Skeleton_Crossbow", rightHand, CrossbowGrip);
 		Attach(enemy(EntityKind::Brute, "Skeleton_Warrior_", 1.15f, Stance::Shambling), "Skeleton_Axe", rightHand);
 		Attach(enemy(EntityKind::Caster, "Skeleton_Mage_", 0.85f, Stance::Shambling), "Skeleton_Staff", rightHand);
 		CharacterLook& archivist = enemy(EntityKind::Archivist, "Skeleton_Mage_", 1.7f, Stance::Shambling);
@@ -386,20 +354,18 @@ namespace Game
 			return it->second;
 
 		CharacterLook result;
-		ItemBase held = look.Weapon;
-		if (m_Hero && held == ItemBase::Wand)
-			held = look.Style.Cast == Focus::Staff ? ItemBase::Staff : look.Style.Cast == Focus::Hands ? ItemBase::Count : ItemBase::Wand;
-		result.Pose = m_Hero && held == ItemBase::Staff ? Stance::Staff : PlayerStance(held);
+		const Focus held = m_Hero ? look.Style.Cast : Focus::Wand;
+		result.Pose = m_Hero && held == Focus::Staff ? Stance::Staff : held == Focus::Staff ? Stance::Heavy : Stance::Light;
 		if (m_Hero)
 			DressHero(result, look);
 		else
 			DressKayKit(result, look);
 		const CharacterRig& rig = m_Rigs[result.Skeleton];
 		const std::vector<uint32_t> weapons = WeaponMeshes(held);
-		const glm::mat4 grip = GripOf(held);
+		const glm::mat4 grip(1.0f);
 		for (const uint32_t weapon : weapons)
-			result.Props.push_back({ weapon, held == ItemBase::Bow ? rig.LeftHand : rig.RightHand, grip });
-		if ((held == ItemBase::Wand || held == ItemBase::Staff) && !weapons.empty())
+			result.Props.push_back({ weapon, rig.RightHand, grip });
+		if (!weapons.empty())
 		{
 			glm::vec3 low(1e9f);
 			glm::vec3 high(-1e9f);
@@ -419,7 +385,7 @@ namespace Game
 			result.Tip = m_Hero ? second : glm::length(first) > glm::length(second) ? first : second;
 			result.TipJoint = rig.RightHand;
 		}
-		else if (m_Hero && held == ItemBase::Count)
+		else if (m_Hero && held == Focus::Hands)
 		{
 			result.Tip = glm::vec3(0.0f, HandTip, 0.0f);
 			result.TipJoint = rig.RightHand;
@@ -443,30 +409,11 @@ namespace Game
 	{
 		look.Skeleton = m_Shared;
 		look.Scale = PlayerScale;
-		const std::string outfit = OutfitOf(player.Body);
-		const std::string legs = OutfitOf(player.Feet);
-		const std::string parts[] = { outfit + "_Body", outfit + "_ArmLeft", outfit + "_ArmRight", outfit + "_Cape", legs + "_LegLeft", legs + "_LegRight" };
+		const std::string parts[] = { "Mage_Body", "Mage_ArmLeft", "Mage_ArmRight", "Mage_Cape", "Mage_LegLeft", "Mage_LegRight" };
 		for (const std::string& part : parts)
 			if (const std::optional<uint32_t> mesh = Mesh(part.c_str()))
 				look.Parts.push_back({ *mesh });
-		switch (player.Head)
-		{
-		case ItemBase::WizardHat:
-			AddParts(look, { "Mage_Head", "Mage_Hat" });
-			break;
-		case ItemBase::Hood:
-			AddParts(look, { "RogueHooded_Head", "RogueHooded_Mask" });
-			break;
-		case ItemBase::Helm:
-			AddParts(look, { "Knight_Head", "Knight_Helmet" });
-			break;
-		default:
-			if (const std::optional<uint32_t> mesh = Mesh((outfit + "_Head").c_str()))
-				look.Parts.push_back({ *mesh });
-			break;
-		}
-		if (player.Weapon == ItemBase::Bow || player.Weapon == ItemBase::Crossbow)
-			AddParts(look, { "Ranger_Quiver" });
+		AddParts(look, { "Mage_Head", "Mage_Hat" });
 	}
 
 	const CharacterLook* CharacterLibrary::ForEnemy(EntityKind kind) const
@@ -475,108 +422,21 @@ namespace Game
 		return it != m_Enemies.end() && !it->second.Parts.empty() ? &it->second : nullptr;
 	}
 
-	std::vector<uint32_t> CharacterLibrary::WeaponMeshes(ItemBase base) const
+	std::vector<uint32_t> CharacterLibrary::WeaponMeshes(Focus focus) const
 	{
 		const auto prefer = [&](const char* original, const char* fallback)
 		{
 			std::vector<uint32_t> meshes = NodeMeshes(original);
 			return meshes.empty() ? NodeMeshes(fallback) : meshes;
 		};
-		switch (base)
+		switch (focus)
 		{
-		case ItemBase::Wand:
+		case Focus::Wand:
 			return prefer("Armory/Wand", "wand");
-		case ItemBase::Staff:
+		case Focus::Staff:
 			return prefer("Armory/Staff", "staff");
-		case ItemBase::Sword:
-			return NodeMeshes("sword_1handed");
-		case ItemBase::Axe:
-			return NodeMeshes("axe_1handed");
-		case ItemBase::Dagger:
-			return NodeMeshes("dagger");
-		case ItemBase::Spear:
-			return NodeMeshes("spear_A");
-		case ItemBase::Bow:
-			return NodeMeshes("bow_withString");
-		case ItemBase::Crossbow:
-			return NodeMeshes("crossbow_2handed");
 		default:
 			return {};
-		}
-	}
-
-	std::vector<uint32_t> CharacterLibrary::ArmorMeshes(ItemBase base) const
-	{
-		std::vector<uint32_t> meshes;
-		const auto add = [&](std::initializer_list<const char*> names)
-		{
-			for (const char* name : names)
-				if (const std::optional<uint32_t> mesh = Mesh(name))
-					meshes.push_back(*mesh);
-		};
-		switch (base)
-		{
-		case ItemBase::WizardHat:
-			add({ "Mage_Hat" });
-			break;
-		case ItemBase::Hood:
-			add({ "Skeleton_Rogue_Hood" });
-			break;
-		case ItemBase::Helm:
-			add({ "Knight_Helmet" });
-			break;
-		case ItemBase::Robe:
-			add({ "Mage_Body" });
-			break;
-		case ItemBase::Tunic:
-			add({ "Ranger_Body" });
-			break;
-		case ItemBase::Plate:
-			add({ "Knight_Body" });
-			break;
-		case ItemBase::Sandals:
-			add({ "Mage_LegLeft", "Mage_LegRight" });
-			break;
-		case ItemBase::Boots:
-			add({ "Ranger_LegLeft", "Ranger_LegRight" });
-			break;
-		case ItemBase::Greaves:
-			add({ "Knight_LegLeft", "Knight_LegRight" });
-			break;
-		default:
-			break;
-		}
-		return meshes;
-	}
-
-	std::optional<uint32_t> CharacterLibrary::ArrowMesh(AbilityId ability) const
-	{
-		switch (ability)
-		{
-		case AbilityId::Arrow:
-		case AbilityId::Volley:
-		case AbilityId::PiercingShot:
-			return Mesh("arrow_bow");
-		case AbilityId::Quarrel:
-			return Mesh("arrow_crossbow");
-		default:
-			return std::nullopt;
-		}
-	}
-
-	Stance PlayerStance(ItemBase weapon)
-	{
-		switch (weapon)
-		{
-		case ItemBase::Spear:
-		case ItemBase::Staff:
-			return Stance::Heavy;
-		case ItemBase::Bow:
-			return Stance::Bow;
-		case ItemBase::Crossbow:
-			return Stance::Rifle;
-		default:
-			return Stance::Light;
 		}
 	}
 
@@ -584,21 +444,6 @@ namespace Game
 	{
 		switch (ability)
 		{
-		case AbilityId::Slash:
-			return { Anim::Slash };
-		case AbilityId::Chop:
-			return { Anim::Chop };
-		case AbilityId::Stab:
-			return { Anim::Stab };
-		case AbilityId::Thrust:
-			return { Anim::HeavyStab };
-		case AbilityId::GroundSlam:
-			return { Anim::HeavyChop };
-		case AbilityId::Cyclone:
-			return { Anim::Spinning };
-		case AbilityId::Bolt:
-		case AbilityId::Orb:
-		case AbilityId::ChainLightning:
 		case AbilityId::EmberBolt:
 			return { .Windup = Anim::CastFlick, .Variants = 3 };
 		case AbilityId::FrostSpear:
@@ -609,9 +454,6 @@ namespace Game
 			return { Anim::CastSlash };
 		case AbilityId::HexShield:
 			return { .Windup = Anim::CastWard, .Hold = true, .HoldAt = 1.25f, .HoldReach = 0.14f };
-		case AbilityId::IceSpear:
-			return { Anim::CastLunge };
-		case AbilityId::Fireball:
 		case AbilityId::ArcLightning:
 			return { Anim::CastHurl };
 		case AbilityId::ChainHook:
@@ -623,27 +465,14 @@ namespace Game
 		case AbilityId::StormStrike:
 		case AbilityId::EarthSpike:
 			return { Anim::CastSmite };
-		case AbilityId::Blink:
 		case AbilityId::Warp:
 			return { Anim::CastBlink };
-		case AbilityId::Meteor:
 		case AbilityId::Comet:
 			return { Anim::CastSummon };
 		case AbilityId::GlacialNova:
-		case AbilityId::FrostNova:
 			return { Anim::CastNova };
 		case AbilityId::DiamondWard:
 			return { Anim::CastWard };
-		case AbilityId::Rejuvenate:
-			return { Anim::UseItem };
-		case AbilityId::Arrow:
-		case AbilityId::Volley:
-		case AbilityId::PiercingShot:
-			return { Anim::BowDraw, Anim::BowRelease };
-		case AbilityId::RainOfArrows:
-			return { Anim::BowDrawUp, Anim::BowReleaseUp };
-		case AbilityId::Quarrel:
-			return { Anim::RifleAim, Anim::RifleShoot };
 		default:
 			return {};
 		}

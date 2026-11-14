@@ -59,7 +59,7 @@ namespace Game
 	void StrikeCircle(World& world, Vec2 center, float radius, const HitInfo& hit, Team side, float rewind, std::span<const Entity> spared = {});
 	void ReelIn(World& world, Entity caster, uint32_t owner, Vec2 point);
 	void CancelRecast(World& world, Entity caster, AbilityId ability);
-	void DropLoot(World& world, const EnemyDef& def, const Enemy& enemy, Vec2 position);
+	void DropLoot(World& world, const EnemyDef& def, Vec2 position);
 	void UpdateProjectiles(World& world, float dt);
 	void UpdateStrikes(World& world, float dt);
 	void UpdateEffects(World& world, float dt);

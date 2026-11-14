@@ -6,7 +6,6 @@
 #include "States/SessionState.h"
 #include "UI/SettingsUi.h"
 #include "UI/Ui.h"
-#include <GameShared/Content/Items.h>
 #include <GameShared/Save/CharacterProfile.h>
 #include <RadianceEngine/Window/Input.h>
 #include <algorithm>
@@ -69,8 +68,6 @@ namespace Game
 		m_Name = settings.PlayerName;
 		m_Address = settings.JoinAddress;
 		m_Port = std::to_string(settings.Port);
-		m_Kit = int(settings.Kit);
-		m_Unlimited = settings.UnlimitedMaterials;
 		m_FriendsCanJoin = settings.FriendsCanJoin;
 		app.GetGameAudio().EnterMenu();
 	}
@@ -262,7 +259,7 @@ namespace Game
 		const glm::vec2 hub(-470.0f, height * 0.56f);
 		constexpr float Radius = 640.0f;
 		constexpr float Step = 0.105f;
-		const std::string wanderer = (m_Name.empty() ? std::string("Nameless") : m_Name) + "  \xC2\xB7  " + (m_HasSave && !m_Fresh ? std::string("saved character") : std::string(GetKit(StarterKit(m_Kit)).Name));
+		const std::string wanderer = (m_Name.empty() ? std::string("Nameless") : m_Name) + "  \xC2\xB7  " + (m_HasSave && !m_Fresh ? std::string("saved character") : std::string("new wanderer"));
 		struct Entry
 		{
 			Page Target;
@@ -381,7 +378,7 @@ namespace Game
 		draw.Sigil(seal, 36.0f, { .Color = WithAlpha(Theme::Gold, 0.55f), .Accent = WithAlpha(Theme::AccentLight, 0.5f), .Speed = 0.8f, .LineWidth = 1.0f, .Glow = 0.45f, .Layers = SigilRings });
 		draw.Icon(UiIcon::AnvilImpact, UiRect::Centered(seal, glm::vec2(32.0f)), { .Color = Theme::GoldLight, .ColorBottom = Theme::Gold, .ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .GlowColor = WithAlpha(Theme::Gold, 0.3f) });
 		draw.Text({ hub.X + 102.0f, hub.Y + 14.0f }, GetMapDef(MapKind::Hub).Name, Theme::Caps(19.0f, Theme::GoldLight, 1.5f));
-		draw.TextWrapped({ hub.X + 102.0f, hub.Y + 44.0f, hub.W - 116.0f, hub.H - 48.0f }, "Your party gathers in the hub town. Store loot in the stash, craft at the forge and lapidary, and choose missions at the board.", Theme::Body(14.5f, Theme::Muted));
+		draw.TextWrapped({ hub.X + 102.0f, hub.Y + 44.0f, hub.W - 116.0f, hub.H - 48.0f }, "Your party gathers on the floating island. Pick your spells at the spellbook, then start a Spellbrawl at the Caldera Gate or a Shardfall run at the Shard Rift.", Theme::Body(14.5f, Theme::Muted));
 		area.CutTop(24.0f);
 		FieldLabel(ui, area, "PORT");
 		UiRect portRow = area.CutTop(44.0f);
@@ -389,15 +386,13 @@ namespace Game
 		portRow.CutLeft(18.0f);
 		draw.TextWrapped({ portRow.X, portRow.Y + 3.0f, portRow.W, portRow.H }, "UDP. Others need to reach it to follow you in.", Theme::Body(14.0f, Theme::Muted));
 		area.CutTop(20.0f);
-		if (ui.Checkbox(Ui::MakeId("unlimited"), area.CutTop(30.0f), "Unlimited crafting materials (testing)", m_Unlimited))
-			m_App.GetSettings().UnlimitedMaterials = m_Unlimited;
 		if (steam)
 		{
 			area.CutTop(10.0f);
 			ui.Checkbox(Ui::MakeId("friends"), area.CutTop(30.0f), "Steam friends can join without an invite", m_FriendsCanJoin);
 		}
 		const UiRect go = area.CutBottom(54.0f);
-		const std::string who = "You enter as " + (m_Name.empty() ? std::string("Player") : m_Name) + ", " + (m_HasSave && !m_Fresh ? std::string("with your saved gear") : std::string("the ") + GetKit(StarterKit(m_Kit)).Name);
+		const std::string who = "You enter as " + (m_Name.empty() ? std::string("Player") : m_Name) + ", " + (m_HasSave && !m_Fresh ? std::string("with your saved spells and look") : std::string("a new wanderer"));
 		draw.TextAligned(area.CutBottom(34.0f), who, Theme::Body(14.5f, Theme::Muted), { 0.5f, 0.5f });
 		if (ui.Button(Ui::MakeId("host"), go, "Open the Rift", ButtonKind::Primary, true, UiIcon::MagicPortal))
 			StartSession(true);
@@ -412,7 +407,7 @@ namespace Game
 		area.CutTop(12.0f);
 		draw.TextWrapped(area.CutTop(44.0f), "Add :port after the address when the host doesn't use the default port.", Theme::Body(14.0f, Theme::Muted));
 		const UiRect go = area.CutBottom(54.0f);
-		const std::string who = "You enter as " + (m_Name.empty() ? std::string("Player") : m_Name) + ", " + (m_HasSave && !m_Fresh ? std::string("with your saved gear") : std::string("the ") + GetKit(StarterKit(m_Kit)).Name);
+		const std::string who = "You enter as " + (m_Name.empty() ? std::string("Player") : m_Name) + ", " + (m_HasSave && !m_Fresh ? std::string("with your saved spells and look") : std::string("a new wanderer"));
 		draw.TextAligned(area.CutBottom(34.0f), who, Theme::Body(14.5f, Theme::Muted), { 0.5f, 0.5f });
 		if (ui.Button(Ui::MakeId("join"), go, "Step Through", ButtonKind::Primary, !m_Address.empty(), UiIcon::MagicPortal))
 			StartSession(false);
@@ -477,7 +472,7 @@ namespace Game
 	void MainMenuState::DrawCharacterPage(Ui& ui, UiRect area)
 	{
 		const bool saving = m_App.GetSettings().SaveProfiles;
-		area = PageHeader(ui, area, "The Wanderer", saving ? "Your gear, stash and materials are bound to this name." : "Saving is off for this run, nothing you find is kept.");
+		area = PageHeader(ui, area, "The Wanderer", saving ? "Your spells, look and honors are bound to this name." : "Saving is off for this run, nothing is kept.");
 		UiDrawList& draw = ui.Draw();
 		FieldLabel(ui, area, "NAME");
 		ui.TextField(Ui::MakeId("name"), area.CutTop(44.0f), m_Name, 24, "Your name", NameCharacter);
@@ -488,47 +483,11 @@ namespace Game
 			draw.Icon(UiIcon::CheckedShield, { status.X, status.Y + 2.0f, 22.0f, 22.0f }, { .Color = Theme::Success, .ColorBottom = Darken(Theme::Success, 0.3f) });
 			draw.TextAligned({ status.X + 32.0f, status.Y, status.W - 32.0f, status.H }, "A saved character answers to this name", Theme::Bold(16.5f, Theme::Success), { 0.0f, 0.5f });
 			area.CutTop(draw.TextWrapped({ area.X, area.Y + 4.0f, area.W, 60.0f }, m_SaveSummary, Theme::Body(14.5f, Theme::Muted)) + 12.0f);
-			ui.Checkbox(Ui::MakeId("fresh"), area.CutTop(30.0f), "Start over with a new kit (replaces the save)", m_Fresh);
+			ui.Checkbox(Ui::MakeId("fresh"), area.CutTop(30.0f), "Start over as a new wanderer (replaces the save)", m_Fresh);
 			area.CutTop(16.0f);
 			if (!m_Fresh)
-			{
-				draw.TextWrapped(area, "Your saved gear, gems and backpack come with you.", Theme::Body(14.5f, Theme::Muted));
-				return;
-			}
+				draw.TextWrapped(area, "Your saved spells, look and honors come with you.", Theme::Body(14.5f, Theme::Muted));
 		}
-		FieldLabel(ui, area, "STARTING KIT");
-		constexpr float Gap = 12.0f;
-		const float kits = float(std::size(Kits));
-		const float cardWidth = (area.W - Gap * (kits - 1.0f)) / kits;
-		UiRect row = area.CutTop(150.0f);
-		std::optional<size_t> hovered;
-		for (size_t i = 0; i < std::size(Kits); i++)
-		{
-			const KitDef& kit = Kits[i];
-			const UiRect card = row.CutLeft(cardWidth);
-			row.CutLeft(Gap);
-			const UiId id = Ui::MakeId("kit", uint64_t(kit.Id));
-			const UiInteraction interaction = ui.Interact(id, card);
-			const bool selected = m_Kit == int(kit.Id);
-			const float hover = ui.Animate(id, interaction.Hovered);
-			const float chosen = ui.Animate(id ^ 0x51ED270B27ull, selected, 10.0f);
-			if (interaction.Hovered)
-				hovered = i;
-			if (interaction.Clicked)
-				m_Kit = int(kit.Id);
-			ui.Card(card, hover, chosen, Theme::Gold);
-			const glm::vec2 seal(card.Center().x, card.Y + 56.0f);
-			draw.Sigil(seal, 38.0f, { .Color = WithAlpha(glm::mix(Theme::AccentLight, Theme::Gold, chosen), 0.25f + 0.3f * hover + 0.4f * chosen), .Accent = WithAlpha(Theme::Astral, 0.3f + 0.4f * chosen), .Speed = 0.6f + 1.2f * chosen,
-				.Phase = float(i) * 0.17f, .LineWidth = 1.0f, .Glow = 0.3f + 0.4f * chosen, .Layers = SigilRings });
-			const float lit = std::max(chosen, hover * 0.7f);
-			draw.Icon(IconFor(kit.Id), UiRect::Centered(seal, glm::vec2(40.0f)), { .Color = glm::mix(Theme::Muted, chosen > 0.5f ? Theme::GoldLight : Theme::AccentLight, lit), .ColorBottom = glm::mix(Theme::Faint, chosen > 0.5f ? Theme::Gold : Theme::Accent, lit),
-				.ShadowColor = Rgba(0.0f, 0.0f, 0.02f, 0.7f), .GlowColor = WithAlpha(chosen > 0.5f ? Theme::Gold : Theme::Accent, 0.35f * lit) });
-			draw.TextAligned({ card.X, card.Y + 106.0f, card.W, 24.0f }, kit.Name, Theme::Caps(15.5f, glm::mix(Theme::Text, Theme::GoldLight, chosen), 1.2f), { 0.5f, 0.5f });
-		}
-		area.CutTop(16.0f);
-		const KitDef& shown = Kits[hovered.value_or(size_t(std::clamp(m_Kit, 0, int(std::size(Kits)) - 1)))];
-		draw.Text({ area.X, area.Y }, shown.Name, Theme::Caps(17.0f, Theme::GoldLight, 1.4f));
-		draw.TextWrapped({ area.X, area.Y + 28.0f, area.W, 60.0f }, shown.Description, Theme::Body(15.0f, Theme::Text));
 	}
 
 	CharacterProfile MainMenuState::PrepareProfile()
@@ -538,10 +497,9 @@ namespace Game
 		settings.JoinAddress = m_Address;
 		const int port = m_Port.empty() ? int(DefaultPort) : std::atoi(m_Port.c_str());
 		settings.Port = uint16_t(std::clamp(port, 1024, 65535));
-		settings.Kit = StarterKit(m_Kit);
 		settings.FriendsCanJoin = m_FriendsCanJoin;
 		m_App.RememberSettings(SettingsGroup::Identity);
-		CharacterProfile profile = m_App.LoadCharacter(settings.PlayerName, settings.Kit, m_HasSave && m_Fresh);
+		CharacterProfile profile = m_App.LoadCharacter(settings.PlayerName, m_HasSave && m_Fresh);
 		if (profile.Style != m_Style)
 		{
 			profile.Style = m_Style;

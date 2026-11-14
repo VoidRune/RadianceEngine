@@ -1,6 +1,5 @@
 #include "Combat.h"
 #include "GameShared/Content/Brawl.h"
-#include "GameShared/Content/Items.h"
 #include "GameShared/Content/Pvp.h"
 #include "GameShared/Simulation/World.h"
 #include "GameShared/World/Collision.h"
@@ -65,14 +64,6 @@ namespace Game
 			if (ability.ImpactRadius > 0.0f)
 				return strike.Radius / ability.ImpactRadius;
 			return ability.Reach > 0.0f ? strike.Radius / ability.Reach : 1.0f;
-		}
-
-		uint32_t RollAmount(Random& random, float chance)
-		{
-			uint32_t amount = 0;
-			for (; chance >= 1.0f; chance -= 1.0f)
-				amount++;
-			return amount + (random.Float() < chance ? 1 : 0);
 		}
 
 		struct Target
@@ -669,7 +660,7 @@ namespace Game
 		{
 			const Enemy enemy = *found;
 			const Vec2 position = transform->Position;
-			DropLoot(world, *def, enemy, position);
+			DropLoot(world, *def, position);
 			world.OnEnemyKilled(target, enemy, position, attacker);
 		}
 		world.QueueDestroy(target);
@@ -789,56 +780,12 @@ namespace Game
 		}
 	}
 
-	void DropLoot(World& world, const EnemyDef& def, const Enemy& enemy, Vec2 position)
+	void DropLoot(World& world, const EnemyDef& def, Vec2 position)
 	{
-		if (world.IsHub())
+		if (!world.IsShardfall())
 			return;
 		Random& random = world.GetRandom();
-		if (world.IsShardfall())
-		{
-			if (random.Float() < std::min(1.0f, def.OrbChance))
-				world.SpawnLoot(random.Below(2) == 0 ? LootKind::Health : LootKind::Mana, world.PlaceDrop(position, Scatter(random, position)));
-			return;
-		}
-		const uint32_t level = std::clamp<uint32_t>(enemy.Level, 1u, MaxItemLevel);
-		const float elite = enemy.Elite ? 1.0f : 0.0f;
-		if (world.IsPvp())
-		{
-			const float weight = def.LootWeight * (enemy.Elite ? 4.0f : 1.0f);
-			if (random.Float() < std::min(1.0f, 0.1f * weight))
-				world.SpawnItem(GenerateItem(random, world.AllocateItemId(), level, 0.3f * elite), world.PlaceDrop(position, Scatter(random, position)), NoPlayer);
-			if (random.Float() < std::min(1.0f, 0.05f * weight))
-				world.SpawnItem(GenerateGem(random, world.AllocateItemId(), level), world.PlaceDrop(position, Scatter(random, position)), NoPlayer);
-			if (random.Float() < std::min(1.0f, 0.3f + def.OrbChance))
-				world.SpawnLoot(random.Below(3) == 0 ? LootKind::Mana : LootKind::Health, world.PlaceDrop(position, Scatter(random, position)));
-			return;
-		}
-		const MissionRewards rewards = world.GetRewards();
-		const float quantity = rewards.Quantity;
-		const float goldScale = 1.0f + 0.15f * float(level - 1);
-		const float itemChance = 0.012f * def.LootWeight * (enemy.Elite ? 10.0f : 1.0f) * quantity;
-		const float gemChance = 0.004f * def.LootWeight * (enemy.Elite ? 12.0f : 1.0f) * quantity;
-		world.GetEntities().Each<PlayerController>([&](Entity player, PlayerController& controller)
-		{
-			MaterialStock materials{};
-			if (def.LootWeight > 0.0f)
-			{
-				materials[size_t(Material::Gold)] = uint32_t(std::lround(float(2 + random.Below(4)) * goldScale * (enemy.Elite ? 6.0f : 1.0f) * def.LootWeight * quantity));
-				materials[size_t(Material::Shard)] = RollAmount(random, std::lerp(0.06f, 0.5f, elite) * quantity);
-				materials[size_t(Material::Starsteel)] = RollAmount(random, std::lerp(0.002f, 0.03f, elite) * quantity);
-				materials[size_t(Material::ArcaneDust)] = RollAmount(random, std::lerp(0.04f, 0.35f, elite) * quantity);
-				materials[size_t(Material::VoidShard)] = RollAmount(random, std::lerp(0.0005f, 0.01f, elite) * quantity);
-			}
-			world.GrantMaterials(player, materials);
-			for (uint32_t i = RollAmount(random, itemChance); i > 0; i--)
-				world.SpawnItem(GenerateItem(random, world.AllocateItemId(), level, rewards.Rarity + 0.5f * elite), world.PlaceDrop(position, Scatter(random, position)), NoPlayer, controller.PlayerId);
-			for (uint32_t i = RollAmount(random, gemChance); i > 0; i--)
-				world.SpawnItem(GenerateGem(random, world.AllocateItemId(), level), world.PlaceDrop(position, Scatter(random, position)), NoPlayer, controller.PlayerId);
-		});
-		const float rate = world.GetSettings().LootRate;
-		if (random.Float() < std::min(1.0f, def.BuffChance * (enemy.Elite ? 2.0f : 1.0f) * rate))
-			world.SpawnLoot(LootKind(1 + random.Below(uint32_t(BuffKinds) - 1)), world.PlaceDrop(position, Scatter(random, position)));
-		else if (random.Float() < std::min(1.0f, def.OrbChance * rate))
+		if (random.Float() < std::min(1.0f, def.OrbChance))
 			world.SpawnLoot(random.Below(2) == 0 ? LootKind::Health : LootKind::Mana, world.PlaceDrop(position, Scatter(random, position)));
 	}
 
@@ -1112,7 +1059,6 @@ namespace Game
 		entities.Each<Loot>([&](Entity entity, Loot& loot)
 		{
 			loot.Lifetime -= dt;
-			loot.BlockTimer = std::max(loot.BlockTimer - dt, 0.0f);
 			const Transform* transform = entities.TryGet<Transform>(entity);
 			if (loot.Lifetime <= 0.0f || !transform)
 			{
@@ -1121,10 +1067,6 @@ namespace Game
 			}
 			for (const Picker& player : players)
 			{
-				if (loot.BlockTimer > 0.0f && loot.BlockedPlayer == player.PlayerId)
-					continue;
-				if (loot.ForPlayer != NoPlayer && loot.ForPlayer != player.PlayerId)
-					continue;
 				if (LengthSquared(player.Position - transform->Position) > LootPickupRadius * LootPickupRadius || !world.ApplyLoot(player.Handle, loot))
 					continue;
 				loot.Lifetime = 0.0f;

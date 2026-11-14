@@ -62,12 +62,10 @@ namespace Game
 		bool IsTeamBrawl() const { return m_Mode == GameMode::Brawl && m_Rules.Teams >= 2; }
 		const MatchRules& GetRules() const { return m_Rules; }
 		const MatchScore& GetScore(uint32_t playerId) const { return m_Scores[playerId < MaxPlayers ? playerId : 0]; }
-		const StormState& GetStorm() const { return m_Storm; }
 		uint32_t GetWinner() const { return m_Winner; }
 		uint8_t GetWinningTeam() const { return m_WinningTeam; }
 		uint32_t GetEntrants() const { return m_Entrants; }
 		uint32_t CountAlive() const;
-		MatchReward GetReward(const World& world, uint32_t playerId) const;
 		const std::vector<Vec2>& GetSpawnPoints() const { return m_SpawnPoints; }
 		const BrawlStatus& GetBrawl() const { return m_Brawl; }
 		const BrawlLoadout& GetLoadout(uint32_t playerId) const { return m_Brawlers[playerId < MaxPlayers ? playerId : 0].Loadout; }
@@ -99,13 +97,6 @@ namespace Game
 		uint8_t GetRoundWins(uint32_t playerId) const { return playerId < MaxPlayers ? m_Brawlers[playerId].RoundWins : uint8_t(0); }
 
 	private:
-		struct PadState
-		{
-			PickupPad Pad;
-			Entity Loot;
-			float Timer = 0.0f;
-		};
-
 		struct DamageEntry
 		{
 			uint32_t Attacker = NoPlayer;
@@ -165,21 +156,8 @@ namespace Game
 			FeatMark Returned;
 		};
 
-		void BeginArena(World& world);
-		void BeginRoyale(World& world);
-		void StartFight(World& world);
 		void EndMatch(World& world, uint32_t winner, uint8_t team);
-		void UpdateArena(World& world, float dt);
-		void UpdateRoyale(World& world, float dt);
-		void UpdateStorm(World& world, float dt);
 		void UpdateWatchers(World& world);
-		void SpawnChest(World& world, Vec2 position, ChestKind kind);
-		void SpawnGuardians(World& world, Vec2 position);
-		void DropCache(World& world);
-		void DropBelongings(World& world, Entity player);
-		void PlanStorm(World& world);
-		void FinishRoyaleIfDecided(World& world);
-		Vec2 RandomPointIn(World& world, Vec2 center, float radius, float clearance) const;
 		void SetPhase(MatchPhase phase);
 		void BeginBrawl(World& world);
 		void UpdateBrawl(World& world, float dt);
@@ -216,7 +194,7 @@ namespace Game
 		void NoteMatchWin(World& world, uint32_t playerId);
 		void NoteDeck(World& world, uint32_t playerId, CardId card);
 
-		GameMode m_Mode = GameMode::Arena;
+		GameMode m_Mode = GameMode::Hub;
 		MatchRules m_Rules;
 		MatchPhase m_Phase = MatchPhase::Countdown;
 		float m_PhaseTime = 0.0f;
@@ -231,16 +209,7 @@ namespace Game
 		uint32_t m_Entrants = 0;
 		std::vector<uint32_t> m_Fallen;
 		std::vector<Vec2> m_SpawnPoints;
-		std::vector<PadState> m_Pads;
-		StormState m_Storm;
-		Vec2 m_ShrinkFrom;
-		float m_ShrinkFromRadius = 0.0f;
-		float m_ShrinkDuration = 1.0f;
-		float m_StormTick = 0.0f;
-		float m_TimeScale = 1.0f;
-		uint16_t m_NextPack = 1;
 		uint32_t m_SpawnCounter = 0;
-		bool m_Deferring = false;
 		std::array<Brawler, MaxPlayers> m_Brawlers{};
 		std::array<DamageLedger, MaxPlayers> m_Ledgers{};
 		std::vector<Fling> m_Flings;

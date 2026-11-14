@@ -229,14 +229,6 @@ namespace Game
 	{
 		switch (kind)
 		{
-		case MapKind::Hub:
-			return BuildHubLevel(seed);
-		case MapKind::Town:
-			return BuildTownLevel(seed);
-		case MapKind::Crucible:
-			return BuildCrucibleLevel(seed);
-		case MapKind::Ashlands:
-			return BuildAshlandsLevel(seed);
 		case MapKind::Caldera:
 			return BuildCalderaLevel(seed);
 		case MapKind::FrozenLake:
@@ -248,7 +240,7 @@ namespace Game
 		case MapKind::ProvingHollow:
 			return BuildProvingHollowLevel(seed);
 		default:
-			return BuildCavesLevel(seed);
+			return BuildHubLevel(seed);
 		}
 	}
 }

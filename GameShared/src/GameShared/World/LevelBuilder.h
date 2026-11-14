@@ -30,14 +30,11 @@ namespace Game
 		int32_t Portal(Vec2 position, Vec2 destination, float destinationFacing, std::string label, bool hidden = false);
 		void Region(std::string name, const TileRect& area, bool enemySpawns = true);
 		void SetPlayerSpawn(Vec2 position);
-		void SetMissionStart(Vec2 position);
 		void SetBossArena(Vec2 center, float radius);
 		void Station(StationKind kind, Vec2 position, float radius = 2.4f);
 		void Dummy(Vec2 position, Vec2 patrol, bool duck = false);
 		void SpawnPoint(Vec2 position);
 		void Socket(Vec2 position);
-		void LootSpot(Vec2 position, bool vault = false);
-		void Pad(Vec2 position, PadKind kind);
 		void Roof(const TileRect& area, float height);
 		void SetRounded();
 		void SetRotunda(Rotunda hall);

@@ -44,22 +44,6 @@ namespace Game
 		void Receive(float dt);
 		void SetTickPhase(float accumulator) { m_Accumulator = accumulator; m_TickLocked = m_Local; }
 		void SetViewAim(float aim) { m_ViewAim = aim; m_HasViewAim = true; }
-		void EquipItem(uint32_t packSlot);
-		void EquipItemTo(uint32_t packSlot, GearSlot slot);
-		void UnequipItem(GearSlot slot);
-		void DropItem(uint32_t packSlot);
-		void SlotGem(uint32_t packSlot, uint32_t gemSlot);
-		void UnslotGem(uint32_t gemSlot);
-		void ChooseUpgrade(uint32_t choice);
-		void DepositItem(uint32_t packSlot, uint32_t stashSlot = AnySlot);
-		void WithdrawItem(uint32_t stashSlot, uint32_t packSlot = AnySlot);
-		void SalvageItem(ItemRef item);
-		void ForgeItem(ItemRef item, ForgeAction action, uint32_t affix = 0, StatCategory category = StatCategory::Offense);
-		void CraftGem(ItemRef gem, GemAction action);
-		void StartMission(MapKind map, uint8_t tier, ModifierMask modifiers);
-		void StartHorde(MapKind map);
-		void StartArena(MapKind map, const MatchRules& rules);
-		void StartRoyale(MapKind map);
 		void StartBrawl(MapKind map, const MatchRules& rules);
 		void StartShardfall(const RunRules& rules);
 		void PickBrawlSpell(uint32_t slot, AbilityId spell);
@@ -77,8 +61,6 @@ namespace Game
 		void JoinMatch();
 		bool IsSpectating() const;
 		void ReturnToHub();
-		void OpenChest();
-		void UseGateway();
 		void MakeWish();
 		void PlayChess(Chess::Command command, uint32_t argument = 0);
 		const Chess::Match& GetChess() const { return m_Chess; }
@@ -97,12 +79,6 @@ namespace Game
 		const LocalPlayerState& GetLocalPlayer() const { return m_LocalPlayer; }
 		const PlayerState& GetPredictedState() const { return m_PredictedState; }
 		const PlayerTraits& GetTraits() const { return m_LocalPlayer.Traits; }
-		const ServerInventory& GetInventory() const { return m_Inventory; }
-		bool HasInventory() const { return m_HasInventory; }
-		uint32_t GetInventoryVersion() const { return m_InventoryVersion; }
-		const StashTab& GetStash() const { return m_Profile.Gear.Stash; }
-		uint32_t GetStashVersion() const { return m_StashVersion; }
-		const MaterialStock& GetMaterials() const { return m_Profile.Gear.Materials; }
 		const SessionInfo& GetSession() const { return m_Session; }
 		uint32_t GetTravelCount() const { return m_Travels; }
 		std::vector<ServerNotice> TakeNotices() { return std::exchange(m_Notices, {}); }
@@ -138,7 +114,7 @@ namespace Game
 		{
 			uint16_t Tag = 0;
 			uint8_t Index = 0;
-			AbilityId Ability = AbilityId::Bolt;
+			AbilityId Ability = AbilityId::EmberBolt;
 			Vec2 Position;
 			Vec2 Previous;
 			Vec2 Velocity;
@@ -158,7 +134,7 @@ namespace Game
 		{
 			uint16_t Tag = 0;
 			uint8_t Index = 0;
-			AbilityId Ability = AbilityId::Bolt;
+			AbilityId Ability = AbilityId::EmberBolt;
 			Vec2 Position;
 			float Facing = 0.0f;
 			float Remaining = 0.0f;
@@ -213,7 +189,6 @@ namespace Game
 		ServerWelcome m_Welcome;
 		SessionInfo m_Session;
 		uint32_t m_Travels = 0;
-		uint32_t m_StashVersion = 0;
 		Chess::Match m_Chess;
 		uint32_t m_ChessVersion = 0;
 		uint32_t m_SpellsVersion = 0;
@@ -227,9 +202,6 @@ namespace Game
 		std::vector<PlayerInfo> m_Players;
 		GameStatus m_Status;
 		LocalPlayerState m_LocalPlayer;
-		ServerInventory m_Inventory;
-		bool m_HasInventory = false;
-		uint32_t m_InventoryVersion = 0;
 		std::deque<PendingHit> m_PendingHits;
 		std::vector<HitEvent> m_NewHits;
 		std::vector<Orb> m_Orbs;
