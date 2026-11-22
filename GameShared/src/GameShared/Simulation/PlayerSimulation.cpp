@@ -11,7 +11,8 @@ namespace Game
 	{
 		constexpr float ReadyEpsilon = 1e-4f;
 		constexpr float LungeStandoff = 0.75f;
-		constexpr uint32_t CastPriority[] = { 1, 2, 3, 0 };
+		constexpr uint32_t CastPriority[] = { 1, 2, 3, 4, 0 };
+		static_assert(std::size(CastPriority) == AbilitySlots);
 		constexpr float ShoveOverVoid = 1.5f;
 		constexpr float LedgeClearance = 0.8f;
 		constexpr float FallDrag = 1.1f;
@@ -428,6 +429,25 @@ namespace Game
 		return AwaitsNovaRecast(state, slot) && !IsNovaBrittle(state.RecastAge);
 	}
 
+	float OvercastPrice(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
+	{
+		const SkillTraits& skill = traits.Skills[slot];
+		return traits.OvercastCost * std::clamp(skill.Cooldown > ReadyEpsilon ? state.Cooldowns[slot] / skill.Cooldown : 1.0f, OvercastFloor, 1.0f);
+	}
+
+	bool CanOvercast(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
+	{
+		if (traits.OvercastCost <= 0.0f || slot == 0 || slot >= AbilitySlots)
+			return false;
+		const SkillTraits& skill = traits.Skills[slot];
+		if (skill.IsEmpty() || !skill.Usable)
+			return false;
+		const AbilityKind kind = GetAbility(skill.Ability).Kind;
+		if (kind == AbilityKind::Shield || kind == AbilityKind::Ward || kind == AbilityKind::Dash)
+			return false;
+		return state.Cooldowns[slot] > OvercastMinimum && state.RecastSlot != int8_t(slot) && state.Mana + ReadyEpsilon >= OvercastPrice(state, traits, slot);
+	}
+
 	bool IsCharged(const SkillTraits& skill)
 	{
 		return skill.ChargeTime > 0.0f;
@@ -592,6 +612,7 @@ namespace Game
 		PlayerActions actions;
 		const uint8_t pressed = input.Buttons & ~state.HeldButtons;
 		state.HeldButtons = input.Buttons;
+		state.Pending = uint8_t((state.Pending | pressed) & input.Buttons);
 		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
 			if (!HoldsCooldown(state, slot))
 				Cool(state.Cooldowns[slot], dt);
@@ -688,13 +709,13 @@ namespace Game
 			return actions;
 		}
 
-		if ((pressed & uint8_t(InputButton::Dodge)) && state.DodgeCooldown <= ReadyEpsilon && state.DashDistance <= 0.0f)
+		if ((pressed & uint8_t(InputButton::Dodge)) && state.DodgeCooldown <= DodgeReady(traits) && state.DashDistance <= 0.0f)
 		{
 			const AbilityDef& roll = GetAbility(traits.Dodge.Ability);
 			state.CastSlot = -1;
 			state.CastTimer = 0.0f;
 			StartDash(state, roll, LengthSquared(move) > 0.01f ? Normalize(move) : aim, roll.DashDistance);
-			state.DodgeCooldown = traits.Dodge.Cooldown;
+			state.DodgeCooldown = traits.DodgeCharges > 1 ? std::max(state.DodgeCooldown, 0.0f) + traits.Dodge.Cooldown : traits.Dodge.Cooldown;
 			state.Push *= 0.5f;
 			actions.Dodged = true;
 			state.Snap = traits.SnapWindow;
@@ -770,8 +791,15 @@ namespace Game
 			{
 				for (const uint32_t slot : CastPriority)
 				{
-					if (!input.IsDown(SlotButton(slot)) || !CanCast(state, traits, slot))
+					if (!input.IsDown(SlotButton(slot)))
 						continue;
+					if (!CanCast(state, traits, slot))
+					{
+						if ((state.Pending & uint8_t(SlotButton(slot))) == 0 || !CanOvercast(state, traits, slot))
+							continue;
+						state.Mana = std::max(state.Mana - OvercastPrice(state, traits, slot), 0.0f);
+						state.Cooldowns[slot] = 0.0f;
+					}
 					if (IsGuard(traits.Skills[slot]))
 					{
 						if (!RaiseGuard(state, actions, traits, slot))
@@ -799,6 +827,7 @@ namespace Game
 					}
 					break;
 				}
+				state.Pending = 0;
 			}
 		}
 

@@ -6,6 +6,7 @@ const uint ShapeSnowflake = 12u;
 const uint ShapeBeam = 13u;
 const uint ShapeInferno = 14u;
 const uint ShapeHex = 15u;
+const uint ShapeLeaf = 16u;
 
 const uint DecalRunes = 0u;
 const uint DecalSector = 1u;
@@ -29,6 +30,7 @@ const uint DecalFirebombMark = 18u;
 const uint DecalContact = 19u;
 const uint DecalAftershockMark = 20u;
 const uint DecalResonanceMark = 21u;
+const uint DecalHeartRune = 22u;
 
 const float Tau = 6.28318531;
 
@@ -1159,6 +1161,27 @@ float HexShape(vec2 uv, uint seed, vec4 params, float pixel)
 	return glow * inside;
 }
 
+float LeafShape(vec2 uv, uint seed, float pixel)
+{
+	float spin = float(seed % 628u) * 0.01;
+	vec2 p = vec2(cos(spin) * uv.x - sin(spin) * uv.y, sin(spin) * uv.x + cos(spin) * uv.y);
+	vec2 q = p - vec2(0.0, -0.08);
+	float r = length(q);
+	float theta = atan(q.x, q.y);
+	float lobe = 0.0;
+	for (int i = 0; i < 5; i++)
+	{
+		float direction = float(i - 2) * 1.15;
+		float reach = i == 2 ? 1.0 : (i == 1 || i == 3) ? 0.85 : 0.5;
+		float offset = abs(mod(theta - direction + 3.14159265, 6.28318531) - 3.14159265);
+		lobe = max(lobe, reach * pow(clamp(1.0 - offset / 0.62, 0.0, 1.0), 1.35));
+	}
+	float edge = 0.2 + lobe * 0.62 - 0.03 * abs(sin(theta * 20.0)) * (0.4 + lobe);
+	float blade = 1.0 - smoothstep(-pixel, pixel, r - edge);
+	float stem = (1.0 - smoothstep(0.0, pixel * 1.5, abs(p.x) - 0.025)) * step(p.y, -0.08) * step(-0.62, p.y);
+	return max(blade, stem);
+}
+
 float ParticleShape(uint shape, vec2 uv, uint seed, vec4 params, float pixel, float time)
 {
 	float r2 = dot(uv, uv);
@@ -1212,5 +1235,7 @@ float ParticleShape(uint shape, vec2 uv, uint seed, vec4 params, float pixel, fl
 		return InfernoShape(uv, seed, params, time);
 	if (shape == ShapeHex)
 		return HexShape(uv, seed, params, pixel);
+	if (shape == ShapeLeaf)
+		return LeafShape(uv, seed, pixel);
 	return exp(-4.0 * r2) * edge;
 }

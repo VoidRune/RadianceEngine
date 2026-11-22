@@ -22,7 +22,7 @@ namespace Game
 	};
 
 	inline constexpr HonorDef Honors[] = {
-		{ Honor::Skydiver, "skydiver", "Skydiver", "Fell off Emberhold 25 times" },
+		{ Honor::Skydiver, "skydiver", "Skydiver", "Fell off the Sun's Cradle 25 times" },
 		{ Honor::Stargazer, "stargazer", "Stargazer", "Lit every constellation above the observatory" },
 		{ Honor::Faithful, "faithful", "Faithful", "Walked where the eye sees nothing" },
 	};

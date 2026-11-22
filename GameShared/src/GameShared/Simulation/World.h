@@ -25,6 +25,8 @@
 
 namespace Game
 {
+	struct DamageEvent;
+
 	constexpr float NarrowBodyRadius = 0.47f;
 	constexpr float WideBodyRadius = 0.75f;
 	constexpr float InteractRange = 2.6f;
@@ -80,6 +82,7 @@ namespace Game
 
 		Entity SpawnPlayer(uint32_t playerId, const BrawlSpells& spells = DefaultBrawlSpells);
 		void RespawnPlayer(Entity player);
+		void RevivePlayer(Entity player, float healthFraction);
 		void RemovePlayer(Entity player);
 		void KillPlayer(Entity player, uint32_t killer, uint8_t ability);
 		void RefreshTraits(Entity player);
@@ -93,6 +96,7 @@ namespace Game
 		Entity SpawnPendingStrike(const AbilityDef& ability, Vec2 position, int32_t damage, const AbilityContext& context);
 		Entity SpawnCardStrike(AbilityId visual, Vec2 position, float facing, float delay, float radius, float push, uint8_t perks, bool visible, const AbilityContext& context);
 		Entity SpawnResonance(const AbilityDef& spell, Vec2 position, float delay, float radius, int32_t damage, float push, const AbilityContext& context);
+		void SpawnLinger(Vec2 position, float delay, float radius, int32_t damage, Element element, uint32_t owner, Entity source, Team side, uint32_t runes, uint8_t depth);
 		bool BreakCrystalWard(Entity target, uint32_t victim) { return m_Match.BreakCrystalWard(*this, target, victim); }
 		void NoteSpellHit(uint32_t attacker, uint8_t ability) { m_Match.NoteSpellHit(*this, attacker, ability); }
 		void AddCrust(Vec2 center, float radius) { m_Match.AddCrust(m_Level, center, radius); }
@@ -101,7 +105,7 @@ namespace Game
 		void AfterBrawlDamage(Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt) { m_Match.AfterDamage(*this, target, victim, attacker, ability, dealt); }
 		void NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, bool pull, uint32_t returned) { m_Match.NoteBlow(victim, attacker, ability, pull, returned); }
 		void NoteFling(uint32_t victim, uint32_t attacker, uint8_t ability) { m_Match.NoteFling(*this, victim, attacker, ability); }
-		CardMask GetCards(uint32_t playerId) const { return m_Match.GetCards(playerId); }
+		CardMask GetCards(uint32_t playerId) const { return IsShardfall() ? m_Run.GetCards(playerId) : m_Match.GetCards(playerId); }
 		Entity SpawnLoot(LootKind kind, Vec2 position);
 		bool ApplyLoot(Entity player, const Loot& loot);
 		void Spectate(Entity player, int32_t direction);
@@ -125,9 +129,36 @@ namespace Game
 		void QueueDestroy(Entity entity) { m_Destroyed.push_back(entity); }
 		void WakePack(uint16_t pack);
 		void OnEnemyKilled(Entity entity, const Enemy& enemy, Vec2 position, uint32_t attacker);
-		void LevelUp(uint32_t level, bool announce = true);
 		const BrawlSpells& GetChosenSpells(uint32_t playerId) const { return m_Chosen[playerId < MaxPlayers ? playerId : 0]; }
 		bool ConsumeRevive(uint32_t playerId);
+		bool RunPick(Entity player, uint32_t choice);
+		bool RunBuild(Entity player, const RunLoadout& loadout);
+		void ChangeArena(MapKind map, uint32_t seed);
+		bool RunReroll(Entity player);
+		bool RunBanish(Entity player, uint32_t choice);
+		bool RunSkip(Entity player);
+		bool RunPause(Entity player, bool paused);
+		bool RunBuy(Entity player, uint32_t slot);
+		bool RunSell(Entity player, uint32_t slot);
+		bool RunSellCard(Entity player, uint32_t card);
+		bool RunSwapSigils(Entity player, uint32_t from, uint32_t to);
+		bool RunShrine(Entity player, uint32_t choice);
+		bool RunSocket(Entity player, uint32_t rune, uint32_t slot, uint32_t socket);
+		bool RunUnsocket(Entity player, uint32_t rune);
+		void QueueCast(Entity caster, AbilityId ability, const AbilityContext& context, float delay, bool track = false, bool follow = false) { m_Casts.push_back({ caster, ability, context, delay, track, follow }); }
+		void OnEnemySlammed(Entity enemy, float speed) { if (IsShardfall()) m_Run.OnSlammed(*this, enemy, speed); }
+		void OnEnemyFlung(Entity enemy) { if (IsShardfall()) m_Run.OnFlung(*this, enemy); }
+		void NoteRunHurt(uint32_t playerId, Entity source) { if (IsShardfall()) m_Run.NoteHurt(playerId, source); }
+		float RunHealScale(uint32_t playerId) const { return IsShardfall() ? m_Run.HealScale(playerId) : 1.0f; }
+		float RunSigilPower(uint32_t playerId, SigilId id) const { return IsShardfall() && playerId < MaxPlayers ? SigilPower(m_Run.GetLoadout(playerId), id) : 0.0f; }
+		bool IsPaused() const { return IsShardfall() && m_Run.IsPaused(*this); }
+		void NoteRunDamage(uint32_t attacker, uint8_t ability, int32_t amount) { if (IsShardfall()) m_Run.NoteDamage(attacker, ability, amount); }
+		int32_t ShapeRunDealt(Entity target, Enemy& enemy, uint32_t attacker, uint8_t ability, int32_t amount) { return IsShardfall() ? m_Run.ShapeDealt(target, enemy, attacker, ability, amount) : amount; }
+		int32_t ShapeRunTaken(Entity target, PlayerController& controller, bool unmitigated, int32_t amount) { return IsShardfall() ? m_Run.ShapeTaken(*this, target, controller, unmitigated, amount) : amount; }
+		void AfterRunDamage(Entity target, const DamageEvent& damage, int32_t dealt, bool killed);
+		float RunChillScale(uint32_t attacker) const { return IsShardfall() ? m_Run.ChillScale(attacker) : 1.0f; }
+		void NotePerfectDodge(Entity player, uint32_t playerId) { if (IsShardfall()) m_Run.PerfectDodge(*this, player, playerId); }
+		bool HasCrystalWard(uint32_t playerId) const { return IsShardfall() ? m_Run.HasCrystalWard(playerId) : m_Match.HasCrystalWard(playerId); }
 
 		bool GetPastPosition(Entity entity, double tick, Vec2& position) const;
 		void GetTargetBounds(Entity entity, Vec2 position, float radius, Vec2& low, Vec2& high) const;
@@ -202,6 +233,7 @@ namespace Game
 		void CastCopies(AbilityId ability, const AbilityContext& context);
 		void StargazeAt(const PlayerController& controller, Vec2 origin, const PlayerActions& actions);
 		PlayerTraits ComputeTraits(uint32_t playerId) const;
+		float CastScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float momentum) const;
 		void UpdateNavigation(float dt);
 		void RebuildTargets();
 		void RecordHistory();
@@ -237,6 +269,16 @@ namespace Game
 			float Strength = EchoPushScale;
 		};
 		std::vector<EchoCast> m_Echoes;
+		struct DelayedCast
+		{
+			Entity Caster;
+			AbilityId Ability = AbilityId::Count;
+			AbilityContext Context;
+			float Remaining = 0.0f;
+			bool Track = false;
+			bool Follow = false;
+		};
+		std::vector<DelayedCast> m_Casts;
 		std::array<BrawlSpells, MaxPlayers> m_Chosen;
 		std::vector<std::pair<uint32_t, float>> m_DummyRespawns;
 		uint32_t m_ShrineVisitors = 0;
@@ -249,6 +291,7 @@ namespace Game
 		uint32_t m_BalloonLane = 0;
 		float m_NavigationTimer = 0.0f;
 		float m_WideNavigationTimer = 0.0f;
+		uint32_t m_LiveShots = 0;
 		uint32_t m_Tick = 0;
 		uint32_t m_NextNetId = 1;
 	};

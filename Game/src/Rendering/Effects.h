@@ -43,6 +43,7 @@ namespace Game
 		DiamondShard,
 		Obsidian,
 		SulfurFire,
+		Leaf,
 		Count,
 	};
 
@@ -162,6 +163,7 @@ namespace Game
 		AuraFrostMist,
 		AuraFrostFlurry,
 		AuraFrostCrownMist,
+		FallingLeaves,
 		Count,
 	};
 

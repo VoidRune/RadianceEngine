@@ -1,4 +1,5 @@
 #include "GameServer.h"
+#include "GameShared/Content/Fighters.h"
 #include "GameShared/Content/Hub.h"
 #include "GameShared/Content/PropLibrary.h"
 #include <RadianceEngine/Core/Log.h>
@@ -108,6 +109,8 @@ namespace Game
 		m_Session = session;
 		m_Session.Rules = SanitizeRules(session.Rules);
 		m_Session.Run = session.Mode == GameMode::Shardfall ? SanitizeRunRules(session.Run) : RunRules{};
+		if (m_Session.Mode == GameMode::Shardfall)
+			PrepareRunSession(m_Session.Map, m_Session.MapSeed, m_Session.Run);
 		m_Session.Epoch = ++m_TravelCount;
 		m_World = std::make_unique<World>(WorldSettings{
 			.Seed = m_Session.MapSeed,
@@ -120,6 +123,8 @@ namespace Game
 			.LagCompensation = m_Config.LagCompensation,
 		});
 		m_ReturnTimer = 0.0f;
+		m_RecapSent = false;
+		m_RunRevision = 0;
 	}
 
 	void GameServer::Travel(GameMode mode, MapKind map, MatchRules rules, RunRules run)
@@ -180,17 +185,65 @@ namespace Game
 		BroadcastPlayerList();
 	}
 
+	void GameServer::ApplyArenaChange()
+	{
+		m_Session.Map = m_World->GetSettings().Map;
+		m_Session.MapSeed = m_World->GetSettings().Seed;
+		m_Session.Epoch = ++m_TravelCount;
+		for (Client& client : m_Clients)
+		{
+			if (!client.Joined)
+				continue;
+			client.PendingInputs.clear();
+			client.Buffering = true;
+			ServerTravel travel;
+			if (const Replicated* replicated = m_World->GetEntities().TryGet<Replicated>(client.Player))
+				travel.PlayerNetId = replicated->NetId;
+			travel.Session = m_Session;
+			travel.ServerTick = m_World->GetTick();
+			Send(client, travel, SendMode::Reliable);
+		}
+		RDN_LOG("The run moved on to {}", GetMapDef(m_Session.Map).Name);
+	}
+
 	void GameServer::CheckReturn(float dt)
 	{
 		const GameStatus status = m_World->GetStatus();
-		if (!IsPvpMode(status.Mode) || status.Match != MatchPhase::Ended)
+		const bool runOver = status.Mode == GameMode::Shardfall && IsRunOver(status.Run.Phase);
+		if (runOver && !m_RecapSent)
+			SendRecap();
+		if (!runOver && (!IsPvpMode(status.Mode) || status.Match != MatchPhase::Ended))
 		{
 			m_ReturnTimer = 0.0f;
 			return;
 		}
 		m_ReturnTimer += dt;
-		if (m_ReturnTimer >= MatchEndSeconds && !m_PendingTravel)
+		if (m_ReturnTimer >= (runOver ? RunEndSeconds : MatchEndSeconds) && !m_PendingTravel)
 			Travel(GameMode::Hub, MapKind::Hub);
+	}
+
+	void GameServer::SendRecap()
+	{
+		m_RecapSent = true;
+		const RunDirector& run = m_World->GetRun();
+		const RunStatus& status = run.GetStatus();
+		ServerRunRecap recap{ .Victory = status.Phase == RunPhase::Victory, .Act = status.Act, .RunClock = status.RunClock, .Rooms = status.Rooms };
+		for (const Client& client : m_Clients)
+		{
+			if (!client.Joined || client.PlayerId >= MaxPlayers)
+				continue;
+			const RunSeat& seat = run.GetSeat(client.PlayerId);
+			RunRecapPlayer player{ .PlayerId = client.PlayerId, .Name = client.Name, .Kills = seat.Kills, .Downs = seat.Downs, .Revived = seat.Revived, .Loadout = seat.Loadout, .Picks = seat.Picks };
+			for (size_t spell = 0; spell < seat.Damage.size(); spell++)
+				if (seat.Damage[spell] > 0)
+					player.Damage.push_back({ AbilityId(spell), seat.Damage[spell] });
+			std::sort(player.Damage.begin(), player.Damage.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+			recap.Players.push_back(std::move(player));
+		}
+		for (const Client& client : m_Clients)
+			if (client.Joined)
+				Send(client, recap, SendMode::Reliable);
+		RDN_LOG("Shardfall run {} in act {} after {} rooms and {:.0f} s", recap.Victory ? "won" : "lost", status.Act, status.Rooms, double(status.RunClock));
 	}
 
 	void GameServer::Stop()
@@ -255,6 +308,11 @@ namespace Game
 		if (const uint32_t revision = m_World->GetMatch().GetCardRevision(); revision != m_CardRevision)
 		{
 			m_CardRevision = revision;
+			m_PlayerListTimer = PlayerListInterval;
+		}
+		if (const uint32_t revision = m_World->GetRun().GetRevision(); m_World->IsShardfall() && revision != m_RunRevision)
+		{
+			m_RunRevision = revision;
 			m_PlayerListTimer = PlayerListInterval;
 		}
 		if (m_PlayerListTimer >= PlayerListInterval)
@@ -390,6 +448,42 @@ namespace Game
 		case ActionType::BrawlCard:
 			m_World->ChooseCard(client.Player, action.Value);
 			break;
+		case ActionType::RunPick:
+			m_World->RunPick(client.Player, action.Value);
+			break;
+		case ActionType::RunReroll:
+			m_World->RunReroll(client.Player);
+			break;
+		case ActionType::RunBanish:
+			m_World->RunBanish(client.Player, action.Value);
+			break;
+		case ActionType::RunSkip:
+			m_World->RunSkip(client.Player);
+			break;
+		case ActionType::RunPause:
+			m_World->RunPause(client.Player, action.Value != 0);
+			break;
+		case ActionType::RunBuy:
+			m_World->RunBuy(client.Player, action.Value);
+			break;
+		case ActionType::RunSell:
+			m_World->RunSell(client.Player, action.Value);
+			break;
+		case ActionType::RunSellCard:
+			m_World->RunSellCard(client.Player, action.Value);
+			break;
+		case ActionType::RunSwapSigils:
+			m_World->RunSwapSigils(client.Player, action.Value, action.Target);
+			break;
+		case ActionType::RunShrine:
+			m_World->RunShrine(client.Player, action.Value);
+			break;
+		case ActionType::RunSocket:
+			m_World->RunSocket(client.Player, action.Value, action.Target >> 8, action.Target & 0xFFu);
+			break;
+		case ActionType::RunUnsocket:
+			m_World->RunUnsocket(client.Player, action.Value);
+			break;
 		case ActionType::Wish:
 			m_World->MakeWish(client.Player);
 			break;
@@ -508,6 +602,8 @@ namespace Game
 				ProcessInputs(client);
 		m_Squad.Update(*m_World);
 		m_World->Step();
+		if (m_World->GetSettings().Map != m_Session.Map || m_World->GetSettings().Seed != m_Session.MapSeed)
+			ApplyArenaChange();
 		HandleWorldEvents();
 		FlushNotices();
 		if (m_World->GetTick() % m_Config.SnapshotInterval == 0)
@@ -665,7 +761,11 @@ namespace Game
 			if (const PlayerController* controller = entities.TryGet<PlayerController>(entity))
 			{
 				if (!controller->State.Alive)
+				{
 					state.Flags |= uint16_t(EntityFlags::Dead);
+					if (m_World->IsShardfall())
+						state.Charge = PackCharge(m_World->GetRun().GetRevive(controller->PlayerId));
+				}
 				if (controller->State.Invulnerable > 0.0f || controller->State.DashDistance > 0.0f)
 					state.Flags |= uint16_t(EntityFlags::Dashing);
 				if (controller->State.Chill > 0.0f)
@@ -687,7 +787,7 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Ignited);
 				if (m_World->GetMatch().GetMarkedBy(controller->PlayerId) != NoPlayer)
 					state.Flags |= uint16_t(EntityFlags::Marked);
-				if (m_World->GetMatch().HasCrystalWard(controller->PlayerId))
+				if (m_World->HasCrystalWard(controller->PlayerId))
 					state.Flags |= uint16_t(EntityFlags::Barrier);
 				if (controller->State.Momentum >= QuicksilverSeconds && m_World->GetMatch().HasPlayerCard(controller->PlayerId, CardId::Quicksilver))
 					state.Flags |= uint32_t(EntityFlags::Quicksilver);
@@ -731,6 +831,12 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Elite);
 				if (enemy->Chill > 0.0f)
 					state.Flags |= uint16_t(EntityFlags::Chilled);
+				if (enemy->Burn > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Ignited);
+				if (enemy->Mark > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Marked);
+				if (enemy->Shock > 0.0f)
+					state.Flags |= uint16_t(EntityFlags::Static);
 				if (enemy->Stun > 0.0f)
 					state.Flags |= uint16_t(EntityFlags::Stunned);
 				if (enemy->Sprout > 0.0f)
@@ -741,6 +847,45 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Barrier);
 				if (const EnemyDef* def = FindEnemyDef(enemy->Type); def && def->Behavior == EnemyBehavior::Treasure && enemy->Age >= BurrowSeconds - BurrowWarning)
 					state.Flags |= uint16_t(EntityFlags::Falling);
+				if (enemy->Mirror > 0.0f)
+					state.Flags |= uint32_t(EntityFlags::Mirror);
+				if (enemy->Empowered > 0.0f)
+					state.Flags |= uint32_t(EntityFlags::Empowered);
+				if (enemy->Ward > 0.0f)
+					state.Flags |= uint32_t(EntityFlags::Warded);
+				if (enemy->Champion)
+					state.Flags |= uint32_t(EntityFlags::Champion);
+				if (enemy->Champion && enemy->Phase >= std::size(ChampionPhases))
+					state.Flags |= uint32_t(EntityFlags::Enraged);
+				if (LengthSquared(enemy->Push) > EnemyFlungSpeed * EnemyFlungSpeed)
+					state.Flags |= uint32_t(EntityFlags::Flung);
+				if (const FighterKit* kit = FindFighterKit(enemy->Type))
+				{
+					state.Variant = uint8_t(AbilityId::Count);
+					if (kit->Shell > 0.0f && enemy->Cracked <= 0.0f)
+						state.Flags |= uint32_t(EntityFlags::Shell);
+					if (kit->Shell > 0.0f && enemy->Cracked > ShellRegrow - 0.4f)
+						state.Flags |= uint32_t(EntityFlags::Shattered);
+					if (enemy->DashLeft > 0.0f)
+						state.Flags |= uint16_t(EntityFlags::Dashing);
+					if (enemy->Stagger > 0.0f)
+						state.Flags |= uint16_t(EntityFlags::Stunned) | uint32_t(EntityFlags::Staggered);
+					if (enemy->GuardBroken > kit->GuardCooldown - 0.4f)
+						state.Flags |= uint32_t(EntityFlags::Shattered);
+					if (enemy->GuardUp)
+					{
+						state.Flags |= uint32_t(EntityFlags::Guard);
+						state.Charge = PackGuard(enemy->GuardLeft, kit->Guard);
+					}
+					if (enemy->Move >= 0)
+					{
+						const FighterMove& move = kit->Moves[size_t(enemy->Move)];
+						state.Flags |= uint16_t(EntityFlags::Attacking);
+						state.Variant = uint8_t(move.Ability);
+						state.Charge = PackCharge(enemy->Windup > 0.0f ? 1.0f - enemy->Windup / std::max(move.Windup, 0.01f) : 1.0f);
+						state.CastPoint = enemy->AimPoint;
+					}
+				}
 			}
 			if (const PendingStrike* pending = entities.TryGet<PendingStrike>(entity))
 			{
@@ -810,6 +955,11 @@ namespace Game
 		}
 		if (m_Session.Mode == GameMode::Hub)
 			local.Starlit = m_World->GetStarlit(client.PlayerId);
+		if (m_Session.Mode == GameMode::Shardfall)
+		{
+			local.Run = m_World->GetRun().GetLoadout(client.PlayerId);
+			local.Revive = PackCharge(m_World->GetRun().GetRevive(client.PlayerId));
+		}
 		return local;
 	}
 
@@ -835,7 +985,7 @@ namespace Game
 				.Score = m_World->GetMatch().GetPoints(playerId),
 				.Rounds = m_World->GetMatch().GetRoundWins(playerId),
 				.Cards = m_World->GetCards(playerId),
-				.Choosing = m_Session.Mode == GameMode::Brawl && m_World->GetMatch().GetLoadout(playerId).OfferPending,
+				.Choosing = m_Session.Mode == GameMode::Brawl ? m_World->GetMatch().GetLoadout(playerId).OfferPending : m_Session.Mode == GameMode::Shardfall && m_World->GetRun().GetLoadout(playerId).HasOffer(),
 				.Spectator = m_World->GetMatch().IsSpectator(playerId),
 			};
 		};

@@ -15,7 +15,9 @@ namespace Game
 		constexpr const char* ShadowOptions[] = { "Off", "Low", "High" };
 		constexpr const char* GiOptions[] = { "Off", "Low", "Medium", "High" };
 		constexpr const char* AntiAliasingOptions[] = { "Off", "SMAA", "SSAA 1.5x", "SSAA 2x" };
+		constexpr const char* GrassOptions[] = { "Off", "Low", "High" };
 		static_assert(std::size(ShadowOptions) == size_t(ShadowQuality::Count) && std::size(GiOptions) == size_t(GiQuality::Count) && std::size(AntiAliasingOptions) == size_t(AntiAliasing::Count));
+		static_assert(std::size(GrassOptions) == size_t(GrassQuality::Count));
 	}
 
 	void DrawSettings(Ui& ui, GameApp& app, UiRect area)
@@ -62,6 +64,12 @@ namespace Game
 		if (ui.Choice(Ui::MakeId("settings.gi"), row("Indirect light", 36.0f).CutLeft(230.0f), gi, GiOptions))
 		{
 			settings.Gi = GiQuality(gi);
+			visuals = true;
+		}
+		int grass = int(settings.Grass);
+		if (ui.Choice(Ui::MakeId("settings.grass"), row("Grass", 36.0f).CutLeft(230.0f), grass, GrassOptions))
+		{
+			settings.Grass = GrassQuality(grass);
 			visuals = true;
 		}
 		int aa = int(settings.Aa);

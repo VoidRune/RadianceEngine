@@ -6,6 +6,7 @@
 #include "Rendering/WorldRenderer.h"
 #include "UI/Palette.h"
 #include "UI/Ui.h"
+#include <GameShared/Content/Fighters.h>
 #include <RadianceEngine/Window/Input.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -83,8 +84,91 @@ namespace Game
 		constexpr const char* ArenaNames[] = { "Random", "Molten Heart", "Frozen Lake", "Sky Observatory", "Storm Peak" };
 		constexpr const char* ModeNames[] = { "Damage", "Knockback" };
 		constexpr const char* GateTabs[] = { "Match", "Custom", "Teams" };
-		constexpr const char* RunOnlyNames[] = { "Every kind", "Quartz", "Jade", "Sapphire", "Ruby", "Amethyst", "Prismatic" };
+		constexpr const char* RunOnlyNames[] = { "Every kind", "Quartz", "Jade", "Sapphire", "Ruby", "Amethyst", "Prismatic", "Duelist", "Archer", "Prism Mage", "Geode Brute", "Mirror Moth", "Lens Wisp", "Obelisk" };
 		static_assert(std::size(RunOnlyNames) == std::size(RunOnlyKinds) + 1);
+		constexpr size_t StragglerMarkers = 2;
+		constexpr float StragglerDelay = 25.0f;
+
+		std::string Upper(std::string text);
+
+		struct RunItemLook
+		{
+			std::string Name;
+			std::string Text;
+			std::string Tag;
+			std::string Footer;
+			UiColor Color;
+			UiIcon Icon = UiIcon::Emerald;
+			uint32_t Rarity = 0;
+		};
+
+		constexpr UiIcon SigilIcons[] = { UiIcon::EarthCrack, UiIcon::Whirlwind, UiIcon::Teleport, UiIcon::MeteorImpact, UiIcon::ArrowCluster, UiIcon::Hourglass, UiIcon::Gems, UiIcon::Sparkles, UiIcon::SkullCrossedBones, UiIcon::Crown, UiIcon::Dodge, UiIcon::HeartPlus, UiIcon::Sprint, UiIcon::Fireball };
+		static_assert(std::size(SigilIcons) == size_t(SigilId::Count));
+		constexpr UiIcon CurseIcons[] = { UiIcon::Drop, UiIcon::Backpack, UiIcon::Dodge, UiIcon::Hourglass };
+		static_assert(std::size(CurseIcons) == size_t(CurseId::Count));
+		constexpr UiIcon ServiceIcons[] = { UiIcon::Healing, UiIcon::Sparkles, UiIcon::Padlock };
+		static_assert(std::size(ServiceIcons) == size_t(ServiceId::Count));
+		constexpr uint32_t SigilColor = 0x7FD8FF;
+		constexpr uint32_t DuoColor = 0xFFD36B;
+		constexpr uint32_t CurseColor = 0xE0485A;
+		constexpr uint32_t ServiceColor = 0xB9C2D8;
+		constexpr UiIcon RuneIcons[] = { UiIcon::ArrowCluster, UiIcon::ThornedArrow, UiIcon::Cycle, UiIcon::Aura, UiIcon::BurningEmbers, UiIcon::Stopwatch, UiIcon::SplitArrows, UiIcon::OnTarget, UiIcon::EchoRipples, UiIcon::ArcingBolt, UiIcon::StarSwirl, UiIcon::PsychicWaves, UiIcon::FireRing };
+		static_assert(std::size(RuneIcons) == size_t(RuneId::Count));
+		constexpr uint32_t RuneColor = 0x6FE3C4;
+		constexpr uint32_t TriggerRuneColor = 0xFFB45E;
+
+		UiColor RuneTone(RuneId rune)
+		{
+			return Hex(GetRune(rune).Kind == RuneKind::Trigger ? TriggerRuneColor : RuneColor);
+		}
+
+		UiIcon RuneIcon(RuneId rune)
+		{
+			return RuneIcons[std::min<size_t>(size_t(rune), std::size(RuneIcons) - 1)];
+		}
+
+		std::string UpperCase(std::string text)
+		{
+			for (char& letter : text)
+				letter = char(std::toupper(static_cast<unsigned char>(letter)));
+			return text;
+		}
+
+		RunItemLook ItemLookOf(const RunCard& card)
+		{
+			switch (card.Kind)
+			{
+			case RunCardKind::Rune:
+			{
+				const RuneDef& rune = GetRune(card.Rune());
+				return { rune.Name, rune.Text, rune.Kind == RuneKind::Trigger ? "TRIGGER RUNE" : "RUNE", "FITS " + UpperCase(rune.Needs), RuneTone(rune.Id), RuneIcon(rune.Id), rune.Rarity >= CardRarity::Rare ? 1u : 0u };
+			}
+			case RunCardKind::Sigil:
+			{
+				const SigilDef& sigil = GetSigil(SigilId(card.Id));
+				return { sigil.Name, sigil.Text, "SIGIL", *sigil.Twice ? std::string("SLOT 1 + LEFTMOST: ") + sigil.Twice : std::string("ORDERS YOUR SIGILS"), Hex(SigilColor), SigilIcons[std::min<size_t>(card.Id, std::size(SigilIcons) - 1)], 1 };
+			}
+			case RunCardKind::Duo:
+			{
+				const DuoDef& duo = GetDuo(DuoId(card.Id));
+				return { duo.Name, duo.Text, "DUO", Upper(GetAbility(duo.First).Name) + " + " + Upper(GetAbility(duo.Second).Name), Hex(DuoColor), IconFor(duo.First), 2 };
+			}
+			case RunCardKind::Curse:
+			{
+				const CurseDef& curse = GetCurse(CurseId(card.Id));
+				return { curse.Name, curse.Text, "CURSED", "CLEANSE AT A SHRINE", Hex(CurseColor), CurseIcons[std::min<size_t>(card.Id, std::size(CurseIcons) - 1)], 0 };
+			}
+			case RunCardKind::Service:
+			{
+				const ServiceDef& service = GetService(ServiceId(card.Id));
+				return { service.Name, service.Text, "SERVICE", "", Hex(ServiceColor), ServiceIcons[std::min<size_t>(card.Id, std::size(ServiceIcons) - 1)], 0 };
+			}
+			default:
+				return { "", "", "", "", Theme::Faint, UiIcon::Emerald, 0 };
+			}
+		}
+		constexpr const char* RunAffixNames[] = { "None", "Hasted", "Warded", "Splitting", "Volatile", "Vampiric", "Reflective", "Random" };
+		static_assert(std::size(RunAffixNames) == size_t(RandomAffix) + 1);
 		constexpr const char* TeamChoices[] = { "Off", "2 teams", "3 teams", "4 teams" };
 		static_assert(std::size(BotLevelNames) == BotLevels);
 		static_assert(std::size(ModeNames) == size_t(BrawlMode::Count));
@@ -266,23 +350,25 @@ namespace Game
 			return std::max(CollapseGrace + (plan.StartRadius - CollapseMinRadius) / CollapseRate, FinalCollapseStart);
 		}
 
-		std::string SpellDamage(AbilityId id)
+		std::string SpellDamage(AbilityId id, float scale = 1.0f)
 		{
 			const AbilityDef& def = GetAbility(id);
+			const auto scaled = [scale](float damage) { return int(std::lround(damage * scale)); };
+			const int base = scaled(float(def.BrawlDamage));
 			switch (id)
 			{
 			case AbilityId::Firebomb:
-				return Format("%d, then %d on the skip", int(def.BrawlDamage), int(GetAbility(AbilityId::FirebombSkip).BrawlDamage));
+				return Format("%d, then %d on the skip", base, scaled(float(GetAbility(AbilityId::FirebombSkip).BrawlDamage)));
 			case AbilityId::StormStrike:
-				return Format("%d, then %d on the jump", int(def.BrawlDamage), int(GetAbility(AbilityId::StormJump).BrawlDamage));
+				return Format("%d, then %d on the jump", base, scaled(float(GetAbility(AbilityId::StormJump).BrawlDamage)));
 			case AbilityId::ObsidianBlades:
-				return Format("%d per blade, %d if all %u land", int(def.BrawlDamage), int(def.BrawlDamage) * int(ObsidianVolley), unsigned(ObsidianVolley));
+				return Format("%d per blade, %d if all %u land", base, base * int(ObsidianVolley), unsigned(ObsidianVolley));
 			case AbilityId::FrostSpear:
-				return Format("%d tapped, up to %d charged, %d burst", int(def.BrawlDamage), int(SpearFullDamage), int(SpearBurstDamage));
+				return Format("%d tapped, up to %d charged, %d burst", base, scaled(float(SpearFullDamage)), scaled(float(SpearBurstDamage)));
 			case AbilityId::PurpleFireball:
-				return Format("%d tapped, up to %d charged, to everyone in the blast", int(def.BrawlDamage), int(FireballFullDamage));
+				return Format("%d tapped, up to %d charged, to everyone in the blast", base, scaled(float(FireballFullDamage)));
 			default:
-				return def.Chain > 0 ? Format("%d per rival", int(def.BrawlDamage)) : std::to_string(def.BrawlDamage);
+				return def.Chain > 0 ? Format("%d per rival", base) : std::to_string(base);
 			}
 		}
 
@@ -431,7 +517,7 @@ namespace Game
 			tooltip.Muted(card.Kind == CardKind::Upgrade ? std::string(RarityName(card.Rarity)) + " upgrade for " + GetAbility(card.Spell).Name : card.Rarity == CardRarity::Apex ? std::string("Apex card, one per player and announced to everyone") : std::string(RarityName(card.Rarity)) + " wild card");
 		}
 
-		void DescribeSpell(UiTooltip& tooltip, AbilityId id, BrawlMode mode)
+		void DescribeSpell(UiTooltip& tooltip, AbilityId id, BrawlMode mode, const SkillTraits* run = nullptr)
 		{
 			const AbilityDef& def = GetAbility(id);
 			const UiColor color = WithAlpha(SkillColor(id));
@@ -444,8 +530,9 @@ namespace Game
 			{
 				if (damage)
 				{
-					tooltip.Pair("Mana", Format("%.0f to raise, %.1f per point it soaks up", double(def.BrawlMana), double(HexShieldManaPerPoint)));
-					tooltip.Pair("Holds", Format("%.0f damage, then it shatters", double(HexShieldDurability)));
+					if (!run)
+						tooltip.Pair("Mana", Format("%.0f to raise, %.1f per point it soaks up", double(def.BrawlMana), double(HexShieldManaPerPoint)));
+					tooltip.Pair("Holds", Format("%.0f damage, then it shatters", double(run ? run->Durability : HexShieldDurability)));
 				}
 				else
 					tooltip.Pair("Holds", "a few hard shoves, then it shatters");
@@ -459,11 +546,12 @@ namespace Game
 			}
 			if (def.Kind == AbilityKind::Ward)
 			{
-				const float cooldown = damage && def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown;
+				const float cooldown = run ? run->Cooldown : damage && def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown;
 				if (damage)
 				{
-					tooltip.Pair("Mana", Format("%.0f", double(def.BrawlMana)));
-					tooltip.Pair("Holds", Format("%.0f damage, from every side", double(DiamondWardDurability)));
+					if (!run)
+						tooltip.Pair("Mana", Format("%.0f", double(def.BrawlMana)));
+					tooltip.Pair("Holds", Format("%.0f damage, from every side", double(run ? run->Durability : DiamondWardDurability)));
 				}
 				else
 					tooltip.Pair("Holds", "a few hard shoves, from every side");
@@ -479,8 +567,9 @@ namespace Game
 			if (damage)
 			{
 				if (def.BrawlDamage > 0)
-					tooltip.Pair("Damage", SpellDamage(id));
-				tooltip.Pair("Mana", def.BrawlMana > 0.0f ? Format("%.0f", double(def.BrawlMana)) : std::string("free"));
+					tooltip.Pair("Damage", SpellDamage(id, run ? run->DamageScale : 1.0f));
+				if (!run)
+					tooltip.Pair("Mana", def.BrawlMana > 0.0f ? Format("%.0f", double(def.BrawlMana)) : std::string("free"));
 			}
 			const float shove = damage ? DamagePushScale : 1.0f;
 			if (id == AbilityId::PurpleFireball)
@@ -511,7 +600,7 @@ namespace Game
 				const AbilityDef& eruption = GetAbility(AbilityId::GlacialEruption);
 				tooltip.Pair("Slows", Format("rivals in the frost for %.1f s", double(PvpChillDuration(def.Chill))));
 				if (damage)
-					tooltip.Pair("Press again", Format("within %.1f s: the spikes erupt for %d, shove %.1f", double(FrostNovaWindow), eruption.BrawlDamage, double(eruption.Push * shove)));
+					tooltip.Pair("Press again", Format("within %.1f s: the spikes erupt for %d, shove %.1f", double(FrostNovaWindow), int(std::lround(float(eruption.BrawlDamage) * (run ? run->DamageScale : 1.0f))), double(eruption.Push * shove)));
 				else
 					tooltip.Pair("Press again", Format("within %.1f s: the spikes erupt, shove %.0f", double(FrostNovaWindow), double(eruption.Push * shove)));
 				tooltip.Pair("Unripe", Format("before %.1f s: %.0f%% strength", double(FrostNovaUnripe), double(FrostNovaUnripeScale * 100.0f)));
@@ -542,9 +631,11 @@ namespace Game
 				tooltip.Pair("Reach", Format("%.1f", double(def.Reach)));
 			if (def.Chain > 0)
 				tooltip.Pair("Jumps", std::to_string(def.Chain));
-			tooltip.Pair("Cast time", def.CastTime > 0.0f ? Format("%.2f s", double(def.CastTime)) : std::string("instant"));
-			tooltip.Pair("Cooldown", Format("%.1f s", double(damage && def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown)));
-			tooltip.Space(2.0f).Muted(id == AbilityId::PurpleFireball ? "You walk slowly while charging, and a dodge snuffs the fireball out" : def.ChargeTime > 0.0f ? "You walk at half speed while charging, and a dodge drops the spear" : def.CastMove <= 0.01f ? "You stand still while casting" : def.CastMove >= 0.99f ? "Cast it on the move" : "You slow down while casting");
+			const float castTime = run ? run->CastTime : def.CastTime;
+			const float castMove = run ? run->MoveScale : def.CastMove;
+			tooltip.Pair("Cast time", castTime > 0.0f ? Format("%.2f s", double(castTime)) : std::string("instant"));
+			tooltip.Pair("Cooldown", Format("%.1f s", double(run ? run->Cooldown : damage && def.BrawlCooldown > 0.0f ? def.BrawlCooldown : def.Cooldown)));
+			tooltip.Space(2.0f).Muted(id == AbilityId::PurpleFireball ? "You walk slowly while charging, and a dodge snuffs the fireball out" : def.ChargeTime > 0.0f ? "You walk at half speed while charging, and a dodge drops the spear" : castMove <= 0.01f ? "You stand still while casting" : castMove >= 0.99f ? "Cast it on the move" : "You slow down while casting");
 		}
 	}
 
@@ -1327,9 +1418,10 @@ namespace Game
 		const UiColor tint = apex ? rarity : CardTint(card);
 		const float lift = taken ? 1.0f : hover;
 		const UiRect face = rect.Translate({ 0.0f, -8.0f * lift });
+		const bool small = face.W < 200.0f;
 		UiRect body = face.Shrink(18.0f, 16.0f);
 		const UiRect tagRect = body.CutTop(18.0f);
-		const float iconSize = std::clamp(face.H * 0.24f, 52.0f, 80.0f);
+		const float iconSize = std::clamp(face.H * 0.24f, small ? 44.0f : 52.0f, 80.0f);
 		body.CutTop(face.H * 0.04f);
 		const UiRect iconRect = UiRect::Centered({ body.Center().x, body.Y + iconSize * 0.5f + 6.0f }, { iconSize, iconSize });
 		const float margin = burst > 0.0f ? 120.0f : legendary ? 58.0f : apex ? 52.0f : card.Rarity == CardRarity::Rare ? 36.0f : 28.0f;
@@ -1341,7 +1433,7 @@ namespace Game
 		draw.TextAligned(tagRect, tag, tagStyle, { 0.5f, 0.5f });
 		draw.Icon(IconFor(id), iconRect, { .Color = WithAlpha(Lighten(tint, 0.55f), fade), .ColorBottom = WithAlpha(tint, fade), .Outline = 0.9f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.75f * fade), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f * fade), .GlowColor = WithAlpha(tint, (apex || legendary ? 0.35f : 0.18f) * fade) });
 		body.CutTop(iconSize + 22.0f);
-		TextStyle nameStyle = Theme::Title(21.0f);
+		TextStyle nameStyle = Theme::Title(small ? 17.0f : 21.0f);
 		nameStyle.Color = WithAlpha(Theme::Text, fade);
 		nameStyle.ColorBottom = WithAlpha(nameStyle.ColorBottom, fade);
 		nameStyle.GlowColor = WithAlpha(nameStyle.GlowColor, fade);
@@ -1365,10 +1457,14 @@ namespace Game
 			nameStyle.ColorBottom = WithAlpha(Lighten(rarity, 0.45f), fade);
 			nameStyle.GlowColor = WithAlpha(rarity, 0.3f * fade);
 		}
-		draw.TextAligned(body.CutTop(28.0f), card.Name, nameStyle, { 0.5f, 0.5f });
-		body.CutTop(8.0f);
+		const bool run = m_Client.GetSession().Mode == GameMode::Shardfall;
+		const RunLoadout& held = m_Client.GetLocalPlayer().Run;
+		const uint8_t stack = run && IsStackable(id) ? StackOf(held.Cards, held.Second, held.Third, id) : uint8_t(0);
+		constexpr const char* StackNames[] = { "", " II", " III" };
+		draw.TextAligned(body.CutTop(small ? 22.0f : 28.0f), std::string(card.Name) + (stack > 0 && stack < MaxCardStack ? StackNames[stack] : ""), nameStyle, { 0.5f, 0.5f });
+		body.CutTop(small ? 4.0f : 8.0f);
 		const UiRect footer = body.CutBottom(18.0f);
-		draw.TextWrapped(body, CardText(card, ShownBrawlMode()), Theme::Body(14.5f, WithAlpha(Theme::Muted, fade)), 0.5f, 1.05f);
+		draw.TextWrapped(body, run ? RunCardDescription(id) : CardText(card, ShownBrawlMode()), Theme::Body(small ? 12.0f : 14.5f, WithAlpha(Theme::Muted, fade)), 0.5f, 1.05f);
 		TextStyle footStyle = Theme::Bold(11.5f, WithAlpha(rarity, 0.9f * fade));
 		footStyle.Tracking = 1.4f;
 		if (taken)
@@ -1567,7 +1663,7 @@ namespace Game
 		heading.Color = Theme::GoldLight;
 		heading.ColorBottom = Theme::Gold;
 		std::string title = "READY CHECK";
-		std::string hint = rules.RandomSpells ? "Random spells: everyone gets three new spells when each round starts. Ready up when you are." : "These are the spells from your Emberhold Spellbook. Drag a different one onto a key below if you want, then ready up.";
+		std::string hint = rules.RandomSpells ? "Random spells: everyone gets three new spells when each round starts. Ready up when you are." : "These are the spells from your Spellbook in the Sun's Cradle. Drag a different one onto a key below if you want, then ready up.";
 		if (champion)
 		{
 			title = "CHAMPION";
@@ -1822,7 +1918,7 @@ namespace Game
 
 		ui.Separator(right.CutTop(20.0f), "PRACTICE");
 		right.CutTop(8.0f);
-		right.CutTop(draw.TextWrapped(right, "Your spells work everywhere in Emberhold, with the damage, mana and shoves of a damage spellbrawl. Try them on the dummies in the pit next to this book: wear one down and it topples, or shove it into the lava and it sinks. Either way a fresh one climbs out a moment later.", Theme::Body(14.5f, Theme::Text)) + 14.0f);
+		right.CutTop(draw.TextWrapped(right, "Your spells work everywhere in the Sun's Cradle, with the damage, mana and shoves of a damage spellbrawl. Try them on the dummies in the pit next to this book: wear one down and it topples, or shove it into the lava and it sinks. Either way a fresh one climbs out a moment later.", Theme::Body(14.5f, Theme::Text)) + 14.0f);
 		ui.Separator(right.CutTop(20.0f), "KEPT FOR EVERY MATCH");
 		right.CutTop(8.0f);
 		right.CutTop(draw.TextWrapped(right, "These spells are saved with your character. Every Spellbrawl starts with them already picked, and you can still swap them in the draft.", Theme::Body(14.5f, Theme::Text)) + 14.0f);
@@ -2027,11 +2123,30 @@ namespace Game
 	BrawlMode SessionState::ShownBrawlMode() const
 	{
 		const SessionInfo& session = m_Client.GetSession();
-		return session.Mode == GameMode::Brawl ? session.Rules.Mode : m_BrawlRules.Mode;
+		return session.Mode == GameMode::Brawl ? session.Rules.Mode : session.Mode == GameMode::Shardfall ? BrawlMode::Damage : m_BrawlRules.Mode;
 	}
 
 	void SessionState::DescribeBrawlSpell(UiTooltip& tooltip, AbilityId spell) const
 	{
+		if (m_Client.GetSession().Mode == GameMode::Shardfall)
+		{
+			SkillTraits skill = MakeRunSkill(spell);
+			for (const SkillTraits& owned : m_Client.GetTraits().Skills)
+				if (owned.Ability == spell)
+					skill = owned;
+			DescribeSpell(tooltip, spell, BrawlMode::Damage, &skill);
+			const RunLoadout& run = m_Client.GetLocalPlayer().Run;
+			const int32_t slot = FindRunSlot(run, spell);
+			if (slot < 0)
+				return;
+			const RuneMask runes = SlotRunes(run, uint32_t(slot));
+			tooltip.Separator();
+			tooltip.Pair("Rune sockets", Format("%u of %u filled", unsigned(std::popcount(runes)), unsigned(OpenSockets(run, uint32_t(slot)))));
+			for (const RuneDef& rune : Runes)
+				if (HasRune(runes, rune.Id))
+					tooltip.Text(std::string(rune.Name) + ": " + rune.Text, Lighten(RuneTone(rune.Id), 0.2f), 13.5f);
+			return;
+		}
 		DescribeSpell(tooltip, spell, m_Client.GetSession().Mode == GameMode::Hub ? BrawlMode::Damage : ShownBrawlMode());
 	}
 
@@ -2078,7 +2193,7 @@ namespace Game
 		Ui& ui = m_App.GetUi();
 		UiDrawList& draw = ui.Draw();
 		constexpr float Width = 820.0f;
-		constexpr float Height = 610.0f;
+		constexpr float Height = 650.0f;
 		const UiRect home{ (ui.GetSize().x - Width) * 0.5f, std::max((ui.GetSize().y - Height) * 0.5f - 66.0f, 12.0f), Width, Height };
 		bool open = true;
 		UiRect content = ui.Window(Ui::MakeId("shardrift"), "Shard Rift", home, &open);
@@ -2087,10 +2202,11 @@ namespace Game
 			m_Station.reset();
 			return;
 		}
-		content.CutTop(draw.TextWrapped(content, "Shardfall is a co-op crystal hunt for up to four mages. Crystal crawlers claw out of the ground in packs that grow every minute. Their kills spill XP shards that level up the whole party, and every level brings an upgrade.", Theme::Body(14.5f, Theme::Text)) + 12.0f);
+		content.CutTop(draw.TextWrapped(content, "Shardfall is a co-op crystal hunt for up to four mages. Each of the three acts is a branching map of rooms: you pick every door, and each door shows what waits behind it. Fight rooms hold sleeping packs of crystal fighters and crawlers, champions fight in phases, and shops, shrines and rest rooms let you shape your build with shards, sigils and duo cards. Spells shove enemies, so knock them into walls and into each other. Each act ends at a guardian. Health never comes back on its own: you heal only at rest altars, at the merchant and when a guardian falls. Spells are free, and mana lets you overcast a spell that is still recharging. Kills spill shards for the merchant, and every cleared room gives the one reward shown on its door.", Theme::Body(14.5f, Theme::Text)) + 12.0f);
 		UiRect strip = content.CutTop(28.0f);
-		const float slot = strip.W / float(std::size(RunOnlyKinds));
-		for (size_t i = 0; i < std::size(RunOnlyKinds); i++)
+		const size_t crawlers = size_t(std::count_if(std::begin(RunOnlyKinds), std::end(RunOnlyKinds), [](EntityKind kind) { return IsCrawlerKind(kind); }));
+		const float slot = strip.W / float(crawlers);
+		for (size_t i = 0; i < crawlers; i++)
 		{
 			const UiRect cell = strip.CutLeft(slot);
 			const glm::vec3 tone = CrawlerTone(RunOnlyKinds[i], m_Time);
@@ -2105,26 +2221,33 @@ namespace Game
 		content.CutTop(8.0f);
 
 		int minute = m_RunRules.StartMinute;
-		StepRow(ui, content, Ui::MakeId("runminute"), minute, { .Label = "Start at minute", .Value = Format("%d:00", minute), .Low = 0, .High = MaxStartMinute, .Note = "Later minutes bring denser, tougher packs", .Tip = "Jumps the act clock forward, so the spawner, enemy health and the prismatic timer act as if that much time had passed." });
+		StepRow(ui, content, Ui::MakeId("runminute"), minute, { .Label = "Start at minute", .Value = Format("%d:00", minute), .Low = 0, .High = MaxStartMinute, .Note = "Skips that many encounters, and enemies are tougher", .Tip = "Jumps the act clock forward and skips one encounter per minute, so enemy health and the prismatic timer act as if that much time had passed." });
 		int level = m_RunRules.StartLevel;
-		StepRow(ui, content, Ui::MakeId("runlevel"), level, { .Label = "Starting level", .Value = std::to_string(level), .Low = 1, .High = MaxStartLevel, .Note = "Every level adds health, damage and a random upgrade" });
+		StepRow(ui, content, Ui::MakeId("runlevel"), level, { .Label = "Head start", .Value = level == 2 ? std::string("1 card") : Format("%d cards", level - 1), .Low = 1, .High = MaxStartLevel, .Note = "Extra card picks banked when the run begins" });
 		int spawns = m_RunRules.Spawns;
 		StepRow(ui, content, Ui::MakeId("runspawns"), spawns, { .Label = "Enemy spawns", .Value = spawns == 0 ? std::string("Off") : Percent(spawns), .Low = 0, .High = MaxSpawnRate, .Step = 25, .Note = spawns == 0 ? "Peaceful: nothing spawns" : "Scales the crowd size and how fast packs arrive" });
-		int xp = m_RunRules.Xp;
-		StepRow(ui, content, Ui::MakeId("runxp"), xp, { .Label = "XP gain", .Value = Percent(xp), .Low = MinXpRate, .High = MaxXpRate, .Step = 25, .Note = "How fast the party levels up" });
+		int xp = m_RunRules.ShardRate;
+		StepRow(ui, content, Ui::MakeId("runxp"), xp, { .Label = "Shard gain", .Value = Percent(xp), .Low = MinShardRate, .High = MaxShardRate, .Step = 25, .Note = "How many shards kills spill" });
 		m_RunRules.StartMinute = uint8_t(minute);
 		m_RunRules.StartLevel = uint8_t(level);
 		m_RunRules.Spawns = uint16_t(spawns);
-		m_RunRules.Xp = uint16_t(xp);
+		m_RunRules.ShardRate = uint16_t(xp);
 
 		UiRect row = content.CutTop(40.0f);
 		draw.TextAligned(row.CutLeft(170.0f), "Only spawn", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
 		int only = m_RunRules.Only;
 		if (ui.Choice(Ui::MakeId("runonly"), row.CutLeft(std::min(240.0f, row.W)), only, RunOnlyNames))
 			m_RunRules.Only = uint8_t(only);
-		draw.TextFit(row.Shrink(12.0f, 0.0f), m_RunRules.Only == 0 ? "The normal mix of packs" : m_RunRules.Only == std::size(RunOnlyKinds) ? "A prismatic crawler is always out there" : "Packs of a single kind, caps still apply", Theme::Body(13.5f, Theme::Faint));
+		draw.TextFit(row.Shrink(12.0f, 0.0f), m_RunRules.Only == 0 ? "The normal encounters" : RunOnlyKinds[m_RunRules.Only - 1] == EntityKind::PrismaticCrawler ? "A prismatic crawler is always out there" : IsFighterKind(RunOnlyKinds[m_RunRules.Only - 1]) ? "A few of that fighter at a time, no encounters" : "Packs of a single kind, caps still apply", Theme::Body(13.5f, Theme::Faint));
+		UiRect affixRow = content.CutTop(40.0f);
+		draw.TextAligned(affixRow.CutLeft(170.0f), "Elite affix", Theme::Bold(16.0f, Theme::Text), { 0.0f, 0.5f });
+		int affix = m_RunRules.Affix;
+		if (ui.Choice(Ui::MakeId("runaffix"), affixRow.CutLeft(std::min(240.0f, affixRow.W)), affix, RunAffixNames))
+			m_RunRules.Affix = uint8_t(affix);
+		draw.TextFit(affixRow.Shrink(12.0f, 0.0f), m_RunRules.Affix == 0 ? "Normal elites" : "Only-spawned fighters arrive as elites with it", Theme::Body(13.5f, Theme::Faint));
 		content.CutTop(10.0f);
 		ToggleRow(ui, content, Ui::MakeId("runimmortal"), "Immortal players", m_RunRules.Immortal, true, "Hits still land and show, but nobody drops below 1 health");
+		ToggleRow(ui, content, Ui::MakeId("runallrunes"), "Every rune", m_RunRules.AllRunes, true, "Everyone starts with one of each rune to socket");
 
 		const RunRules defaults;
 		const uint32_t players = std::max<uint32_t>(uint32_t(m_Client.GetPlayers().size()), 1u);
@@ -2725,5 +2848,1326 @@ namespace Game
 		if (golden)
 			DrawGlow(renderer, base + glm::vec3(0.0f, 1.3f, 0.0f), 0.9f, glm::vec3(1.0f, 0.7f, 0.2f) * (0.25f + 0.1f * std::sin(m_Time * 4.0f)));
 		DrawBrawlPlayer(renderer, entity, Ground(entity.Position));
+	}
+
+	namespace
+	{
+		constexpr const char* RunKeys[] = { "RMB", "Q", "R", "F" };
+		static_assert(std::size(RunKeys) == SkillSlots);
+		constexpr const char* RomanRanks[] = { "", "I", "II", "III", "IV", "V" };
+		static_assert(std::size(RomanRanks) == size_t(MaxSpellRank) + 1);
+
+		std::string RunClock(float seconds)
+		{
+			const unsigned total = unsigned(std::max(seconds, 0.0f));
+			return Format("%u:%02u", total / 60u, total % 60u);
+		}
+
+		bool DealsDamage(AbilityId spell)
+		{
+			const RunSpellDef* def = FindRunSpell(spell);
+			return def && def->Damage > 0;
+		}
+
+		std::string RankStep(AbilityId spell, uint8_t rank)
+		{
+			std::vector<std::string> parts;
+			if (DealsDamage(spell))
+				parts.push_back(Format("+%.0f%% damage", double(RankDamage * 100.0f)));
+			if (rank % 2 == 0)
+				parts.push_back(Format("%.0f%% faster cooldown", double((1.0f - RankCooldown) * 100.0f)));
+			else if (const RankMilestone* milestone = MilestoneAt(spell, rank))
+				parts.push_back(milestone->Text);
+			std::string text;
+			for (size_t i = 0; i < parts.size(); i++)
+				text += (i == 0 ? "" : ", ") + parts[i];
+			return text;
+		}
+
+		std::string RunCardName(const RunCard& card)
+		{
+			switch (card.Kind)
+			{
+			case RunCardKind::Spell:
+				return GetAbility(card.Spell()).Name;
+			case RunCardKind::Rank:
+				return std::string(GetAbility(card.Spell()).Name) + " rank up";
+			case RunCardKind::Card:
+				return GetCard(card.Upgrade()).Name;
+			case RunCardKind::Rune:
+				return std::string(GetRune(card.Rune()).Name) + " rune";
+			default:
+				return "Skipped";
+			}
+		}
+
+		UiIcon RunCardIcon(const RunCard& card)
+		{
+			if (card.Kind == RunCardKind::Rune)
+				return RuneIcon(card.Rune());
+			return card.Kind == RunCardKind::Card ? IconFor(card.Upgrade()) : card.Kind == RunCardKind::None ? UiIcon::Hourglass : IconFor(card.Spell());
+		}
+
+		const char* SpellFormName(AbilityId spell)
+		{
+			const uint8_t forms = SpellForms(spell);
+			return (forms & FormBlast) ? "Exploding projectile" : (forms & FormBolt) ? "Projectile" : (forms & FormChain) ? "Chaining projectile" : (forms & FormHook) ? "Hook" : (forms & FormStrike) ? "Ground spell" : (forms & FormNova) ? "Nova" : "Utility spell";
+		}
+
+		void DrawRuneStone(UiDrawList& draw, RuneId rune, glm::vec2 center, float radius, float alpha = 1.0f, float lift = 0.0f)
+		{
+			const UiColor tone = RuneTone(rune);
+			const bool rare = GetRune(rune).Rarity >= CardRarity::Rare;
+			draw.Circle(center + glm::vec2(0.0f, 2.0f), radius + 2.0f, Rgba(0.0f, 0.0f, 0.0f, 0.45f * alpha));
+			draw.Circle(center, radius, WithAlpha(Darken(tone, 0.8f), 0.97f * alpha), WithAlpha(rare ? Theme::GoldLight : Lighten(tone, 0.15f), (0.75f + 0.25f * lift) * alpha), rare ? 1.8f : 1.3f);
+			draw.Circle(center, radius * 0.76f, WithAlpha(Darken(tone, 0.6f), 0.5f * alpha));
+			draw.Icon(RuneIcon(rune), UiRect::Centered(center, { radius * 1.3f, radius * 1.3f }), { .Color = WithAlpha(Lighten(tone, 0.6f), alpha), .ColorBottom = WithAlpha(tone, alpha), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f * alpha), .GlowColor = WithAlpha(tone, (0.2f + 0.3f * lift) * alpha) });
+		}
+
+		void DescribeRune(UiTooltip& tooltip, RuneId rune, const RunLoadout* loadout = nullptr)
+		{
+			const RuneDef& def = GetRune(rune);
+			const UiColor tone = RuneTone(rune);
+			tooltip.Accent = tone;
+			tooltip.Header(def.Name, Lighten(tone, 0.25f), std::nullopt, RuneIcon(rune));
+			tooltip.Muted(std::string(def.Rarity >= CardRarity::Rare ? "Rare " : "Common ") + (def.Kind == RuneKind::Trigger ? "trigger rune" : "rune"));
+			tooltip.Space();
+			tooltip.Text(def.Text);
+			tooltip.Separator();
+			tooltip.Pair("Fits", def.Needs);
+			if (!loadout)
+				return;
+			const RunePlace place = FindRune(*loadout, rune);
+			if (!place.IsSet())
+				return;
+			tooltip.Pair("Socketed in", GetAbility(SlotSpell(*loadout, uint32_t(place.Slot))).Name);
+			if (rune == RuneId::Link)
+			{
+				const AbilityId linked = LinkedSpell(*loadout, uint32_t(place.Slot));
+				tooltip.Pair("Casts", linked != AbilityId::Count ? GetAbility(linked).Name : "nothing yet", Theme::Muted, linked != AbilityId::Count ? WithAlpha(SkillColor(linked)) : Theme::Faint);
+			}
+		}
+
+		UiColor RunCardColor(const RunCard& card)
+		{
+			if (card.Kind == RunCardKind::Rune)
+				return RuneTone(card.Rune());
+			if (card.Kind == RunCardKind::Card)
+				return CardTint(GetCard(card.Upgrade()));
+			if (card.Kind == RunCardKind::None)
+				return Theme::Faint;
+			return WithAlpha(SkillColor(card.Spell()));
+		}
+	}
+
+	void SessionState::DrawRunCardFace(const UiRect& rect, const RunCard& card, float hover, std::optional<uint32_t> key, float reveal, bool banishing)
+	{
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const UiRect face = rect.Translate({ 0.0f, -8.0f * hover });
+		if (card.Kind == RunCardKind::Card)
+			DrawCardFace(rect, card.Upgrade(), hover, 1.0f, key, false, reveal, 0.0f, 0.0f);
+		else if (card.Kind >= RunCardKind::Sigil)
+		{
+			const RunItemLook look = ItemLookOf(card);
+			const float fade = Smooth(0.0f, 0.35f, reveal);
+			const bool small = face.W < 200.0f;
+			UiRect body = face.Shrink(18.0f, 16.0f);
+			const UiRect tagRect = body.CutTop(18.0f);
+			const float iconSize = std::clamp(face.H * 0.22f, 40.0f, 72.0f);
+			body.CutTop(face.H * 0.04f);
+			const UiRect iconRect = UiRect::Centered({ body.Center().x, body.Y + iconSize * 0.5f + 6.0f }, { iconSize, iconSize });
+			draw.Card(face, { .Color = look.Color, .Rarity = look.Rarity, .Margin = look.Rarity > 0 ? 40.0f : 28.0f, .Hover = hover, .Reveal = reveal, .Mouse = ui.GetMouse(), .MedallionY = iconRect.Center().y, .MedallionRadius = iconSize * 0.68f, .Seed = float(card.Id) * 0.53f + float(card.Kind) });
+			TextStyle tagStyle = Theme::Bold(small ? 10.5f : 12.0f, WithAlpha(Lighten(look.Color, 0.25f), fade));
+			tagStyle.Tracking = 1.8f;
+			draw.TextAligned(tagRect, look.Tag, tagStyle, { 0.5f, 0.5f });
+			draw.Icon(look.Icon, iconRect, { .Color = WithAlpha(Lighten(look.Color, 0.55f), fade), .ColorBottom = WithAlpha(look.Color, fade), .Outline = 0.9f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.75f * fade), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f * fade), .GlowColor = WithAlpha(look.Color, 0.3f * fade) });
+			body.CutTop(iconSize + 22.0f);
+			TextStyle nameStyle = Theme::Title(small ? 16.0f : 20.0f);
+			nameStyle.Color = WithAlpha(Lighten(look.Color, 0.45f), fade);
+			nameStyle.ShadowColor = WithAlpha(nameStyle.ShadowColor, fade);
+			draw.TextFit(body.CutTop(small ? 22.0f : 28.0f), look.Name, nameStyle, { 0.5f, 0.5f });
+			body.CutTop(6.0f);
+			const UiRect footer = body.CutBottom(18.0f);
+			draw.TextWrapped(body, look.Text, Theme::Body(small ? 12.0f : 14.0f, WithAlpha(Theme::Muted, fade)), 0.5f, 1.05f);
+			TextStyle footStyle = Theme::Bold(small ? 10.0f : 11.5f, WithAlpha(look.Color, 0.9f * fade));
+			footStyle.Tracking = 1.4f;
+			draw.TextAligned(footer, look.Footer, footStyle, { 0.5f, 0.5f });
+			if (key)
+			{
+				const UiRect badge{ face.Right() - 32.0f, face.Y + 10.0f, 22.0f, 20.0f };
+				draw.Rect(badge, { .Fill = Rgba(0.04f, 0.035f, 0.07f, 0.95f * fade), .Border = WithAlpha(Theme::Edge, 0.9f * fade), .BorderWidth = 1.0f, .Chamfer = 4.0f });
+				draw.TextAligned(badge, std::to_string(*key + 1), Theme::Bold(12.5f, WithAlpha(Theme::AccentLight, fade)), { 0.5f, 0.5f });
+			}
+		}
+		else
+		{
+			const AbilityId spell = card.Spell();
+			const AbilityDef& def = GetAbility(spell);
+			const bool fresh = card.Kind == RunCardKind::Spell;
+			const RunLoadout& loadout = m_Client.GetLocalPlayer().Run;
+			const uint8_t rank = std::clamp<uint8_t>(RankOf(loadout, spell), 1, MaxSpellRank - 1);
+			const UiColor tint = WithAlpha(SkillColor(spell));
+			const bool milestone = !fresh && MilestoneAt(spell, uint8_t(rank + 1)) != nullptr;
+			const UiColor frame = fresh || milestone ? Theme::Gold : tint;
+			UiRect body = face.Shrink(18.0f, 16.0f);
+			const UiRect tagRect = body.CutTop(18.0f);
+			const float iconSize = std::clamp(face.H * 0.24f, 44.0f, 80.0f);
+			body.CutTop(face.H * 0.04f);
+			const UiRect iconRect = UiRect::Centered({ body.Center().x, body.Y + iconSize * 0.5f + 6.0f }, { iconSize, iconSize });
+			draw.Card(face, { .Color = frame, .Rarity = fresh || milestone ? 1u : 0u, .Margin = fresh || milestone ? 40.0f : 28.0f, .Hover = hover, .Reveal = reveal, .Mouse = ui.GetMouse(), .MedallionY = iconRect.Center().y, .MedallionRadius = iconSize * 0.68f, .Seed = float(card.Id) * 0.37f + (fresh ? 0.5f : 0.0f) });
+			const float fade = Smooth(0.0f, 0.35f, reveal);
+			const bool small = face.W < 200.0f;
+			TextStyle tagStyle = Theme::Bold(small ? 10.5f : 12.0f, WithAlpha(fresh ? Theme::GoldLight : Lighten(tint, 0.2f), fade));
+			tagStyle.Tracking = 1.8f;
+			draw.TextAligned(tagRect, fresh ? std::string("NEW SPELL") : small ? Format("RANK %s", RomanRanks[rank + 1]) : Format("RANK %s  \xC2\xB7  %s", RomanRanks[rank + 1], Upper(def.Name).c_str()), tagStyle, { 0.5f, 0.5f });
+			draw.Icon(IconFor(spell), iconRect, { .Color = WithAlpha(Lighten(tint, 0.55f), fade), .ColorBottom = WithAlpha(tint, fade), .Outline = 0.9f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.75f * fade), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f * fade), .GlowColor = WithAlpha(tint, 0.25f * fade) });
+			if (!fresh)
+				for (uint8_t pip = 1; pip <= MaxSpellRank; pip++)
+				{
+					const glm::vec2 at{ iconRect.Center().x + (float(pip) - 3.0f) * 13.0f, iconRect.Bottom() + 9.0f };
+					const bool lit = pip <= rank;
+					const bool next = pip == rank + 1;
+					draw.Diamond(at, next ? 10.0f : 8.0f, lit ? WithAlpha(tint, fade) : next ? WithAlpha(Theme::GoldLight, (0.6f + 0.4f * std::sin(m_Time * 6.0f)) * fade) : Rgba(0.05f, 0.04f, 0.08f, 0.9f * fade), WithAlpha(Theme::Edge, fade), 1.0f);
+				}
+			body.CutTop(iconSize + (fresh ? 22.0f : 30.0f));
+			TextStyle nameStyle = Theme::Title(small ? 17.0f : 21.0f);
+			nameStyle.Color = WithAlpha(fresh ? Theme::GoldLight : Theme::Text, fade);
+			nameStyle.ColorBottom = WithAlpha(fresh ? Theme::Gold : nameStyle.ColorBottom, fade);
+			nameStyle.GlowColor = WithAlpha(fresh ? Theme::Gold : nameStyle.GlowColor, (fresh ? 0.35f : 1.0f) * fade);
+			nameStyle.ShadowColor = WithAlpha(nameStyle.ShadowColor, fade);
+			draw.TextAligned(body.CutTop(small ? 22.0f : 28.0f), def.Name, nameStyle, { 0.5f, 0.5f });
+			body.CutTop(6.0f);
+			const UiRect footer = body.CutBottom(18.0f);
+			const RunSpellDef* pitch = FindRunSpell(spell);
+			const std::string step = RankStep(spell, uint8_t(rank + 1));
+			const std::string text = fresh ? std::string(pitch && *pitch->Pitch ? pitch->Pitch : def.Description) : small ? std::string(1, char(std::toupper(static_cast<unsigned char>(step[0])))) + step.substr(1) + "." : Format("Rank %s to %s: ", RomanRanks[rank], RomanRanks[rank + 1]) + step + ".";
+			draw.TextWrapped(body, text, Theme::Body(small ? 12.0f : 14.5f, WithAlpha(Theme::Muted, fade)), 0.5f, 1.05f);
+			TextStyle footStyle = Theme::Bold(small ? 10.0f : 11.5f, WithAlpha(fresh ? Theme::Gold : tint, 0.9f * fade));
+			footStyle.Tracking = 1.4f;
+			const auto free = std::find(loadout.Spells.begin(), loadout.Spells.end(), AbilityId::Count);
+			const std::string slot = free != loadout.Spells.end() ? Format("  \xC2\xB7  ON %s", RunKeys[free - loadout.Spells.begin()]) : std::string();
+			draw.TextAligned(footer, fresh ? Upper(ActionWord(spell)) + slot : std::string(milestone ? "MILESTONE" : "RANK UP"), footStyle, { 0.5f, 0.5f });
+			if (key)
+			{
+				const UiRect badge{ face.Right() - 32.0f, face.Y + 10.0f, 22.0f, 20.0f };
+				draw.Rect(badge, { .Fill = Rgba(0.04f, 0.035f, 0.07f, 0.95f * fade), .Border = WithAlpha(Theme::Edge, 0.9f * fade), .BorderWidth = 1.0f, .Chamfer = 4.0f });
+				draw.TextAligned(badge, std::to_string(*key + 1), Theme::Bold(12.5f, WithAlpha(Theme::AccentLight, fade)), { 0.5f, 0.5f });
+			}
+		}
+		if (banishing)
+		{
+			const float pulse = 0.6f + 0.4f * std::sin(m_Time * 7.0f);
+			draw.Rect(face, { .Fill = Rgba(0.35f, 0.02f, 0.06f, 0.18f + 0.12f * hover), .Border = WithAlpha(Theme::Danger, pulse), .BorderWidth = 2.0f, .Glow = WithAlpha(Theme::Danger, 0.25f * pulse), .GlowSize = 12.0f, .Chamfer = 16.0f });
+			draw.TextAligned({ face.X, face.Bottom() - 46.0f, face.W, 20.0f }, "BANISH", Theme::Bold(13.0f, WithAlpha(Theme::Danger, pulse)), { 0.5f, 0.5f });
+		}
+	}
+
+	void SessionState::DrawRunSpells(UiRect area, const RunLoadout& loadout, float size)
+	{
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		for (uint32_t slot = 0; slot < AbilitySlots && area.W >= size; slot++)
+		{
+			const AbilityId spell = slot == 0 ? BrawlBasic : loadout.Spells[slot - 1];
+			const UiRect tile = UiRect::Centered({ area.X + size * 0.5f, area.Center().y }, { size, size });
+			area.CutLeft(size + 8.0f);
+			const bool empty = spell == AbilityId::Count;
+			const UiColor color = empty ? Theme::Faint : WithAlpha(SkillColor(spell));
+			draw.Rect(tile, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Border = WithAlpha(color, empty ? 0.4f : 0.85f), .BorderWidth = 1.2f, .Chamfer = 6.0f });
+			if (empty)
+			{
+				draw.Icon(UiIcon::Emerald, tile.Shrink(size * 0.28f), { .Color = Rgba(0.62f, 0.56f, 0.9f, 0.2f) });
+				continue;
+			}
+			draw.Icon(IconFor(spell), tile.Shrink(size * 0.17f), { .Color = Lighten(color, 0.5f), .ColorBottom = color, .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
+			const uint8_t rank = loadout.Ranks[slot];
+			for (uint8_t pip = 1; pip <= MaxSpellRank; pip++)
+				draw.Diamond({ tile.X + 6.0f + float(pip - 1) * (tile.W - 12.0f) / 4.0f, tile.Bottom() + 5.0f }, 6.0f, pip <= rank ? color : Rgba(0.05f, 0.04f, 0.08f, 0.9f), WithAlpha(Theme::Edge, 0.8f), 0.8f);
+			if (ui.Interact(Ui::MakeId("runspell", slot), tile).Hovered)
+			{
+				UiTooltip& tooltip = ui.Tooltip();
+				DescribeSpell(tooltip, spell, BrawlMode::Damage);
+				tooltip.Pair("Rank", Format("%s of %s", RomanRanks[rank], RomanRanks[MaxSpellRank]));
+			}
+		}
+	}
+
+	void SessionState::DrawRunOffer()
+	{
+		const GameStatus& status = m_Client.GetStatus();
+		const LocalPlayerState& local = m_Client.GetLocalPlayer();
+		if (m_Client.GetSession().Mode != GameMode::Shardfall || !local.Valid || IsRunOver(status.Run.Phase))
+		{
+			m_RunPending.reset();
+			m_RunBanishing = false;
+			return;
+		}
+		const RunLoadout& run = local.Run;
+		if (!(run.Offer == m_SeenOffer) || run.Offers != m_SeenOffers)
+		{
+			if (run.HasOffer() && !(run.Offer == m_SeenOffer))
+			{
+				m_RunReveal = 0.0f;
+				if (!m_RunPending)
+					m_App.GetGameAudio().PlayUi(Cue::UiNotify, 0.5f);
+			}
+			m_SeenOffer = run.Offer;
+			m_SeenOffers = run.Offers;
+			m_RunPending.reset();
+			m_RunBanishing = m_RunBanishing && run.Banishes > 0;
+		}
+		if (!run.HasOffer() || m_Paused)
+			return;
+		Ui& ui = m_App.GetUi();
+		const glm::vec2 size = ui.GetSize();
+		m_RunReveal += ui.GetDeltaTime();
+		const bool modal = status.Run.Paused;
+		const bool ready = !m_RunPending;
+		const auto take = [&](uint32_t choice)
+		{
+			const RunCard& card = run.Offer[choice];
+			if (m_RunBanishing)
+			{
+				m_Client.BanishRunCard(choice);
+				m_App.GetGameAudio().PlayUi(Cue::UiShatter, 0.6f);
+			}
+			else
+			{
+				m_Client.PickRunCard(choice);
+				if (card.Kind == RunCardKind::Rune)
+				{
+					m_GrimoireOpen = true;
+					m_MerchantOpen = false;
+				}
+				const bool rare = card.Kind == RunCardKind::Spell || (card.Kind == RunCardKind::Card && GetCard(card.Upgrade()).Rarity != CardRarity::Common) || (card.Kind == RunCardKind::Rune && GetRune(card.Rune()).Rarity != CardRarity::Common);
+				m_App.GetGameAudio().PlayUi(rare ? Cue::UiRare : Cue::UiReward);
+			}
+			m_RunPending = choice;
+			m_RunBanishing = false;
+		};
+		if (ready && !m_App.UiWantsKeyboard())
+			for (uint32_t i = 0; i < CardChoices; i++)
+				if (Rdn::Input::IsKeyPressed(CardKeys[i]) && !run.Offer[i].IsEmpty())
+					take(i);
+
+		uint32_t count = 0;
+		for (const RunCard& card : run.Offer)
+			count += card.IsEmpty() ? 0u : 1u;
+		const float cardWidth = modal ? 250.0f : 178.0f;
+		const float cardHeight = modal ? std::clamp(size.y * 0.36f, 250.0f, 330.0f) : 238.0f;
+		const float gap = modal ? 36.0f : 12.0f;
+		const float rowWidth = float(count) * cardWidth + float(count - 1) * gap;
+		float top = 0.0f;
+		float left = 0.0f;
+		if (modal)
+		{
+			ui.SetLayer(UiLayer::World);
+			ui.Draw().Rect(ui.GetScreen(), { .Fill = Rgba(0.02f, 0.012f, 0.05f, 0.62f), .FillBottom = Rgba(0.02f, 0.012f, 0.05f, 0.72f) });
+			ui.SetLayer(UiLayer::Windows);
+			ui.Block(ui.GetScreen());
+			top = std::max(size.y * 0.5f - cardHeight * 0.5f - 40.0f, 150.0f);
+			left = size.x * 0.5f - rowWidth * 0.5f;
+		}
+		else
+		{
+			top = size.y - 186.0f - cardHeight - 34.0f;
+			left = size.x - rowWidth - 26.0f;
+		}
+		UiDrawList& draw = ui.Draw();
+		if (modal)
+		{
+			TextStyle heading = Theme::Title(30.0f);
+			heading.Tracking = 3.0f;
+			heading.Color = Theme::GoldLight;
+			heading.ColorBottom = Theme::Gold;
+			const std::string title = m_RunBanishing ? std::string("BANISH A CARD") : status.Run.Phase == RunPhase::Respite && run.Offers == 1 ? std::string("THE GUARDIAN'S LEGACY") : run.Focus == RunCardKind::Sigil ? std::string("CHOOSE A SIGIL") : run.Focus == RunCardKind::Rune ? std::string("CHOOSE A RUNE") : run.Focus == RunCardKind::Spell ? std::string("CHOOSE A NEW SPELL") : run.Focus == RunCardKind::Rank ? std::string("RANK UP A SPELL") : std::string("CHOOSE A CARD");
+			draw.TextAligned({ 0.0f, top - 92.0f, size.x, 40.0f }, title, heading, { 0.5f, 0.5f });
+			std::string hint = m_RunBanishing ? "Click a card to remove it from this run for good. A new one takes its place." : "Choose one. Press 1, 2 or 3. The run waits while you choose.";
+			if (run.Offers > 1 && !m_RunBanishing)
+				hint += Format(" %u more after this one.", unsigned(run.Offers - 1));
+			draw.TextAligned({ 0.0f, top - 54.0f, size.x, 22.0f }, hint, Theme::Floating(15.5f, Theme::Text, UiFont::Body), { 0.5f, 0.5f });
+		}
+		else
+		{
+			TextStyle label = Theme::Bold(12.0f, Theme::GoldLight);
+			label.Tracking = 1.6f;
+			const std::string line = (m_RunBanishing ? std::string("BANISH: CLICK A CARD") : "LEVEL UP  \xC2\xB7  PRESS 1, 2 OR 3") + (run.Offers > 1 ? Format("  \xC2\xB7  %u WAITING", unsigned(run.Offers)) : std::string());
+			draw.TextAligned({ left, top - 26.0f, rowWidth, 18.0f }, line, label, { 0.5f, 0.5f });
+		}
+
+		float x = left;
+		for (uint32_t i = 0; i < CardChoices; i++)
+		{
+			const RunCard& card = run.Offer[i];
+			if (card.IsEmpty())
+				continue;
+			const float reveal = std::clamp((m_RunReveal - 0.1f * float(i)) / 0.45f, 0.0f, 1.0f);
+			const float rise = 1.0f - reveal;
+			const UiRect rect{ x, top + 36.0f * rise * rise * rise, cardWidth, cardHeight };
+			x += cardWidth + gap;
+			const UiId id = Ui::MakeId("runcard", i);
+			const UiInteraction interaction = ui.Interact(id, rect);
+			const float hover = ui.Animate(id, ready && interaction.Hovered);
+			if (ready && interaction.Clicked)
+				take(i);
+			DrawRunCardFace(rect, card, hover, ready ? std::optional<uint32_t>(i) : std::nullopt, reveal, m_RunBanishing);
+			if (m_RunPending == i)
+				draw.Rect(rect.Translate({ 0.0f, -8.0f * hover }), { .Border = WithAlpha(Theme::Success, 0.9f), .BorderWidth = 2.0f, .Glow = WithAlpha(Theme::Success, 0.3f), .GlowSize = 14.0f, .Chamfer = 16.0f });
+			if (interaction.Hovered && !modal)
+			{
+				if (card.Kind == RunCardKind::Card)
+					DescribeCard(ui.Tooltip(), card.Upgrade(), BrawlMode::Damage);
+				else if (card.Kind == RunCardKind::Rune)
+					DescribeRune(ui.Tooltip(), card.Rune());
+				else if (card.Kind == RunCardKind::Spell || card.Kind == RunCardKind::Rank)
+					DescribeSpell(ui.Tooltip(), card.Spell(), BrawlMode::Damage);
+			}
+		}
+
+		const float buttonHeight = modal ? 40.0f : 28.0f;
+		const float buttonWidth = modal ? 190.0f : (rowWidth - 2.0f * 8.0f) / 3.0f;
+		const float buttonGap = modal ? 14.0f : 8.0f;
+		UiRect buttons{ modal ? size.x * 0.5f - (3.0f * buttonWidth + 2.0f * buttonGap) * 0.5f : left, top + cardHeight + (modal ? 26.0f : 10.0f), 3.0f * buttonWidth + 2.0f * buttonGap, buttonHeight };
+		if (ui.Button(Ui::MakeId("run.reroll"), buttons.CutLeft(buttonWidth), Format(modal ? "Reroll  (%u left)" : "Reroll %u", unsigned(run.Rerolls)), ButtonKind::Normal, ready && run.Rerolls > 0))
+		{
+			m_Client.RerollRunCards();
+			m_RunPending = uint32_t(CardChoices);
+			m_RunBanishing = false;
+			m_App.GetGameAudio().PlayUi(Cue::UiConfirm, 0.7f);
+		}
+		buttons.CutLeft(buttonGap);
+		if (ui.Button(Ui::MakeId("run.banish"), buttons.CutLeft(buttonWidth), m_RunBanishing ? std::string("Cancel") : Format(modal ? "Banish  (%u left)" : "Banish %u", unsigned(run.Banishes)), m_RunBanishing ? ButtonKind::Primary : ButtonKind::Normal, ready && (run.Banishes > 0 || m_RunBanishing)))
+			m_RunBanishing = !m_RunBanishing;
+		buttons.CutLeft(buttonGap);
+		if (ui.Button(Ui::MakeId("run.skip"), buttons.CutLeft(buttonWidth), std::string("Skip"), ButtonKind::Normal, ready))
+		{
+			m_Client.SkipRunCards();
+			m_RunPending = uint32_t(CardChoices);
+			m_RunBanishing = false;
+			m_App.GetGameAudio().PlayUi(Cue::UiConfirm, 0.6f);
+		}
+		if (!modal)
+			return;
+		const UiRect strip = UiRect::Centered({ size.x * 0.5f, top + cardHeight + 26.0f + buttonHeight + 58.0f }, { 640.0f, 62.0f });
+		UiRect spells = strip;
+		UiRect cards = spells.CutRight(300.0f);
+		TextStyle label = Theme::Bold(11.5f, Theme::Muted);
+		label.Tracking = 1.4f;
+		draw.TextAligned(spells.CutTop(16.0f), "YOUR SPELLS", label, { 0.0f, 0.5f });
+		DrawRunSpells(spells.CutTop(40.0f), run, 36.0f);
+		draw.TextAligned(cards.CutTop(16.0f), "YOUR CARDS", label, { 0.0f, 0.5f });
+		DrawCardRow(cards.CutTop(36.0f), run.Cards, 28.0f, "None yet");
+	}
+
+	void SessionState::DrawRunRecap()
+	{
+		const GameStatus& status = m_Client.GetStatus();
+		if (m_Client.GetSession().Mode != GameMode::Shardfall || !IsRunOver(status.Run.Phase) || m_Paused)
+			return;
+		Ui& ui = m_App.GetUi();
+		const glm::vec2 size = ui.GetSize();
+		const float fade = std::clamp(status.Run.PhaseClock / 1.2f, 0.0f, 1.0f);
+		ui.SetLayer(UiLayer::World);
+		ui.Draw().Rect(ui.GetScreen(), { .Fill = Rgba(0.02f, 0.012f, 0.05f, 0.7f * fade), .FillBottom = Rgba(0.02f, 0.012f, 0.05f, 0.82f * fade) });
+		ui.SetLayer(UiLayer::Windows);
+		if (status.Run.PhaseClock < 1.0f)
+			return;
+		ui.Block(ui.GetScreen());
+		UiDrawList& draw = ui.Draw();
+		const bool victory = status.Run.Phase == RunPhase::Victory;
+		TextStyle title = Theme::Title(54.0f);
+		title.Tracking = 5.0f;
+		title.Color = victory ? Theme::GoldLight : Hex(0xFF8A7A);
+		title.ColorBottom = victory ? Theme::Gold : Hex(0x9E2620);
+		const float top = std::max(size.y * 0.1f, 40.0f);
+		draw.TextAligned({ 0.0f, top, size.x, 60.0f }, victory ? "VICTORY" : "THE RUN IS OVER", title, { 0.5f, 0.5f });
+		DrawTitleOrnament(size.x * 0.5f, top + 70.0f, draw.MeasureWidth(victory ? "VICTORY" : "THE RUN IS OVER", title));
+		const ServerRunRecap* recap = m_Client.GetRecap() ? &*m_Client.GetRecap() : nullptr;
+		const float clock = recap ? recap->RunClock : status.Run.RunClock;
+		const std::string line = Format("%s  \xC2\xB7  %u rooms  \xC2\xB7  %s", (victory ? std::string("All three acts cleared") : "Fell in act " + std::to_string(status.Run.Act)).c_str(), unsigned(status.Run.Rooms), RunClock(clock).c_str());
+		draw.TextAligned({ 0.0f, top + 84.0f, size.x, 24.0f }, line, Theme::Floating(17.0f, Theme::Text, UiFont::Body), { 0.5f, 0.5f });
+
+		const UiRect area{ size.x * 0.5f - std::min(size.x - 80.0f, 1160.0f) * 0.5f, top + 128.0f, std::min(size.x - 80.0f, 1160.0f), size.y - top - 128.0f - 110.0f };
+		if (!recap)
+			draw.TextAligned(area, "Gathering the tally...", Theme::Floating(16.0f, Theme::Muted, UiFont::Body), { 0.5f, 0.3f });
+		else
+		{
+			const size_t players = std::max<size_t>(recap->Players.size(), 1);
+			const float columnGap = 18.0f;
+			const float columnWidth = std::min((area.W - columnGap * float(players - 1)) / float(players), 470.0f);
+			const uint32_t tilesPerRow = std::max(uint32_t((columnWidth - 36.0f + 4.0f) / 30.0f), 1u);
+			float columnHeight = 0.0f;
+			for (const RunRecapPlayer& player : recap->Players)
+			{
+				const float damageRows = float(std::clamp<size_t>(player.Damage.size(), 1, 6));
+				const float pickRows = float((player.Picks.size() + tilesPerRow - 1) / tilesPerRow);
+				columnHeight = std::max(columnHeight, 28.0f + 20.0f + 10.0f + 16.0f + 40.0f + 10.0f + 16.0f + damageRows * 24.0f + 10.0f + 16.0f + pickRows * 30.0f + 34.0f);
+			}
+			columnHeight = std::min(columnHeight, area.H);
+			const float rowLeft = area.Center().x - (float(players) * columnWidth + float(players - 1) * columnGap) * 0.5f;
+			for (size_t p = 0; p < recap->Players.size(); p++)
+			{
+				const RunRecapPlayer& player = recap->Players[p];
+				const UiRect column{ rowLeft + float(p) * (columnWidth + columnGap), area.Y, columnWidth, columnHeight };
+				ui.Panel(column, 12.0f);
+				UiRect content = column.Shrink(18.0f, 14.0f);
+				TextStyle name = Theme::Title(22.0f);
+				name.Color = Lighten(WithAlpha(ColorOf(player.PlayerId)), 0.35f);
+				draw.TextAligned(content.CutTop(28.0f), player.Name, name, { 0.0f, 0.5f });
+				draw.TextAligned(content.CutTop(20.0f), Format("%u kills  \xC2\xB7  %u downs  \xC2\xB7  %u revives", unsigned(player.Kills), unsigned(player.Downs), unsigned(player.Revived)), Theme::Body(14.0f, Theme::Muted), { 0.0f, 0.5f });
+				content.CutTop(10.0f);
+				TextStyle label = Theme::Bold(11.5f, Theme::Muted);
+				label.Tracking = 1.4f;
+				draw.TextAligned(content.CutTop(16.0f), "SPELLS", label, { 0.0f, 0.5f });
+				DrawRunSpells(content.CutTop(40.0f), player.Loadout, 34.0f);
+				content.CutTop(10.0f);
+				draw.TextAligned(content.CutTop(16.0f), "DAMAGE BY SPELL", label, { 0.0f, 0.5f });
+				uint64_t total = 0;
+				for (const auto& [spell, amount] : player.Damage)
+					total += amount;
+				const uint32_t peak = player.Damage.empty() ? 1u : std::max(player.Damage.front().second, 1u);
+				if (player.Damage.empty())
+					draw.TextAligned(content.CutTop(24.0f), "No damage dealt", Theme::Body(13.5f, Theme::Faint), { 0.0f, 0.5f });
+				for (size_t s = 0; s < player.Damage.size() && s < 6; s++)
+				{
+					const auto& [spell, amount] = player.Damage[s];
+					UiRect row = content.CutTop(24.0f);
+					const UiColor color = WithAlpha(SkillColor(spell));
+					draw.Icon(IconFor(spell), row.CutLeft(20.0f).Shrink(0.0f, 2.0f), { .Color = Lighten(color, 0.5f), .ColorBottom = color });
+					row.CutLeft(8.0f);
+					const UiRect value = row.CutRight(92.0f);
+					const UiRect bar{ row.X, row.Center().y - 4.0f, row.W * float(amount) / float(peak), 8.0f };
+					draw.Rect(bar, { .Fill = Lighten(color, 0.2f), .FillBottom = Darken(color, 0.25f), .Glow = WithAlpha(color, 0.25f), .GlowSize = 5.0f, .Chamfer = 2.0f });
+					draw.TextAligned(value, Format("%u  %.0f%%", amount, double(float(amount) * 100.0f / float(std::max<uint64_t>(total, 1)))), Theme::Body(13.0f, Theme::Text), { 1.0f, 0.5f });
+				}
+				content.CutTop(10.0f);
+				draw.TextAligned(content.CutTop(16.0f), Format("CARDS IN PICK ORDER  \xC2\xB7  %zu", player.Picks.size()), label, { 0.0f, 0.5f });
+				constexpr float Tile = 26.0f;
+				const uint32_t perRow = std::max(uint32_t((content.W + 4.0f) / (Tile + 4.0f)), 1u);
+				for (size_t i = 0; i < player.Picks.size(); i++)
+				{
+					const RunPick& pick = player.Picks[i];
+					const UiRect tile{ content.X + float(i % perRow) * (Tile + 4.0f), content.Y + float(i / perRow) * (Tile + 4.0f), Tile, Tile };
+					if (tile.Bottom() > content.Bottom())
+						break;
+					const UiColor color = RunCardColor(pick.Card);
+					draw.Rect(tile, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Border = WithAlpha(pick.Card.Kind == RunCardKind::Spell ? Theme::Gold : color, 0.8f), .BorderWidth = 1.0f, .Chamfer = 4.0f });
+					draw.Icon(RunCardIcon(pick.Card), tile.Shrink(4.0f), { .Color = Lighten(color, 0.45f), .ColorBottom = color });
+					if (ui.Interact(Ui::MakeId("recappick", p * 256 + i), tile).Hovered)
+						ui.Tooltip().Header(RunCardName(pick.Card), color, std::nullopt, RunCardIcon(pick.Card)).Muted(Format("Taken in act %u, room %u", unsigned(pick.Stage >> 8), unsigned(pick.Stage & 0xFFu)));
+				}
+			}
+		}
+		const UiRect button = UiRect::Centered({ size.x * 0.5f, size.y - 70.0f }, { 300.0f, 46.0f });
+		if (ui.Button(Ui::MakeId("run.home"), button, "Return to the Sun's Cradle", ButtonKind::Primary))
+			m_Client.ReturnToHub();
+		draw.TextAligned({ 0.0f, button.Bottom() + 6.0f, size.x, 18.0f }, Format("Everyone returns in %.0f s", double(std::max(RunEndSeconds - status.Run.PhaseClock, 0.0f))), Theme::Body(13.0f, Theme::Muted), { 0.5f, 0.5f });
+	}
+
+	void SessionState::DrawRunMarker()
+	{
+		const Level* level = m_Client.GetLevel();
+		const RunPhase phase = m_Client.GetStatus().Run.Phase;
+		if (m_Client.GetSession().Mode != GameMode::Shardfall || !level)
+			return;
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const glm::vec2 size = ui.GetSize();
+		for (const EntityState& entity : m_Client.GetEntities())
+		{
+			if (entity.Kind != EntityKind::Loot || entity.Variant < uint8_t(LootKind::Magnet) || entity.Variant >= uint8_t(LootKind::Count))
+				continue;
+			const std::optional<glm::vec2> pixels = ProjectToScreen(Ground(entity.Position, 1.25f));
+			if (!pixels)
+				continue;
+			const glm::vec3 tone = LootColors[std::min<size_t>(entity.Variant, std::size(LootColors) - 1)];
+			draw.TextAligned(UiRect::Centered(ui.ToLogical(*pixels), { 200.0f, 18.0f }), LootDefs[entity.Variant].Name, Theme::Floating(13.5f, Lighten(WithAlpha(tone), 0.35f), UiFont::Bold), { 0.5f, 0.5f });
+		}
+		constexpr float Inset = 64.0f;
+		const UiRect safe{ Inset, Inset + 70.0f, size.x - 2.0f * Inset, size.y - 2.0f * Inset - 200.0f };
+		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
+		const bool settling = UsesRooms(m_Client.GetSession().Run) && m_Client.GetStatus().Run.RoomClock < StragglerDelay;
+		if (phase == RunPhase::Act && self && !settling)
+		{
+			std::vector<const EntityState*> fighters;
+			for (const EntityState& entity : m_Client.GetEntities())
+				if (IsFighterKind(entity.Kind) && !entity.Has(EntityFlags::Dead))
+					fighters.push_back(&entity);
+			if (!fighters.empty() && fighters.size() <= StragglerMarkers)
+				for (const EntityState* fighter : fighters)
+				{
+					const std::optional<glm::vec2> seen = ProjectToScreen(Ground(fighter->Position, 1.5f));
+					if (!seen || safe.Contains(ui.ToLogical(*seen)))
+						continue;
+					const glm::vec2 offset = ui.ToLogical(*seen) - safe.Center();
+					const float scale = std::min(std::abs(offset.x) > 1e-3f ? (safe.W * 0.5f) / std::abs(offset.x) : 1e9f, std::abs(offset.y) > 1e-3f ? (safe.H * 0.5f) / std::abs(offset.y) : 1e9f);
+					const glm::vec2 edge = safe.Center() + offset * std::min(scale, 1.0f);
+					const glm::vec2 heading = glm::normalize(offset);
+					const UiColor danger = Hex(0xE04A3C);
+					draw.Diamond(edge, 16.0f, Rgba(0.06f, 0.02f, 0.02f, 0.9f), danger, 1.4f);
+					draw.Diamond(edge + heading * 13.0f, 7.0f, danger, Lighten(danger, 0.3f), 1.0f);
+					const EnemyDef* def = FindEnemyDef(fighter->Kind);
+					draw.TextAligned(UiRect::Centered(edge - heading * 26.0f, { 240.0f, 18.0f }), Format("%s  %.0f m", def ? def->Name : "", double(Length(fighter->Position - self->Position))), Theme::Floating(13.0f, Lighten(danger, 0.35f), UiFont::Bold), { 0.5f, 0.5f });
+				}
+		}
+		const auto edgeMarker = [&](glm::vec2 point, UiColor tone, const std::string& label, float pulse)
+		{
+			const glm::vec2 center = safe.Center();
+			const glm::vec2 offset = point - center;
+			const float scale = std::min(std::abs(offset.x) > 1e-3f ? (safe.W * 0.5f) / std::abs(offset.x) : 1e9f, std::abs(offset.y) > 1e-3f ? (safe.H * 0.5f) / std::abs(offset.y) : 1e9f);
+			const glm::vec2 edge = center + offset * std::min(scale, 1.0f);
+			const glm::vec2 heading = glm::normalize(offset);
+			draw.Diamond(edge, 20.0f, Rgba(0.04f, 0.03f, 0.08f, 0.92f), WithAlpha(tone, pulse), 1.5f);
+			draw.Diamond(edge + heading * 16.0f, 8.0f, WithAlpha(tone, pulse), WithAlpha(Lighten(tone, 0.4f), pulse), 1.0f);
+			draw.TextAligned(UiRect::Centered(edge - heading * 30.0f, { 240.0f, 20.0f }), label, Theme::Floating(14.0f, Lighten(tone, 0.3f), UiFont::Bold), { 0.5f, 0.5f });
+		};
+		const RunStatus& run = m_Client.GetStatus().Run;
+		if (level->Doors.size() == DoorSlots && phase == RunPhase::Act && run.Room != NoRoom)
+		{
+			const ActMap map = MakeActMap(m_Client.GetSession().Run.Seed, run.Act);
+			unsigned living = 0;
+			for (const EntityState& entity : m_Client.GetEntities())
+				living += entity.Kind == EntityKind::Player && !entity.Has(EntityFlags::Dead) ? 1u : 0u;
+			for (uint8_t slot = 0; slot < DoorSlots; slot++)
+			{
+				const uint8_t target = DoorTarget(map, run.Room, slot);
+				if (!(level->DoorMask & (1u << slot)) || target == NoRoom)
+					continue;
+				const MapRoom& room = map.At(target);
+				const UiColor tone = WithAlpha(RoomTone(room.Kind));
+				std::string label = RoomKindNames[size_t(room.Kind)];
+				if (room.Reward != RoomReward::None)
+					label += std::string(": ") + RoomRewardNames[size_t(room.Reward)];
+				if (run.Cleared && living > 1 && run.Votes[slot] > 0)
+					label += Format("   %u/%u", unsigned(run.Votes[slot]), living);
+				const float pulse = run.Cleared ? 0.7f + 0.3f * std::sin(m_Time * 4.0f + float(slot)) : 0.45f;
+				const std::optional<glm::vec2> seen = ProjectToScreen(Ground(level->Doors[slot], 2.6f));
+				if (!seen)
+					continue;
+				const glm::vec2 point = ui.ToLogical(*seen);
+				if (safe.Contains(point) || !run.Cleared)
+					draw.TextAligned(UiRect::Centered(point, { 280.0f, 20.0f }), label, Theme::Floating(run.Cleared ? 15.0f : 13.0f, run.Cleared ? Lighten(tone, 0.3f) : WithAlpha(tone, 0.55f), UiFont::Bold), { 0.5f, 0.5f });
+				else
+					edgeMarker(point, tone, label, pulse);
+			}
+			const RoomKind calm = CurrentRoomKind();
+			if ((calm == RoomKind::Shop || calm == RoomKind::Shrine) && level->Altars.size() == 2)
+				if (const std::optional<glm::vec2> seen = ProjectToScreen(Ground((level->Altars[0] + level->Altars[1]) * 0.5f, 2.6f)))
+					draw.TextAligned(UiRect::Centered(ui.ToLogical(*seen), { 260.0f, 20.0f }), calm == RoomKind::Shop ? "Crystal Merchant  (E)" : "Old Shrine  (E)", Theme::Floating(15.0f, Lighten(WithAlpha(RoomTone(calm)), 0.3f), UiFont::Bold), { 0.5f, 0.5f });
+			const uint8_t rested = m_Client.GetLocalPlayer().Run.Rested;
+			for (size_t i = 0; i < level->Altars.size() && i < 2 && calm == RoomKind::Rest; i++)
+			{
+				const std::optional<glm::vec2> seen = ProjectToScreen(Ground(level->Altars[i], 1.6f));
+				if (!seen)
+					continue;
+				const UiColor tone = WithAlpha(i == 0 ? HealAltarTone : TrainAltarTone);
+				const std::string label = rested == 0 ? (i == 0 ? Format("Rest: heal %.0f%%", double(RestHeal * 100.0f)) : std::string("Train: rank up a spell")) : rested == i + 1 ? std::string(i == 0 ? "Rested" : "Trained") : std::string();
+				if (!label.empty())
+					draw.TextAligned(UiRect::Centered(ui.ToLogical(*seen), { 240.0f, 20.0f }), label, Theme::Floating(14.5f, rested == 0 ? Lighten(tone, 0.3f) : WithAlpha(tone, 0.6f), UiFont::Bold), { 0.5f, 0.5f });
+			}
+		}
+		if (level->BossArenaRadius <= 0.0f || (phase != RunPhase::Gate && phase != RunPhase::Respite))
+			return;
+		const std::optional<glm::vec2> pixels = ProjectToScreen(Ground(level->BossArena, 2.2f));
+		if (!pixels)
+			return;
+		const glm::vec2 point = ui.ToLogical(*pixels);
+		const bool rift = phase == RunPhase::Respite;
+		const UiColor tone = rift ? Hex(0x8FE3FF) : Hex(0xC9A6FF);
+		const float pulse = 0.65f + 0.35f * std::sin(m_Time * 4.0f);
+		const float distance = self ? Length(self->Position - level->BossArena) : 0.0f;
+		const std::string label = Format("%s  %.0f m", rift ? "Rift" : "Guardian stone", double(distance));
+		const TextStyle style = Theme::Floating(14.0f, Lighten(tone, 0.3f), UiFont::Bold);
+		if (safe.Contains(point))
+		{
+			if (distance > GateRadius + 1.0f)
+				draw.TextAligned(UiRect::Centered(point - glm::vec2(0.0f, 18.0f), { 240.0f, 20.0f }), label, style, { 0.5f, 0.5f });
+			return;
+		}
+		const glm::vec2 center = safe.Center();
+		const glm::vec2 offset = point - center;
+		const float scale = std::min(std::abs(offset.x) > 1e-3f ? (safe.W * 0.5f) / std::abs(offset.x) : 1e9f, std::abs(offset.y) > 1e-3f ? (safe.H * 0.5f) / std::abs(offset.y) : 1e9f);
+		const glm::vec2 edge = center + offset * std::min(scale, 1.0f);
+		const glm::vec2 heading = glm::normalize(offset);
+		draw.Diamond(edge, 22.0f, Rgba(0.04f, 0.03f, 0.08f, 0.92f), WithAlpha(tone, pulse), 1.6f);
+		draw.Diamond(edge + heading * 17.0f, 9.0f, WithAlpha(tone, pulse), WithAlpha(Lighten(tone, 0.4f), pulse), 1.0f);
+		draw.TextAligned(UiRect::Centered(edge - heading * 30.0f, { 240.0f, 20.0f }), label, style, { 0.5f, 0.5f });
+	}
+
+	namespace
+	{
+		constexpr float StreakWindow = 2.5f;
+		constexpr float MultiWindow = 0.35f;
+		constexpr uint32_t MultiKills = 6;
+		constexpr float MultiShow = 1.4f;
+		constexpr float PerfectShow = 1.1f;
+
+		struct StreakTier
+		{
+			uint32_t Kills;
+			const char* Name;
+			uint32_t Color;
+		};
+
+		constexpr StreakTier StreakTiers[] = {
+			{ 10, "Streak", 0x9FDCEA },
+			{ 25, "Rampage", 0x8FE3FF },
+			{ 50, "Shatterstorm", 0xC9A6FF },
+			{ 100, "Crystal Cataclysm", 0xFFCF5A },
+			{ 200, "Kaleidoscope", 0xFF7AC9 },
+		};
+
+		const StreakTier* TierOf(uint32_t kills)
+		{
+			const StreakTier* tier = nullptr;
+			for (const StreakTier& candidate : StreakTiers)
+				if (kills >= candidate.Kills)
+					tier = &candidate;
+			return tier;
+		}
+	}
+
+	void SessionState::UpdateRunFeel(float dt)
+	{
+		if (m_Client.GetSession().Mode != GameMode::Shardfall)
+		{
+			m_Streak = 0;
+			m_RecentKills.clear();
+			m_SeenBursts.clear();
+			return;
+		}
+		for (const EntityState& entity : m_Client.GetEntities())
+		{
+			if (entity.Kind != EntityKind::Effect)
+				continue;
+			const AbilityId ability = AbilityOf(entity);
+			if ((ability != AbilityId::Ascension && ability != AbilityId::ShardBomb && ability != AbilityId::FrostClock) || !m_SeenBursts.emplace(entity.NetId, m_Time).second)
+				continue;
+			const float radius = GetAbility(ability).Reach * entity.GetScale();
+			const glm::vec3 ground = Ground(entity.Position, 0.05f);
+			const bool own = entity.Owner == m_Client.GetPlayerId();
+			if (ability == AbilityId::Ascension)
+			{
+				m_Effects->Shockwave(ground, radius, 0.6f, 0.7f, 0.3f);
+				m_Effects->Burst(Fx::ArcaneBurst, Ground(entity.Position, 0.6f), glm::vec3(0.0f, 1.0f, 0.0f), 2.0f, glm::vec3(1.0f, 0.86f, 0.5f));
+				if (own)
+					AddTrauma(0.22f);
+			}
+			else if (ability == AbilityId::ShardBomb)
+			{
+				m_Effects->Shockwave(ground, std::min(radius, 9.0f), 0.85f, 1.0f, 0.4f);
+				m_Effects->Burst(Fx::Explosion, Ground(entity.Position, 0.4f), glm::vec3(0.0f, 1.0f, 0.0f), 2.2f, glm::vec3(1.0f, 0.6f, 0.3f));
+				m_Effects->Burst(Fx::CrystalBurst, Ground(entity.Position, 0.5f), glm::vec3(0.0f, 1.0f, 0.0f), 2.5f, glm::vec3(1.0f, 0.7f, 0.4f));
+				AddTrauma(0.5f);
+			}
+			else
+			{
+				m_Effects->Shockwave(ground, std::min(radius, 9.0f), 1.0f, 0.6f, 0.35f);
+				m_Effects->Burst(Fx::FrostNova, Ground(entity.Position, 0.3f), glm::vec3(0.0f, 1.0f, 0.0f), 2.4f);
+				AddTrauma(0.25f);
+			}
+		}
+		if (m_SeenBursts.size() > 64)
+			std::erase_if(m_SeenBursts, [&](const auto& seen) { return m_Time - seen.second > 5.0f; });
+
+		const uint32_t self = m_Client.GetPlayerId();
+		for (const HitEvent& hit : m_Client.GetNewHits())
+		{
+			if (hit.Ability == uint8_t(AbilityId::PerfectDodge) && hit.Target == m_Client.GetPlayerNetId())
+			{
+				m_PerfectAge = 0.0f;
+				m_Effects->Burst(Fx::ArcaneBurst, Ground(hit.Position, 0.8f), glm::vec3(0.0f, 1.0f, 0.0f), 1.3f, glm::vec3(1.0f, 0.86f, 0.5f));
+				m_Effects->Shockwave(Ground(hit.Position, 0.05f), 2.2f, 0.4f, 0.45f, 0.2f);
+				m_App.GetGameAudio().PlayUi(Cue::UiRare, 0.5f, 1.35f);
+				AddTrauma(0.12f);
+			}
+			if (!hit.Killed || hit.Attacker != self || hit.OnPlayer)
+				continue;
+			const StreakTier* before = TierOf(m_Streak);
+			m_Streak++;
+			m_StreakBest = std::max(m_StreakBest, m_Streak);
+			m_StreakIdle = 0.0f;
+			m_StreakPulse = 1.0f;
+			m_RecentKills.push_back({ m_Time, hit.Position });
+			if (const StreakTier* after = TierOf(m_Streak); after && after != before && after->Kills >= 25)
+			{
+				m_App.GetGameAudio().PlayUi(Cue::UiRare, 0.55f, 1.0f + 0.1f * float(after - StreakTiers));
+				m_StreakFlash = 1.0f;
+			}
+		}
+		m_StreakIdle += dt;
+		m_StreakPulse = std::max(m_StreakPulse - dt * 4.0f, 0.0f);
+		m_StreakFlash = std::max(m_StreakFlash - dt * 1.5f, 0.0f);
+		if (m_StreakIdle > StreakWindow && m_Streak > 0)
+		{
+			m_StreakShown = m_Streak;
+			m_StreakFade = 1.0f;
+			m_Streak = 0;
+		}
+		m_StreakFade = std::max(m_StreakFade - dt * 0.8f, 0.0f);
+		std::erase_if(m_RecentKills, [&](const auto& kill) { return m_Time - kill.first > MultiWindow; });
+		if (m_RecentKills.size() >= MultiKills)
+		{
+			Vec2 center;
+			for (const auto& kill : m_RecentKills)
+				center += kill.second;
+			center = center * (1.0f / float(m_RecentKills.size()));
+			const float size = float(m_RecentKills.size());
+			m_Effects->Burst(Fx::CrystalBurst, Ground(center, 0.5f), glm::vec3(0.0f, 1.0f, 0.0f), 1.2f + 0.08f * size, glm::vec3(0.75f, 0.9f, 1.0f));
+			m_Effects->Shockwave(Ground(center, 0.05f), 2.0f + 0.2f * size, 0.45f, 0.5f, 0.25f);
+			AddTrauma(std::min(0.12f + 0.025f * size, 0.4f));
+			m_App.GetGameAudio().PlayUi(Cue::Glass, std::min(0.3f + 0.03f * size, 0.7f), 1.3f);
+			m_MultiCount = uint32_t(m_RecentKills.size());
+			m_MultiAge = 0.0f;
+			m_RecentKills.clear();
+		}
+		m_MultiAge += dt;
+		m_PerfectAge += dt;
+	}
+
+	void SessionState::DrawPerfectDodge()
+	{
+		if (m_Client.GetSession().Mode != GameMode::Shardfall || m_PerfectAge >= PerfectShow)
+			return;
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const glm::vec2 size = ui.GetSize();
+		const float fade = std::clamp((PerfectShow - m_PerfectAge) / 0.35f, 0.0f, 1.0f);
+		const float pop = 1.0f + 0.25f * std::max(1.0f - m_PerfectAge / 0.15f, 0.0f);
+		const float y = size.y * 0.34f - 18.0f * m_PerfectAge;
+		TextStyle title = Theme::Title(30.0f * pop);
+		title.Color = WithAlpha(Theme::GoldLight, fade);
+		title.ColorBottom = WithAlpha(Theme::Gold, fade);
+		title.GlowColor = WithAlpha(Theme::Gold, 0.4f * fade);
+		title.ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f * fade);
+		draw.TextAligned({ 0.0f, y, size.x, 36.0f }, "Perfect dodge", title, { 0.5f, 0.5f });
+		draw.TextAligned({ 0.0f, y + 32.0f, size.x, 20.0f }, "Your next spell crits", Theme::Floating(15.0f, WithAlpha(Theme::Text, fade), UiFont::Body), { 0.5f, 0.5f });
+	}
+
+	void SessionState::DrawRunStreak()
+	{
+		if (m_Client.GetSession().Mode != GameMode::Shardfall)
+			return;
+		const bool live = m_Streak >= 5;
+		const uint32_t kills = live ? m_Streak : m_StreakShown;
+		const float alpha = live ? 1.0f : m_StreakFade;
+		if (alpha <= 0.0f || kills < 5)
+			return;
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const glm::vec2 size = ui.GetSize();
+		const StreakTier* tier = TierOf(kills);
+		const UiColor tone = WithAlpha(tier ? Hex(tier->Color) : Theme::AccentLight, alpha);
+		const float pop = 1.0f + 0.18f * m_StreakPulse + 0.25f * m_StreakFlash;
+		const UiRect area{ size.x - 250.0f, 150.0f, 220.0f, 110.0f };
+		TextStyle number = Theme::Title(46.0f * pop);
+		number.Color = Lighten(tone, 0.35f);
+		number.ColorBottom = tone;
+		number.GlowColor = WithAlpha(tone, 0.45f * alpha);
+		number.ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f * alpha);
+		draw.TextAligned({ area.X, area.Y, area.W, 56.0f }, std::to_string(kills), number, { 1.0f, 0.5f });
+		TextStyle label = Theme::Caps(13.0f, WithAlpha(Lighten(tone, 0.2f), alpha), 2.5f);
+		draw.TextAligned({ area.X, area.Y + 54.0f, area.W, 20.0f }, tier ? tier->Name : "Kills", label, { 1.0f, 0.5f });
+		if (live)
+		{
+			const float left = std::clamp(1.0f - m_StreakIdle / StreakWindow, 0.0f, 1.0f);
+			const UiRect bar{ area.Right() - 140.0f, area.Y + 78.0f, 140.0f, 4.0f };
+			draw.Rect(bar, { .Fill = Rgba(0.02f, 0.02f, 0.05f, 0.7f * alpha), .Chamfer = 1.5f });
+			draw.Rect({ bar.Right() - bar.W * left, bar.Y, bar.W * left, bar.H }, { .Fill = tone, .Glow = WithAlpha(tone, 0.35f), .GlowSize = 5.0f, .Chamfer = 1.5f });
+		}
+		if (m_MultiAge < MultiShow && m_MultiCount >= MultiKills)
+		{
+			const float fade = std::clamp((MultiShow - m_MultiAge) / 0.4f, 0.0f, 1.0f);
+			const float rise = 12.0f * m_MultiAge;
+			TextStyle multi = Theme::Floating(18.0f + 0.4f * float(std::min(m_MultiCount, 20u)), WithAlpha(Theme::GoldLight, fade), UiFont::Bold);
+			draw.TextAligned({ area.X - 40.0f, area.Y + 88.0f - rise, area.W + 40.0f, 24.0f }, Format("%u at once!", m_MultiCount), multi, { 1.0f, 0.5f });
+		}
+	}
+
+	void SessionState::DrawActMap()
+	{
+		const SessionInfo& session = m_Client.GetSession();
+		const RunStatus& run = m_Client.GetStatus().Run;
+		if (session.Mode != GameMode::Shardfall || !UsesRooms(session.Run) || run.Room == NoRoom || IsRunOver(run.Phase) || m_Paused)
+			return;
+		const bool doors = run.Cleared && run.Phase == RunPhase::Act;
+		if (!m_ActMapOpen && !doors)
+			return;
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const glm::vec2 size = ui.GetSize();
+		const ActMap map = MakeActMap(session.Run.Seed, run.Act);
+		constexpr float Width = 232.0f;
+		constexpr float Step = 50.0f;
+		const float height = Step * float(MapLayers - 1) + 96.0f;
+		const UiRect panel{ size.x - Width - 24.0f, std::max(110.0f, size.y * 0.5f - height * 0.5f), Width, height };
+		draw.Rect(panel.Translate({ 0.0f, 5.0f }).Expand(3.0f), { .Fill = Rgba(0.0f, 0.0f, 0.02f, 0.5f), .Softness = 14.0f, .Chamfer = 14.0f });
+		draw.Rect(panel, { .Fill = Hex(0x120E22, 0.88f), .FillBottom = Hex(0x07060E, 0.92f), .Border = WithAlpha(Theme::Astral, 0.45f), .BorderWidth = 1.2f, .Chamfer = 12.0f });
+		const char* act = run.Act == 1 ? "I" : run.Act == 2 ? "II" : "III";
+		TextStyle heading = Theme::Title(15.0f);
+		heading.Tracking = 2.0f;
+		draw.TextAligned({ panel.X, panel.Y + 8.0f, panel.W, 20.0f }, Format("ACT %s ROUTE", act), heading, { 0.5f, 0.5f });
+		const float top = panel.Y + 46.0f;
+		const float bottom = panel.Bottom() - 40.0f;
+		const auto nodeAt = [&](uint8_t room)
+		{
+			const uint8_t layer = RoomLayer(room);
+			const float width = float(std::max<uint8_t>(map.Width[layer], 1));
+			return glm::vec2(panel.X + 24.0f + (panel.W - 48.0f) * (float(RoomColumn(room)) + 0.5f) / width, bottom - (bottom - top) * float(layer) / float(MapLayers - 1));
+		};
+		const auto visited = [&](uint8_t room) { return (run.Route & RoomBit(room)) != 0; };
+		for (uint8_t room = 0; room < MapRooms; room++)
+		{
+			if (!map.At(room).Exists() || RoomLayer(room) >= GuardianLayer)
+				continue;
+			for (uint8_t slot = 0; slot < DoorSlots; slot++)
+			{
+				const uint8_t next = DoorTarget(map, room, slot);
+				if (next == NoRoom)
+					continue;
+				const bool walked = visited(room) && visited(next);
+				const bool ahead = room == run.Room && doors;
+				const UiColor color = walked ? WithAlpha(Lighten(Theme::Astral, 0.3f), 0.9f) : ahead ? WithAlpha(RoomTone(map.At(next).Kind), 0.75f + 0.25f * std::sin(m_Time * 4.0f)) : Rgba(0.6f, 0.6f, 0.75f, 0.22f);
+				draw.Line(nodeAt(room), nodeAt(next), walked || ahead ? 2.2f : 1.2f, color);
+			}
+		}
+		for (uint8_t room = 0; room < MapRooms; room++)
+		{
+			const MapRoom& node = map.At(room);
+			if (!node.Exists())
+				continue;
+			const glm::vec2 point = nodeAt(room);
+			const UiColor tone = WithAlpha(RoomTone(node.Kind));
+			const bool here = room == run.Room;
+			const bool past = visited(room) && !here;
+			const bool reachable = RoomLayer(room) > RoomLayer(run.Room);
+			const float alpha = here || reachable ? 1.0f : past ? 0.7f : 0.3f;
+			const float radius = node.Kind == RoomKind::Guardian ? 12.0f : 9.0f;
+			if (here)
+				draw.Circle(point, radius + 5.0f + 1.5f * std::sin(m_Time * 4.0f), UiColor(0.0f), WithAlpha(Lighten(tone, 0.4f), 0.9f), 1.6f);
+			if (node.Kind == RoomKind::Guardian)
+				draw.Diamond(point, radius * 1.4f, WithAlpha(Darken(tone, 0.55f), 0.95f * alpha), WithAlpha(tone, alpha), 1.6f);
+			else
+				draw.Circle(point, radius, past || here ? WithAlpha(Darken(tone, 0.2f), 0.9f * alpha) : WithAlpha(Darken(tone, 0.7f), 0.9f * alpha), WithAlpha(tone, alpha), 1.4f);
+			const char* glyph = node.Kind == RoomKind::Fight ? (node.Reward == RoomReward::Spell ? "S" : node.Reward == RoomReward::Rank ? "R" : node.Reward == RoomReward::Cache ? "*" : node.Reward == RoomReward::Rune ? "o" : "C") : node.Kind == RoomKind::Elite ? "E" : node.Kind == RoomKind::Rest ? "+" : node.Kind == RoomKind::Shop ? "$" : node.Kind == RoomKind::Shrine ? "^" : "G";
+			draw.TextAligned(UiRect::Centered(point, { 24.0f, 18.0f }), glyph, Theme::Floating(11.5f, past || here ? Theme::Text : WithAlpha(Lighten(tone, 0.4f), alpha), UiFont::Bold), { 0.5f, 0.5f });
+		}
+		draw.TextFit({ panel.X + 8.0f, panel.Bottom() - 30.0f, panel.W - 16.0f, 14.0f }, "o rune  S spell  R rank  C card  * cache", Theme::Body(11.0f, Theme::Faint), { 0.5f, 0.5f });
+		draw.TextAligned({ panel.X, panel.Bottom() - 16.0f, panel.W, 14.0f }, m_ActMapOpen ? "E champion  + rest  $ shop  ^ shrine   M close" : "E champion  + rest  $ shop  ^ shrine   M keep", Theme::Body(11.0f, Theme::Faint), { 0.5f, 0.5f });
+	}
+
+	RoomKind SessionState::CurrentRoomKind() const
+	{
+		const SessionInfo& session = m_Client.GetSession();
+		const RunStatus& run = m_Client.GetStatus().Run;
+		if (session.Mode != GameMode::Shardfall || !UsesRooms(session.Run) || run.Room == NoRoom)
+			return RoomKind::None;
+		return MakeActMap(session.Run.Seed, run.Act).At(run.Room).Kind;
+	}
+
+	void SessionState::DrawMerchant()
+	{
+		const RunStatus& run = m_Client.GetStatus().Run;
+		const LocalPlayerState& local = m_Client.GetLocalPlayer();
+		const RoomKind kind = CurrentRoomKind();
+		const bool calm = kind == RoomKind::Shop || kind == RoomKind::Shrine || kind == RoomKind::Rest;
+		if (!calm || run.Phase != RunPhase::Act || !local.Valid || m_Paused)
+		{
+			if (!calm)
+				m_MerchantRoom = UINT32_MAX;
+			return;
+		}
+		const uint32_t key = uint32_t(run.Act) * 64u + run.Room;
+		if (key != m_MerchantRoom)
+		{
+			m_MerchantRoom = key;
+			m_MerchantOpen = kind != RoomKind::Rest;
+		}
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const RunLoadout& loadout = local.Run;
+		const char* noun = kind == RoomKind::Shop ? "the merchant" : kind == RoomKind::Shrine ? "the shrine" : "your sigils";
+		if (!m_MerchantOpen)
+		{
+			draw.TextAligned({ 0.0f, ui.GetSize().y - 230.0f, ui.GetSize().x, 22.0f }, std::string("E  open ") + noun, Theme::Floating(15.0f, Theme::GoldLight, UiFont::Bold), { 0.5f, 0.5f });
+			return;
+		}
+		constexpr float Width = 690.0f;
+		const float height = kind == RoomKind::Shop ? 640.0f : kind == RoomKind::Shrine ? 520.0f : 260.0f;
+		const UiRect home{ 24.0f, 110.0f, Width, height };
+		bool open = true;
+		const char* title = kind == RoomKind::Shop ? "Crystal Merchant" : kind == RoomKind::Shrine ? "Old Shrine" : "Sigils";
+		UiRect content = ui.Window(Ui::MakeId("merchant"), title, home, &open);
+		if (!open)
+		{
+			m_MerchantOpen = false;
+			return;
+		}
+		const UiColor shardTone = Hex(0x8FE3FF);
+		draw.TextAligned(content.CutTop(24.0f), Format("%u shards", unsigned(loadout.Shards)), Theme::Bold(17.0f, shardTone), { 0.0f, 0.5f });
+		content.CutTop(8.0f);
+		if (kind == RoomKind::Shop)
+		{
+			for (uint32_t slot = 0; slot < ShopSlots; slot++)
+			{
+				const RunCard& item = loadout.Stock[slot];
+				if (item.IsEmpty())
+					continue;
+				UiRect row = content.CutTop(70.0f).Shrink(0.0f, 4.0f);
+				const bool sold = (loadout.Sold & (1u << slot)) != 0;
+				const uint16_t price = ItemPrice(item, loadout.Draughts);
+				RunItemLook look;
+				if (item.Kind == RunCardKind::Card)
+				{
+					const CardDef& card = GetCard(item.Upgrade());
+					look = { card.Name, RunCardDescription(item.Upgrade()), "CARD", "", card.Rarity >= CardRarity::Legendary ? Theme::GoldLight : card.Rarity >= CardRarity::Rare ? Hex(0xB59CFF) : Hex(0xC8D2E8), IconFor(item.Upgrade()), 0 };
+				}
+				else
+					look = ItemLookOf(item);
+				const float alpha = sold ? 0.4f : 1.0f;
+				draw.Rect(row, { .Fill = Rgba(0.04f, 0.035f, 0.08f, 0.85f * alpha), .Border = WithAlpha(look.Color, 0.55f * alpha), .BorderWidth = 1.0f, .Chamfer = 8.0f });
+				UiRect inner = row.Shrink(10.0f, 6.0f);
+				draw.Icon(look.Icon, inner.CutLeft(46.0f).Shrink(2.0f, 4.0f), { .Color = WithAlpha(Lighten(look.Color, 0.5f), alpha), .ColorBottom = WithAlpha(look.Color, alpha), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
+				inner.CutLeft(8.0f);
+				const UiRect button = UiRect::Centered(inner.CutRight(118.0f).Center(), { 108.0f, 32.0f });
+				UiRect header = inner.CutTop(20.0f);
+				TextStyle tag = Theme::Bold(10.5f, WithAlpha(look.Color, 0.9f * alpha));
+				tag.Tracking = 1.4f;
+				draw.TextAligned(header.CutRight(80.0f), look.Tag, tag, { 1.0f, 0.5f });
+				draw.TextAligned(header, look.Name, Theme::Bold(15.5f, WithAlpha(Lighten(look.Color, 0.3f), alpha)), { 0.0f, 0.5f });
+				draw.TextWrapped(inner, look.Text, Theme::Body(12.5f, WithAlpha(Theme::Muted, alpha)), 0.0f, 1.0f);
+				if (sold)
+					draw.TextAligned(button, "Sold", Theme::Bold(14.0f, Theme::Faint), { 0.5f, 0.5f });
+				else if (ui.Button(Ui::MakeId("buy", slot), button, Format("Buy  %u", unsigned(price)), ButtonKind::Primary, loadout.Shards >= price))
+					m_Client.BuyRunItem(slot);
+			}
+		}
+		else if (kind == RoomKind::Shrine)
+		{
+			for (uint32_t choice = 1; choice < uint32_t(ShrineChoice::Count); choice++)
+			{
+				UiRect row = content.CutTop(110.0f);
+				const bool chosen = loadout.Rested == choice;
+				draw.Rect(row.Shrink(0.0f, 6.0f), { .Fill = Rgba(0.05f, 0.04f, 0.09f, 0.8f), .Border = WithAlpha(chosen ? Theme::Gold : Theme::Edge, 0.8f), .BorderWidth = 1.0f, .Chamfer = 10.0f });
+				UiRect inner = row.Shrink(16.0f, 14.0f);
+				UiRect side = inner.CutRight(150.0f);
+				draw.TextAligned(inner.CutTop(26.0f), ShrineNames[choice], Theme::Title(19.0f), { 0.0f, 0.5f });
+				draw.TextWrapped(inner, ShrineTexts[choice], Theme::Body(14.0f, Theme::Muted), 0.0f, 1.05f);
+				const UiRect button = UiRect::Centered(side.Center(), { 130.0f, 34.0f });
+				if (chosen)
+					draw.TextAligned(button, "Chosen", Theme::Bold(15.0f, Theme::Gold), { 0.5f, 0.5f });
+				else if (ui.Button(Ui::MakeId("shrine", choice), button, "Choose", ButtonKind::Primary, loadout.Rested == 0))
+					m_Client.UseShrine(choice);
+			}
+		}
+		content.CutTop(10.0f);
+		if (kind == RoomKind::Shrine)
+			return;
+		ui.Separator(content.CutTop(20.0f), "YOUR SIGILS");
+		draw.TextFit(content.CutTop(20.0f), "The sigil in the first slot works twice with Leftmost Rule. Arrows swap neighbours.", Theme::Body(13.0f, Theme::Faint));
+		UiRect row = content.CutTop(110.0f);
+		const float slotWidth = row.W / float(SigilSlots);
+		for (uint32_t slot = 0; slot < SigilSlots; slot++)
+		{
+			UiRect cell = row.CutLeft(slotWidth).Shrink(4.0f, 4.0f);
+			const SigilId sigil = loadout.Sigils[slot];
+			draw.Rect(cell, { .Fill = Rgba(0.04f, 0.035f, 0.08f, 0.85f), .Border = WithAlpha(sigil == SigilId::None ? Theme::Edge : Hex(SigilColor), 0.7f), .BorderWidth = 1.0f, .Chamfer = 8.0f });
+			UiRect inner = cell.Shrink(8.0f, 6.0f);
+			draw.TextAligned(inner.CutTop(16.0f), Format("SLOT %u", slot + 1), Theme::Bold(10.5f, Theme::Faint), { 0.5f, 0.5f });
+			if (sigil == SigilId::None)
+			{
+				draw.TextAligned(inner, "empty", Theme::Body(13.0f, Theme::Faint), { 0.5f, 0.5f });
+				continue;
+			}
+			const SigilDef& def = GetSigil(sigil);
+			const UiRect name = inner.CutTop(36.0f);
+			draw.TextWrapped(name, def.Name, Theme::Bold(13.5f, Lighten(Hex(SigilColor), 0.3f)), 0.5f, 1.0f);
+			if (ui.Interact(Ui::MakeId("sigiltip", slot), name).Hovered)
+			{
+				UiTooltip& tooltip = ui.Tooltip();
+				tooltip.Header(def.Name, Hex(SigilColor));
+				tooltip.Text(def.Text);
+			}
+			UiRect buttons = inner.CutBottom(26.0f);
+			const float third = buttons.W / 3.0f;
+			if (ui.Button(Ui::MakeId("sigilleft", slot), buttons.CutLeft(third).Shrink(2.0f, 0.0f), "<", ButtonKind::Normal, slot > 0))
+				m_Client.SwapSigils(slot, slot - 1);
+			const UiRect sell = buttons.CutLeft(third).Shrink(2.0f, 0.0f);
+			if (kind == RoomKind::Shop && ui.Button(Ui::MakeId("sigilsell", slot), sell, Format("+%u", unsigned(float(def.Price) * SigilSellShare)), ButtonKind::Normal, true))
+				m_Client.SellSigil(slot);
+			if (ui.Button(Ui::MakeId("sigilright", slot), buttons.Shrink(2.0f, 0.0f), ">", ButtonKind::Normal, slot + 1 < SigilSlots))
+				m_Client.SwapSigils(slot, slot + 1);
+		}
+		if (kind != RoomKind::Shop)
+			return;
+		std::vector<CardId> owned;
+		for (const CardId id : RunCardPool)
+			if (HasCard(loadout.Cards, id))
+				owned.push_back(id);
+		constexpr float RowHeight = 30.0f;
+		const UiRect side{ home.Right() + 12.0f, home.Y, 380.0f, std::min(104.0f + RowHeight * float(std::max<size_t>(owned.size(), 1)), 640.0f) };
+		UiRect cards = ui.Window(Ui::MakeId("merchantcards"), "Your Cards", side);
+		draw.TextFit(cards.CutTop(20.0f), "Sell a card you no longer want for half its price.", Theme::Body(13.0f, Theme::Faint));
+		cards.CutTop(6.0f);
+		if (owned.empty())
+			draw.TextAligned(cards.CutTop(RowHeight), "No cards yet", Theme::Body(14.0f, Theme::Faint), { 0.0f, 0.5f });
+		for (const CardId id : owned)
+		{
+			if (cards.H < RowHeight)
+				break;
+			UiRect line = cards.CutTop(RowHeight).Shrink(0.0f, 2.0f);
+			const CardDef& card = GetCard(id);
+			const uint8_t stack = StackOf(loadout.Cards, loadout.Second, loadout.Third, id);
+			const UiColor tint = card.Rarity >= CardRarity::Legendary ? Theme::GoldLight : card.Rarity >= CardRarity::Rare ? Hex(0xB59CFF) : Hex(0xC8D2E8);
+			const UiRect button = line.CutRight(96.0f);
+			draw.TextAligned(line, stack > 1 ? Format("%s  x%u", card.Name, unsigned(stack)) : std::string(card.Name), Theme::Bold(14.0f, tint), { 0.0f, 0.5f });
+			if (ui.Interact(Ui::MakeId("cardtip", uint64_t(id)), line).Hovered)
+				ui.Tooltip().Header(card.Name, tint, std::nullopt, IconFor(id)).Text(RunCardDescription(id));
+			if (ui.Button(Ui::MakeId("cardsell", uint64_t(id)), button, Format("Sell +%u", unsigned(CardSellPrice(id))), ButtonKind::Normal, true))
+				m_Client.SellCard(id);
+		}
+	}
+
+	void SessionState::DrawRunItems()
+	{
+		const LocalPlayerState& local = m_Client.GetLocalPlayer();
+		if (m_Client.GetSession().Mode != GameMode::Shardfall || !local.Valid || !UsesRooms(m_Client.GetSession().Run))
+			return;
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const RunLoadout& loadout = local.Run;
+		std::vector<std::pair<std::string, UiColor>> lines;
+		lines.push_back({ Format("%u shards", unsigned(loadout.Shards)), Hex(0x8FE3FF) });
+		for (uint32_t slot = 0; slot < SigilSlots; slot++)
+			if (loadout.Sigils[slot] != SigilId::None)
+				lines.push_back({ Format("%u  ", slot + 1) + GetSigil(loadout.Sigils[slot]).Name, Lighten(Hex(SigilColor), 0.2f) });
+		for (const DuoDef& duo : Duos)
+			if (HasDuo(loadout, duo.Id))
+				lines.push_back({ duo.Name, Hex(DuoColor) });
+		for (const CurseDef& curse : Curses)
+			if (HasCurse(loadout, curse.Id))
+				lines.push_back({ std::string("Cursed: ") + curse.Name, Hex(CurseColor) });
+		float y = ui.GetSize().y - 64.0f - 20.0f * float(lines.size());
+		for (const auto& [text, color] : lines)
+		{
+			draw.Text({ 16.0f, y }, text, Theme::Floating(13.5f, color, UiFont::Bold));
+			y += 20.0f;
+		}
+	}
+
+	void SessionState::DrawChampionBar()
+	{
+		const RunStatus& run = m_Client.GetStatus().Run;
+		if (m_Client.GetSession().Mode != GameMode::Shardfall || run.Champion == 0 || run.Phase != RunPhase::Act)
+			return;
+		const EntityState* champion = m_Client.FindEntity(run.Champion);
+		if (!champion || champion->Has(EntityFlags::Dead))
+			return;
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		const ChampionDef* def = FindChampion(champion->Kind);
+		const bool enraged = champion->Has(EntityFlags::Enraged);
+		const UiColor tone = enraged ? Hex(0xFF5A3C) : Hex(0xE8B04A);
+		const float fill = std::clamp(float(champion->Health) / 255.0f, 0.0f, 1.0f);
+		const UiRect bar = UiRect::Centered({ ui.GetSize().x * 0.5f, 172.0f }, { 560.0f, 12.0f });
+		TextStyle name = Theme::Title(19.0f);
+		name.Tracking = 1.5f;
+		draw.TextAligned({ bar.X, bar.Y - 28.0f, bar.W, 24.0f }, Upper(def ? def->Name : "Champion") + (enraged ? "  -  ENRAGED" : ""), name, { 0.5f, 0.5f });
+		draw.Rect(bar.Expand(3.0f), { .Fill = Rgba(0.02f, 0.0f, 0.02f, 0.85f), .Border = WithAlpha(tone, 0.6f), .BorderWidth = 1.2f, .Chamfer = 4.0f });
+		if (fill > 0.0f)
+			draw.Rect({ bar.X, bar.Y, bar.W * fill, bar.H }, { .Fill = Lighten(tone, 0.2f), .FillBottom = Darken(tone, 0.35f), .Glow = WithAlpha(tone, 0.35f), .GlowSize = 8.0f, .Chamfer = 3.0f });
+		for (const float mark : ChampionPhases)
+			draw.Diamond({ bar.X + bar.W * mark, bar.Center().y }, 12.0f, Rgba(0.04f, 0.02f, 0.05f, 0.95f), WithAlpha(fill > mark ? Theme::GoldLight : Theme::Faint, 0.9f), 1.2f);
+	}
+
+	void SessionState::DrawGrimoire()
+	{
+		const SessionInfo& session = m_Client.GetSession();
+		const GameStatus& status = m_Client.GetStatus();
+		const LocalPlayerState& local = m_Client.GetLocalPlayer();
+		Ui& ui = m_App.GetUi();
+		m_RuneNote = std::max(m_RuneNote - ui.GetDeltaTime(), 0.0f);
+		if (session.Mode != GameMode::Shardfall || !local.Valid || IsRunOver(status.Run.Phase))
+		{
+			m_GrimoireOpen = false;
+			m_SelectedRune.reset();
+			return;
+		}
+		const RunLoadout& run = local.Run;
+		const RuneMask loose = LooseRunes(run);
+		const bool choosing = run.HasOffer() && status.Run.Paused;
+		const bool locked = status.Run.Fighting;
+		const glm::vec2 size = ui.GetSize();
+		if (locked && !m_RuneFighting)
+			m_GrimoireOpen = false;
+		m_RuneFighting = locked;
+		if (!m_GrimoireOpen || m_Paused || choosing)
+		{
+			if (loose != 0 && !m_Paused && !choosing && !locked)
+			{
+				const float pulse = 0.7f + 0.3f * std::sin(m_Time * 4.0f);
+				ui.Draw().TextAligned({ 0.0f, size.y - 258.0f, size.x, 22.0f }, std::popcount(loose) > 1 ? "G  socket your new runes" : "G  socket your new rune", Theme::Floating(15.0f, WithAlpha(Lighten(Hex(RuneColor), 0.2f), pulse), UiFont::Bold), { 0.5f, 0.5f });
+			}
+			m_SelectedRune.reset();
+			return;
+		}
+		constexpr float Width = 620.0f;
+		constexpr float RowHeight = 64.0f;
+		constexpr float Cell = 52.0f;
+		const uint32_t looseCount = uint32_t(std::popcount(loose));
+		const uint32_t perRow = uint32_t((Width - 44.0f) / Cell);
+		const float pouchHeight = Cell * float(std::max((looseCount + perRow - 1u) / perRow, 1u)) + 8.0f;
+		const UiRect home{ 24.0f, 110.0f, Width, 150.0f + RowHeight * float(AbilitySlots) + pouchHeight };
+		bool open = true;
+		UiRect content = ui.Window(Ui::MakeId("grimoire"), "Grimoire", home, &open);
+		if (!open)
+		{
+			m_GrimoireOpen = false;
+			m_SelectedRune.reset();
+			return;
+		}
+		UiDrawList& draw = ui.Draw();
+		const UiPayload* drag = ui.GetDrag();
+		const bool dragging = drag && drag->Type == RunePayload;
+		if (m_SelectedRune && !HasRune(run.Runes, *m_SelectedRune))
+			m_SelectedRune.reset();
+		const std::optional<RuneId> held = dragging ? std::optional<RuneId>(RuneId(drag->Value)) : m_SelectedRune;
+		const std::string guide = locked ? std::string("Enemies are awake. Runes stay locked until the fight is over.") : m_RuneNote > 0.0f ? std::string("That rune does not fit there.") : held ? Format("%s fits: %s. Drop it on a glowing socket.", GetRune(*held).Name, GetRune(*held).Needs) : std::string("Drag a rune onto a socket, or click it and then a socket. Right-click takes it out.");
+		draw.TextFit(content.CutTop(20.0f), guide, Theme::Body(13.5f, locked || m_RuneNote > 0.0f ? Theme::Danger : held ? Lighten(RuneTone(*held), 0.25f) : Theme::Muted));
+		content.CutTop(8.0f);
+		const auto refuse = [&]
+		{
+			m_App.GetGameAudio().PlayUi(Cue::UiError, 0.6f);
+			m_RuneNote = locked ? 0.0f : 2.0f;
+			m_SelectedRune.reset();
+		};
+		const auto place = [&](RuneId rune, uint32_t slot, uint32_t socket)
+		{
+			if (locked || !CanSocket(run, rune, slot, socket))
+				return refuse();
+			if (run.Sockets[slot][socket] != rune)
+			{
+				m_Client.SocketRune(rune, slot, socket);
+				m_App.GetGameAudio().PlayUi(Cue::UiConfirm, 0.7f);
+			}
+			m_SelectedRune.reset();
+		};
+		const auto remove = [&](RuneId rune)
+		{
+			if (locked)
+				return refuse();
+			m_Client.UnsocketRune(rune);
+			m_App.GetGameAudio().PlayUi(Cue::UiClick, 0.7f);
+			m_SelectedRune.reset();
+		};
+		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
+		{
+			const UiRect row = content.CutTop(RowHeight).Shrink(0.0f, 3.0f);
+			const AbilityId spell = SlotSpell(run, slot);
+			const bool empty = spell >= AbilityId::Count;
+			const bool fits = held && !empty && RuneFits(*held, spell);
+			const float dim = held && !fits ? 0.38f : 1.0f;
+			const UiColor color = empty ? Theme::Faint : WithAlpha(SkillColor(spell));
+			draw.Rect(row, { .Fill = Rgba(0.04f, 0.035f, 0.08f, 0.85f * dim), .Border = WithAlpha(fits ? Hex(RuneColor) : color, (fits ? 0.85f : 0.4f) * dim), .BorderWidth = fits ? 1.5f : 1.0f, .Chamfer = 8.0f });
+			UiRect inner = row.Shrink(10.0f, 6.0f);
+			const UiRect tile = UiRect::Centered(inner.CutLeft(46.0f).Center(), { 44.0f, 44.0f });
+			inner.CutLeft(10.0f);
+			draw.Rect(tile, { .Fill = Theme::SlotTop, .FillBottom = Theme::SlotBottom, .Border = WithAlpha(color, 0.85f * dim), .BorderWidth = 1.2f, .Chamfer = 6.0f });
+			if (empty)
+			{
+				draw.Icon(UiIcon::Emerald, tile.Shrink(12.0f), { .Color = Rgba(0.62f, 0.56f, 0.9f, 0.2f) });
+				draw.TextAligned(inner, Format("Empty spell slot on %s", RunKeys[slot - 1]), Theme::Body(14.0f, WithAlpha(Theme::Faint, dim)), { 0.0f, 0.5f });
+				continue;
+			}
+			draw.Icon(IconFor(spell), tile.Shrink(7.0f), { .Color = WithAlpha(Lighten(color, 0.5f), dim), .ColorBottom = WithAlpha(color, dim), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.6f) });
+			if (ui.Interact(Ui::MakeId("grimspell", slot), tile).Hovered && !held)
+				DescribeBrawlSpell(ui.Tooltip(), spell);
+			UiRect sockets = inner.CutRight(float(MaxSockets) * 48.0f);
+			UiRect label = inner;
+			draw.TextFit(label.CutTop(26.0f), GetAbility(spell).Name, Theme::Bold(16.0f, WithAlpha(Lighten(color, 0.3f), dim)), { 0.0f, 0.7f });
+			draw.TextFit(label, Format("Rank %s   %s", RomanRanks[run.Ranks[slot]], SpellFormName(spell)), Theme::Body(12.5f, WithAlpha(Theme::Faint, dim)), { 0.0f, 0.2f });
+			const uint8_t opened = OpenSockets(run, slot);
+			for (uint32_t socket = 0; socket < MaxSockets; socket++)
+			{
+				const glm::vec2 center{ sockets.X + 24.0f + 48.0f * float(socket), sockets.Center().y };
+				const UiRect hit = UiRect::Centered(center, { 44.0f, 44.0f });
+				const UiId id = Ui::MakeId("runesocket", slot * MaxSockets + socket);
+				const UiInteraction interaction = ui.Interact(id, hit);
+				if (socket >= opened)
+				{
+					const char* rank = socket == 2 ? "II" : "IV";
+					draw.Circle(center, 13.0f, Rgba(0.02f, 0.02f, 0.04f, 0.6f * dim), WithAlpha(Theme::Edge, 0.35f * dim), 1.0f);
+					draw.TextAligned(hit, rank, Theme::Bold(10.5f, WithAlpha(Theme::Faint, 0.85f * dim)), { 0.5f, 0.5f });
+					if (interaction.Hovered && !held)
+						ui.Tooltip().Text(Format("This socket opens when %s reaches rank %s.", GetAbility(spell).Name, rank), Theme::Muted);
+					continue;
+				}
+				const RuneId rune = run.Sockets[slot][socket];
+				const bool filled = rune < RuneId::Count;
+				const float hover = ui.Animate(id, interaction.Hovered);
+				const bool target = fits && !locked;
+				const float beckon = 0.55f + 0.45f * std::sin(m_Time * 6.0f);
+				draw.Circle(center, 19.0f, Rgba(0.015f, 0.012f, 0.03f, 0.95f * dim), WithAlpha(target ? Lighten(Hex(RuneColor), 0.2f) : Theme::Edge, (target ? 0.45f + 0.55f * beckon : 0.6f + 0.4f * hover) * dim), target ? 1.8f : 1.2f);
+				if (filled)
+				{
+					ui.OfferDrag(id, RunePayload, int(rune));
+					const bool lifted = dragging && RuneId(drag->Value) == rune;
+					if (!lifted)
+						DrawRuneStone(draw, rune, center, 16.0f, (RuneFits(rune, spell) ? 1.0f : 0.4f) * dim, std::max(hover, m_SelectedRune == rune ? 1.0f : 0.0f));
+					if (m_SelectedRune == rune)
+						draw.Circle(center, 21.5f, UiColor(0.0f), WithAlpha(Theme::GoldLight, 0.9f), 1.6f);
+				}
+				if (const std::optional<int> dropped = ui.AcceptDrop(hit, RunePayload))
+					place(RuneId(*dropped), slot, socket);
+				else if (interaction.RightClicked && filled)
+					remove(rune);
+				else if (interaction.Clicked && m_SelectedRune && m_SelectedRune != rune)
+					place(*m_SelectedRune, slot, socket);
+				else if (interaction.Clicked && filled)
+					m_SelectedRune = m_SelectedRune == rune ? std::nullopt : std::optional<RuneId>(rune);
+				if (interaction.Hovered && filled && !dragging)
+					DescribeRune(ui.Tooltip(), rune, &run);
+			}
+		}
+		content.CutTop(10.0f);
+		ui.Separator(content.CutTop(20.0f), "RUNE POUCH");
+		content.CutTop(4.0f);
+		const UiRect pouch = content.CutTop(pouchHeight);
+		if (const std::optional<int> dropped = ui.AcceptDrop(pouch, RunePayload); dropped && FindRune(run, RuneId(*dropped)).IsSet())
+			remove(RuneId(*dropped));
+		if (looseCount == 0)
+			draw.TextAligned(pouch, run.Runes == 0 ? "No runes yet. Rune rooms, champion chests and the merchant carry them." : "Every rune you own sits in a socket.", Theme::Body(14.0f, Theme::Faint), { 0.5f, 0.5f });
+		uint32_t index = 0;
+		for (uint32_t id = 0; id < uint32_t(RuneId::Count); id++)
+		{
+			const RuneId rune = RuneId(id);
+			if (!HasRune(loose, rune))
+				continue;
+			const glm::vec2 center{ pouch.X + 26.0f + Cell * float(index % perRow), pouch.Y + 4.0f + Cell * (float(index / perRow) + 0.5f) };
+			index++;
+			const UiRect hit = UiRect::Centered(center, { 46.0f, 46.0f });
+			const UiId stone = Ui::MakeId("pouchrune", id);
+			const UiInteraction interaction = ui.Interact(stone, hit);
+			ui.OfferDrag(stone, RunePayload, int(rune));
+			const float hover = ui.Animate(stone, interaction.Hovered);
+			const bool selected = m_SelectedRune == rune;
+			const bool lifted = dragging && RuneId(drag->Value) == rune;
+			if (interaction.Clicked)
+				m_SelectedRune = selected ? std::nullopt : std::optional<RuneId>(rune);
+			if (!lifted)
+				DrawRuneStone(draw, rune, center - glm::vec2(0.0f, 2.0f * hover), 19.0f, RuneFitsBuild(run, rune) ? 1.0f : 0.45f, std::max(hover, selected ? 1.0f : 0.0f));
+			if (selected)
+				draw.Circle(center, 24.0f, UiColor(0.0f), WithAlpha(Theme::GoldLight, 0.9f), 1.6f);
+			if (interaction.Hovered && !dragging)
+				DescribeRune(ui.Tooltip(), rune, &run);
+		}
+		if (dragging)
+		{
+			const UiLayer layer = ui.GetLayer();
+			ui.SetLayer(UiLayer::Drag);
+			DrawRuneStone(ui.Draw(), RuneId(drag->Value), ui.GetMouse(), 21.0f, 1.0f, 1.0f);
+			ui.SetLayer(layer);
+		}
 	}
 }

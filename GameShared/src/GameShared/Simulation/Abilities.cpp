@@ -24,13 +24,38 @@ namespace Game
 			const int32_t pulse = std::max(1, int32_t(std::lround(float(damage) * ResonanceScale)));
 			world.SpawnResonance(ability, center, ability.ImpactDelay + ResonanceDelay, radius, pulse, ability.Push * ResonanceScale * context.PushScale, context);
 		}
+
+		void RuneStrike(World& world, AbilityId id, const AbilityDef& ability, int32_t damage, const AbilityContext& context)
+		{
+			if (context.Runes == 0)
+				return;
+			if (HasRune(context.Runes, RuneId::Linger))
+			{
+				const bool line = ability.Shape == StrikeShape::Line;
+				const Vec2 center = line ? context.Target + Normalize(context.Direction) * (ability.Reach * context.AreaScale * 0.5f) : context.Target;
+				const float radius = (line ? ability.Reach * 0.55f : ability.ImpactRadius) * context.AreaScale * LingerRadius;
+				world.SpawnLinger(center, ability.ImpactDelay, radius, damage, ability.Damages, context.Owner, context.Source, context.Side, context.Runes, context.Depth);
+			}
+			if (HasRune(context.Runes, RuneId::Encore))
+			{
+				AbilityContext again = context;
+				again.Runes &= ~(RuneBit(RuneId::Encore) | RuneBit(RuneId::Echo));
+				again.Depth = uint8_t(context.Depth + 1);
+				again.DamageScale *= EncoreShare;
+				again.PushScale *= EncoreShare;
+				again.AreaScale *= EncoreArea;
+				again.Tag = 0;
+				again.Rewind = 0.0f;
+				world.QueueCast(context.Source, id, again, EncoreDelay);
+			}
+		}
 	}
 
 	void ExecuteAbility(World& world, AbilityId id, const AbilityContext& context)
 	{
 		const AbilityDef& ability = GetAbility(id);
 		const bool brawlDamage = world.UsesBrawlDamage() && context.Side == Team::Players;
-		const int32_t damage = ScaleDamage(brawlDamage ? ability.BrawlDamage : ability.Damage, context.DamageScale);
+		const int32_t damage = ScaleDamage(context.BaseDamage >= 0 ? context.BaseDamage : brawlDamage ? ability.BrawlDamage : ability.Damage, context.DamageScale);
 		if (HasCard(context.Cards, CardId::ResonantGround) && ability.Spell && IsAreaSpell(id) && ability.Kind != AbilityKind::Projectile && id != AbilityId::GlacialNova)
 			Resonate(world, ability, damage, context);
 		if (id == AbilityId::GlacialEruption && HasCard(context.Cards, CardId::ResonantGround))
@@ -70,9 +95,11 @@ namespace Game
 				thrust.Origin = context.Target;
 				StrikeArea(world, ability, damage, thrust);
 				world.SpawnEffect(ability, thrust, context.Target, context.Tag);
+				RuneStrike(world, id, ability, damage, context);
 				break;
 			}
 			world.SpawnPendingStrike(ability, context.Target, damage, context);
+			RuneStrike(world, id, ability, damage, context);
 			if (id == AbilityId::Firebomb)
 			{
 				const Vec2 axis = Normalize(context.Direction);

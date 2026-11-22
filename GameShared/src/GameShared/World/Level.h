@@ -24,6 +24,11 @@ namespace Game
 		SkyRuins,
 		StormPeak,
 		ProvingHollow,
+		CrystalQuarry,
+		GlassTerrace,
+		HollowRoom,
+		QuarryRoom,
+		TerraceRoom,
 		Count,
 	};
 
@@ -36,12 +41,17 @@ namespace Game
 	};
 
 	inline constexpr MapDef Maps[] = {
-		{ MapKind::Hub, "Emberhold", "The floating island between battles, with the spellbook, the Caldera Gate, the Shard Rift, the chess loft and the practice dummies.", 2 },
+		{ MapKind::Hub, "Sun's Cradle", "The floating island between battles, with the Caldera Gate, the Shard Rift, chess, and the training grounds with the spellbook and practice dummies.", 2 },
 		{ MapKind::Caldera, "Molten Heart", "The Forge of the Titans: an iron mold plate chained above a molten pit. The titan's crucible pours molten metal down a sword-shaped trench, and late in the round the forge floods the plate from the edge inward.", 5 },
 		{ MapKind::FrozenLake, "Frozen Lake", "A long frozen lake in a snowy valley. Shoves slide far on the ice, ice pillars bounce you back, and the thin ice gives way into freezing water around the shores and the air holes.", 6 },
 		{ MapKind::SkyRuins, "Sky Observatory", "The domed observatory of a vanished sky civilization, high above the clouds. There is no lava, only a long fall: a hole gapes in the middle of its star-chart floor, and the old core's burning field closes in around it.", 7 },
 		{ MapKind::StormPeak, "Storm Peak", "A wide summit plateau high above the clouds, crowned by the old Stormcallers' ritual circle and its monoliths. Lightning falls at random, the storm closes in on the circle, and a shove off the edge is a long way down.", 8 },
-		{ MapKind::ProvingHollow, "Proving Hollow", "A grassy hollow ringed by cliffs, with a worn road around four crystal-studded pillar clusters, a stone boss ring to the north and a vault sealed behind an iron gate.", 9 },
+		{ MapKind::ProvingHollow, "Proving Hollow", "A winding grassy hollow among great oaks, mossy knolls and a still pond, with the guardian stone in a cobbled ring at its far end.", 9 },
+		{ MapKind::CrystalQuarry, "Crystal Quarry", "An abandoned quarry that snakes between rock knolls and crystal spires. The lanes are tight and the stone gives cover from beams and arrows.", 10 },
+		{ MapKind::GlassTerrace, "Glass Terrace", "A broken terrace of old paving and reflecting pools, open to the sky, with long sightlines and only a few crystal spires to hide behind.", 11 },
+		{ MapKind::HollowRoom, "Oakwood Glade", "A small glade of grass, oaks and still water deep in the hollow.", 12 },
+		{ MapKind::QuarryRoom, "Quarry Cut", "A tight cut in the old quarry, between rock knolls and crystal spires.", 13 },
+		{ MapKind::TerraceRoom, "Terrace Court", "A broken court of the glass terrace, with reflecting pools and fallen columns.", 14 },
 	};
 	static_assert(std::size(Maps) == size_t(MapKind::Count));
 
@@ -58,9 +68,14 @@ namespace Game
 		return kind == MapKind::Caldera || kind == MapKind::FrozenLake || kind == MapKind::SkyRuins || kind == MapKind::StormPeak;
 	}
 
+	inline bool IsRoomMap(MapKind kind)
+	{
+		return kind == MapKind::HollowRoom || kind == MapKind::QuarryRoom || kind == MapKind::TerraceRoom;
+	}
+
 	inline bool IsShardfallMap(MapKind kind)
 	{
-		return kind == MapKind::ProvingHollow;
+		return kind == MapKind::ProvingHollow || kind == MapKind::CrystalQuarry || kind == MapKind::GlassTerrace || IsRoomMap(kind);
 	}
 
 	enum class StationKind : uint8_t
@@ -414,6 +429,9 @@ namespace Game
 		Vec2 PlayerSpawn;
 		Vec2 BossArena;
 		float BossArenaRadius = 0.0f;
+		std::vector<Vec2> Doors;
+		uint8_t DoorMask = 0;
+		std::vector<Vec2> Altars;
 		std::vector<Shape> Shapes;
 		std::vector<uint32_t> BucketStart;
 		std::vector<uint32_t> BucketShapes;
@@ -471,4 +489,7 @@ namespace Game
 	Level BuildSkyRuinsLevel(uint32_t seed);
 	Level BuildStormPeakLevel(uint32_t seed);
 	Level BuildProvingHollowLevel(uint32_t seed);
+	Level BuildCrystalQuarryLevel(uint32_t seed);
+	Level BuildGlassTerraceLevel(uint32_t seed);
+	Level BuildShardRoomLevel(MapKind kind, uint32_t seed);
 }

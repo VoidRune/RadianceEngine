@@ -1,6 +1,7 @@
 #include "GameApp.h"
 #include "Audio/GameAudio.h"
 #include "Online/SteamPlatform.h"
+#include "Rendering/EmberIslandArt.h"
 #include "Rendering/MenuBackdrop.h"
 #include "Rendering/ModelSources.h"
 #include "Rendering/LevelArt.h"
@@ -92,6 +93,7 @@ namespace Game
 		std::ifstream file(PreferencesPath);
 		std::string line;
 		bool antiAliasing = false;
+		bool grass = false;
 		while (std::getline(file, line))
 		{
 			const size_t equals = line.find('=');
@@ -130,6 +132,8 @@ namespace Game
 				m_Settings.FrameCap = std::clamp(cap, MinFrameCap, MaxFrameCap);
 			else if (uint32_t scale = 0; key == "RenderScale" && ParseNumber(value, scale))
 				m_Settings.RenderScale = std::clamp(scale, MinRenderScale, MaxRenderScale);
+			else if (key == "Grass")
+				grass = ParseName(value, GrassQualityNames, m_Settings.Grass);
 			else if (key == "AntiAliasing")
 				antiAliasing = ParseName(value, AntiAliasingNames, m_Settings.Aa);
 			else if (key == "ScreenShake")
@@ -141,6 +145,8 @@ namespace Game
 			else if (GraphicsTier tier{}; key == "GraphicsTier" && ParseName(value, GraphicsTierNames, tier))
 				m_GraphicsTier = tier;
 		}
+		if (!grass && m_GraphicsTier)
+			m_Settings.Grass = GraphicsPresets[size_t(*m_GraphicsTier)].Grass;
 		if (!antiAliasing && m_GraphicsTier)
 			m_Settings.Aa = GraphicsPresets[size_t(*m_GraphicsTier)].Aa;
 	}
@@ -163,6 +169,7 @@ namespace Game
 			m_Stored.FrameCap = m_Settings.FrameCap;
 			m_Stored.RenderScale = m_Settings.RenderScale;
 			m_Stored.Aa = m_Settings.Aa;
+			m_Stored.Grass = m_Settings.Grass;
 			m_Stored.ShowControls = m_Settings.ShowControls;
 			m_Stored.ScreenShake = m_Settings.ScreenShake;
 			break;
@@ -184,7 +191,7 @@ namespace Game
 		file << "PlayerName=" << m_Stored.PlayerName << "\nJoinAddress=" << m_Stored.JoinAddress << "\nPort=" << m_Stored.Port << "\nFriendsCanJoin=" << (m_Stored.FriendsCanJoin ? 1 : 0)
 			<< "\nVolume=" << m_Stored.Volume << "\nMusicVolume=" << m_Stored.MusicVolume << "\nEffectsVolume=" << m_Stored.EffectsVolume << "\nMuted=" << (m_Stored.Muted ? 1 : 0)
 			<< "\nShadows=" << ShadowQualityNames[size_t(m_Stored.Shadows)] << "\nGi=" << GiQualityNames[size_t(m_Stored.Gi)] << "\nFullscreen=" << (m_Stored.Fullscreen ? 1 : 0) << "\nVsync=" << (m_Stored.Vsync ? 1 : 0)
-			<< "\nFrameCap=" << m_Stored.FrameCap << "\nRenderScale=" << m_Stored.RenderScale << "\nAntiAliasing=" << AntiAliasingNames[size_t(m_Stored.Aa)] << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\nScreenShake=" << m_Stored.ScreenShake << "\n";
+			<< "\nFrameCap=" << m_Stored.FrameCap << "\nRenderScale=" << m_Stored.RenderScale << "\nAntiAliasing=" << AntiAliasingNames[size_t(m_Stored.Aa)] << "\nGrass=" << GrassQualityNames[size_t(m_Stored.Grass)] << "\nShowControls=" << (m_Stored.ShowControls ? 1 : 0) << "\nScreenShake=" << m_Stored.ScreenShake << "\n";
 		if (!m_GraphicsGpu.empty())
 			file << "Gpu=" << m_GraphicsGpu << "\n";
 		if (m_GraphicsTier)
@@ -221,6 +228,7 @@ namespace Game
 		m_Settings.Distortion = options.Distortion;
 		m_Settings.Trails = options.Trails;
 		m_Settings.DistortionStage = options.DistortionStage;
+		m_Settings.GrassStage = options.GrassStage;
 		m_Settings.StartMode = options.StartMode;
 		m_Settings.Rules = options.Rules;
 		m_Settings.Run = options.Run;
@@ -257,7 +265,7 @@ namespace Game
 		}
 
 		Rdn::WindowDescription windowDesc;
-		windowDesc.Title = "RadianceEngine Game";
+		windowDesc.Title = "Apex of Magic";
 		windowDesc.Width = 1600;
 		windowDesc.Height = 900;
 		windowDesc.Fullscreen = m_Settings.Fullscreen;
@@ -341,15 +349,20 @@ namespace Game
 		m_WorldRenderer->SetDebugView(DebugView(options.DebugView));
 		m_WorldRenderer->GetDistortion().Enabled = m_Settings.Distortion;
 		m_WorldRenderer->GetTrails().Enabled = m_Settings.Trails;
+		m_WorldRenderer->GetSun().Enabled = options.Sun;
+		EmberIslandArt::KitRim = options.KitRim;
 		m_WorldRenderer->SetTranslucency(options.Translucency);
 		m_WorldRenderer->SetPointLights(options.PointLights);
 		m_WorldRenderer->SetGlassModels(options.Refraction);
 		if (options.Shadows)
 			m_Settings.Shadows = ShadowQuality(*options.Shadows);
 		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);
+		if (options.Grass)
+			m_Settings.Grass = GrassQuality(*options.Grass);
 		if (options.Gi)
 			m_Settings.Gi = GiQuality(*options.Gi);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
+		m_WorldRenderer->SetGrassQuality(m_Settings.Grass);
 		m_WorldRenderer->SetRenderScale(float(m_Settings.RenderScale) / 100.0f);
 		m_WorldRenderer->SetAntiAliasing(m_Settings.Aa);
 		m_WorldRenderer->SetLakeFullResolution(m_RecommendedGraphics != GraphicsTier::Low);
@@ -462,6 +475,7 @@ namespace Game
 	{
 		m_WorldRenderer->SetShadowQuality(m_Settings.Shadows);
 		m_WorldRenderer->SetGiQuality(m_Settings.Gi);
+		m_WorldRenderer->SetGrassQuality(m_Settings.Grass);
 		m_WorldRenderer->SetRenderScale(float(m_Settings.RenderScale) / 100.0f);
 		m_WorldRenderer->SetAntiAliasing(m_Settings.Aa);
 		m_WorldRenderer->SetLakeFullResolution(m_RecommendedGraphics != GraphicsTier::Low);
@@ -481,6 +495,8 @@ namespace Game
 			m_Settings.FrameCap = next.FrameCap;
 		if (m_Settings.RenderScale == previous.RenderScale)
 			m_Settings.RenderScale = next.RenderScale;
+		if (m_Settings.Grass == previous.Grass)
+			m_Settings.Grass = next.Grass;
 		if (m_Settings.Aa == previous.Aa)
 			m_Settings.Aa = next.Aa;
 		m_Stored.Shadows = m_Settings.Shadows;
@@ -488,6 +504,7 @@ namespace Game
 		m_Stored.FrameCap = m_Settings.FrameCap;
 		m_Stored.RenderScale = m_Settings.RenderScale;
 		m_Stored.Aa = m_Settings.Aa;
+		m_Stored.Grass = m_Settings.Grass;
 		m_GraphicsGpu = m_Device->GetProperties().Name;
 		m_GraphicsTier = m_RecommendedGraphics;
 		m_PreferencesDirty = true;
@@ -504,6 +521,7 @@ namespace Game
 		m_Settings.FrameCap = preset.FrameCap;
 		m_Settings.RenderScale = preset.RenderScale;
 		m_Settings.Aa = preset.Aa;
+		m_Settings.Grass = preset.Grass;
 		ApplyVisualSettings();
 		RememberSettings(SettingsGroup::Visuals);
 	}

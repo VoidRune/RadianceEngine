@@ -1164,7 +1164,6 @@ namespace Game
 		const std::vector<std::vector<uint32_t>> vines = { group("Citadel/Vine_A"), group("Citadel/Vine_B") };
 		const std::vector<std::vector<uint32_t>> ivy = { group("Citadel/Ivy_A"), group("Citadel/Ivy_B") };
 		const std::vector<std::vector<uint32_t>> carpet = { group("Citadel/GroundIvy_A"), group("Citadel/GroundIvy_B") };
-		const std::vector<std::vector<uint32_t>> grass = { group("Nature/Grass_A"), group("Nature/Grass_B"), group("Nature/Grass_C") };
 		const std::vector<std::vector<uint32_t>> flowers = { group("Nature/Flowers_A"), group("Nature/Flowers_B") };
 		const std::vector<std::vector<uint32_t>> roots = { group("Citadel/Roots_A"), group("Citadel/Roots_B") };
 		const auto place = [&](const std::vector<uint32_t>& meshes, const glm::mat4& transform)
@@ -1226,9 +1225,7 @@ namespace Game
 			const float scale = 0.6f + 0.5f * Unit(n, 5, 1301u);
 			if (lush > 0.64f && pick < 0.32f)
 				green(carpet[HashOf(n, 6, 1301u) % carpet.size()], placed(p, FloorY, yaw, scale));
-			else if (lush > 0.57f && pick < 0.5f)
-				green(grass[HashOf(n, 7, 1301u) % grass.size()], placed(p, FloorY, yaw, scale * 0.7f));
-			else if (lush > 0.6f && pick < 0.6f)
+			else if (lush > 0.6f && pick >= 0.5f && pick < 0.6f)
 				place(flowers[HashOf(n, 8, 1301u) % flowers.size()], placed(p, FloorY, yaw, scale * 0.7f));
 		}
 		for (const float side : { -1.0f, 1.0f })

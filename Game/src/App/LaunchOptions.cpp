@@ -31,7 +31,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--new-character] [--no-save] [--export-props] [--shardfall] [--run-minute 0..12] [--run-level 1..30] [--spawns 0..300] [--xp 25..500] [--only quartz|jade|sapphire|ruby|amethyst|prismatic] [--immortal] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource|translucency] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--render-scale 50..100] [--aa off|smaa|ssaa1.5|ssaa2] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--menu-page 0..5] [--leviathan] [--no-distortion] [--no-trails] [--no-translucency] [--no-point-lights] [--no-refraction] [--distortion-stage all|shockwaves] [--no-steam]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--new-character] [--no-save] [--export-props] [--shardfall] [--run-minute 0..12] [--run-level 1..30] [--spawns 0..300] [--shards 25..500] [--only quartz|jade|sapphire|ruby|amethyst|prismatic|duelist|archer|mage|brute|moth|wisp|obelisk] [--arena hollow|quarry|terrace] [--endless] [--run-seed n] [--affix hasted|warded|splitting|volatile|vampiric|reflective|random] [--immortal] [--runes] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--lag ms] [--loss percent] [--no-validation] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource|translucency] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--grass off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--frame-cap 30..240] [--render-scale 50..100] [--aa off|smaa|ssaa1.5|ssaa2] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--menu-page 0..5] [--leviathan] [--no-distortion] [--no-trails] [--no-sun] [--old-rim] [--no-translucency] [--no-point-lights] [--no-refraction] [--distortion-stage all|shockwaves] [--grass-stage] [--no-steam]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -69,7 +69,8 @@ namespace Game
 			else if (argument == "--shardfall")
 			{
 				options.StartMode = GameMode::Shardfall;
-				options.Map = MapKind::ProvingHollow;
+				if (!options.Map || !IsShardfallMap(*options.Map))
+					options.Map = MapKind::ProvingHollow;
 			}
 			else if (argument == "--brawl")
 			{
@@ -84,6 +85,23 @@ namespace Game
 						options.Rules.Rounds = uint8_t(rounds);
 					i++;
 				}
+			}
+			else if (argument == "--arena" && hasValue)
+			{
+				valid = value == "hollow" || value == "quarry" || value == "terrace";
+				if (valid)
+				{
+					options.Map = value == "hollow" ? MapKind::ProvingHollow : value == "quarry" ? MapKind::CrystalQuarry : MapKind::GlassTerrace;
+					options.Run.Endless = true;
+				}
+				i++;
+			}
+			else if (argument == "--endless")
+				options.Run.Endless = true;
+			else if (argument == "--run-seed" && hasValue)
+			{
+				valid = ParseNumber(value, options.Run.Seed) && options.Run.Seed != 0;
+				i++;
 			}
 			else if (argument == "--brawl-map" && hasValue)
 			{
@@ -188,26 +206,39 @@ namespace Game
 					(minute ? options.Run.StartMinute : options.Run.StartLevel) = uint8_t(number);
 				i++;
 			}
-			else if ((argument == "--spawns" || argument == "--xp") && hasValue)
+			else if ((argument == "--spawns" || argument == "--shards") && hasValue)
 			{
 				uint32_t percent = 0;
 				const bool spawns = argument == "--spawns";
-				valid = ParseNumber(value, percent) && (spawns ? percent <= MaxSpawnRate : percent >= MinXpRate && percent <= MaxXpRate);
+				valid = ParseNumber(value, percent) && (spawns ? percent <= MaxSpawnRate : percent >= MinShardRate && percent <= MaxShardRate);
 				if (valid)
-					(spawns ? options.Run.Spawns : options.Run.Xp) = uint16_t(percent);
+					(spawns ? options.Run.Spawns : options.Run.ShardRate) = uint16_t(percent);
 				i++;
 			}
 			else if (argument == "--only" && hasValue)
 			{
-				constexpr std::string_view Kinds[] = { "quartz", "jade", "sapphire", "ruby", "amethyst", "prismatic" };
+				constexpr std::string_view Kinds[] = { "quartz", "jade", "sapphire", "ruby", "amethyst", "prismatic", "duelist", "archer", "mage", "brute", "moth", "wisp", "obelisk" };
+				static_assert(std::size(Kinds) == std::size(RunOnlyKinds));
 				const auto kind = std::find(std::begin(Kinds), std::end(Kinds), value);
 				valid = kind != std::end(Kinds);
 				if (valid)
 					options.Run.Only = uint8_t(kind - std::begin(Kinds) + 1);
 				i++;
 			}
+			else if (argument == "--affix" && hasValue)
+			{
+				constexpr std::string_view Affixes[] = { "hasted", "warded", "splitting", "volatile", "vampiric", "reflective", "random" };
+				static_assert(std::size(Affixes) == RandomAffix);
+				const auto affix = std::find(std::begin(Affixes), std::end(Affixes), value);
+				valid = affix != std::end(Affixes);
+				if (valid)
+					options.Run.Affix = uint8_t(affix - std::begin(Affixes) + 1);
+				i++;
+			}
 			else if (argument == "--immortal")
 				options.Run.Immortal = true;
+			else if (argument == "--runes")
+				options.Run.AllRunes = true;
 			else if (argument == "--mute")
 				options.Muted = true;
 			else if (argument == "--no-save")
@@ -281,6 +312,14 @@ namespace Game
 					options.Shadows = uint8_t(it - std::begin(ShadowQualityNames));
 				i++;
 			}
+			else if (argument == "--grass" && hasValue)
+			{
+				const auto it = std::find_if(std::begin(GrassQualityNames), std::end(GrassQualityNames), [&](const char* name) { return SameText(name, value); });
+				valid = it != std::end(GrassQualityNames);
+				if (valid)
+					options.Grass = uint8_t(it - std::begin(GrassQualityNames));
+				i++;
+			}
 			else if (argument == "--gi" && hasValue)
 			{
 				const auto it = std::find_if(std::begin(GiQualityNames), std::end(GiQualityNames), [&](const char* name) { return SameText(name, value); });
@@ -346,6 +385,10 @@ namespace Game
 				options.Distortion = false;
 			else if (argument == "--no-trails")
 				options.Trails = false;
+			else if (argument == "--no-sun")
+				options.Sun = false;
+			else if (argument == "--old-rim")
+				options.KitRim = false;
 			else if (argument == "--no-translucency")
 				options.Translucency = false;
 			else if (argument == "--no-point-lights")
@@ -359,6 +402,8 @@ namespace Game
 					options.DistortionStage = SameText("all", value) ? 1 : 2;
 				i++;
 			}
+			else if (argument == "--grass-stage")
+				options.GrassStage = true;
 			else if (argument == "--leviathan")
 				options.Leviathan = true;
 			else if (argument == "--outfit" && hasValue)

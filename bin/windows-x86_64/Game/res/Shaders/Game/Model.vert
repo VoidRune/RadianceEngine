@@ -44,6 +44,7 @@ layout(location = 9) out vec3 outWorld;
 layout(location = 10) flat out vec4 outAccent;
 layout(location = 11) flat out uint outFlash;
 layout(location = 15) flat out vec3 outCenter;
+layout(location = 16) out float outPulse;
 #ifdef DISSOLVE
 layout(location = 12) out vec3 outLocal;
 layout(location = 13) flat out vec4 outDissolve;
@@ -64,6 +65,25 @@ const float FloodLead = 0.3;
 const float HiltLead = 0.3;
 const float ForgeHiltLine = 6.2;
 const vec2 ForgeCenter = vec2(24.0, 24.0);
+const uint HeartbeatFlag = 536870912u;
+const float HeartDepth = 3.9;
+const float HeartNearFalloff = 0.16;
+const float HeartWaveSpeed = 6.5;
+const float HeartWaveWidth = 1.3;
+const float HeartWaveFade = 0.35;
+const float HeartBase = 0.45;
+const float HeartNear = 1.1;
+const float HeartWave = 1.6;
+const float HeartFlash = 1.6;
+
+float HeartbeatGain(vec3 local, vec4 beat)
+{
+	float distance = beat.w > 0.0 ? beat.w : length(local + vec3(0.0, HeartDepth, 0.0));
+	float near = exp(-distance * HeartNearFalloff);
+	float x = (distance - beat.x * HeartWaveSpeed) / HeartWaveWidth;
+	float wave = beat.x >= 0.0 ? exp(-x * x) * exp(-beat.x * HeartWaveFade) : 0.0;
+	return HeartBase + HeartNear * near + HeartWave * wave * (1.0 + beat.y) + HeartFlash * beat.z * near;
+}
 
 float MetalLift(float meters, vec4 pour, vec4 shape, vec3 world)
 {
@@ -135,6 +155,7 @@ void main()
 	outWorld = world;
 	outAccent = instance.Accent;
 	outCenter = vec3(instance.Row0.w, instance.Row1.w, instance.Row2.w);
+	outPulse = (instance.Info.w & HeartbeatFlag) != 0u ? HeartbeatGain(world - outCenter, instance.Accent) : 1.0;
 	outFlash = instance.Flash.a > 0.0 ? packUnorm4x8(instance.Flash) : 0u;
 #ifdef DISSOLVE
 	outLocal = vertex.PositionU.xyz * length(vec3(instance.Row0.y, instance.Row1.y, instance.Row2.y));

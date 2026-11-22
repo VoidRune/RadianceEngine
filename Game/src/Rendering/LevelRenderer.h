@@ -1,8 +1,11 @@
 #pragma once
 #include "Rendering/ObservatoryArt.h"
+#include "Rendering/EmberIslandArt.h"
 #include "Rendering/LevelArt.h"
 #include "Rendering/LakeArt.h"
 #include "Rendering/ForgeArt.h"
+#include "Rendering/PortalArt.h"
+#include "Rendering/TreeArt.h"
 #include <GameShared/Content/Brawl.h>
 #include <GameShared/World/Level.h>
 #include <glm/glm.hpp>
@@ -32,8 +35,6 @@ namespace Game
 		Vec2 CameraMin{ -1e9f, -1e9f };
 		Vec2 CameraMax{ 1e9f, 1e9f };
 		Vec2 Focus;
-		float FocusHeight = 0.0f;
-		bool Cutaway = true;
 		float Time = 0.0f;
 		int32_t HoveredPortal = -1;
 		int32_t ReachablePortal = -1;
@@ -42,6 +43,7 @@ namespace Game
 		float Restore = 1.0f;
 		float Clock = 0.0f;
 		bool ForceLeviathan = false;
+		bool GateFocus = false;
 	};
 
 	class IslandArt
@@ -146,6 +148,9 @@ namespace Game
 		ObservatoryArt m_Hall;
 		LakeArt m_Lake;
 		ForgeArt m_Forge;
+		PortalArt m_Portals;
+		TreeArt m_Trees;
+		EmberIslandArt m_Ember;
 		std::vector<float> m_PropReach;
 		std::vector<float> m_PropTop;
 		std::vector<glm::vec4> m_LavaRuns;

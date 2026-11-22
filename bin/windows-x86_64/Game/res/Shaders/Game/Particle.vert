@@ -51,7 +51,15 @@ void main()
 	else
 	{
 		float angle = uintBitsToFloat(particle.Info.w) + material.Motion.x * particle.PositionAge.w;
-		vec2 rotated = vec2(corner.x * cos(angle) - corner.y * sin(angle), corner.x * sin(angle) + corner.y * cos(angle)) * size;
+		vec2 shaped = corner;
+		if (align == AlignTumble)
+		{
+			float phase = float(particle.Info.y % 997u) * 0.37;
+			float flip = cos(particle.PositionAge.w * (1.6 + 0.9 * fract(phase)) + phase);
+			shaped.x *= sign(flip) * max(abs(flip), 0.18);
+			angle += 0.5 * sin(particle.PositionAge.w * 1.1 + phase);
+		}
+		vec2 rotated = vec2(shaped.x * cos(angle) - shaped.y * sin(angle), shaped.x * sin(angle) + shaped.y * cos(angle)) * size;
 		if (align == AlignGround)
 			world = center + vec3(rotated.x, 0.0, rotated.y);
 		else

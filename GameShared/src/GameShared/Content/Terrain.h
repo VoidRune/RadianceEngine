@@ -29,6 +29,7 @@ namespace Game
 		Skystone,
 		Sky,
 		Slate,
+		Deck,
 		Count,
 	};
 
@@ -77,6 +78,7 @@ namespace Game
 		{ TerrainId::Skystone, "Skystone", true, false, TerrainStyle::Slabs, 0xD9CCB0, 0xB6A787 },
 		{ TerrainId::Sky, "Open sky", true, false, TerrainStyle::Void, 0x9CC4E8, 0x9CC4E8 },
 		{ TerrainId::Slate, "Mountain slate", true, false, TerrainStyle::Slabs, 0x5E6A78, 0x4A5462 },
+		{ TerrainId::Deck, "Island deck", true, false, TerrainStyle::Void, 0x8C8577, 0x6E685D },
 	};
 
 	constexpr bool TerrainsMatchIds()

@@ -83,6 +83,7 @@ const uint AlignBillboard = 0u;
 const uint AlignVelocity = 1u;
 const uint AlignGround = 2u;
 const uint AlignPlane = 3u;
+const uint AlignTumble = 4u;
 
 const uint LightLayer = 2u;
 

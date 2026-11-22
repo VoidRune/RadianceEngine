@@ -13,6 +13,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -57,6 +58,20 @@ namespace Game
 		uint32_t GetStyleVersion() const { return m_StyleVersion; }
 		void ChooseCard(uint32_t choice);
 		void SetBrawlReady(bool ready);
+		void PickRunCard(uint32_t choice);
+		void RerollRunCards();
+		void BanishRunCard(uint32_t choice);
+		void SkipRunCards();
+		void PauseRun(bool paused);
+		void BuyRunItem(uint32_t slot);
+		void SellSigil(uint32_t slot);
+		void SellCard(CardId card);
+		void SwapSigils(uint32_t from, uint32_t to);
+		void UseShrine(uint32_t choice);
+		void SocketRune(RuneId rune, uint32_t slot, uint32_t socket);
+		void UnsocketRune(RuneId rune);
+		const std::optional<ServerRunRecap>& GetRecap() const { return m_Recap; }
+		bool IsRunPaused() const { return m_Session.Mode == GameMode::Shardfall && m_Status.Run.Paused; }
 		void Spectate(int32_t direction);
 		void JoinMatch();
 		bool IsSpectating() const;
@@ -205,6 +220,7 @@ namespace Game
 		std::deque<PendingHit> m_PendingHits;
 		std::vector<HitEvent> m_NewHits;
 		std::vector<Orb> m_Orbs;
+		std::optional<ServerRunRecap> m_Recap;
 
 		SnapshotDecoder m_Decoder;
 		std::deque<ServerSnapshot> m_Snapshots;

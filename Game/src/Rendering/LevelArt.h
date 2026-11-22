@@ -14,9 +14,7 @@ namespace Game
 		ModelInstance Instance{};
 		Vec2 Center;
 		float Reach = 0.0f;
-		Vec2 Extent;
 		float Base = 0.0f;
-		float Top = 0.0f;
 		bool Cut = false;
 		float Bob = 0.0f;
 		float BobPhase = 0.0f;
@@ -88,6 +86,7 @@ namespace Game
 		std::vector<uint8_t> WallDrawn;
 		std::vector<LevelFire> Fires;
 		GroundField Ground;
+		GrassField Grass;
 		PeakRelief Relief;
 		int32_t Width = 0;
 	};

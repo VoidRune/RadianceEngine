@@ -287,13 +287,17 @@ namespace Game
 			.SkyRadiance = glm::vec4(lighting.SkyColor, 0.0f),
 			.GroundRadiance = glm::vec4(lighting.GroundColor, 0.0f),
 			.Environment = environment.Params,
-			.Translucent = glm::vec4(0.0f, float(std::min<size_t>(lights.size(), MaxSpellLights)), 0.0f, 0.0f),
 		};
-		for (size_t i = 0; i < lights.size() && i < MaxSpellLights; i++)
+		size_t glassLights = 0;
+		for (size_t i = 0; i < lights.size() && glassLights < MaxSpellLights; i++)
 		{
-			frame.Lights[i * 2] = glm::vec4(lights[i].Position, lights[i].Radius);
-			frame.Lights[i * 2 + 1] = glm::vec4(lights[i].Color, 0.0f);
+			if (!lights[i].Glass)
+				continue;
+			frame.Lights[glassLights * 2] = glm::vec4(lights[i].Position, lights[i].Radius);
+			frame.Lights[glassLights * 2 + 1] = glm::vec4(lights[i].Color, 0.0f);
+			glassLights++;
 		}
+		frame.Translucent = glm::vec4(0.0f, float(glassLights), 0.0f, 0.0f);
 		for (uint32_t level = 0; level < GlassPyramidLevels; level++)
 			frame.Levels[level] = glm::vec4(glm::vec2(origins[level]) / glm::vec2(atlas), glm::vec2(float(sizes[level].Width), float(sizes[level].Height)) / glm::vec2(atlas));
 		std::memcpy(static_cast<uint8_t*>(m_Frame->GetMappedPtr()) + m_Frame->GetOffset(frameIndex), &frame, sizeof(frame));

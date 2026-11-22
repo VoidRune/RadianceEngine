@@ -104,6 +104,7 @@ namespace Game
 		glm::vec3 Position{ 0.0f };
 		float Radius = 3.0f;
 		glm::vec3 Color{ 0.0f };
+		bool Glass = true;
 	};
 
 	struct LakeLook
@@ -153,6 +154,7 @@ namespace Game
 		float LavaLine = -0.3f;
 		LakeLook Lake;
 		ColorGrade Grade;
+		glm::vec4 DepthHole{ 0.0f };
 	};
 
 	struct EnvironmentView
@@ -206,6 +208,7 @@ namespace Game
 			glm::mat4 ViewProjection;
 			glm::vec4 LavaTransform;
 			glm::vec4 LavaParams;
+			glm::vec4 DepthHole;
 		};
 
 		struct CullGpu

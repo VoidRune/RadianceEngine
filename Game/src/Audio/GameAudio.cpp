@@ -63,6 +63,11 @@ namespace Game
 			case MapKind::Hub:
 				return AmbienceScene::Hub;
 			case MapKind::ProvingHollow:
+			case MapKind::CrystalQuarry:
+			case MapKind::GlassTerrace:
+			case MapKind::HollowRoom:
+			case MapKind::QuarryRoom:
+			case MapKind::TerraceRoom:
 				return AmbienceScene::Crucible;
 			case MapKind::Caldera:
 				return AmbienceScene::Caldera;
@@ -850,6 +855,21 @@ namespace Game
 		};
 		switch (ability)
 		{
+		case AbilityId::Ascension:
+			PlayAt(Cue::Bell, at, 0.55f, 1.35f);
+			PlayAt(Cue::GlassLight, at, 0.45f, 1.1f, 0.05f);
+			PlayAt(Cue::WhooshHeavy, at, 0.4f, 1.3f);
+			break;
+		case AbilityId::ShardBomb:
+			PlayAt(Cue::Explosion, at, 0.85f, 0.85f);
+			PlayAt(Cue::Glass, at, 0.7f, 0.9f, 0.06f);
+			PlayAt(Cue::Rumble, at, 0.6f, 1.0f, 0.1f);
+			break;
+		case AbilityId::FrostClock:
+			PlayAt(Cue::IceImpact, at, 0.75f, 0.8f);
+			PlayAt(Cue::GlassLight, at, 0.6f, 0.7f, 0.08f);
+			PlayAt(Cue::Bell, at, 0.4f, 0.8f, 0.15f);
+			break;
 		case AbilityId::Aftershock:
 			PlayAt(Cue::Rock, at, 0.9f, 0.6f);
 			PlayAt(Cue::FireImpact, at, 0.6f, 0.7f, 0.03f);
@@ -890,6 +910,12 @@ namespace Game
 			break;
 		case AbilityId::FirebombFlame:
 			PlayAt(Cue::FireImpact, at, 0.3f, 1.35f);
+			break;
+		case AbilityId::RuneBlast:
+			PlayAt(Cue::Explosion, at, 0.45f, 1.45f);
+			break;
+		case AbilityId::RuneZone:
+			PlayAt(Cue::ManaStart, at, 0.18f, 1.2f);
 			break;
 		case AbilityId::StormStrike:
 			PlayAt(Cue::ShockHit, at, 0.85f, 0.75f);
@@ -1513,6 +1539,17 @@ namespace Game
 		case LootKind::Mana:
 			PlayUi(Cue::ManaStart, 0.6f, 1.1f);
 			break;
+		case LootKind::Magnet:
+			PlayUi(Cue::ManaStart, 0.6f, 1.4f);
+			PlayUi(Cue::Coins, 0.5f, 1.2f, 0.05f);
+			break;
+		case LootKind::Chest:
+			PlayUi(Cue::Coins, 0.7f, 1.0f);
+			PlayUi(Cue::UiRare, 0.6f, 1.0f, 0.08f);
+			break;
+		case LootKind::Bomb:
+		case LootKind::Frost:
+			break;
 		default:
 			PlayUi(Cue::Shield, 0.6f, 1.1f);
 			PlayUi(Cue::UiNotify, 0.5f, 1.0f, 0.1f);
@@ -1527,6 +1564,8 @@ namespace Game
 		{
 			if (played++ >= MaxHitSounds)
 				break;
+			if (hit.Ability == uint8_t(AbilityId::PerfectDodge))
+				continue;
 			if (hit.Warded)
 			{
 				PlayWardHit(hit);
@@ -1623,7 +1662,7 @@ namespace Game
 	void GameAudio::ObserveStatus(const GameClient& client)
 	{
 		const GameStatus& status = client.GetStatus();
-		if (status.Mode == GameMode::Shardfall && status.Run.Level > m_Status.Run.Level && m_Status.Mode == GameMode::Shardfall)
+		if (status.Mode == GameMode::Shardfall && status.Run.Rooms > m_Status.Run.Rooms && m_Status.Mode == GameMode::Shardfall)
 			PlayUi(Cue::UiReward, 0.7f);
 	}
 }

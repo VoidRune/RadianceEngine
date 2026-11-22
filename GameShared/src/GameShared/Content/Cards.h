@@ -61,6 +61,12 @@ namespace Game
 		EchoChamber,
 		UnstableArcana,
 		Quicksilver,
+		Multishot,
+		Piercing,
+		ChainReaction,
+		KeenEdge,
+		Shatter,
+		Shock,
 		Count,
 	};
 
@@ -111,6 +117,7 @@ namespace Game
 		InDamage = 1 << 0,
 		InKnockback = 1 << 1,
 		InBoth = InDamage | InKnockback,
+		InRun = 1 << 2,
 	};
 
 	struct CardDef
@@ -127,6 +134,7 @@ namespace Game
 		AbilityId Needs = AbilityId::Count;
 		AbilityId NeedsAlt = AbilityId::Count;
 		CardId NeedsCard = CardId::Count;
+		const char* RunDescription = nullptr;
 	};
 
 	inline constexpr CardDef Cards[] = {
@@ -181,6 +189,12 @@ namespace Game
 		{ CardId::EchoChamber, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Echo Chamber", "Every spell casts two extra copies at 60% strength: projectiles fan out beside it and area spells land around your target. Cooldowns are 40% longer. Warp, wards, Chain Hook and Frost Nova don't echo.", nullptr, TagStorm, InDamage },
 		{ CardId::UnstableArcana, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Unstable Arcana", "Every spell you cast surges at random: double damage, 75% more area, two extra copies, or no cooldown.", nullptr, 0, InDamage },
 		{ CardId::Quicksilver, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Quicksilver", "Keep moving to build charge. After 1.2 s on the move your spells deal double damage. Standing still drains it and every hit you take halves it.", nullptr, TagStorm, InDamage },
+		{ CardId::Multishot, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Multishot", "Your projectile spells fire one more projectile, each 10% weaker.", nullptr, TagMana, InRun },
+		{ CardId::Piercing, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Piercing", "Your projectiles pass through one more crawler.", nullptr, TagFrost, InRun },
+		{ CardId::ChainReaction, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Chain Reaction", "Your chaining spells jump one more time. At rank II every projectile chains once.", nullptr, TagStorm, InRun },
+		{ CardId::KeenEdge, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Keen Edge", "Your critical hits deal 50% more, and you crit 5% more often.", nullptr, TagGuard, InRun },
+		{ CardId::Shatter, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Shatter", "Chilled crawlers you kill burst into shards that hit everything nearby for a third of their health.", nullptr, TagFrost, InRun },
+		{ CardId::Shock, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Shock", "Your lightning shocks crawlers for 3 seconds. Shocked crawlers take 15% more damage from everyone.", nullptr, TagStorm, InRun },
 	};
 	static_assert(std::size(Cards) == size_t(CardId::Count));
 
@@ -389,6 +403,7 @@ namespace Game
 		PerkSeek = 1 << 3,
 		PerkBurst = 1 << 4,
 		PerkReach = 1 << 5,
+		PerkDebt = 1 << 6,
 	};
 
 	enum StrikePerk : uint8_t

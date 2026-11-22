@@ -239,6 +239,14 @@ namespace Game
 			return BuildStormPeakLevel(seed);
 		case MapKind::ProvingHollow:
 			return BuildProvingHollowLevel(seed);
+		case MapKind::CrystalQuarry:
+			return BuildCrystalQuarryLevel(seed);
+		case MapKind::GlassTerrace:
+			return BuildGlassTerraceLevel(seed);
+		case MapKind::HollowRoom:
+		case MapKind::QuarryRoom:
+		case MapKind::TerraceRoom:
+			return BuildShardRoomLevel(kind, seed);
 		default:
 			return BuildHubLevel(seed);
 		}

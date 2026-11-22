@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/PortalTerrace.h"
 #include "GameShared/World/Shapes.h"
 #include <cstdint>
 #include <iterator>
@@ -141,6 +142,10 @@ namespace Game
 		SulfurVent,
 		MoltenAnchor,
 		MoltenCone,
+		GreatOak,
+		CrystalSpire,
+		AutumnTree,
+		EmberStone,
 		Count,
 	};
 
@@ -701,20 +706,43 @@ namespace Game
 		inline constexpr uint32_t BasaltEdge = 0x4A3F38;
 		inline constexpr uint32_t Ember = 0xFF6A1F;
 
-		inline constexpr PropCollider CalderaGateColliders[] = { Rect({ 1.75f, 0.42f }) };
+		inline constexpr uint32_t Maple = 0xC23A1A;
+		inline constexpr PropCollider AutumnTreeColliders[] = {
+			Circle(1.45f),
+			Circle(0.85f, Block::All, { 3.3f, -1.3f }),
+			Circle(0.85f, Block::All, { -2.3f, 0.8f }),
+			Circle(0.55f, Block::All, { -0.7f, 2.3f }),
+			Circle(0.55f, Block::All, { 2.4f, 1.5f }),
+		};
+		inline constexpr PropCollider EmberStoneColliders[] = { Circle(0.62f) };
+		inline constexpr PropPart AutumnTreeParts[] = {
+			Cylinder({}, 0.0f, { 1.2f, 1.2f }, 5.0f, WoodDark),
+			Sphere({ 0.0f, 0.1f }, 4.4f, { 5.0f, 4.0f }, 7.0f, Maple),
+		};
+
+		inline constexpr PropCollider CalderaGateColliders[] = {
+			Rect({ 2.55f, 0.95f }, Block::All, { 0.0f, 1.5f }),
+			Circle(0.6f, Block::All, { -3.5f, -3.83f }),
+			Circle(0.6f, Block::All, { 3.5f, -3.83f }),
+			Circle(0.3f, Block::All, { -3.06f, -3.31f }),
+			Circle(0.3f, Block::All, { 3.06f, -3.31f }),
+			Circle(0.3f, Block::All, { -2.74f, -2.92f }),
+			Circle(0.3f, Block::All, { 2.74f, -2.92f }),
+			Circle(0.3f, Block::All, { -2.44f, -2.57f }),
+			Circle(0.3f, Block::All, { 2.44f, -2.57f }),
+			Circle(0.45f, Block::All, { -3.47f, 0.0f }),
+			Circle(0.45f, Block::All, { 3.47f, 0.0f }),
+			Circle(0.3f, Block::All, { -3.28f, 1.33f }),
+			Circle(0.3f, Block::All, { 3.28f, 1.33f }),
+		};
 		inline constexpr PropPart CalderaGateParts[] = {
-			Box({}, 0.0f, { 2.05f, 0.7f }, 0.16f, StoneDark),
-			Box({ -1.38f, 0.0f }, 0.16f, { 0.34f, 0.34f }, 2.9f, Basalt),
-			Box({ 1.38f, 0.0f }, 0.16f, { 0.34f, 0.34f }, 2.9f, Basalt),
-			Box({ -1.38f, 0.0f }, 0.16f, { 0.4f, 0.4f }, 0.3f, BasaltEdge),
-			Box({ 1.38f, 0.0f }, 0.16f, { 0.4f, 0.4f }, 0.3f, BasaltEdge),
-			Box({}, 3.06f, { 1.95f, 0.44f }, 0.46f, Basalt),
-			Box({}, 3.52f, { 1.6f, 0.36f }, 0.12f, BasaltEdge),
-			Box({}, 0.16f, { 1.04f, 0.06f }, 2.9f, Ember, 0.0f, 0.75f),
-			Box({ 0.0f, -0.08f }, 0.16f, { 0.86f, 0.02f }, 2.6f, Flame, 0.0f, 1.0f),
-			Sphere({}, 3.64f, { 0.22f, 0.22f }, 0.4f, Flame, 0.0f, 1.0f),
-			Cone({ -1.25f, 0.0f }, 3.64f, { 0.13f, 0.13f }, 0.32f, Ember, 0.0f, 0.9f),
-			Cone({ 1.25f, 0.0f }, 3.64f, { 0.13f, 0.13f }, 0.32f, Ember, 0.0f, 0.9f),
+			Cylinder({}, -PortalTerraceHeight, { 3.8f, 3.8f }, PortalTerraceHeight, StoneDark),
+			Box({ -1.9f, 1.3f }, 0.0f, { 0.6f, 0.5f }, 3.6f, Stone),
+			Box({ 1.9f, 1.3f }, 0.0f, { 0.6f, 0.5f }, 3.6f, Stone),
+			Box({ 0.0f, 1.3f }, 3.6f, { 2.5f, 0.5f }, 1.6f, Stone),
+			Box({ 0.0f, 1.3f }, 0.0f, { 1.2f, 0.03f }, 3.6f, ClothBlue, 0.0f, 1.0f),
+			Box({ -3.5f, -3.83f }, -PortalTerraceHeight, { 0.45f, 0.45f }, 1.4f, StoneDark),
+			Box({ 3.5f, -3.83f }, -PortalTerraceHeight, { 0.45f, 0.45f }, 1.4f, StoneDark),
 		};
 
 		inline constexpr uint32_t Obsidian = 0x17141B;
@@ -898,6 +926,17 @@ namespace Game
 		inline constexpr PropCollider HarborPostColliders[] = { Circle(0.26f, Block::Movement) };
 		inline constexpr PropCollider HarborBoatColliders[] = { Rect({ 0.8f, 1.85f }, Block::Movement) };
 		inline constexpr PropCollider SulfurVentColliders[] = { Circle(0.72f, Block::Movement) };
+		inline constexpr PropCollider GreatOakColliders[] = { Circle(1.25f) };
+		inline constexpr PropPart GreatOakParts[] = {
+			Cylinder({}, 0.0f, { 0.7f, 0.7f }, 3.2f, Trunk),
+			Sphere({}, 2.6f, { 2.6f, 2.6f }, 3.6f, Leaves),
+			Sphere({ 1.1f, 0.7f }, 3.8f, { 1.8f, 1.8f }, 2.6f, LeavesLight),
+		};
+		inline constexpr PropCollider CrystalSpireColliders[] = { Circle(1.0f) };
+		inline constexpr PropPart CrystalSpireParts[] = {
+			Cone({}, 0.0f, { 0.9f, 0.9f }, 3.4f, 0x9A7BE0, 0.0f, 0.25f),
+			Cone({ 0.7f, 0.4f }, 0.0f, { 0.45f, 0.45f }, 1.8f, 0xB79CF0, 0.0f, 0.25f),
+		};
 		inline constexpr PropCollider MoltenAnchorColliders[] = { Circle(0.5f, Block::Movement) };
 		inline constexpr PropCollider MoltenConeColliders[] = { Circle(2.5f) };
 		inline constexpr PropPart SummitCrystalParts[] = { Box({}, 0.0f, { 0.25f, 0.25f }, 1.2f, StormGlow, 0.4f, 0.6f) };
@@ -1003,6 +1042,10 @@ namespace Game
 		{ PropId::SulfurVent, "Sulfur vent", PropData::SulfurVentColliders, {} },
 		{ PropId::MoltenAnchor, "Chain anchor", PropData::MoltenAnchorColliders, {} },
 		{ PropId::MoltenCone, "Vent cone", PropData::MoltenConeColliders, {} },
+		{ PropId::GreatOak, "Great oak", PropData::GreatOakColliders, PropData::GreatOakParts, true },
+		{ PropId::CrystalSpire, "Crystal spire", PropData::CrystalSpireColliders, PropData::CrystalSpireParts, true },
+		{ PropId::AutumnTree, "Autumn maple", PropData::AutumnTreeColliders, PropData::AutumnTreeParts },
+		{ PropId::EmberStone, "Outcrop", PropData::EmberStoneColliders, {} },
 	};
 
 	constexpr bool PropsMatchIds()

@@ -4,12 +4,30 @@
 #include "GameShared/Simulation/PlayerInput.h"
 #include "GameShared/World/Collision.h"
 #include "GameShared/World/Level.h"
+#include <algorithm>
+#include <cmath>
 #include <span>
 
 namespace Game
 {
+	inline float DodgeReady(const PlayerTraits& traits)
+	{
+		return float(std::max<uint8_t>(traits.DodgeCharges, 1) - 1) * traits.Dodge.Cooldown + 1e-4f;
+	}
+
+	inline uint32_t DodgesReady(const PlayerState& state, const PlayerTraits& traits)
+	{
+		const uint32_t charges = std::max<uint8_t>(traits.DodgeCharges, 1);
+		if (traits.Dodge.Cooldown <= 0.0f)
+			return charges;
+		const uint32_t spent = uint32_t(std::ceil(std::max(state.DodgeCooldown - 1e-4f, 0.0f) / traits.Dodge.Cooldown));
+		return spent >= charges ? 0u : charges - spent;
+	}
+
 	inline constexpr float PortalCooldownSeconds = 0.75f;
 	inline constexpr float FallSeconds = 1.2f;
+	inline constexpr float OvercastFloor = 0.25f;
+	inline constexpr float OvercastMinimum = 0.5f;
 	inline constexpr float LiftSeconds = 0.8f;
 
 	struct CollapsePlan;
@@ -54,6 +72,8 @@ namespace Game
 	bool IsRecastable(AbilityId ability);
 	bool AwaitsNovaRecast(const PlayerState& state, uint32_t slot);
 	bool HoldsCooldown(const PlayerState& state, uint32_t slot);
+	float OvercastPrice(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
+	bool CanOvercast(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
 	bool IsCharged(const SkillTraits& skill);
 	float ChargePower(const PlayerState& state, const SkillTraits& skill);
 	Vec2 GetHookPoint(const PlayerState& state);

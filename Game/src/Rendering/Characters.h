@@ -238,7 +238,8 @@ namespace Game
 
 	AttackAnim PlayerAttackAnim(AbilityId ability);
 	AttackAnim EnemyAttackAnim(EntityKind kind);
+	AttackAnim FighterAttackAnim(AbilityId ability);
 
-	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f), const glm::vec4& flash = glm::vec4(0.0f), const ModelDissolve& dissolve = {});
+	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f), const glm::vec4& flash = glm::vec4(0.0f), const ModelDissolve& dissolve = {}, uint32_t extraFlags = 0);
 	glm::mat4 ModelTransform(const glm::vec3& base, float facing, float scale);
 }

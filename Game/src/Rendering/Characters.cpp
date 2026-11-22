@@ -279,6 +279,12 @@ namespace Game
 		CharacterLook& archivist = enemy(EntityKind::Archivist, "Skeleton_Mage_", 1.7f, Stance::Shambling);
 		Attach(archivist, "Skeleton_Staff", rightHand);
 		Attach(archivist, "spellbook_open", leftHand);
+		Attach(enemy(EntityKind::CrystalDuelist, "Skeleton_Warrior_", 0.78f, Stance::Heavy), "Skeleton_Blade", rightHand);
+		Attach(enemy(EntityKind::ShardArcher, "Skeleton_Rogue_", 0.8f, Stance::Rifle), "Skeleton_Crossbow", rightHand, CrossbowGrip);
+		Attach(enemy(EntityKind::PrismMage, "Skeleton_Mage_", 0.82f, Stance::Light), "Skeleton_Staff", rightHand);
+		Attach(enemy(EntityKind::GeodeBrute, "Skeleton_Warrior_", 1.12f, Stance::Heavy), "Skeleton_Axe", rightHand);
+		enemy(EntityKind::MirrorMoth, "Skeleton_Minion_", 0.68f, Stance::Light);
+		Attach(enemy(EntityKind::LensWisp, "Skeleton_Mage_", 0.7f, Stance::Light), "Skeleton_Staff", rightHand);
 	}
 
 	float CharacterLibrary::TopOf(const CharacterLook& look) const
@@ -497,6 +503,45 @@ namespace Game
 		}
 	}
 
+	AttackAnim FighterAttackAnim(AbilityId ability)
+	{
+		switch (ability)
+		{
+		case AbilityId::DuelistSlash:
+			return { Anim::Slash };
+		case AbilityId::DuelistCleave:
+			return { Anim::Chop };
+		case AbilityId::DuelistThrust:
+			return { Anim::Stab };
+		case AbilityId::DuelistLunge:
+			return { Anim::HeavyStab };
+		case AbilityId::ArcherShot:
+		case AbilityId::ArcherVolley:
+			return { Anim::RifleAim, Anim::RifleShoot };
+		case AbilityId::Comet:
+			return { Anim::MagicRaise, Anim::MagicShoot };
+		case AbilityId::ArcLightning:
+			return { Anim::MagicCast, Anim::MagicShoot };
+		case AbilityId::GlacialEruption:
+			return { Anim::CastNova };
+		case AbilityId::BruteSlam:
+		case AbilityId::BruteQuake:
+			return { Anim::Chop };
+		case AbilityId::GeodeToss:
+		case AbilityId::LensBeam:
+		case AbilityId::LensSweep:
+			return { Anim::MagicRaise, Anim::MagicShoot };
+		case AbilityId::MothDust:
+			return { Anim::MagicCast, Anim::MagicShoot };
+		case AbilityId::MothDive:
+			return { Anim::Stab };
+		case AbilityId::LensFlare:
+			return { Anim::CastNova };
+		default:
+			return {};
+		}
+	}
+
 	glm::mat4 ModelTransform(const glm::vec3& base, float facing, float scale)
 	{
 		const glm::vec3 forward(std::cos(facing), 0.0f, std::sin(facing));
@@ -509,7 +554,7 @@ namespace Game
 		return transform;
 	}
 
-	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent, const glm::vec4& flash, const ModelDissolve& dissolve)
+	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent, const glm::vec4& flash, const ModelDissolve& dissolve, uint32_t extraFlags)
 	{
 		CharacterPose pose;
 		pose.Model = ModelTransform(base, facing, scale);
@@ -520,9 +565,9 @@ namespace Game
 		const uint32_t palette = renderer.AddPalette(skin, skeleton.JointCount());
 		const bool accented = glm::vec3(accent) != glm::vec3(0.0f);
 		for (const CharacterPart& part : look.Parts)
-			renderer.DrawModel(part.Mesh, pose.Model, palette, glm::vec4(glm::vec3(tint) * part.Shade, tint.a), emission, base.y, accent, accented ? part.Accent : 0u, flash, dissolve);
+			renderer.DrawModel(part.Mesh, pose.Model, palette, glm::vec4(glm::vec3(tint) * part.Shade, tint.a), emission, base.y, accent, (accented ? part.Accent : 0u) | extraFlags, flash, dissolve);
 		for (const PropAttachment& prop : look.Props)
-			renderer.DrawModel(prop.Mesh, pose.Model * pose.Globals[prop.Joint] * prop.Offset, NoPalette, tint, emission, base.y, accent, 0u, flash, dissolve);
+			renderer.DrawModel(prop.Mesh, pose.Model * pose.Globals[prop.Joint] * prop.Offset, NoPalette, tint, emission, base.y, accent, extraFlags, flash, dissolve);
 		return pose;
 	}
 }

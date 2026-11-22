@@ -198,6 +198,8 @@ namespace Game
 				return { { { { .Mesh = "Nature/Oak_A" } }, { { .Mesh = "Nature/Oak_B" } } }, true };
 			case PropId::PineTree:
 				return { { { { .Mesh = "Nature/Pine_A" } }, { { .Mesh = "Nature/Pine_B" } } }, true };
+			case PropId::GreatOak:
+				return { { { { .Mesh = "Nature/Oak_A", .Scale = Uniform(1.9f) } }, { { .Mesh = "Nature/Oak_B", .Scale = Uniform(1.9f) } } }, true };
 			case PropId::Bush:
 				return { { { { .Mesh = "Nature/Bush_A" } }, { { .Mesh = "Nature/Bush_B" } }, { { .Mesh = "Nature/Bush_C" } } }, true };
 			case PropId::Boulder:
@@ -276,14 +278,33 @@ namespace Game
 				return { { { { .Mesh = "Stations/Lectern" } } } };
 			case PropId::Crystal:
 				return { { { { .Mesh = "Arcana/Crystal_A" } }, { { .Mesh = "Arcana/Crystal_B" } }, { { .Mesh = "Arcana/Crystal_C" } } }, true };
+			case PropId::CrystalSpire:
+				return { { { { .Mesh = "Arcana/Crystal_A", .Scale = Uniform(3.2f) } }, { { .Mesh = "Arcana/Crystal_B", .Scale = Uniform(3.2f) } }, { { .Mesh = "Arcana/Crystal_C", .Scale = Uniform(3.2f) } } }, true };
 			case PropId::Globe:
 				return { { { { .Mesh = "Arcana/Armillary" } } } };
 			case PropId::Telescope:
 				return { { { { .Mesh = "Arcana/Telescope" } } } };
 			case PropId::Statue:
 				return { { { { .Mesh = "Arcana/Statue" } } } };
+			case PropId::AutumnTree:
+				return { { { { .Mesh = "AutumnTree/Stones" }, { .Mesh = "AutumnTree/Litter" } } } };
 			case PropId::CalderaGate:
-				return { { { { .Mesh = "Emberhold/CalderaGate" } } } };
+			{
+				const glm::vec3 Sink{ 0.0f, -PortalTerraceHeight, 0.0f };
+				return { { {
+					{ .Mesh = "MainPortal/Arch", .Offset = Sink },
+					{ .Mesh = "MainPortal/Terrace", .Offset = Sink },
+					{ .Mesh = "MainPortal/Marble", .Offset = Sink },
+					{ .Mesh = "MainPortal/Floor", .Offset = Sink },
+					{ .Mesh = "MainPortal/Gold", .Offset = Sink },
+					{ .Mesh = "MainPortal/Inlay", .Offset = Sink },
+					{ .Mesh = "MainPortal/Ember", .Offset = Sink },
+					Fire({ -3.498f, 0.764f, -3.827f }, FireKind::Campfire, 0.46f),
+					Fire({ 3.498f, 0.764f, -3.827f }, FireKind::Campfire, 0.46f),
+					Fire({ -3.47f, 1.216f, 0.0f }, FireKind::Campfire, 0.4f),
+					Fire({ 3.47f, 1.216f, 0.0f }, FireKind::Campfire, 0.4f),
+				} } };
+			}
 			case PropId::MageTower:
 				return { { { { .Mesh = "Emberhold/MageTower" }, Fire({ 0.62f, 2.05f, -1.62f }, FireKind::Lantern, 0.7f) } } };
 			case PropId::PierPost:
@@ -1650,7 +1671,6 @@ namespace Game
 						m_EdgeRocks = snowy;
 						m_CliffRocks = snowy;
 					}
-				m_Grass = FindWeighted({ { "Nature/Grass_A", 1.0f }, { "Nature/Grass_B", 0.9f }, { "Nature/Grass_C", 1.0f } });
 				m_SmallBushes = FindWeighted({ { "Nature/Bush_B", 0.6f }, { "Nature/Bush_A", 0.5f }, { "Nature/Bush_C", 0.45f } });
 				m_Saplings = FindWeighted({ { "Tree_Bare_1_A_Color1", 0.5f }, { "Tree_Bare_2_A_Color1", 0.4f } });
 				const std::optional<uint32_t> layers[] = { m_Renderer.FindMaterialSlot(m_Level.Kind == MapKind::FrozenLake && m_Renderer.FindMaterialSlot("GroundSnow") ? "GroundSnow" : "GroundGrass"), m_Renderer.FindMaterialSlot("GroundDirt"), m_Renderer.FindMaterialSlot("GroundRock"), m_Renderer.FindMaterialSlot("GroundSand") };
@@ -1745,9 +1765,7 @@ namespace Game
 				item.Instance = instance;
 				item.Center = { (low.x + high.x) * 0.5f, (low.z + high.z) * 0.5f };
 				item.Reach = 0.5f * std::sqrt((high.x - low.x) * (high.x - low.x) + (high.z - low.z) * (high.z - low.z)) + bob;
-				item.Extent = { (high.x - low.x) * 0.5f, (high.z - low.z) * 0.5f };
 				item.Base = base;
-				item.Top = high.y;
 				item.Cut = cut;
 				item.Bob = bob;
 				item.BobPhase = phase;
@@ -3464,7 +3482,89 @@ namespace Game
 						else if (kind == GroundHill || (lakeside && lakes[cell] < FarAway))
 							m_Scene.Cells[CellIndex(x, y)] |= CellTop | CellSides;
 					}
+				m_Scene.Grass = {};
+				if (!cliffs && !snowy && m_Scene.Relief.IsEmpty())
+					BuildGrass(heights, colors, used, paved, lakes, vw, vh);
 				m_Scene.Ground = { std::move(heights), vw, vh };
+			}
+
+			void BuildGrass(const std::vector<float>& heights, const std::vector<uint32_t>& colors, const std::vector<uint8_t>& used, const std::vector<float>& paved, const std::vector<float>& lakes, int32_t vw, int32_t vh)
+			{
+				const int32_t steps = TerrainSteps;
+				const size_t count = size_t(vw) * size_t(vh);
+				std::vector<float> keep(count, 1.0f);
+				const auto carve = [&](Vec2 center, float inner, float outer)
+				{
+					const int32_t i0 = std::max(int32_t(std::floor((center.x - outer + float(TerrainMargin)) * float(steps))), 0);
+					const int32_t i1 = std::min(int32_t(std::ceil((center.x + outer + float(TerrainMargin)) * float(steps))), vw - 1);
+					const int32_t j0 = std::max(int32_t(std::floor((center.y - outer + float(TerrainMargin)) * float(steps))), 0);
+					const int32_t j1 = std::min(int32_t(std::ceil((center.y + outer + float(TerrainMargin)) * float(steps))), vh - 1);
+					for (int32_t j = j0; j <= j1; j++)
+						for (int32_t i = i0; i <= i1; i++)
+						{
+							const float distance = Length(Vec2(float(i) / float(steps) - float(TerrainMargin), float(j) / float(steps) - float(TerrainMargin)) - center);
+							float& slot = keep[size_t(j) * size_t(vw) + size_t(i)];
+							slot = std::min(slot, Ease((distance - inner) / (outer - inner)));
+						}
+				};
+				for (const PlacedProp& prop : m_Level.Props)
+				{
+					float reach = 0.3f;
+					for (const PropPart& part : GetProp(prop.Id).Parts)
+						reach = std::max(reach, Length(part.Offset) + std::max(part.Half.x, part.Half.y));
+					if (m_PropArt[size_t(prop.Id)].Natural)
+						carve(prop.Position, 0.3f * reach, 0.7f * reach);
+					else
+						carve(prop.Position, reach + 0.05f, reach + 0.4f);
+				}
+				for (const WallSegment& wall : m_Level.Walls)
+				{
+					const float length = Length(wall.To - wall.From);
+					const int32_t samples = std::max(int32_t(std::ceil(length / 0.2f)), 1);
+					for (int32_t s = 0; s <= samples; s++)
+						carve(wall.From + (wall.To - wall.From) * (float(s) / float(samples)), 0.3f, 0.6f);
+				}
+				const int32_t columns = m_GroundColumns;
+				const int32_t rows = m_GroundRows;
+				GrassField& grass = m_Scene.Grass;
+				grass.Columns = vw;
+				grass.Rows = vh;
+				grass.Origin = glm::vec2(-float(TerrainMargin));
+				grass.Step = 1.0f / float(steps);
+				grass.Texels.assign(count, glm::vec4(0.0f));
+				const auto unit = [](uint32_t packed, uint32_t shift) { return float((packed >> shift) & 0xFFu) / 255.0f; };
+				bool any = false;
+				for (int32_t j = 0; j < vh; j++)
+					for (int32_t i = 0; i < vw; i++)
+					{
+						const size_t k = size_t(j) * size_t(vw) + size_t(i);
+						glm::vec4& texel = grass.Texels[k];
+						texel.x = heights[k];
+						if (!used[k])
+							continue;
+						bool open = true;
+						for (int32_t ey = std::max(j % steps == 0 ? j / steps - 1 : j / steps, 0); ey <= std::min(j / steps, rows - 1) && open; ey++)
+							for (int32_t ex = std::max(i % steps == 0 ? i / steps - 1 : i / steps, 0); ex <= std::min(i / steps, columns - 1) && open; ex++)
+							{
+								const size_t c = size_t(ey) * size_t(columns) + size_t(ex);
+								const uint8_t kind = m_Ground[c].Kind;
+								open = kind != GroundPaved && kind != GroundWater && kind != GroundNone && lakes[c] >= FarAway;
+							}
+						if (!open)
+							continue;
+						const uint32_t packed = colors[k];
+						const float dirt = unit(packed, 0);
+						const float rock = unit(packed, 8);
+						const float sand = unit(packed, 16);
+						const float cover = std::max(1.0f - dirt - rock - sand, 0.0f);
+						const float stones = Ease((paved[k] / float(steps) - 0.2f) / 0.5f);
+						texel.y = Ease((cover - 0.2f) / 0.55f) * keep[k] * stones;
+						texel.z = std::clamp(unit(packed, 24), 0.0f, 1.0f);
+						texel.w = std::clamp(1.4f * dirt + sand, 0.0f, 1.0f);
+						any |= texel.y > 0.0f;
+					}
+				if (!any)
+					m_Scene.Grass = {};
 			}
 
 			void Islets(uint32_t material, uint32_t layer)
@@ -5282,7 +5382,7 @@ namespace Game
 					const bool onLakeShore = m_Level.Kind == MapKind::FrozenLake && !IsBrawlFloor(m_Map.GetTerrain(int32_t(prop.Position.x), int32_t(prop.Position.y)));
 					const float base = onLakeShore ? m_LakeLand.Height(prop.Position) : !m_Scene.Relief.IsEmpty() ? m_Scene.Relief.Footing(prop.Position, Footprint(prop.Id)) : art.Natural ? NaturalBase(prop.Position, prop.Base) : prop.Base;
 					const glm::mat4 place = Translation({ prop.Position.x, base, prop.Position.y }) * RotationY(prop.Yaw) * Scaling(Uniform(jitter));
-					const bool tall = GetProp(prop.Id).Tall;
+					const bool tall = GetProp(prop.Id).Tall && prop.Id != PropId::CalderaGate;
 					glm::vec3 low(1e9f);
 					glm::vec3 high(-1e9f);
 					for (const ResolvedPart& part : variant)
@@ -5418,31 +5518,14 @@ namespace Game
 						const glm::vec3 center = glm::vec3(spot.Base.x, spot.Top - radius * 0.45f, spot.Base.y) - outward * (0.05f + 0.08f * roll(955u));
 						Add(rock, Translation(center) * AlignUp(axis, roll(956u) * TwoPi) * Scaling(Uniform(rock.Scale * radius / 0.4f)), glm::vec4(0.95f, 0.95f, 0.95f, 0.0f), center.y, false, center.y);
 					}
-					if (!m_Grass.empty() && !spot.HighStep && roll(911u) < (paved ? 0.08f : spot.Cliff ? 0.3f : 0.34f))
+					if (!spot.Cliff && !spot.LowStep && roll(921u) < (spot.LowPaved ? 0.12f : 0.45f))
 					{
-						const WeightedMesh& tuft = m_Grass[Hash(hx, hy, 914u) % m_Grass.size()];
-						const glm::vec3 base = glm::vec3(spot.Base.x, spot.Top - 0.02f, spot.Base.y) - outward * (0.04f + 0.1f * roll(912u));
-						const glm::vec3 lean = glm::normalize(up + outward * (0.3f + 0.35f * roll(913u)));
-						Add(tuft, Translation(base) * AlignUp(lean, roll(915u) * TwoPi) * Scaling(Uniform(tuft.Scale * (0.65f + 0.35f * roll(916u)))), plain, base.y, false, base.y);
-					}
-					if (!spot.Cliff && !spot.LowStep && !m_Grass.empty() && roll(921u) < (spot.LowPaved ? 0.12f : 0.45f))
-					{
-						const WeightedMesh& tuft = m_Grass[Hash(hx, hy, 924u) % m_Grass.size()];
-						const glm::vec3 base = glm::vec3(spot.Base.x, spot.Bottom - 0.01f, spot.Base.y) + outward * (0.08f + 0.18f * roll(922u));
-						Add(tuft, Translation(base) * AlignUp(glm::normalize(up + outward * 0.15f), roll(925u) * TwoPi) * Scaling(Uniform(tuft.Scale * (0.7f + 0.4f * roll(926u)))), plain, base.y, false, base.y);
 						if (!spot.LowPaved && !m_SmallBushes.empty() && roll(927u) < 0.08f)
 						{
 							const WeightedMesh& bush = m_SmallBushes[Hash(hx, hy, 928u) % m_SmallBushes.size()];
 							const glm::vec3 spotBase = glm::vec3(spot.Base.x, spot.Bottom - 0.02f, spot.Base.y) + outward * 0.22f;
 							Add(bush, Translation(spotBase) * RotationY(roll(929u) * TwoPi) * Scaling(Uniform(bush.Scale * (0.6f + 0.3f * roll(930u)))), plain, spotBase.y, false, spotBase.y);
 						}
-					}
-					if (!m_Grass.empty() && drop > 0.55f && roll(931u) < (spot.Cliff ? 0.07f : 0.1f))
-					{
-						const WeightedMesh& tuft = m_Grass[Hash(hx, hy, 934u) % m_Grass.size()];
-						const glm::vec3 base = face(0.25f + 0.45f * roll(932u)) - outward * 0.03f;
-						const glm::vec3 lean = glm::normalize(outward * 0.9f + up * (0.35f + 0.3f * roll(933u)));
-						Add(tuft, Translation(base) * AlignUp(lean, roll(935u) * TwoPi) * Scaling(Uniform(tuft.Scale * (0.5f + 0.3f * roll(936u)))), plain, base.y, false, base.y);
 					}
 					if (!spot.Cliff && !spot.HighStep && !m_Roots.empty() && drop > 0.8f && roll(941u) < 0.025f)
 					{
@@ -5770,8 +5853,8 @@ namespace Game
 						{
 						case TerrainId::Grass:
 							if (roll < 330)
-								Scatter(m_Grass, x, y, 70, top, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f));
-							else if (roll < 380)
+								break;
+							if (roll < 380)
 								Scatter(m_SmallBushes, x, y, 80, top, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f));
 							else if (roll < 400)
 								Scatter(m_Pebbles, x, y, 90, top, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f));
@@ -5857,7 +5940,6 @@ namespace Game
 			std::vector<WeightedMesh> m_CliffRocks;
 			std::vector<WeightedMesh> m_Shrines;
 			std::vector<WeightedMesh> m_Pebbles;
-			std::vector<WeightedMesh> m_Grass;
 			std::vector<WeightedMesh> m_SmallBushes;
 			std::vector<WeightedMesh> m_Saplings;
 			std::vector<WeightedMesh> m_Roots;

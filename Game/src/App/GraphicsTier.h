@@ -1,4 +1,5 @@
 #pragma once
+#include "Rendering/Grass.h"
 #include "Rendering/Lighting.h"
 #include <RadianceEngine/Graphics/Device.h>
 #include <cstdint>
@@ -21,6 +22,7 @@ namespace Game
 		uint32_t FrameCap = 240;
 		uint32_t RenderScale = 100;
 		AntiAliasing Aa = AntiAliasing::Smaa;
+		GrassQuality Grass = GrassQuality::High;
 	};
 
 	inline constexpr uint32_t MinFrameCap = 30;
@@ -30,9 +32,9 @@ namespace Game
 
 	inline constexpr const char* GraphicsTierNames[] = { "low", "medium", "high" };
 	inline constexpr GraphicsPreset GraphicsPresets[] = {
-		{ ShadowQuality::Low, GiQuality::Off, 60, 75, AntiAliasing::Off },
-		{ ShadowQuality::High, GiQuality::Low, 144, 85, AntiAliasing::Smaa },
-		{ ShadowQuality::High, GiQuality::Medium, 240, 100, AntiAliasing::Smaa },
+		{ ShadowQuality::Low, GiQuality::Off, 60, 75, AntiAliasing::Off, GrassQuality::Low },
+		{ ShadowQuality::High, GiQuality::Low, 144, 85, AntiAliasing::Smaa, GrassQuality::High },
+		{ ShadowQuality::High, GiQuality::Medium, 240, 100, AntiAliasing::Smaa, GrassQuality::High },
 	};
 	static_assert(std::size(GraphicsTierNames) == size_t(GraphicsTier::Count) && std::size(GraphicsPresets) == size_t(GraphicsTier::Count));
 

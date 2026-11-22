@@ -64,6 +64,8 @@ namespace Game
 			return { 0.36f, 0.82f, 1.0f };
 		case AbilityId::Resonance:
 			return { 0.95f, 0.8f, 0.5f };
+		case AbilityId::RuneZone:
+			return { 0.44f, 0.89f, 0.77f };
 		default:
 			break;
 		}

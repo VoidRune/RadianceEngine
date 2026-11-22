@@ -50,7 +50,7 @@ namespace Game
 		{ Achievement::ComebackMage, "COMEBACK_MAGE", "Comeback Mage", "Win a match after losing the first two rounds" },
 		{ Achievement::DeckBuilder, "DECK_BUILDER", "Deck Builder", "Stack two upgrades on one spell" },
 		{ Achievement::Scholar, "SCHOLAR", "Scholar", "Win a round with every spell", false, "scholar_spells", uint32_t(std::size(BrawlSpellPool)) },
-		{ Achievement::Skydiver, "SKYDIVER", "Skydiver", "Fall off Emberhold 25 times", false, "falls", SkydiverFalls },
+		{ Achievement::Skydiver, "SKYDIVER", "Skydiver", "Fall off the Sun's Cradle 25 times", false, "falls", SkydiverFalls },
 		{ Achievement::Stargazer, "STARGAZER", "Stargazer", "Light every constellation above the observatory" },
 		{ Achievement::Faithful, "FAITHFUL", "Faithful", "Reach the cat's islet", true },
 	};

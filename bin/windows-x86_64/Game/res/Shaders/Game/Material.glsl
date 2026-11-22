@@ -43,6 +43,9 @@ const uint MeshObsidian = 8388608u;
 const uint MeshMetal = 16777216u;
 const uint MeshHeated = 33554432u;
 const uint MeshPolished = 67108864u;
+const uint MeshHero = 134217728u;
+const uint MeshDeep = 268435456u;
+const uint MeshHeartbeat = 536870912u;
 const uint MaterialTranslucent = 256u;
 
 vec4 SampleAlbedo(Material m, vec2 uv)

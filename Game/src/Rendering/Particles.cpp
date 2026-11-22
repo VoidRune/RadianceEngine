@@ -267,7 +267,7 @@ namespace Game
 			.Color = decal.Color,
 			.Tint = decal.Tint,
 			.Params = decal.Params,
-			.Info = glm::uvec4(uint32_t(decal.Shape), decal.Seed, 0u, 0u),
+			.Info = glm::uvec4(uint32_t(decal.Shape), decal.Seed, decal.Wall ? 1u : 0u, 0u),
 		});
 	}
 

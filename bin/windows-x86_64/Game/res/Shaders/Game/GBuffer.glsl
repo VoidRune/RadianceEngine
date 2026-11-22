@@ -1,13 +1,24 @@
 const vec3 DepthColor = vec3(0.0014, 0.0017, 0.0029);
 const float TranslucentRange = 0.45;
 
-float PackEmissionTag(bool cut, float translucency)
+const float HeroTag = 0.75;
+const float HeroTagRange = 0.2;
+
+float PackEmissionTag(bool hero, float translucency)
 {
-	return cut ? 1.0 : clamp(translucency, 0.0, 1.0) * TranslucentRange;
+	float amount = clamp(translucency, 0.0, 1.0);
+	return hero ? HeroTag + amount * HeroTagRange : amount * TranslucentRange;
+}
+
+bool IsHeroTag(float tag)
+{
+	return tag > HeroTag - 0.01 && tag < HeroTag + HeroTagRange + 0.01;
 }
 
 float UnpackTranslucency(float tag)
 {
+	if (IsHeroTag(tag))
+		return clamp((tag - HeroTag) / HeroTagRange, 0.0, 1.0);
 	return tag < 0.5 ? clamp(tag / TranslucentRange, 0.0, 1.0) : 0.0;
 }
 

@@ -1,6 +1,7 @@
 #version 450
 #include "Particles.glsl"
 #include "EffectShapes.glsl"
+#include "HeartRunes.glsl"
 
 layout(std430, set = 0, binding = 4) readonly buffer FrameBuffer { ParticleFrame Frame; };
 layout(set = 0, binding = 5) uniform sampler2D SceneDepth;
@@ -71,13 +72,16 @@ void main()
 	float c = cos(decal.CenterYaw.w);
 	float s = sin(decal.CenterYaw.w);
 	vec3 extent = decal.Extent.xyz;
-	vec2 uv = vec2(offset.x * c + offset.z * s, offset.z * c - offset.x * s) / extent.xy;
-	float height = abs(offset.y) / extent.z;
+	bool wall = decal.Info.z == 1u;
+	vec2 lateral = vec2(offset.x * c + offset.z * s, offset.z * c - offset.x * s);
+	vec2 uv = wall ? vec2(lateral.x / extent.x, offset.y / extent.z) : lateral / extent.xy;
+	float height = wall ? abs(lateral.y) / extent.y : abs(offset.y) / extent.z;
 	if (max(abs(uv.x), abs(uv.y)) > 1.0 || height > 1.0 || (decal.Info.x == DecalCaustic && dot(uv, uv) > 0.92))
 		return;
 	vec3 normal = cross(NearerDelta(screen, vec2(0.0, texel.y), world), NearerDelta(screen, vec2(texel.x, 0.0), world));
-	float facing = abs(normal.y) * inversesqrt(max(dot(normal, normal), 1e-12));
-	float mask = smoothstep(0.55, 0.8, facing) * (1.0 - smoothstep(0.6, 1.0, height));
+	float facing = abs(wall ? dot(normal, vec3(-s, 0.0, c)) : normal.y) * inversesqrt(max(dot(normal, normal), 1e-12));
+	float foliage = wall ? 0.0 : (1.0 - smoothstep(0.3, 0.55, offset.y)) * smoothstep(-0.25, -0.1, offset.y);
+	float mask = max(smoothstep(0.55, 0.8, facing), foliage) * (1.0 - smoothstep(0.6, 1.0, height));
 	float near = Frame.CameraForward.w;
 	float far = Frame.Screen.z;
 	float pixelWorld = near * far / (far - depth * (far - near)) * Frame.Screen.w * 1.3;
@@ -134,6 +138,13 @@ void main()
 		result = mark.xy;
 		float peak = max(max(decal.Color.r, decal.Color.g), decal.Color.b);
 		glow = mix(vec3(1.0), vec3(peak) / max(decal.Color.rgb, vec3(1e-3)), clamp(mark.z, 0.0, 0.6));
+	}
+	else if (shape == DecalHeartRune)
+	{
+		HeartRuneLook rune = HeartRuneShape(uv, pixel, params, seed, time);
+		result = vec2(rune.Coverage, 1.0);
+		albedo = rune.Albedo;
+		glow = rune.Emission;
 	}
 	else if (shape == DecalCaustic)
 	{

@@ -23,6 +23,7 @@ namespace Game
 		void Drop(Vec2 position, uint32_t xp, uint64_t seed);
 		uint32_t Update(World& world, float dt);
 		void Clear() { m_Orbs.clear(); }
+		void Attract() { for (Orb& orb : m_Orbs) orb.Drawn = true; }
 		const std::vector<Orb>& GetOrbs() const { return m_Orbs; }
 
 	private:

@@ -17,9 +17,11 @@ namespace Game
 		Entity Source;
 		uint16_t Tag = 0;
 		float DamageScale = 1.0f;
+		int32_t BaseDamage = -1;
 		float Rewind = 0.0f;
 		uint8_t ExtraProjectiles = 0;
 		uint8_t ExtraPierce = 0;
+		uint8_t ExtraChain = 0;
 		float AreaScale = 1.0f;
 		float ProjectileSpeedScale = 1.0f;
 		float CritChance = 0.0f;
@@ -31,6 +33,8 @@ namespace Game
 		float Charge = 0.0f;
 		CardMask Cards = 0;
 		Vec2 Departure;
+		uint32_t Runes = 0;
+		uint8_t Depth = 0;
 	};
 
 	void ExecuteAbility(World& world, AbilityId id, const AbilityContext& context);

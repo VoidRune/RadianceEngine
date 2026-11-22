@@ -199,7 +199,7 @@ void main()
 	vec3 sun = Frame.SunRadiance.rgb * max(cosI, 0.0);
 	vec3 sky = HemisphereRadiance(Frame.SkyRadiance.rgb, Frame.GroundRadiance.rgb, n.y, 1.0);
 	vec3 frost = EvaluateBrdf(albedo, 0.0, roughness, n, view, l) * sun + albedo * sky * surface.r;
-	vec3 inside = SpellGlow(inWorld, n) * (sqrt(albedo) * thin * IceGlow);
+	vec3 inside = SpellGlow(inWorld, n) * (sqrt(albedo) * thin * IceGlow * (1.0 - pc.Look.w));
 
 	vec4 back = texelFetch(BackFaces, ivec2(gl_FragCoord.xy), 0);
 	bool exits = back.w > frontZ && back.w < sceneZ;

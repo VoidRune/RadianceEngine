@@ -130,6 +130,7 @@ namespace Game
 		ResetView();
 		m_Welcome.PlayerNetId = travel.PlayerNetId;
 		m_Session = travel.Session;
+		m_Recap.reset();
 		m_Status.Mode = m_Session.Mode;
 		m_Status.Map = m_Session.Map;
 		m_Level = std::make_unique<Level>(BuildLevel(m_Session.Map, m_Session.MapSeed));
@@ -242,6 +243,66 @@ namespace Game
 	void GameClient::SetBrawlReady(bool ready)
 	{
 		SendAction(ActionType::BrawlReady, ready ? 1u : 0u);
+	}
+
+	void GameClient::PickRunCard(uint32_t choice)
+	{
+		SendAction(ActionType::RunPick, choice);
+	}
+
+	void GameClient::RerollRunCards()
+	{
+		SendAction(ActionType::RunReroll, 0);
+	}
+
+	void GameClient::BanishRunCard(uint32_t choice)
+	{
+		SendAction(ActionType::RunBanish, choice);
+	}
+
+	void GameClient::SkipRunCards()
+	{
+		SendAction(ActionType::RunSkip, 0);
+	}
+
+	void GameClient::PauseRun(bool paused)
+	{
+		SendAction(ActionType::RunPause, paused ? 1u : 0u);
+	}
+
+	void GameClient::BuyRunItem(uint32_t slot)
+	{
+		SendAction(ActionType::RunBuy, slot);
+	}
+
+	void GameClient::SellSigil(uint32_t slot)
+	{
+		SendAction(ActionType::RunSell, slot);
+	}
+
+	void GameClient::SellCard(CardId card)
+	{
+		SendAction(ActionType::RunSellCard, uint32_t(card));
+	}
+
+	void GameClient::SwapSigils(uint32_t from, uint32_t to)
+	{
+		SendAction(ActionType::RunSwapSigils, from, to);
+	}
+
+	void GameClient::UseShrine(uint32_t choice)
+	{
+		SendAction(ActionType::RunShrine, choice);
+	}
+
+	void GameClient::SocketRune(RuneId rune, uint32_t slot, uint32_t socket)
+	{
+		SendAction(ActionType::RunSocket, uint32_t(rune), (slot << 8) | socket);
+	}
+
+	void GameClient::UnsocketRune(RuneId rune)
+	{
+		SendAction(ActionType::RunUnsocket, uint32_t(rune));
 	}
 
 	void GameClient::Spectate(int32_t direction)
@@ -431,6 +492,10 @@ namespace Game
 				RDN_LOG("Joined as player {} in {} ({} Hz, a snapshot every {} ticks, map seed {})", welcome.PlayerId + 1, GetMapDef(m_Session.Map).Name, welcome.TickRate, welcome.SnapshotInterval, m_Session.MapSeed);
 			}
 			break;
+		case MessageType::ServerRunRecap:
+			if (ServerRunRecap recap; m_State == ClientState::InGame && Decode(message.Data, recap))
+				m_Recap = std::move(recap);
+			break;
 		case MessageType::ServerTravel:
 			if (ServerTravel travel; m_State == ClientState::InGame && Decode(message.Data, travel))
 				OnTravel(travel);
@@ -528,6 +593,8 @@ namespace Game
 		uint32_t ahead = 0;
 		for (const PlayerInput& input : m_PendingInputs)
 		{
+			if (IsRunPaused())
+				break;
 			CollectBodies(ahead, m_Bodies);
 			SimulatePlayer(*m_Level, motion, state, traits, input, GetTickSeconds(), m_Bodies, ArenaFor(ahead));
 			ahead++;
@@ -572,6 +639,13 @@ namespace Game
 
 	void GameClient::PredictTick(PlayerInput input)
 	{
+		const bool frozen = IsRunPaused();
+		if (frozen)
+		{
+			input.Move = {};
+			input.Buttons = 0;
+			input.Interact = 0;
+		}
 		input.Sequence = ++m_InputSequence;
 		input.AimDistance = QuantizeAimDistance(input.AimDistance);
 		const double view = std::max(m_RenderTick, 0.0);
@@ -585,7 +659,7 @@ namespace Game
 
 		const float dt = GetTickSeconds();
 		m_PreviousMotion = m_PredictedMotion;
-		if (m_HasPrediction)
+		if (m_HasPrediction && !frozen)
 		{
 			const PlayerTraits& traits = GetTraits();
 			const uint32_t ahead = uint32_t(m_PendingInputs.size() - 1);
@@ -653,7 +727,7 @@ namespace Game
 			if (ability.Id == AbilityId::ObsidianBlades && HasCard(m_LocalPlayer.Brawl.Cards, CardId::SeekerBlades))
 				return;
 			const float charge = IsCharged(skill) ? actions.Charge : 0.0f;
-			const ProjectilePattern pattern = ShotPattern(ability, GetProjectilePattern(ability, uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles), traits.ExtraPierce, traits.ProjectileSpeedScale), charge, traits.ProjectileSpeedScale);
+			const ProjectilePattern pattern = ShotPattern(ability, GetProjectilePattern(ability, uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles), uint8_t(traits.ExtraPierce + skill.ExtraPierce), traits.ProjectileSpeedScale), charge, traits.ProjectileSpeedScale);
 			const ChargedShot shot = ChargedShotOf(ability, charge);
 			const float blast = (ability.ImpactRadius > 0.0f ? shot.Blast / ability.ImpactRadius : 1.0f) * traits.AreaScale * skill.AreaScale;
 			for (uint32_t i = 0; i < pattern.Count && i < 16; i++)

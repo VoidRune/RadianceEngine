@@ -37,6 +37,13 @@ namespace Game
 		AmethystCrawler,
 		PrismaticCrawler,
 		CrawlerEgg,
+		CrystalDuelist,
+		ShardArcher,
+		PrismMage,
+		GeodeBrute,
+		MirrorMoth,
+		LensWisp,
+		ShardObelisk,
 		Count,
 	};
 
@@ -60,6 +67,10 @@ namespace Game
 	{
 		Health,
 		Mana,
+		Magnet,
+		Bomb,
+		Frost,
+		Chest,
 		Count,
 	};
 
@@ -121,6 +132,7 @@ namespace Game
 		float Footing = 0.0f;
 		int8_t CastSlot = -1;
 		uint8_t HeldButtons = 0;
+		uint8_t Pending = 0;
 		int8_t RecastSlot = -1;
 		float RecastTimer = 0.0f;
 		float RecastAge = 0.0f;
@@ -176,7 +188,52 @@ namespace Game
 		float Age = 0.0f;
 		float Brood = 0.0f;
 		float Far = 0.0f;
+		float OffspringHealth = 0.0f;
+		float Burn = 0.0f;
+		float BurnRate = 0.0f;
+		float BurnBank = 0.0f;
+		uint32_t BurnBy = NoPlayer;
+		float Mark = 0.0f;
+		uint32_t MarkBy = NoPlayer;
+		float Shock = 0.0f;
+		float ShockBonus = 0.0f;
 		bool Shielded = false;
+		int8_t Move = -1;
+		float Recovery = 0.0f;
+		std::array<float, 8> MoveCooldowns{};
+		Vec2 DashDirection;
+		float DashLeft = 0.0f;
+		float DashSpeed = 0.0f;
+		float Evade = 0.0f;
+		float DodgeCooldown = 0.0f;
+		bool GuardUp = false;
+		float GuardLeft = 0.0f;
+		float GuardBroken = 0.0f;
+		float Poise = 0.0f;
+		float PoiseIdle = 0.0f;
+		float Stagger = 0.0f;
+		float Strafe = 1.0f;
+		float StrafeTimer = 0.0f;
+		float Alarm = 0.0f;
+		uint8_t Reaction = 0;
+		float BlinkCooldown = 0.0f;
+		float Blink = 0.0f;
+		uint8_t Affixes = 0;
+		float Mirror = 0.0f;
+		float MirrorWait = 0.0f;
+		float Cracked = 0.0f;
+		float Empowered = 0.0f;
+		float Mend = 0.0f;
+		float Ward = 0.0f;
+		float WardMax = 0.0f;
+		float WardIdle = 0.0f;
+		uint8_t Rank = 0;
+		bool Champion = false;
+		uint8_t Phase = 0;
+		float PoiseScale = 1.0f;
+		Vec2 Push;
+		uint32_t PushBy = NoPlayer;
+		float Crashed = 0.0f;
 	};
 
 	enum class DummyKind : uint8_t
@@ -233,6 +290,9 @@ namespace Game
 		uint8_t Perks = 0;
 		uint32_t Returned = NoPlayer;
 		uint8_t Reflections = 0;
+		uint32_t Runes = 0;
+		uint8_t Depth = 0;
+		uint8_t Bounces = 0;
 	};
 
 	struct Effect
@@ -272,6 +332,8 @@ namespace Game
 		uint8_t Ability = 0;
 		uint8_t Perks = 0;
 		float Lead = 0.0f;
+		uint32_t Runes = 0;
+		uint8_t Depth = 0;
 	};
 
 	struct Boss

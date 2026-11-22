@@ -386,6 +386,8 @@ namespace Game
 		void WardStruck(const HitEvent& hit);
 		void DrawWards(WorldRenderer& renderer) const;
 		void DrawEnemy(WorldRenderer& renderer, const EntityState& entity) const;
+		void DrawFighterAura(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& body, float size) const;
+		void DrawObelisk(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawProjectile(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawEffect(WorldRenderer& renderer, const EntityState& entity) const;
 		void DrawTelegraph(WorldRenderer& renderer, const EntityState& entity, float progress) const;
@@ -419,6 +421,21 @@ namespace Game
 		void TakeCard(uint32_t choice, CardId card);
 		void DrawCardFace(const UiRect& rect, CardId id, float hover, float fade, std::optional<uint32_t> key, bool taken, float reveal, float burst, float burnAway = 0.0f);
 		void DrawCardRow(UiRect area, CardMask cards, float size, const char* empty);
+		void DrawRunCardFace(const UiRect& rect, const RunCard& card, float hover, std::optional<uint32_t> key, float reveal, bool banishing);
+		void DrawRunSpells(UiRect area, const RunLoadout& loadout, float size);
+		void DrawRunOffer();
+		void DrawRunRecap();
+		void DrawRunMarker();
+		void DrawActMap();
+		void DrawMerchant();
+		void DrawGrimoire();
+		static constexpr int RunePayload = 32;
+		void DrawRunItems();
+		void DrawChampionBar();
+		RoomKind CurrentRoomKind() const;
+		void UpdateRunFeel(float dt);
+		void DrawRunStreak();
+		void DrawPerfectDodge();
 		void DrawSpellStrip(const UiRect& area);
 		bool AcceptSpellDrop(const UiRect& rect, uint32_t slot, bool clicked);
 		bool CanEditSpells() const;
@@ -521,6 +538,7 @@ namespace Game
 		std::unique_ptr<CosmeticVisuals> m_Cosmetics;
 		std::unique_ptr<CrawlerSystem> m_Crawlers;
 		std::optional<uint32_t> m_MeteorMesh;
+		std::optional<uint32_t> m_ObeliskMesh;
 		SpellMeshes m_SpellMeshes;
 		std::unordered_map<uint32_t, SpearPath> m_SpearPaths;
 		std::vector<SpikeRuin> m_SpikeRuins;
@@ -631,6 +649,13 @@ namespace Game
 		uint8_t m_SeenRound = 0;
 		uint8_t m_FoughtRound = 0;
 		bool m_LoadoutOpen = true;
+		bool m_ActMapOpen = false;
+		bool m_MerchantOpen = false;
+		bool m_GrimoireOpen = false;
+		std::optional<RuneId> m_SelectedRune;
+		float m_RuneNote = 0.0f;
+		bool m_RuneFighting = false;
+		uint32_t m_MerchantRoom = UINT32_MAX;
 		std::optional<uint32_t> m_PickingSlot;
 		std::optional<uint32_t> m_ChosenCard;
 		float m_CardReveal = 0.0f;
@@ -646,6 +671,24 @@ namespace Game
 		std::vector<CardNews> m_ApexNews;
 		std::array<CardMask, MaxPlayers> m_KnownCards{};
 		bool m_CardsKnown = false;
+		std::optional<uint32_t> m_RunPending;
+		bool m_RunBanishing = false;
+		float m_RunReveal = 0.0f;
+		RunOffer m_SeenOffer{};
+		uint8_t m_SeenOffers = 0;
+		bool m_RunPauseSent = false;
+		std::unordered_map<uint32_t, float> m_SeenBursts;
+		std::vector<std::pair<float, Vec2>> m_RecentKills;
+		uint32_t m_Streak = 0;
+		uint32_t m_StreakBest = 0;
+		uint32_t m_StreakShown = 0;
+		float m_StreakIdle = 1e9f;
+		float m_StreakPulse = 0.0f;
+		float m_StreakFlash = 0.0f;
+		float m_StreakFade = 0.0f;
+		uint32_t m_MultiCount = 0;
+		float m_MultiAge = 1e9f;
+		float m_PerfectAge = 1e9f;
 		struct FeedEntry
 		{
 			KillRecord Kill;
@@ -655,7 +698,6 @@ namespace Game
 		MatchPhase m_SeenMatch = MatchPhase::Countdown;
 		int32_t m_SeenCountdown = -1;
 		GameMode m_SeenMode = GameMode::Count;
-		uint16_t m_SeenLevel = 0;
 		std::string m_BannerTitle;
 		std::string m_BannerText;
 		glm::vec4 m_BannerColor{ 1.0f };

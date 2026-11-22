@@ -25,7 +25,7 @@ API names must match `Achievements` in `GameShared/src/GameShared/Content/Achiev
 | COMEBACK_MAGE | Comeback Mage | Win a match after losing the first two rounds | |
 | DECK_BUILDER | Deck Builder | Stack two upgrades on one spell | |
 | SCHOLAR | Scholar | Win a round with every spell | Progress stat `scholar_spells`, 0 to 13 |
-| SKYDIVER | Skydiver | Fall off Emberhold 25 times | Progress stat `falls`, 0 to 25 |
+| SKYDIVER | Skydiver | Fall off the Sun's Cradle 25 times | Progress stat `falls`, 0 to 25 |
 | STARGAZER | Stargazer | Light every constellation above the observatory | |
 | FAITHFUL | Faithful | Reach the cat's islet | Hidden |
 

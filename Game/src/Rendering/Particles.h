@@ -40,6 +40,7 @@ namespace Game
 		Beam,
 		Inferno,
 		Hex,
+		Leaf,
 	};
 
 	enum class DecalShape : uint8_t
@@ -66,6 +67,7 @@ namespace Game
 		Contact,
 		AftershockMark,
 		ResonanceMark,
+		HeartRune,
 	};
 
 	enum class ParticleAlign : uint8_t
@@ -74,6 +76,7 @@ namespace Game
 		Velocity,
 		Ground,
 		Plane,
+		Tumble,
 	};
 
 	enum class SpawnShape : uint8_t
@@ -144,6 +147,7 @@ namespace Game
 		float Roughness = -1.0f;
 		glm::vec4 Params{ 0.0f };
 		uint32_t Seed = 0;
+		bool Wall = false;
 	};
 
 	class ParticleSystem

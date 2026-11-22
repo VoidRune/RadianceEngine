@@ -903,19 +903,7 @@ namespace Game
 	{
 		if (!IsDamageMode() || playerId >= MaxPlayers)
 			return 1.0f;
-		const CardMask cards = m_Brawlers[playerId].Loadout.Cards;
-		float scale = overloaded ? OverloadScale : 1.0f;
-		if (HasCard(cards, CardId::Brimming) && maxMana > 0.0f && manaBefore >= BrimmingShare * maxMana)
-			scale *= BrimmingScale;
-		if (HasCard(cards, CardId::LastStand) && healthFraction < LastStandHealth)
-			scale *= LastStandScale;
-		if (HasCard(cards, CardId::ManaSingularity))
-			scale *= 1.0f + ManaSingularityDamage * manaBefore;
-		if (HasCard(cards, CardId::BloodMagic))
-			scale *= BloodMagicDamage;
-		if (HasCard(cards, CardId::Quicksilver) && momentum >= QuicksilverSeconds)
-			scale *= QuicksilverDamage;
-		return scale;
+		return CardCastScale(m_Brawlers[playerId].Loadout.Cards, healthFraction, manaBefore, maxMana, overloaded, momentum);
 	}
 
 	int32_t MatchDirector::ShapeDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount)

@@ -4,6 +4,7 @@
 #include <RadianceEngine/Graphics/ShaderCompiler.h>
 #include <glm/gtc/packing.hpp>
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <tuple>
@@ -259,8 +260,11 @@ namespace Game
 		m_Distortion = std::make_unique<ScreenDistortion>(device, allocator);
 		m_Glass = std::make_unique<GlassRenderer>(device, allocator);
 		m_Trails = std::make_unique<TrailRenderer>(device, allocator);
+		m_Grass = std::make_unique<GrassRenderer>(device, allocator);
 		m_Lightning = std::make_unique<LightningRenderer>(device, allocator);
 		m_Void = std::make_unique<VoidRenderer>(device, allocator);
+		m_Sun = std::make_unique<SunRenderer>(device, allocator);
+		m_Portal = std::make_unique<PortalRenderer>(device, allocator);
 		if (m_ModelVertexShader)
 			m_Lake = std::make_unique<LakeRenderer>(device, allocator, m_ModelVertexShader.get());
 		CreateMeshes();
@@ -299,8 +303,11 @@ namespace Game
 		m_Distortion.reset();
 		m_Glass.reset();
 		m_Trails.reset();
+		m_Grass.reset();
 		m_Lightning.reset();
 		m_Void.reset();
+		m_Sun.reset();
+		m_Portal.reset();
 		m_Lake.reset();
 		ReleaseModelData();
 		for (Rdn::GpuRingBuffer* buffer : { m_InstanceBuffer.get(), m_ModelInstanceBuffer.get(), m_PaletteBuffer.get(), m_IceFieldBuffer.get() })
@@ -314,10 +321,10 @@ namespace Game
 		for (Rdn::Sampler* sampler : { m_ModelSampler.get(), m_NearestSampler.get(), m_RepeatSampler.get(), m_EnvironmentSampler.get() })
 			if (sampler)
 				m_Allocator.ReleaseResource(sampler);
-		for (Rdn::Pipeline* pipeline : { m_ShadowPipeline.get(), m_ModelShadowPipeline.get(), m_ModelAlphaShadowPipeline.get(), m_BackPipeline.get(), m_ModelBackPipeline.get(), m_CrystalPipeline.get(), m_IceSheetPipeline.get(), m_IcewaterPipeline.get(), m_DissolvePipeline.get(), m_DissolveShadowPipeline.get() })
+		for (Rdn::Pipeline* pipeline : { m_ShadowPipeline.get(), m_ModelShadowPipeline.get(), m_ModelAlphaShadowPipeline.get(), m_BackPipeline.get(), m_ModelBackPipeline.get(), m_CrystalPipeline.get(), m_IceSheetPipeline.get(), m_IcewaterPipeline.get(), m_DissolvePipeline.get(), m_DissolveShadowPipeline.get(), m_XrayMaskPipeline.get(), m_XrayPipeline.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
-		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get(), m_CrystalFragmentShader.get(), m_IceSheetShader.get(), m_IcewaterFragmentShader.get(), m_DissolveVertexShader.get(), m_DissolveFragmentShader.get(), m_DissolveShadowShader.get() })
+		for (Rdn::Shader* shader : { m_ModelShadowShader.get(), m_ModelBackShader.get(), m_CrystalFragmentShader.get(), m_IceSheetShader.get(), m_IcewaterFragmentShader.get(), m_DissolveVertexShader.get(), m_DissolveFragmentShader.get(), m_DissolveShadowShader.get(), m_XrayShader.get(), m_XrayCompositeVertex.get(), m_XrayCompositeShader.get() })
 			if (shader)
 				m_Allocator.ReleaseResource(shader);
 		for (const auto& [pipeline, vertex, fragment] : { std::tuple(m_Pipeline.get(), m_VertexShader.get(), m_FragmentShader.get()), std::tuple(m_ModelPipeline.get(), m_ModelVertexShader.get(), m_ModelFragmentShader.get()), std::tuple(m_LavaPipeline.get(), m_LavaVertexShader.get(), m_LavaFragmentShader.get()) })
@@ -340,6 +347,8 @@ namespace Game
 				m_Allocator.ReleaseResource(set);
 		for (const std::unique_ptr<Rdn::GpuImage>& texture : m_Textures)
 			m_Allocator.ReleaseResource(texture.get());
+		if (m_PortalNoise)
+			m_Allocator.ReleaseResource(m_PortalNoise.get());
 		for (const EnvironmentGpu& environment : m_Environments)
 			m_Allocator.ReleaseResource(environment.Image.get());
 		m_ModelVertices.reset();
@@ -407,6 +416,9 @@ namespace Game
 		m_TextureSamplers.push_back(m_NearestSampler.get());
 		const std::vector<uint16_t> veins = BakeVeinTexture();
 		m_Textures.push_back(createTexture(VeinTextureSize, VeinTextureSize, 1, Rdn::Format::R16_Unorm, veins.data(), veins.size() * sizeof(uint16_t)));
+		if (m_PortalNoise)
+			m_Allocator.ReleaseResource(m_PortalNoise.get());
+		m_PortalNoise = createTexture(VeinTextureSize, VeinTextureSize, uint32_t(std::bit_width(VeinTextureSize)), Rdn::Format::R16_Unorm, veins.data(), veins.size() * sizeof(uint16_t));
 		m_TextureSamplers.push_back(m_RepeatSampler.get());
 		for (const ModelTexture& texture : data.Textures)
 		{
@@ -868,6 +880,38 @@ namespace Game
 		}
 		else
 			RDN_LOG_ERROR("The back face shader failed to compile, indirect light uses a fixed object thickness");
+		Rdn::ShaderDesc xrayDesc;
+		Rdn::ShaderDesc compositeVertexDesc;
+		Rdn::ShaderDesc compositeDesc;
+		if (Rdn::ShaderCompiler::Compile("res/Shaders/Game/ModelXray.frag", xrayDesc) && Rdn::ShaderCompiler::Compile("res/Shaders/Game/Composite.vert", compositeVertexDesc) && Rdn::ShaderCompiler::Compile("res/Shaders/Game/XrayComposite.frag", compositeDesc))
+		{
+			m_XrayShader = std::make_unique<Rdn::Shader>();
+			m_Allocator.CreateShader(m_XrayShader.get(), xrayDesc);
+			m_XrayCompositeVertex = std::make_unique<Rdn::Shader>();
+			m_Allocator.CreateShader(m_XrayCompositeVertex.get(), compositeVertexDesc);
+			m_XrayCompositeShader = std::make_unique<Rdn::Shader>();
+			m_Allocator.CreateShader(m_XrayCompositeShader.get(), compositeDesc);
+			m_XrayMaskPipeline = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_XrayMaskPipeline.get(), Rdn::PipelineDesc{
+				.ShaderStages = { m_ModelVertexShader.get(), m_XrayShader.get() },
+				.CullMode = Rdn::CullMode::None,
+				.ColorAttachmentFormats = { HeroMaskFormat },
+				.DepthAttachmentFormat = DepthFormat,
+				.PushDescriptorSets = { 0 },
+			});
+			m_XrayPipeline = std::make_unique<Rdn::Pipeline>();
+			m_Allocator.CreatePipeline(m_XrayPipeline.get(), Rdn::PipelineDesc{
+				.ShaderStages = { m_XrayCompositeVertex.get(), m_XrayCompositeShader.get() },
+				.CullMode = Rdn::CullMode::None,
+				.DepthTest = false,
+				.DepthWrite = false,
+				.Blend = Rdn::BlendMode::Premultiplied,
+				.ColorAttachmentFormats = { SceneColorFormat },
+				.PushDescriptorSets = { 0 },
+			});
+		}
+		else
+			RDN_LOG_ERROR("The x-ray shader failed to compile, hidden players get no silhouette");
 		return true;
 	}
 
@@ -1009,8 +1053,11 @@ namespace Game
 		m_Distortion->BeginFrame();
 		m_Glass->BeginFrame();
 		m_Trails->BeginFrame(m_Particles->GetTime());
+		m_Grass->BeginFrame(m_Particles->GetTime());
 		m_Lightning->BeginFrame(m_Particles->GetTime());
 		m_Void->BeginFrame(m_Particles->GetTime());
+		m_Sun->BeginFrame(m_Particles->GetTime());
+		m_Portal->BeginFrame(m_Particles->GetTime());
 		if (lighting.Grade != m_Post->GetGrade() && !m_Post->HasCustomLut())
 			m_Post->SetGrade(lighting.Grade);
 		m_Camera = camera;
@@ -1020,6 +1067,7 @@ namespace Game
 		m_Constants.ViewProjection = camera.ViewProjection;
 		m_Constants.Focus = glm::vec4(fadeBelowFocus ? focusHeight : -1e4f, 0.0f, 0.0f, 0.0f);
 		m_Constants.Eye = glm::vec4(camera.Eye, lighting.Rain > 0.0f ? lighting.Rain : -lighting.Pulse);
+		m_Constants.Sight = glm::vec4(0.0f);
 	}
 
 	void WorldRenderer::DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw)
@@ -1036,7 +1084,7 @@ namespace Game
 	void WorldRenderer::Draw(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, const glm::vec3& color, float yaw, float emission, float ground, const BoxSurface& surface)
 	{
 		if (size_t(mesh) < m_Instances.size())
-			m_Instances[size_t(mesh)].push_back({ glm::vec4(center, yaw), glm::vec4(halfExtents, ground), glm::vec4(color, emission), glm::vec4(surface.Roughness, surface.Metallic, 0.0f, 0.0f) });
+			m_Instances[size_t(mesh)].push_back({ glm::vec4(center, yaw), glm::vec4(halfExtents, ground), glm::vec4(color, emission), glm::vec4(surface.Roughness, surface.Metallic, surface.Cut ? 1.0f : 0.0f, 0.0f) });
 	}
 
 	uint32_t WorldRenderer::AddPalette(const JointMatrices& skin, uint32_t joints)
@@ -1098,6 +1146,55 @@ namespace Game
 		}
 	}
 
+	void WorldRenderer::RenderXray(Rdn::RenderGraph& graph, Rdn::RGImage scene, const GBuffer& gbuffer, Rdn::Extent2D extent, const WorldCamera& camera, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex)
+	{
+		if (!m_XrayPipeline || !m_XrayMaskPipeline || modelCount == 0 || std::none_of(m_ModelHeroMeshes.begin(), m_ModelHeroMeshes.end(), [](uint8_t hero) { return hero != 0; }))
+			return;
+		const Rdn::RGImage mask = graph.CreateImage("Hero mask", Rdn::RGImageDesc{ .Size = Rdn::Extent3D(extent), .Format = HeroMaskFormat });
+		const Rdn::RGImage maskDepth = graph.CreateImage("Hero depth", Rdn::RGImageDesc{ .Size = Rdn::Extent3D(extent), .Format = DepthFormat });
+		graph.AddPass("Hero mask", Rdn::PassType::Graphics,
+			[&](Rdn::PassBuilder& builder)
+			{
+				builder.AddColorAttachment(mask, Rdn::AttachmentLoadOp::Clear, Rdn::AttachmentStoreOp::Store, { 0.0f, 0.0f, 0.0f, 0.0f });
+				builder.SetDepthAttachment(maskDepth, Rdn::AttachmentLoadOp::Clear, Rdn::AttachmentStoreOp::Store);
+			},
+			[this, modelCount, paletteCount, frameIndex](Rdn::CommandBuffer& cmd, const Rdn::PassContext&)
+			{
+				Rdn::DescriptorWrite write;
+				write.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_ModelInstanceBuffer->GetHandle(), m_ModelInstanceBuffer->GetOffset(frameIndex), uint64_t(modelCount) * sizeof(ModelInstance)));
+				write.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_ModelVertices->GetHandle(), 0, m_ModelVertices->GetSize()));
+				write.AddWrite(Rdn::BufferWrite(2, Rdn::DescriptorType::StorageBuffer, m_PaletteBuffer->GetHandle(), m_PaletteBuffer->GetOffset(frameIndex), uint64_t(paletteCount) * sizeof(glm::mat4)));
+				cmd.BindIndexBuffer(m_ModelIndices->GetHandle(), Rdn::IndexType::Uint32);
+				cmd.BindPipeline(m_XrayMaskPipeline->GetHandle());
+				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_XrayMaskPipeline->GetLayout(), 0, write);
+				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_XrayMaskPipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
+				for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
+				{
+					const DrawMesh& source = m_DrawMeshes[mesh];
+					const auto [first, total] = m_ModelRanges[mesh];
+					const uint32_t skinned = mesh < m_ModelCharacterCounts.size() ? m_ModelCharacterCounts[mesh] : 0;
+					if (skinned > 0 && m_ModelHeroMeshes[mesh])
+						cmd.DrawIndexed(source.IndexCount, skinned, source.FirstIndex, 0, first + total - skinned);
+				}
+			});
+		const glm::vec4 clip(camera.Near, camera.Far, float(extent.Width), float(extent.Height));
+		graph.AddPass("Xray", Rdn::PassType::Graphics,
+			[&](Rdn::PassBuilder& builder)
+			{
+				builder.AddColorAttachment(scene, Rdn::AttachmentLoadOp::Load, Rdn::AttachmentStoreOp::Store);
+				for (const Rdn::RGImage image : { mask, maskDepth, gbuffer.Depth, gbuffer.Emission })
+					builder.UseImage(image, Rdn::RGImageUsage::Sampled);
+			},
+			[this, mask, maskDepth, depth = gbuffer.Depth, emission = gbuffer.Emission, clip](Rdn::CommandBuffer& cmd, const Rdn::PassContext& context)
+			{
+				const auto sampled = [&](uint32_t binding, Rdn::RGImage image) { return Rdn::ImageWrite(binding, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(image), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_NearestSampler->GetHandle()); };
+				cmd.BindPipeline(m_XrayPipeline->GetHandle());
+				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_XrayPipeline->GetLayout(), 0, Rdn::DescriptorWrite().AddWrite(sampled(0, mask)).AddWrite(sampled(1, maskDepth)).AddWrite(sampled(2, depth)).AddWrite(sampled(3, emission)));
+				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_XrayPipeline->GetLayout(), &clip, sizeof(clip));
+				cmd.Draw(3, 1, 0, 0);
+			});
+	}
+
 	void WorldRenderer::RenderCharacters(Rdn::RenderGraph& graph, const GBuffer& gbuffer, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex)
 	{
 		if (modelCount == 0 || !m_TextureSet || std::all_of(m_ModelCharacterCounts.begin(), m_ModelCharacterCounts.end(), [](uint32_t count) { return count == 0; }))
@@ -1136,6 +1233,8 @@ namespace Game
 			m_ModelShadowDraws[mesh].push_back(instance);
 		else
 			(instance.Dissolve.x > 0.0f && m_DissolvePipeline ? m_ModelDissolveDraws : m_ModelDraws)[mesh].push_back(instance);
+		if (!shadowOnly && instance.Info.x != NoPalette)
+			m_Grass->Push(glm::vec3(instance.Rows[0].w, instance.Rows[1].w, instance.Rows[2].w), GrassPushRadius, instance.Info.x);
 	}
 
 	void WorldRenderer::SubmitUnder(uint32_t mesh, const ModelInstance& instance)
@@ -1152,8 +1251,43 @@ namespace Game
 		m_IceFieldSize = glm::vec4(float(width), float(height), wallLow, wallHigh);
 	}
 
+	void WorldRenderer::StampGrass(const GroundDecal& decal)
+	{
+		const float alpha = std::clamp(decal.Color.a, 0.0f, 1.0f);
+		if (alpha <= 0.01f || decal.Wall)
+			return;
+		GrassStamp stamp{ .Center = decal.Center, .Extent = decal.Extent * 0.95f, .Yaw = decal.Yaw };
+		switch (decal.Shape)
+		{
+		case DecalShape::Scorch:
+		{
+			const float size = std::clamp((std::max(decal.Extent.x, decal.Extent.y) - 0.2f) / 0.4f, 0.0f, 1.0f);
+			stamp.Kind = GrassStampKind::Burn;
+			stamp.Strength = alpha * (0.35f + 0.65f * size);
+			stamp.Heat = std::clamp(decal.Params.x, 0.0f, 1.0f) * alpha * size;
+			break;
+		}
+		case DecalShape::Cracks:
+			if (decal.Params.x <= 0.0f)
+				return;
+			stamp.Kind = GrassStampKind::Burn;
+			stamp.Strength = 0.5f * alpha;
+			stamp.Heat = 0.6f * std::clamp(decal.Params.x, 0.0f, 1.0f) * alpha;
+			break;
+		case DecalShape::Frost:
+		case DecalShape::FrostLane:
+			stamp.Kind = GrassStampKind::Frost;
+			stamp.Strength = alpha;
+			break;
+		default:
+			return;
+		}
+		m_Grass->Stamp(stamp);
+	}
+
 	void WorldRenderer::DrawDecal(const GroundDecal& decal)
 	{
+		StampGrass(decal);
 		if (!m_Relief)
 		{
 			m_Particles->DrawDecal(decal);
@@ -1194,9 +1328,8 @@ namespace Game
 		camera.Projection[1][1] *= float(output.Height) / float(extent.Height);
 		camera.ViewProjection = camera.Projection * camera.View;
 		m_Constants.ViewProjection = camera.ViewProjection;
-		const glm::ivec2 anchor = m_Gi ? m_Gi->Update(extent, camera, m_Relief ? m_Relief->GetPlane() : m_FocusHeight) : glm::ivec2(0);
-		m_Constants.Focus.z = float(((anchor.x % 4) + 4) % 4);
-		m_Constants.Focus.w = float(((anchor.y % 4) + 4) % 4);
+		if (m_Gi)
+			m_Gi->Update(extent, camera, m_Relief ? m_Relief->GetPlane() : m_FocusHeight);
 
 		m_Packed.clear();
 		for (size_t i = 0; i < m_BoxRanges.size(); i++)
@@ -1220,6 +1353,7 @@ namespace Game
 
 		m_ModelRanges.resize(m_ModelDraws.size());
 		m_ModelCharacterCounts.assign(m_ModelDraws.size(), 0);
+		m_ModelHeroMeshes.assign(m_ModelDraws.size(), 0);
 		m_ModelShadowRanges.resize(m_ModelDraws.size());
 		m_ModelDissolveRanges.resize(m_ModelDraws.size());
 		m_ModelGlassRanges.resize(m_ModelDraws.size());
@@ -1230,6 +1364,7 @@ namespace Game
 			std::vector<ModelInstance>& draws = m_ModelDraws[mesh];
 			const auto characters = std::stable_partition(draws.begin(), draws.end(), [](const ModelInstance& instance) { return instance.Info.x == NoPalette; });
 			m_ModelCharacterCounts[mesh] = uint32_t(draws.end() - characters);
+			m_ModelHeroMeshes[mesh] = std::any_of(characters, draws.end(), [](const ModelInstance& instance) { return (instance.Info.w & MeshHero) != 0; });
 			m_ModelRanges[mesh] = { uint32_t(m_PackedModels.size()), uint32_t(draws.size()) };
 			m_PackedModels.insert(m_PackedModels.end(), draws.begin(), draws.end());
 		}
@@ -1280,7 +1415,7 @@ namespace Game
 					continue;
 				const DrawMesh& source = m_DrawMeshes[mesh];
 				const GlassSurface& surface = m_GlassSurfaces[source.Glass];
-				glass.Draws.push_back({ .FirstIndex = source.FirstIndex, .IndexCount = source.IndexCount, .FirstInstance = first, .InstanceCount = instances, .Absorb = surface.Absorb, .Look = glm::vec4(surface.Look.x, surface.Look.y, m_GiQuality != GiQuality::Off ? 1.0f : 0.0f, surface.Look.w), .Water = surface.Water });
+				glass.Draws.push_back({ .FirstIndex = source.FirstIndex, .IndexCount = source.IndexCount, .FirstInstance = first, .InstanceCount = instances, .Absorb = surface.Absorb, .Look = glm::vec4(surface.Look.x, surface.Look.y, m_GiQuality != GiQuality::Off ? 1.0f : 0.0f, (source.Flags & MeshDeep) != 0 ? 1.0f : surface.Look.w), .Water = surface.Water });
 				for (uint32_t i = first; i < first + instances; i++)
 				{
 					const ModelInstance& instance = m_PackedModels[i];
@@ -1321,7 +1456,7 @@ namespace Game
 					cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_Pipeline->GetLayout(), 0, Rdn::DescriptorWrite()
 						.AddWrite(Rdn::BufferWrite(0, Rdn::DescriptorType::StorageBuffer, m_InstanceBuffer->GetHandle(), m_InstanceBuffer->GetOffset(frameIndex), uint64_t(count) * sizeof(BoxInstance)))
 						.AddWrite(Rdn::BufferWrite(1, Rdn::DescriptorType::StorageBuffer, m_MeshBuffer->GetHandle(), 0, m_MeshBuffer->GetSize())));
-					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Pipeline->GetLayout(), &m_Constants, BaseConstantsSize);
+					cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_Pipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
 					for (size_t mesh = 0; mesh < m_Instances.size(); mesh++)
 						if (m_BoxRanges[mesh].second > 0)
 							cmd.Draw(m_Meshes[mesh].VertexCount, m_BoxRanges[mesh].second, m_Meshes[mesh].FirstVertex, m_BoxRanges[mesh].first);
@@ -1370,6 +1505,7 @@ namespace Game
 					cmd.Draw(6, lava.second, 0, lava.first);
 				}
 			});
+		m_Grass->Render(graph, gbuffer, frameIndex, camera, extent);
 		Rdn::RGImage backDepth{};
 		if (gi && GiPresets[size_t(m_GiQuality)].BackFaces && m_BackPipeline)
 		{
@@ -1435,6 +1571,9 @@ namespace Game
 				};
 				m_Lake->Render(graph, scene, gbuffer, extent, frameIndex, camera, m_Lighting, m_Particles->GetTime(), !m_LakeFullResolution, models, m_LakeDraws);
 			}
+			RenderXray(graph, scene, gbuffer, extent, camera, modelCount, paletteCount, frameIndex);
+			m_Sun->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
+			m_Portal->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera, m_PortalNoise->GetImageView(), *m_RepeatSampler);
 			m_Glass->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera, m_Lighting, environment, m_Particles->GetTime(), m_Lights);
 			m_Trails->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
 			m_Lightning->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
@@ -1474,7 +1613,7 @@ namespace Game
 				cmd.BindPipeline(m_ModelBackPipeline->GetHandle());
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelBackPipeline->GetLayout(), 0, write);
 				cmd.BindDescriptorSets(Rdn::PipelineBindPoint::Graphics, m_ModelBackPipeline->GetLayout(), 1, { m_BackTextureSet->GetHandle() });
-				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_ModelBackPipeline->GetLayout(), &m_Constants, BaseConstantsSize);
+				cmd.PushConstants(Rdn::ShaderStage::Vertex | Rdn::ShaderStage::Fragment, m_ModelBackPipeline->GetLayout(), &m_Constants, sizeof(m_Constants));
 				cmd.BindIndexBuffer(m_ModelIndices->GetHandle(), Rdn::IndexType::Uint32);
 				for (size_t mesh = 0; mesh < m_ModelRanges.size(); mesh++)
 					if (m_ModelRanges[mesh].second > 0 && (m_DrawMeshes[mesh].Flags & (MeshGround | MeshSplat)) == 0)

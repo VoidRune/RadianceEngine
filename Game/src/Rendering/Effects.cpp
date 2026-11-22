@@ -204,6 +204,10 @@ namespace Game
 				set(Fx::AuraFrostFlurry, {
 					{ .Kind = K::Snow, .Count = 12.5f, .Shape = SpawnShape::Disc, .Radius = 0.5f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 0.15f, 0.4f }, .Life = { 1.0f, 1.8f }, .Size = { 0.015f, 0.03f } },
 				});
+				set(Fx::FallingLeaves, {
+					{ .Kind = K::Leaf, .Count = 0.9f, .Shape = SpawnShape::Disc, .Radius = 1.2f, .Direction = { 0.3f, -1.0f, 0.2f }, .Cone = 0.6f, .Speed = { 0.2f, 0.5f }, .Life = { 9.0f, 13.0f }, .Size = { 0.09f, 0.14f }, .Tint = { 1.0f, 0.42f, 0.16f } },
+					{ .Kind = K::Leaf, .Count = 0.7f, .Shape = SpawnShape::Disc, .Radius = 1.2f, .Direction = { 0.3f, -1.0f, 0.2f }, .Cone = 0.6f, .Speed = { 0.2f, 0.5f }, .Life = { 9.0f, 13.0f }, .Size = { 0.08f, 0.13f }, .Tint = { 0.85f, 0.16f, 0.08f } },
+				});
 				set(Fx::AuraFrostCrownMist, {
 					{ .Kind = K::Frost, .Count = 4.0f, .Shape = SpawnShape::Disc, .Radius = 0.11f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.35f, .Speed = { 0.05f, 0.14f }, .Life = { 0.7f, 1.2f }, .Size = { 0.05f, 0.08f }, .Tint = { 0.35f, 0.35f, 0.35f } },
 					{ .Kind = K::Snow, .Count = 3.0f, .Shape = SpawnShape::Disc, .Radius = 0.12f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.1f, 0.25f }, .Life = { 0.8f, 1.3f }, .Size = { 0.012f, 0.022f } },
@@ -726,6 +730,13 @@ namespace Game
 		sulfurFire.Physics = { 3.0f, 2.5f, 4.0f, 1.4f };
 		sulfurFire.Motion.y = 0.3f;
 
+		ParticleMaterial& leaf = define(ParticleKind::Leaf, ParticleShape::Leaf, ParticleAlign::Tumble, 0.0f, 0.0f);
+		SetColors(leaf, { 0.62f, 0.55f, 0.5f, 0.0f }, { 0.62f, 0.55f, 0.5f, 1.0f }, { 0.5f, 0.45f, 0.42f, 1.0f }, { 0.4f, 0.36f, 0.34f, 0.0f }, { 0.0f, 0.04f, 0.88f, 1.0f });
+		leaf.Physics = { -0.75f, 1.1f, 1.6f, 0.45f };
+		leaf.Collision = { 0.0f, 1.0f, 1.0f, 0.0f };
+		leaf.Motion.x = 1.3f;
+		leaf.Motion.y = 0.1f;
+
 		ParticleMaterial& violetEmber = define(ParticleKind::VioletEmber, ParticleShape::Spark, ParticleAlign::Velocity, 1.0f, 1.6f);
 		SetColors(violetEmber, { 3.0f, 1.2f, 4.0f, 1.0f }, { 2.4f, 0.6f, 3.6f, 1.0f }, { 1.0f, 0.15f, 2.0f, 0.8f }, { 0.25f, 0.02f, 0.6f, 0.0f }, { 0.0f, 0.4f, 0.8f, 1.0f });
 		violetEmber.Sizes = { 1.0f, 1.0f, 0.8f, 0.3f };
@@ -831,6 +842,7 @@ namespace Game
 			return std::nullopt;
 		case AbilityId::Warp:
 			return Fx::Blink;
+		case AbilityId::RuneBlast:
 		case AbilityId::FirebombFlame:
 		case AbilityId::Firestrike:
 			return Fx::FireBurst;
@@ -848,6 +860,7 @@ namespace Game
 		case AbilityId::ShelfCrush:
 		case AbilityId::Eruption:
 			return Fx::Debris;
+		case AbilityId::RuneZone:
 		case AbilityId::Resonance:
 			return Fx::ArcaneBurst;
 		case AbilityId::CrystalSpike:
@@ -1081,7 +1094,13 @@ namespace Game
 			if (wave.Air)
 				DrawAirShockwave(renderer, wave.Ground, wave.Radius * (0.08f + 0.92f * grow), wave.Width * (0.6f + 0.8f * t), wave.Strength * fade);
 			else
-				DrawShockwave(renderer, wave.Ground, wave.Radius * (0.08f + 0.92f * grow), wave.Width * (0.6f + 0.8f * t), wave.Strength * fade, wave.Facing, wave.HalfArc);
+			{
+				const float radius = wave.Radius * (0.08f + 0.92f * grow);
+				const float width = wave.Width * (0.6f + 0.8f * t);
+				DrawShockwave(renderer, wave.Ground, radius, width, wave.Strength * fade, wave.Facing, wave.HalfArc);
+				renderer.GetGrass().Stamp({ .Kind = GrassStampKind::Wave, .Center = wave.Ground, .Extent = glm::vec2(radius), .Strength = std::clamp(wave.Strength * fade * 6.0f, 0.0f, 1.0f),
+					.Width = std::max(2.0f * width, 0.35f), .Facing = wave.Facing, .HalfArc = wave.HalfArc });
+			}
 		}
 	}
 
@@ -1217,6 +1236,19 @@ namespace Game
 		case AbilityId::FirebombFlame:
 			scorch(ground, radius * 0.5f, 2.5f, 1.0f);
 			break;
+		case AbilityId::RuneBlast:
+			scorch(ground, radius * 0.45f, 3.0f, 0.8f);
+			shock(radius, 0.3f);
+			Shockwave(ground, radius * 1.3f, 0.4f, 0.1f, 0.22f);
+			break;
+		case AbilityId::RuneZone:
+		{
+			GroundDecal pool = decal(DecalShape::Glow, ground, glm::vec2(radius * 1.1f));
+			pool.Color = glm::vec4(color * 0.55f, 1.0f);
+			Mark(pool, 0.6f, 0.05f, 0.3f, 1.0f, 0.25f);
+			shock(radius, 0.45f, 0.7f);
+			break;
+		}
 		case AbilityId::StormStrike:
 		{
 			GroundDecal burn = decal(DecalShape::Scorch, ground, glm::vec2(radius * 0.6f));

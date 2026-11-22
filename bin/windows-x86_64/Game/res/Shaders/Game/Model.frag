@@ -1,6 +1,7 @@
 #version 450
 #include "GBuffer.glsl"
 #include "Material.glsl"
+#include "Sight.glsl"
 #ifdef DISSOLVE
 #include "Dissolve.glsl"
 #endif
@@ -10,6 +11,7 @@ layout(push_constant) uniform PushConstants
 	mat4 ViewProjection;
 	vec4 Focus;
 	vec4 Eye;
+	vec4 Sight;
 } pc;
 
 layout(location = 0) in vec3 inNormal;
@@ -25,6 +27,7 @@ layout(location = 9) in vec3 inWorld;
 layout(location = 10) flat in vec4 inAccent;
 layout(location = 11) flat in uint inFlash;
 layout(location = 15) flat in vec3 inCenter;
+layout(location = 16) in float inPulse;
 #ifdef DISSOLVE
 layout(location = 12) in vec3 inLocal;
 layout(location = 13) flat in vec4 inDissolve;
@@ -123,12 +126,6 @@ struct Layer
 	vec4 Surface;
 	vec3 Normal;
 };
-
-float Bayer4(uvec2 pixel)
-{
-	const float matrix[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
-	return (matrix[(pixel.y & 3u) * 4u + (pixel.x & 3u)] + 0.5) / 16.0;
-}
 
 Layer Fetch(Material m, vec2 uv)
 {
@@ -307,8 +304,8 @@ float FilterRoughness(vec3 n, float roughness)
 
 void main()
 {
-	float cut = inCut.y > 0.0 ? inCut.y * clamp((inShading.z - inCut.x) / 0.35, 0.0, 1.0) : 0.0;
-	if (Bayer4(uvec2(gl_FragCoord.xy) + uvec2(4.0 - pc.Focus.zw)) < cut)
+	float sight = inCut.y > 0.0 ? SightDistance(inWorld, pc.Eye.xyz, pc.Sight) : 2.0;
+	if (sight < 1.0)
 		discard;
 #ifdef DISSOLVE
 	float field = DissolveField(inLocal, inDissolve.z, inDissolve.w, inBurn.w);
@@ -627,7 +624,7 @@ void main()
 	}
 	if (backFacing)
 		n = -n;
-	if (!metal && (flags & MeshHeated) == 0u && inAccent.a > 0.0)
+	if (!metal && (flags & (MeshHeated | MeshHeartbeat)) == 0u && inAccent.a > 0.0)
 	{
 		vec3 toEye = normalize(pc.Eye.xyz - inWorld);
 		if ((flags & MeshSkinned) != 0u)
@@ -662,8 +659,9 @@ void main()
 	float glow = clamp(inShading.x, 0.0, 1.0);
 	if ((flags & MeshLavaGlow) != 0u)
 		heat += HotRock * glow;
-	float fade = DepthFade(pc.Focus.x, inShading.z);
-	vec3 emitted = albedo * glow + heat + (twoTone ? inAccent.rgb * (TwoToneVeins * Luminance(material.Extra.rgb)) : material.Extra.rgb) * layer.Surface.a;
+	heat += SightGlow * SightRimGlow(sight);
+	float fade = (flags & MeshDeep) != 0u ? 0.0 : DepthFade(pc.Focus.x, inShading.z);
+	vec3 emitted = albedo * glow + heat + (twoTone ? inAccent.rgb * (TwoToneVeins * Luminance(material.Extra.rgb)) : material.Extra.rgb) * (layer.Surface.a * inPulse);
 	if ((flags & MeshBright) != 0u)
 		emitted *= BrightGain;
 	if (inFlash != 0u)
@@ -679,5 +677,5 @@ void main()
 #endif
 	outAlbedo = vec4(albedo * (1.0 - glow), occlusion);
 	outSurface = PackSurface(n, roughness, metallic);
-	outEmission = vec4(emitted * (1.0 - fade), PackEmissionTag(cut > 0.0, translucency * (1.0 - glow)));
+	outEmission = vec4(emitted * (1.0 - fade), PackEmissionTag((flags & MeshHero) != 0u, translucency * (1.0 - glow)));
 }

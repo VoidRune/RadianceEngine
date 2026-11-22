@@ -73,6 +73,28 @@ namespace Game
 		RubyShard,
 		Aftershock,
 		Resonance,
+		Ascension,
+		ShardBomb,
+		FrostClock,
+		DuelistSlash,
+		DuelistCleave,
+		DuelistThrust,
+		DuelistLunge,
+		ArcherShot,
+		ArcherVolley,
+		PerfectDodge,
+		BruteSlam,
+		BruteQuake,
+		MothDust,
+		MothDive,
+		LensBeam,
+		LensFlare,
+		ObeliskPulse,
+		VolatileBlast,
+		GeodeToss,
+		LensSweep,
+		RuneZone,
+		RuneBlast,
 		Count,
 	};
 
@@ -168,13 +190,35 @@ namespace Game
 		{ .Id = AbilityId::GlacialEruption, .Name = "Frost Nova", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Reach = 3.4f, .EffectDuration = 0.9f, .Push = 14.0f, .Parent = AbilityId::GlacialNova, .BrawlDamage = 12 },
 		{ .Id = AbilityId::WellBurst, .Name = "Void Gaze", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 13.5f, .Parent = AbilityId::GravityWell, .BrawlDamage = 11 },
 		{ .Id = AbilityId::WarpWake, .Name = "Warp", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Reach = 3.3f, .EffectDuration = 0.35f, .Push = 13.5f, .Parent = AbilityId::Warp, .BrawlDamage = 11 },
-		{ .Id = AbilityId::CrawlerBite, .Name = "Crystal Bite", .Kind = AbilityKind::Melee, .Cooldown = 1.3f, .Damage = 9, .Reach = 1.25f, .HalfArc = 0.8f, .EffectDuration = 0.12f },
-		{ .Id = AbilityId::Pounce, .Name = "Pounce", .Kind = AbilityKind::Melee, .Cooldown = 3.2f, .Damage = 14, .Reach = 3.0f, .EffectDuration = 0.2f, .Shape = StrikeShape::Line, .Width = 0.8f },
-		{ .Id = AbilityId::ShardSpit, .Name = "Shard Spit", .Cooldown = 3.0f, .Damage = 10, .ProjectileSpeed = 6.5f, .ProjectileRadius = 0.16f, .ProjectileRange = 8.0f, .ProjectileSpread = 0.32f, .SpawnOffset = 0.5f },
+		{ .Id = AbilityId::CrawlerBite, .Name = "Crystal Bite", .Kind = AbilityKind::Melee, .Cooldown = 1.3f, .Damage = 8, .Reach = 1.25f, .HalfArc = 0.8f, .EffectDuration = 0.12f },
+		{ .Id = AbilityId::Pounce, .Name = "Pounce", .Kind = AbilityKind::Melee, .Cooldown = 3.2f, .Damage = 12, .Reach = 3.0f, .EffectDuration = 0.2f, .Shape = StrikeShape::Line, .Width = 0.8f },
+		{ .Id = AbilityId::ShardSpit, .Name = "Shard Spit", .Cooldown = 3.0f, .Damage = 10, .ProjectileSpeed = 6.5f, .ProjectileRadius = 0.22f, .ProjectileRange = 8.0f, .ProjectileSpread = 0.32f, .SpawnOffset = 0.5f },
 		{ .Id = AbilityId::RubyBurst, .Name = "Ruby Burst", .Kind = AbilityKind::Ground, .EffectDuration = 0.3f, .ImpactRadius = 0.9f, .ImpactDelay = 0.5f, .Shape = StrikeShape::Ring, .InnerRadius = 0.55f },
-		{ .Id = AbilityId::RubyShard, .Name = "Ruby Shard", .Damage = 12, .ProjectileSpeed = 7.5f, .ProjectileRadius = 0.15f, .ProjectileRange = 5.5f, .SpawnOffset = 0.0f },
+		{ .Id = AbilityId::RubyShard, .Name = "Ruby Shard", .Damage = 10, .ProjectileSpeed = 7.5f, .ProjectileRadius = 0.15f, .ProjectileRange = 5.5f, .SpawnOffset = 0.0f },
 		{ .Id = AbilityId::Aftershock, .Name = "Comet", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .EffectDuration = 0.5f, .ImpactRadius = 4.5f, .ImpactDelay = 0.5f, .Push = 13.0f, .Parent = AbilityId::Comet, .BrawlDamage = 10 },
 		{ .Id = AbilityId::Resonance, .Name = "Resonant Ground", .Kind = AbilityKind::Ground, .EffectDuration = 0.5f, .ImpactRadius = 1.0f, .ImpactDelay = 1.0f, .Push = 10.0f, .BrawlDamage = 10 },
+		{ .Id = AbilityId::Ascension, .Name = "Ascension", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Reach = 4.5f, .EffectDuration = 0.7f },
+		{ .Id = AbilityId::ShardBomb, .Name = "Shard Bomb", .Kind = AbilityKind::Nova, .Damages = Element::Fire, .Reach = 14.0f, .EffectDuration = 0.9f },
+		{ .Id = AbilityId::FrostClock, .Name = "Frost Clock", .Kind = AbilityKind::Nova, .Damages = Element::Cold, .Reach = 14.0f, .EffectDuration = 1.2f },
+		{ .Id = AbilityId::DuelistSlash, .Name = "Crystal Slash", .Kind = AbilityKind::Melee, .Damage = 12, .Reach = 2.1f, .HalfArc = 1.1f, .EffectDuration = 0.18f },
+		{ .Id = AbilityId::DuelistCleave, .Name = "Crystal Cleave", .Kind = AbilityKind::Melee, .Damage = 12, .Reach = 2.1f, .HalfArc = 1.2f, .EffectDuration = 0.18f },
+		{ .Id = AbilityId::DuelistThrust, .Name = "Crystal Thrust", .Kind = AbilityKind::Melee, .Damage = 16, .Reach = 2.7f, .EffectDuration = 0.2f, .Shape = StrikeShape::Line, .Width = 0.9f },
+		{ .Id = AbilityId::DuelistLunge, .Name = "Lunging Thrust", .Kind = AbilityKind::Melee, .Damage = 15, .Reach = 2.4f, .EffectDuration = 0.2f, .Shape = StrikeShape::Line, .Width = 1.0f },
+		{ .Id = AbilityId::ArcherShot, .Name = "Shard Arrow", .Damage = 12, .ProjectileSpeed = 9.0f, .ProjectileRadius = 0.24f, .ProjectileRange = 13.0f, .SpawnOffset = 0.6f },
+		{ .Id = AbilityId::ArcherVolley, .Name = "Shard Volley", .Damage = 8, .ProjectileSpeed = 8.0f, .ProjectileRadius = 0.2f, .ProjectileRange = 11.0f, .ProjectileCount = 3, .ProjectileSpread = 0.5f, .SpawnOffset = 0.6f },
+		{ .Id = AbilityId::PerfectDodge, .Name = "Perfect Dodge", .Kind = AbilityKind::Dash },
+		{ .Id = AbilityId::BruteSlam, .Name = "Geode Slam", .Kind = AbilityKind::Nova, .Damage = 18, .Reach = 3.0f, .EffectDuration = 0.4f, .Push = 14.0f },
+		{ .Id = AbilityId::BruteQuake, .Name = "Fault Line", .Kind = AbilityKind::Melee, .Damage = 15, .Reach = 7.5f, .EffectDuration = 0.45f, .Shape = StrikeShape::Line, .Width = 1.6f, .Push = 10.0f },
+		{ .Id = AbilityId::MothDust, .Name = "Mirror Dust", .Damage = 7, .ProjectileSpeed = 7.5f, .ProjectileRadius = 0.24f, .ProjectileRange = 9.0f, .ProjectileCount = 3, .ProjectileSpread = 0.55f, .SpawnOffset = 0.5f },
+		{ .Id = AbilityId::MothDive, .Name = "Glass Dive", .Kind = AbilityKind::Melee, .Damage = 12, .Reach = 1.8f, .EffectDuration = 0.2f, .Shape = StrikeShape::Line, .Width = 1.1f },
+		{ .Id = AbilityId::LensBeam, .Name = "Focused Beam", .Kind = AbilityKind::Melee, .Damages = Element::Lightning, .Damage = 18, .Reach = 13.0f, .EffectDuration = 0.35f, .Shape = StrikeShape::Line, .Width = 0.9f, .Push = 8.0f },
+		{ .Id = AbilityId::LensFlare, .Name = "Lens Flare", .Kind = AbilityKind::Nova, .Damages = Element::Lightning, .Damage = 8, .Reach = 2.6f, .EffectDuration = 0.3f, .Push = 12.0f },
+		{ .Id = AbilityId::ObeliskPulse, .Name = "Obelisk Pulse", .Kind = AbilityKind::Nova, .Damage = 12, .Reach = 3.4f, .EffectDuration = 0.4f, .Push = 16.0f },
+		{ .Id = AbilityId::VolatileBlast, .Name = "Volatile Blast", .Kind = AbilityKind::Ground, .Damages = Element::Fire, .Damage = 15, .EffectDuration = 0.35f, .ImpactRadius = 2.4f, .ImpactDelay = 1.3f, .Push = 12.0f },
+		{ .Id = AbilityId::GeodeToss, .Name = "Geode Toss", .Kind = AbilityKind::Ground, .Damage = 14, .EffectDuration = 0.4f, .ImpactRadius = 1.6f, .ImpactDelay = 1.1f, .Range = 11.0f, .Push = 10.0f },
+		{ .Id = AbilityId::LensSweep, .Name = "Focused Beam", .Kind = AbilityKind::Melee, .Damages = Element::Lightning, .Damage = 12, .Reach = 13.0f, .EffectDuration = 0.35f, .Shape = StrikeShape::Line, .Width = 0.9f, .Push = 6.0f },
+		{ .Id = AbilityId::RuneZone, .Name = "Lingering Zone", .Kind = AbilityKind::Ground, .EffectDuration = 0.45f, .ImpactRadius = 1.0f },
+		{ .Id = AbilityId::RuneBlast, .Name = "Combustion", .Kind = AbilityKind::Nova, .Damages = Element::Fire, .Reach = 2.4f, .EffectDuration = 0.35f, .ImpactRadius = 2.4f },
 	};
 
 	constexpr bool AbilitiesMatchIds()
@@ -216,6 +260,7 @@ namespace Game
 		Brood,
 		Treasure,
 		Egg,
+		Fighter,
 	};
 
 	struct EnemyDef
@@ -234,7 +279,7 @@ namespace Game
 		EnemyBehavior Behavior = EnemyBehavior::Hunter;
 		uint8_t Tier = 0;
 		uint16_t Cost = 0;
-		uint16_t Xp = 0;
+		uint16_t Worth = 0;
 		float Lunge = 0.0f;
 		float Keep = 0.0f;
 		uint8_t Volley = 0;
@@ -247,13 +292,20 @@ namespace Game
 		{ .Kind = EntityKind::Caster, .Name = "Pyromancer", .Health = 55, .Radius = 0.36f, .Speed = 2.5f, .Attack = AbilityId::Firestrike, .AttackRange = 7.0f, .Windup = 0.8f, .OrbChance = 0.2f },
 		{ .Kind = EntityKind::Archivist, .Name = "The Archivist", .Health = 6000, .Radius = 0.85f, .Speed = 2.6f, .Attack = AbilityId::TomeVolley, .AttackRange = 10.0f, .Windup = 0.7f, .OrbChance = 0.0f, .Boss = true, .Title = "Keeper of the Burned Library" },
 		{ .Kind = EntityKind::Wyrm, .Name = "Crystal Wyrm", .Health = 7500, .Radius = 1.0f, .Speed = 3.0f, .Attack = AbilityId::CrystalSpike, .AttackRange = 9.0f, .Windup = 0.8f, .OrbChance = 0.0f, .Boss = true, .Title = "Devourer of the Deep Veins" },
-		{ .Kind = EntityKind::QuartzCrawler, .Name = "Quartz Crawler", .Health = 30, .Radius = 0.32f, .Speed = 3.7f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.85f, .Windup = 0.45f, .OrbChance = 0.02f, .Tier = 1, .Cost = 1, .Xp = 1, .Lunge = 0.7f },
-		{ .Kind = EntityKind::JadeCrawler, .Name = "Jade Crawler", .Health = 60, .Radius = 0.36f, .Speed = 3.3f, .Attack = AbilityId::Pounce, .AttackRange = 2.6f, .Windup = 0.6f, .OrbChance = 0.04f, .Behavior = EnemyBehavior::Pouncer, .Tier = 2, .Cost = 3, .Xp = 3, .Lunge = 3.0f },
-		{ .Kind = EntityKind::SapphireCrawler, .Name = "Sapphire Crawler", .Health = 85, .Radius = 0.4f, .Speed = 2.7f, .Attack = AbilityId::ShardSpit, .AttackRange = 6.5f, .Windup = 0.5f, .OrbChance = 0.05f, .Tier = 3, .Cost = 5, .Xp = 8, .Keep = 4.5f },
-		{ .Kind = EntityKind::RubyCrawler, .Name = "Ruby Crawler", .Health = 120, .Radius = 0.44f, .Speed = 3.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 1.0f, .Windup = 0.5f, .OrbChance = 0.07f, .Behavior = EnemyBehavior::Volatile, .Tier = 4, .Cost = 8, .Xp = 20, .Lunge = 0.8f },
-		{ .Kind = EntityKind::AmethystCrawler, .Name = "Amethyst Brood Mother", .Health = 260, .Radius = 0.5f, .Speed = 2.0f, .Attack = AbilityId::ShardSpit, .AttackRange = 7.5f, .Windup = 0.7f, .OrbChance = 0.2f, .Behavior = EnemyBehavior::Brood, .Tier = 5, .Cost = 16, .Xp = 50, .Keep = 6.0f, .Volley = 2 },
-		{ .Kind = EntityKind::PrismaticCrawler, .Name = "Prismatic Crawler", .Health = 160, .Radius = 0.4f, .Speed = 4.6f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .OrbChance = 0.5f, .Behavior = EnemyBehavior::Treasure, .Tier = 3, .Cost = 6, .Xp = 30 },
-		{ .Kind = EntityKind::CrawlerEgg, .Name = "Crawler Egg", .Health = 18, .Radius = 0.24f, .Speed = 0.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .OrbChance = 0.0f, .Behavior = EnemyBehavior::Egg, .Xp = 1 },
+		{ .Kind = EntityKind::QuartzCrawler, .Name = "Quartz Crawler", .Health = 7, .Radius = 0.32f, .Speed = 3.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.85f, .Windup = 0.55f, .OrbChance = 0.02f, .Tier = 1, .Cost = 1, .Worth = 1, .Lunge = 0.7f },
+		{ .Kind = EntityKind::JadeCrawler, .Name = "Jade Crawler", .Health = 60, .Radius = 0.36f, .Speed = 2.9f, .Attack = AbilityId::Pounce, .AttackRange = 2.6f, .Windup = 0.7f, .OrbChance = 0.04f, .Behavior = EnemyBehavior::Pouncer, .Tier = 2, .Cost = 3, .Worth = 3, .Lunge = 3.0f },
+		{ .Kind = EntityKind::SapphireCrawler, .Name = "Sapphire Crawler", .Health = 85, .Radius = 0.4f, .Speed = 2.4f, .Attack = AbilityId::ShardSpit, .AttackRange = 6.5f, .Windup = 0.65f, .OrbChance = 0.05f, .Tier = 3, .Cost = 5, .Worth = 8, .Keep = 4.5f },
+		{ .Kind = EntityKind::RubyCrawler, .Name = "Ruby Crawler", .Health = 120, .Radius = 0.44f, .Speed = 2.7f, .Attack = AbilityId::CrawlerBite, .AttackRange = 1.0f, .Windup = 0.6f, .OrbChance = 0.07f, .Behavior = EnemyBehavior::Volatile, .Tier = 4, .Cost = 8, .Worth = 20, .Lunge = 0.8f },
+		{ .Kind = EntityKind::AmethystCrawler, .Name = "Amethyst Brood Mother", .Health = 260, .Radius = 0.5f, .Speed = 1.8f, .Attack = AbilityId::ShardSpit, .AttackRange = 7.5f, .Windup = 0.8f, .OrbChance = 0.2f, .Behavior = EnemyBehavior::Brood, .Tier = 5, .Cost = 16, .Worth = 50, .Keep = 6.0f, .Volley = 2 },
+		{ .Kind = EntityKind::PrismaticCrawler, .Name = "Prismatic Crawler", .Health = 160, .Radius = 0.4f, .Speed = 3.3f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .OrbChance = 0.5f, .Behavior = EnemyBehavior::Treasure, .Tier = 3, .Cost = 6, .Worth = 30 },
+		{ .Kind = EntityKind::CrawlerEgg, .Name = "Crawler Egg", .Health = 18, .Radius = 0.24f, .Speed = 0.0f, .Attack = AbilityId::CrawlerBite, .AttackRange = 0.0f, .OrbChance = 0.0f, .Behavior = EnemyBehavior::Egg, .Worth = 1 },
+		{ .Kind = EntityKind::CrystalDuelist, .Name = "Crystal Duelist", .Health = 230, .Radius = 0.4f, .Speed = 3.1f, .Attack = AbilityId::DuelistSlash, .AttackRange = 2.4f, .Windup = 0.42f, .OrbChance = 0.3f, .Behavior = EnemyBehavior::Fighter, .Tier = 4, .Cost = 10, .Worth = 30 },
+		{ .Kind = EntityKind::ShardArcher, .Name = "Shard Archer", .Health = 120, .Radius = 0.36f, .Speed = 2.9f, .Attack = AbilityId::ArcherShot, .AttackRange = 12.0f, .Windup = 0.55f, .OrbChance = 0.25f, .Behavior = EnemyBehavior::Fighter, .Tier = 3, .Cost = 7, .Worth = 22 },
+		{ .Kind = EntityKind::PrismMage, .Name = "Prism Mage", .Health = 140, .Radius = 0.38f, .Speed = 2.7f, .Attack = AbilityId::Comet, .AttackRange = 11.0f, .Windup = 0.7f, .OrbChance = 0.3f, .Behavior = EnemyBehavior::Fighter, .Tier = 4, .Cost = 9, .Worth = 26 },
+		{ .Kind = EntityKind::GeodeBrute, .Name = "Geode Brute", .Health = 380, .Radius = 0.6f, .Speed = 2.3f, .Attack = AbilityId::BruteSlam, .AttackRange = 2.8f, .Windup = 1.0f, .OrbChance = 0.4f, .Behavior = EnemyBehavior::Fighter, .Tier = 4, .Cost = 12, .Worth = 36 },
+		{ .Kind = EntityKind::MirrorMoth, .Name = "Mirror Moth", .Health = 110, .Radius = 0.36f, .Speed = 3.3f, .Attack = AbilityId::MothDust, .AttackRange = 9.0f, .Windup = 0.6f, .OrbChance = 0.25f, .Behavior = EnemyBehavior::Fighter, .Tier = 3, .Cost = 7, .Worth = 22 },
+		{ .Kind = EntityKind::LensWisp, .Name = "Lens Wisp", .Health = 90, .Radius = 0.34f, .Speed = 2.6f, .Attack = AbilityId::LensBeam, .AttackRange = 13.0f, .Windup = 1.3f, .OrbChance = 0.25f, .Behavior = EnemyBehavior::Fighter, .Tier = 3, .Cost = 7, .Worth = 22 },
+		{ .Kind = EntityKind::ShardObelisk, .Name = "Shard Obelisk", .Health = 300, .Radius = 0.55f, .Speed = 0.0f, .Attack = AbilityId::ObeliskPulse, .AttackRange = 3.2f, .Windup = 0.9f, .OrbChance = 0.5f, .Behavior = EnemyBehavior::Fighter, .Tier = 4, .Cost = 10, .Worth = 30 },
 	};
 
 	inline const EnemyDef* FindEnemyDef(EntityKind kind)
@@ -332,6 +384,10 @@ namespace Game
 	inline constexpr LootDef LootDefs[] = {
 		{ LootKind::Health, "Health orb", "heals 35" },
 		{ LootKind::Mana, "Mana orb", "restores 40 mana" },
+		{ LootKind::Magnet, "Shard magnet", "pulls every crystal shard to you" },
+		{ LootKind::Bomb, "Shard bomb", "shatters every crawler nearby" },
+		{ LootKind::Frost, "Frost clock", "freezes every crawler nearby for 4 seconds" },
+		{ LootKind::Chest, "Crystal chest", "a card for everyone" },
 	};
 	static_assert(std::size(LootDefs) == size_t(LootKind::Count));
 

@@ -110,8 +110,10 @@ namespace Game
 		void SendNotice(const Client& client, const std::string& text, bool success);
 		void CreateWorld(const SessionInfo& session);
 		void ApplyTravel();
+		void ApplyArenaChange();
 		void CheckReturn(float dt);
 		void FlushNotices();
+		void SendRecap();
 		void RemoveClient(ConnectionId connection);
 		void DropSilentClients(float dt);
 		void Tick();
@@ -150,6 +152,8 @@ namespace Game
 		float m_Accumulator = 0.0f;
 		float m_PlayerListTimer = 0.0f;
 		uint32_t m_CardRevision = 0;
+		uint32_t m_RunRevision = 0;
+		bool m_RecapSent = false;
 		uint32_t m_StarvedTicks = 0;
 		std::vector<NetEvent> m_Events;
 		std::vector<NetMessage> m_Messages;

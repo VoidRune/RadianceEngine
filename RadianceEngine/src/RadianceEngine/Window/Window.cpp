@@ -235,8 +235,11 @@ namespace Rdn
 		if (m_CursorMode == mode)
 			return;
 
+		const bool moves = m_CursorMode == CursorMode::Disabled || mode == CursorMode::Disabled;
 		glfwSetInputMode(m_Window, GLFW_CURSOR, ToGlfwCursorMode(mode));
 		m_CursorMode = mode;
+		if (!moves)
+			return;
 
 		double x, y;
 		glfwGetCursorPos(m_Window, &x, &y);

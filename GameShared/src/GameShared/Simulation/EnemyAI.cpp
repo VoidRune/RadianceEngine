@@ -1,6 +1,7 @@
 #include "EnemyAI.h"
 #include "GameShared/Content/Definitions.h"
 #include "GameShared/Simulation/Abilities.h"
+#include "GameShared/Simulation/FighterAI.h"
 #include "GameShared/Simulation/World.h"
 #include "GameShared/World/Collision.h"
 #include <algorithm>
@@ -83,9 +84,10 @@ namespace Game
 			return GetAbility(def.Attack).Kind == AbilityKind::Ground;
 		}
 
-		void ReleaseAttack(World& world, const Transform& transform, const EnemyDef& def, const Enemy& enemy)
+		void ReleaseAttack(World& world, Entity entity, const Transform& transform, const EnemyDef& def, const Enemy& enemy)
 		{
 			AbilityContext context;
+			context.Source = entity;
 			context.Origin = transform.Position;
 			context.Direction = LengthSquared(enemy.AimDirection) > 0.0f ? enemy.AimDirection : FromAngle(transform.Facing);
 			context.Target = enemy.AimPoint;
@@ -131,7 +133,7 @@ namespace Game
 
 		EnemyScaling Inherit(const Enemy& enemy, const Health& health, const EnemyDef& def)
 		{
-			return { .Health = float(health.Max) / float(std::max(def.Health, 1)), .Damage = enemy.DamageScale, .Speed = enemy.SpeedScale, .Cooldown = enemy.CooldownScale, .Level = enemy.Level };
+			return { .Health = enemy.OffspringHealth > 0.0f ? enemy.OffspringHealth : float(health.Max) / float(std::max(def.Health, 1)), .Damage = enemy.DamageScale, .Speed = enemy.SpeedScale, .Cooldown = enemy.CooldownScale, .Level = enemy.Level };
 		}
 
 		struct Birth
@@ -226,6 +228,7 @@ namespace Game
 					players.push_back({ entity, transform->Position, PlayerRadius });
 		});
 		ShieldBroods(world);
+		EmpowerAllies(world, dt);
 		std::vector<Body> crowd;
 		thread_local TargetGrid crowdGrid;
 		thread_local std::vector<uint32_t> nearby;
@@ -241,6 +244,10 @@ namespace Game
 		});
 		crowdGrid.Finish();
 		std::vector<Birth> births;
+		std::vector<std::pair<Entity, float>> slams;
+		std::vector<Entity> flung;
+		thread_local FighterScene scene;
+		bool sceneReady = false;
 
 		entities.Each<Enemy>([&](Entity entity, Enemy& enemy)
 		{
@@ -259,6 +266,33 @@ namespace Game
 				return;
 			}
 			enemy.Age += dt;
+			UpdateEnemyTraits(enemy, dt);
+			enemy.Crashed = std::max(enemy.Crashed - dt, 0.0f);
+			if (LengthSquared(enemy.Push) > 0.0f)
+			{
+				const Vec2 from = transform->Position;
+				const Vec2 step = enemy.Push * dt;
+				transform->Position = MoveCircle(level, from, radius, step);
+				const float speed = Length(enemy.Push);
+				const Vec2 moved = transform->Position - from;
+				const float impact = Length(step - moved) / std::max(dt, 1e-4f);
+				enemy.Anchor = transform->Position;
+				if (impact >= WallSlamSpeed)
+				{
+					slams.push_back({ entity, impact });
+					enemy.Push = moved * (1.0f / std::max(dt, 1e-4f));
+				}
+				else
+				{
+					if (speed >= DominoSpeed)
+						flung.push_back(entity);
+					enemy.Push *= std::exp(-EnemyPushFriction * dt);
+					if (LengthSquared(enemy.Push) < EnemyPushStop * EnemyPushStop)
+						enemy.Push = {};
+				}
+				if (speed >= EnemyFlungSpeed)
+					return;
+			}
 			if (def->Behavior == EnemyBehavior::Egg)
 			{
 				if (enemy.Age >= EggHatchSeconds)
@@ -273,7 +307,7 @@ namespace Game
 					Flee(world, *transform, enemy, *def, radius, players, Separation(crowd, crowdGrid, nearby, entity, transform->Position, radius), dt);
 				return;
 			}
-			if (def->Behavior == EnemyBehavior::Brood && (enemy.Brood += dt) >= BroodInterval)
+			if (def->Behavior == EnemyBehavior::Brood && (enemy.Brood += dt) >= BroodInterval && crowd.size() < BroodCrowdCap)
 			{
 				enemy.Brood = 0.0f;
 				LayEggs(world, *transform, enemy, *health, *def, radius, births);
@@ -289,6 +323,16 @@ namespace Game
 				*entities.TryGet<Transform>(entity) = body;
 				*entities.TryGet<Enemy>(entity) = mind;
 				*entities.TryGet<Boss>(entity) = state;
+				return;
+			}
+			if (def->Behavior == EnemyBehavior::Fighter)
+			{
+				if (!sceneReady)
+				{
+					GatherFighterScene(world, scene);
+					sceneReady = true;
+				}
+				UpdateFighter(world, entity, *transform, enemy, *def, radius, scene, Separation(crowd, crowdGrid, nearby, entity, transform->Position, radius), dt);
 				return;
 			}
 
@@ -315,11 +359,11 @@ namespace Game
 				enemy.Anchor = transform->Position;
 				enemy.Stuck = 0.0f;
 				if (enemy.Lunge <= 0.0f && !pounce)
-					ReleaseAttack(world, *transform, *def, enemy);
+					ReleaseAttack(world, entity, *transform, *def, enemy);
 				return;
 			}
 			const float pace = enemy.Chill > 0.0f ? ChillPace : 1.0f;
-			enemy.AttackCooldown = std::max(enemy.AttackCooldown - dt * pace, 0.0f);
+			enemy.AttackCooldown = std::max(enemy.AttackCooldown - dt * pace * (enemy.Empowered > 0.0f ? EmpowerHaste : 1.0f), 0.0f);
 			enemy.RetargetTimer -= dt;
 			const Body* target = FindBody(players, enemy.Target);
 			if (!target || enemy.RetargetTimer <= 0.0f)
@@ -351,7 +395,7 @@ namespace Game
 					enemy.Windup = 0.0f;
 					enemy.AttackCooldown = GetAbility(def->Attack).Cooldown * enemy.CooldownScale;
 					if (def->Lunge <= 0.0f || def->Behavior == EnemyBehavior::Pouncer)
-						ReleaseAttack(world, *transform, *def, enemy);
+						ReleaseAttack(world, entity, *transform, *def, enemy);
 					enemy.Lunge = def->Lunge;
 				}
 				return;
@@ -392,7 +436,7 @@ namespace Game
 			}
 
 			const float reach = def->AttackRange + target->Radius;
-			if (visible && distance <= reach && enemy.AttackCooldown <= 0.0f)
+			if (visible && distance <= reach && enemy.AttackCooldown <= 0.0f && !IsMirrored(enemy))
 			{
 				enemy.Windup = def->Windup;
 				enemy.AimDirection = distance > 1e-4f ? toTarget / distance : FromAngle(transform->Facing);
@@ -411,7 +455,7 @@ namespace Game
 				desired = -Normalize(toTarget);
 
 			const Vec2 push = Separation(crowd, crowdGrid, nearby, entity, transform->Position, radius);
-			transform->Position = MoveCircle(level, transform->Position, radius, desired * (def->Speed * enemy.SpeedScale * pace * dt) + push);
+			transform->Position = MoveCircle(level, transform->Position, radius, desired * (def->Speed * enemy.SpeedScale * pace * (enemy.Empowered > 0.0f ? EmpowerSpeed : 1.0f) * dt) + push);
 			if (visible)
 				transform->Facing = AngleOf(toTarget);
 			else if (LengthSquared(desired) > 0.0f)
@@ -431,9 +475,17 @@ namespace Game
 				enemy.Stuck = 0.0f;
 			}
 		});
-		for (const Birth& birth : births)
+		for (const auto& [slammed, speed] : slams)
+			world.OnEnemySlammed(slammed, speed);
+		for (const Entity entity : flung)
+			world.OnEnemyFlung(entity);
+		for (Birth& birth : births)
+		{
+			if (IsFodder(birth.Kind))
+				birth.Scaling.Health = 1.0f;
 			if (Enemy* born = entities.TryGet<Enemy>(world.SpawnEnemy(birth.Kind, birth.Position, birth.Scaling)))
 				born->Sprout = birth.Sprout;
+		}
 
 		if (players.empty())
 			return;

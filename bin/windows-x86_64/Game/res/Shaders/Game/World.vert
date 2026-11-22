@@ -27,7 +27,8 @@ layout(location = 0) out vec3 outNormal;
 layout(location = 1) out vec4 outColor;
 layout(location = 2) out float outHeight;
 layout(location = 3) out float outWorldHeight;
-layout(location = 4) flat out vec2 outSurface;
+layout(location = 4) flat out vec3 outSurface;
+layout(location = 5) out vec3 outWorld;
 
 void main()
 {
@@ -50,6 +51,7 @@ void main()
 	outColor = box.ColorEmission;
 	outHeight = world.y - box.HalfExtentsGround.w;
 	outWorldHeight = world.y;
-	outSurface = box.Surface.xy;
+	outSurface = box.Surface.xyz;
+	outWorld = world;
 	gl_Position = pc.ViewProjection * vec4(world, 1.0);
 }

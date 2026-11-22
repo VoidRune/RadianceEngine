@@ -31,7 +31,7 @@ namespace Game
 		constexpr const char* LandingLines[] = {
 			"A gust catches you and sets you back on the island.",
 			"The ember winds carry you home. They sound amused.",
-			"An updraft lifts you back to the ledge. Emberhold keeps its own.",
+			"An updraft lifts you back to the ledge. The Sun's Cradle keeps its own.",
 			"The void spits you back out.",
 			"Wind howls up from below and drops you on solid stone.",
 		};
@@ -71,7 +71,11 @@ namespace Game
 		m_NavGrid.Build(m_Level);
 		m_Chosen.fill(DefaultBrawlSpells);
 		if (IsShardfall())
+		{
+			if (m_Settings.Run.Seed == 0)
+				m_Settings.Run.Seed = m_Settings.Seed | 1u;
 			m_Run.Begin(m_Settings.Run);
+		}
 		else if (IsPvp())
 			m_Match.Begin(*this);
 		else if (IsHub())
@@ -91,11 +95,19 @@ namespace Game
 	void World::Step()
 	{
 		const float dt = GetTickSeconds();
+		if (IsPaused())
+		{
+			m_Tick++;
+			RecordHistory();
+			return;
+		}
 		MarkTargetsMoved();
 		UpdateNavigation(dt);
 		UpdateRespawns(*this, dt);
 		UpdateRegeneration(*this, dt);
 		UpdateEnemies(*this, dt);
+		m_LiveShots = 0;
+		m_Entities.Each<Projectile>([&](Entity, Projectile& projectile) { m_LiveShots += projectile.Side == Team::Players ? 1u : 0u; });
 		MarkTargetsMoved();
 		UpdateEchoes(dt);
 		UpdateProjectiles(*this, dt);
@@ -112,6 +124,9 @@ namespace Game
 		if (const ArenaState arena = GetArena(); arena.Field)
 			SinkFallenProps(m_Level, *arena.Field, arena.Clock);
 		FlushDestroyed();
+		if (IsShardfall())
+			if (const std::optional<ArenaChange> arena = m_Run.TakeArenaChange())
+				ChangeArena(arena->Map, arena->Seed);
 		m_Tick++;
 		RecordHistory();
 	}
@@ -126,7 +141,10 @@ namespace Game
 		else if (IsHub())
 			status.HubFalls = uint16_t(std::min<uint32_t>(m_HubFalls, UINT16_MAX));
 		else if (IsShardfall())
+		{
 			status.Run = m_Run.GetStatus();
+			status.Run.Paused = IsPaused();
+		}
 		return status;
 	}
 
@@ -152,7 +170,7 @@ namespace Game
 	{
 		Transform* transform = m_Entities.TryGet<Transform>(player);
 		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
-		if (!transform || !controller)
+		if (!transform || !controller || IsPaused())
 			return {};
 		const PlayerTraits& traits = controller->Traits;
 		CollectBodies(transform->Position, m_Bodies);
@@ -165,7 +183,12 @@ namespace Game
 			m_HubFalls++;
 		if (actions.Landed && IsHub())
 			Notify(controller->PlayerId, LandingLines[m_HubFalls % std::size(LandingLines)], true);
-		if (actions.Dodged)
+		if (actions.Dodged && IsShardfall())
+		{
+			m_Run.ArmEcho(controller->PlayerId);
+			m_Run.NoteDodge(*this, controller->PlayerId, origin);
+		}
+		else if (actions.Dodged)
 			m_Match.ArmEcho(controller->PlayerId);
 		for (uint32_t slot = 0; slot < AbilitySlots && actions.Recast != 0; slot++)
 		{
@@ -207,7 +230,7 @@ namespace Game
 		context.CritChance = traits.CritChance;
 		context.CritMultiplier = traits.CritMultiplier;
 		context.LifeSteal = traits.LifeSteal;
-		context.Cards = m_Match.GetCards(controller->PlayerId);
+		context.Cards = GetCards(controller->PlayerId);
 		context.Departure = origin;
 		if (m_Settings.LagCompensation)
 			context.Rewind = float(std::clamp(double(m_Tick) - input.GetViewTime(), 0.0, double(MaxRewindTicks)));
@@ -217,13 +240,15 @@ namespace Game
 				continue;
 			const SkillTraits& skill = traits.Skills[slot];
 			AbilityContext eruption = context;
-			eruption.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, controller->State.Momentum) * NovaEruptionScale(actions.RecastAge);
+			eruption.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, controller->State.Momentum) * NovaEruptionScale(actions.RecastAge);
 			eruption.PushScale = NovaEruptionPush(actions.RecastAge) * skill.PushScale;
 			eruption.AreaScale = traits.AreaScale * skill.AreaScale;
 			eruption.PvpScale = skill.PvpScale;
+			if (IsShardfall())
+				eruption.Runes = SlotRunes(m_Run.GetLoadout(controller->PlayerId), slot);
 			EruptFrostNova(*this, actions.RecastPoint, eruption);
 		}
-		const bool damage = IsDamageBrawl();
+		const bool damage = UsesBrawlDamage();
 		const bool chamber = damage && HasCard(context.Cards, CardId::EchoChamber);
 		const bool arcana = damage && HasCard(context.Cards, CardId::UnstableArcana);
 		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
@@ -232,18 +257,22 @@ namespace Game
 				continue;
 			const SkillTraits& skill = traits.Skills[slot];
 			const AbilityDef& ability = GetAbility(skill.Ability);
-			context.DamageScale = skill.DamageScale * m_Match.CastDamageScale(controller->PlayerId, healthFraction, actions.ManaBefore, traits.MaxMana, (actions.Overloaded & (1u << slot)) != 0, controller->State.Momentum);
+			context.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, actions.ManaBefore, traits.MaxMana, (actions.Overloaded & (1u << slot)) != 0, controller->State.Momentum);
 			if (skill.Ability == AbilityId::ChainHook && damage)
 				context.DamageScale *= (HasCard(context.Cards, CardId::Whiplash) ? WhiplashDamage : 1.0f) * (HasCard(context.Cards, CardId::LongChain) ? LongChainDamage : 1.0f);
 			context.AreaScale = traits.AreaScale * skill.AreaScale;
 			context.PushScale = skill.PushScale;
 			context.ExtraProjectiles = uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles);
+			context.ExtraPierce = uint8_t(traits.ExtraPierce + skill.ExtraPierce);
+			context.ExtraChain = skill.ExtraChain;
 			context.Direction = AimsFromPoint(skill.Ability) ? actions.CastAim : actions.Direction;
 			context.Target = AimsFromPoint(skill.Ability) ? actions.CastPoint : GetGroundTarget(m_Level, context.Origin, context.Direction, actions.AimDistance, ability.Range);
 			context.PvpScale = skill.PvpScale;
 			context.RangeScale = skill.RangeScale;
 			context.Charge = IsCharged(skill) ? actions.Charge : 0.0f;
 			const bool guard = ability.Kind == AbilityKind::Shield;
+			const bool focused = IsShardfall() && !guard && ability.Kind != AbilityKind::Dash && ability.Kind != AbilityKind::Ward && m_Run.ConsumeFocus(controller->PlayerId);
+			context.CritChance = focused ? 1.0f : traits.CritChance;
 			ArcanaSurge surge = ArcanaSurge::None;
 			if (arcana && !guard)
 			{
@@ -260,10 +289,14 @@ namespace Game
 					controller->State.Cooldowns[slot] = 0.0f;
 				controller->State.Surge = uint8_t((uint8_t(controller->State.Surge + 0x10) & 0xF0) | uint8_t(surge));
 			}
+			if (IsShardfall())
+				m_Run.ShapeCast(*this, *controller, slot, skill.Ability, context);
 			ExecuteAbility(*this, skill.Ability, context);
+			if (IsShardfall())
+				m_Run.AfterCast(*this, player, *controller, slot, skill.Ability, context);
 			if ((chamber && EchoesInChamber(skill.Ability)) || surge == ArcanaSurge::Copies)
 				CastCopies(skill.Ability, context);
-			if (slot > 0 && ability.Kind != AbilityKind::Dash && ability.Kind != AbilityKind::Ward && m_Match.ConsumeEcho(controller->PlayerId))
+			if (slot > 0 && ability.Kind != AbilityKind::Dash && ability.Kind != AbilityKind::Ward && (IsShardfall() ? m_Run.ConsumeEcho(controller->PlayerId) : m_Match.ConsumeEcho(controller->PlayerId)))
 				m_Echoes.push_back({ player, skill.Ability, context, EchoDelay });
 			if (!guard && HasCard(context.Cards, CardId::Rewind) && m_Random.Float() < RewindChance)
 			{
@@ -324,6 +357,45 @@ namespace Game
 			context.DamageScale *= echo.Strength;
 			ExecuteAbility(*this, echo.Ability, context);
 		}
+		std::vector<DelayedCast> ready;
+		for (size_t i = 0; i < m_Casts.size();)
+		{
+			if ((m_Casts[i].Remaining -= dt) > 0.0f)
+			{
+				i++;
+				continue;
+			}
+			ready.push_back(m_Casts[i]);
+			m_Casts.erase(m_Casts.begin() + ptrdiff_t(i));
+		}
+		for (const DelayedCast& cast : ready)
+		{
+			AbilityContext context = cast.Context;
+			if (const Enemy* enemy = m_Entities.TryGet<Enemy>(cast.Caster))
+			{
+				const Health* health = m_Entities.TryGet<Health>(cast.Caster);
+				const Transform* transform = m_Entities.TryGet<Transform>(cast.Caster);
+				if (!health || health->IsDead() || !transform || enemy->Stun > 0.0f || enemy->Stagger > 0.0f)
+					continue;
+				if (cast.Follow)
+				{
+					const Vec2 shift = transform->Position - context.Origin;
+					context.Origin = transform->Position;
+					if (!cast.Track)
+						context.Target += shift;
+				}
+				if (const Transform* prey = cast.Track ? m_Entities.TryGet<Transform>(enemy->Target) : nullptr)
+				{
+					const Vec2 aim = prey->Position - context.Origin;
+					if (LengthSquared(aim) > 1e-4f)
+						context.Direction = Normalize(aim);
+					context.Target = prey->Position;
+				}
+			}
+			else if (!m_Entities.Has<PlayerController>(cast.Caster))
+				continue;
+			ExecuteAbility(*this, cast.Ability, context);
+		}
 	}
 
 	void World::CollectBodies(Vec2 around, std::vector<BodyCircle>& bodies)
@@ -346,6 +418,8 @@ namespace Game
 	{
 		if (playerId < MaxPlayers)
 			m_Chosen[playerId] = spells;
+		if (IsShardfall())
+			m_Run.OnPlayerSpawned(playerId, spells);
 		const PlayerTraits traits = ComputeTraits(playerId);
 		PlayerController controller{ .PlayerId = playerId, .Traits = traits };
 		controller.State.Mana = traits.MaxMana;
@@ -434,12 +508,14 @@ namespace Game
 		controller->State.CastSlot = -1;
 		controller->State.Stun = 0.0f;
 		controller->State.Chill = 0.0f;
-		controller->RespawnTimer = IsPvp() ? PvpRespawnDelay : RespawnDelay;
+		controller->RespawnTimer = IsShardfall() ? 0.0f : IsPvp() ? PvpRespawnDelay : RespawnDelay;
 		controller->LastAttacker = NoPlayer;
 		controller->KilledBy = killer;
 		if (Health* health = m_Entities.TryGet<Health>(player))
 			health->Current = 0;
 		Emit({ WorldEventType::PlayerDied, victim, uint8_t(std::min<uint32_t>(killer, 255u)) });
+		if (IsShardfall())
+			m_Run.OnPlayerDowned(victim);
 		if (!IsPvp())
 			return;
 		m_Match.NoteKnockout(*this, victim, killer, hazard);
@@ -451,6 +527,8 @@ namespace Game
 	{
 		if (const PlayerController* controller = m_Entities.TryGet<PlayerController>(player); controller && IsPvp())
 			m_Match.OnPlayerRemoved(*this, controller->PlayerId);
+		if (const PlayerController* controller = m_Entities.TryGet<PlayerController>(player); controller && IsShardfall())
+			m_Run.OnPlayerRemoved(controller->PlayerId);
 		if (const PlayerController* controller = m_Entities.TryGet<PlayerController>(player))
 			LeaveChess(controller->PlayerId);
 		m_Entities.Destroy(player);
@@ -501,7 +579,7 @@ namespace Game
 		if (m_Settings.Mode == GameMode::Brawl)
 			return m_Match.GetBrawlTraits(playerId);
 		if (IsShardfall())
-			return MakeRunTraits(MakeRunLoadout(chosen), m_Run.GetLevel());
+			return MakeRunTraits(m_Run.GetLoadout(playerId));
 		return MakeBrawlTraits({ .Spells = chosen }, BrawlMode::Damage);
 	}
 
@@ -949,6 +1027,11 @@ namespace Game
 		const bool seeking = ability.Id == AbilityId::ObsidianBlades && HasCard(context.Cards, CardId::SeekerBlades);
 		if (seeking)
 			perks |= PerkSeek;
+		const bool loose = ability.Id != AbilityId::ChainHook;
+		if (loose && HasRune(context.Runes, RuneId::Homing))
+			perks |= PerkSeek;
+		if (context.Side == Team::Players && IsShardfall() && m_LiveShots >= RunProjectileCap)
+			return {};
 		const bool overcharged = ability.Id == AbilityId::ArcLightning && HasCard(context.Cards, CardId::Overcharge);
 		if (overcharged)
 			perks |= PerkReach;
@@ -958,7 +1041,7 @@ namespace Game
 		const bool charged = IsChargedShot(ability.Id);
 		const ChargedShot shot = ChargedShotOf(ability, context.Charge);
 		const float push = (ability.Id == AbilityId::ChainHook ? (HasCard(context.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) : shot.Push) * boost;
-		if (boost != 1.0f && IsDamageBrawl())
+		if (boost != 1.0f && UsesBrawlDamage())
 			damage = ScaleDamage(damage, boost);
 		const float lifetime = (pattern.Speed > 0.0f ? ChargedRange(ability, context.Charge) / pattern.Speed : 0.0f) * context.RangeScale;
 		const Entity entity = m_Entities.Create();
@@ -972,13 +1055,13 @@ namespace Game
 			.Damage = charged || seeking ? ScaleDamage(damage, shot.DamageScale * (seeking ? SeekerDamage : 1.0f)) : damage,
 			.Side = context.Side,
 			.Pierce = uint8_t(pattern.Pierce + CardPierce(ability.Id, context.Cards)),
-			.Chain = uint8_t(ability.Chain + (overcharged ? 1 : 0)),
+			.Chain = uint8_t(ability.Chain + (overcharged ? 1 : 0) + context.ExtraChain),
 			.Rewind = context.Rewind,
 			.CritChance = context.CritChance,
 			.CritMultiplier = context.CritMultiplier,
 			.LifeSteal = context.LifeSteal,
 			.ImpactRadius = shot.Blast * context.AreaScale,
-			.Chill = shot.Chill + (frozen && IsDamageBrawl() ? BlackIceChill : 0.0f),
+			.Chill = shot.Chill + (frozen && UsesBrawlDamage() ? BlackIceChill : 0.0f),
 			.Stun = frozen ? BlackIceFreeze / PvpStunScale : ability.Stun,
 			.PvpScale = context.PvpScale,
 			.Push = push * context.PushScale * (seeking ? SeekerPush : 1.0f),
@@ -987,9 +1070,13 @@ namespace Game
 			.Source = context.Source,
 			.Floor = LaunchFloor(m_Level, context.Origin),
 			.Perks = perks,
+			.Runes = context.Runes,
+			.Depth = context.Depth,
+			.Bounces = uint8_t(loose && HasRune(context.Runes, RuneId::Bounce) ? RuneBounces : 0),
 		});
 		if (context.Side == Team::Players)
 		{
+			m_LiveShots++;
 			m_Stats.PlayerProjectiles++;
 			m_Stats.RewindTicks += context.Rewind;
 		}
@@ -998,6 +1085,8 @@ namespace Game
 
 	Entity World::SpawnProjectileCopy(const Projectile& projectile, Vec2 position, uint32_t owner, float scale, uint16_t tag)
 	{
+		if (projectile.Side == Team::Players && IsShardfall() && m_LiveShots++ >= RunProjectileCap)
+			return {};
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, position, AngleOf(projectile.Velocity));
 		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = owner, .Tag = tag, .Variant = projectile.Ability, .Scale = ScaleByte(scale) });
@@ -1048,6 +1137,8 @@ namespace Game
 			.Push = ability.Push * context.PushScale,
 			.Ability = uint8_t(ability.Id),
 			.Perks = uint8_t(ability.Id == AbilityId::StormStrike && HasCard(context.Cards, CardId::StaticCharge) ? PerkStatic : 0),
+			.Runes = context.Runes,
+			.Depth = context.Depth,
 		});
 		return entity;
 	}
@@ -1062,7 +1153,7 @@ namespace Game
 			.Remaining = delay,
 			.Radius = radius,
 			.Shape = StrikeShape::Circle,
-			.Damage = IsDamageBrawl() ? damage : 0,
+			.Damage = UsesBrawlDamage() ? damage : 0,
 			.Side = context.Side,
 			.Owner = context.Owner,
 			.Source = context.Source,
@@ -1071,6 +1162,8 @@ namespace Game
 			.Push = push,
 			.Ability = uint8_t(AbilityId::Resonance),
 			.Lead = std::max(delay - pulse.ImpactDelay, 0.0f),
+			.Runes = context.Runes & TriggerRunes,
+			.Depth = context.Depth,
 		});
 		return entity;
 	}
@@ -1090,7 +1183,7 @@ namespace Game
 			.Remaining = delay,
 			.Radius = radius,
 			.Shape = StrikeShape::Circle,
-			.Damage = IsDamageBrawl() ? int32_t(std::lround(float(ability.BrawlDamage) * share * context.DamageScale)) : 0,
+			.Damage = UsesBrawlDamage() ? int32_t(std::lround(float(ability.BrawlDamage) * share * context.DamageScale)) : 0,
 			.Side = context.Side,
 			.Owner = context.Owner,
 			.Source = context.Source,
@@ -1100,8 +1193,51 @@ namespace Game
 			.Ability = uint8_t(visual),
 			.Perks = perks,
 			.Lead = visible ? std::max(delay - ability.ImpactDelay, 0.0f) : 0.0f,
+			.Runes = context.Runes & TriggerRunes,
+			.Depth = context.Depth,
 		});
 		return entity;
+	}
+
+	void World::SpawnLinger(Vec2 position, float delay, float radius, int32_t damage, Element element, uint32_t owner, Entity source, Team side, uint32_t runes, uint8_t depth)
+	{
+		const int32_t pulse = std::max(1, int32_t(std::lround(float(damage) * LingerShare)));
+		for (uint32_t i = 0; i < LingerPulses; i++)
+		{
+			const Entity entity = m_Entities.Create();
+			m_Entities.Add<Transform>(entity, position, 0.0f);
+			m_Entities.Add<PendingStrike>(entity, PendingStrike{
+				.Remaining = delay + LingerInterval * float(i + 1),
+				.Radius = radius,
+				.Shape = StrikeShape::Circle,
+				.Damage = pulse,
+				.Side = side,
+				.Owner = owner,
+				.Source = source,
+				.Damages = element,
+				.Ability = uint8_t(AbilityId::RuneZone),
+				.Runes = runes & TriggerRunes,
+				.Depth = depth,
+			});
+		}
+	}
+
+	void World::AfterRunDamage(Entity target, const DamageEvent& damage, int32_t dealt, bool killed)
+	{
+		if (IsShardfall())
+			m_Run.AfterDealt(*this, target, damage.Attacker, damage.Ability, dealt, damage.Runes, damage.Depth, killed);
+	}
+
+	bool World::RunSocket(Entity player, uint32_t rune, uint32_t slot, uint32_t socket)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Socket(*this, controller->PlayerId, RuneId(rune), slot, socket);
+	}
+
+	bool World::RunUnsocket(Entity player, uint32_t rune)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Unsocket(*this, controller->PlayerId, RuneId(rune));
 	}
 
 	Entity World::SpawnLoot(LootKind kind, Vec2 position)
@@ -1124,12 +1260,19 @@ namespace Game
 		case LootKind::Health:
 			if (health->Current >= health->Max)
 				return false;
-			health->Current = std::min(health->Max, health->Current + (IsPvp() ? std::max(HealthOrbHeal, health->Max / 4) : HealthOrbHeal));
+			health->Current = std::min(health->Max, health->Current + (IsPvp() ? std::max(HealthOrbHeal, health->Max / 4) : std::max(1, int32_t(float(HealthOrbHeal) * RunHealScale(controller->PlayerId)))));
 			break;
 		case LootKind::Mana:
 			if (controller->State.Mana >= controller->Traits.MaxMana - 0.5f)
 				return false;
 			controller->State.Mana = std::min(controller->Traits.MaxMana, controller->State.Mana + ManaOrbRestore);
+			break;
+		case LootKind::Magnet:
+		case LootKind::Bomb:
+		case LootKind::Frost:
+		case LootKind::Chest:
+			if (const Transform* transform = m_Entities.TryGet<Transform>(player); !IsShardfall() || !transform || !m_Run.ApplyPickup(*this, controller->PlayerId, transform->Position, loot.Kind))
+				return false;
 			break;
 		default:
 			return false;
@@ -1156,10 +1299,10 @@ namespace Game
 		});
 	}
 
-	void World::OnEnemyKilled(Entity entity, const Enemy& enemy, Vec2 position, uint32_t)
+	void World::OnEnemyKilled(Entity entity, const Enemy& enemy, Vec2 position, uint32_t attacker)
 	{
 		const EnemyDef* def = FindEnemyDef(enemy.Type);
-		if (def && def->Behavior == EnemyBehavior::Volatile)
+		if (def && def->Behavior == EnemyBehavior::Volatile && !(IsShardfall() && m_Run.IsCrumbling()))
 		{
 			AbilityContext context;
 			context.Side = Team::Enemies;
@@ -1171,23 +1314,111 @@ namespace Game
 		if (def && IsShardfall())
 		{
 			const Replicated* replicated = m_Entities.TryGet<Replicated>(entity);
-			m_Run.OnKilled(*this, *def, position, (uint64_t(replicated ? replicated->NetId : 0) << 20) ^ m_Tick);
+			m_Run.OnKilled(*this, *def, entity, enemy, position, (uint64_t(replicated ? replicated->NetId : 0) << 20) ^ m_Tick, attacker);
 		}
-	}
-
-	void World::LevelUp(uint32_t level, bool announce)
-	{
-		m_Entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
-		{
-			RefreshTraits(entity);
-			if (announce)
-				Notify(controller.PlayerId, "Level " + std::to_string(level), true);
-		});
 	}
 
 	bool World::ConsumeRevive(uint32_t playerId)
 	{
-		return !IsPvp() || m_Match.CanRespawn(playerId);
+		return !IsShardfall() && (!IsPvp() || m_Match.CanRespawn(playerId));
+	}
+
+	void World::RevivePlayer(Entity player, float healthFraction)
+	{
+		Transform* transform = m_Entities.TryGet<Transform>(player);
+		PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		Health* health = m_Entities.TryGet<Health>(player);
+		if (!transform || !controller || !health || controller->State.Alive)
+			return;
+		MarkTargetsMoved();
+		const float mana = controller->State.Mana;
+		controller->State = PlayerState{};
+		controller->State.Mana = std::min(mana, controller->Traits.MaxMana);
+		controller->State.Invulnerable = ReviveProtection;
+		controller->RespawnTimer = 0.0f;
+		controller->LastAttacker = NoPlayer;
+		controller->KilledBy = NoPlayer;
+		health->Max = controller->Traits.MaxHealth;
+		health->Current = std::clamp(int32_t(std::lround(float(health->Max) * healthFraction)), 1, health->Max);
+		transform->Position = FindFreeSpotNear(transform->Position, PlayerRadius);
+		if (MotionHistory* history = m_Entities.TryGet<MotionHistory>(player))
+		{
+			history->Positions.fill(transform->Position);
+			history->FirstTick = m_Tick + 1;
+		}
+	}
+
+	bool World::RunPick(Entity player, uint32_t choice)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Pick(*this, controller->PlayerId, choice);
+	}
+
+	bool World::RunBuild(Entity player, const RunLoadout& loadout)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Build(*this, controller->PlayerId, loadout);
+	}
+
+	bool World::RunReroll(Entity player)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Reroll(*this, controller->PlayerId);
+	}
+
+	bool World::RunBanish(Entity player, uint32_t choice)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Banish(*this, controller->PlayerId, choice);
+	}
+
+	bool World::RunSkip(Entity player)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Skip(*this, controller->PlayerId);
+	}
+
+	bool World::RunPause(Entity player, bool paused)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.SetPaused(*this, controller->PlayerId, paused);
+	}
+
+	bool World::RunBuy(Entity player, uint32_t slot)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Buy(*this, controller->PlayerId, slot);
+	}
+
+	bool World::RunSell(Entity player, uint32_t slot)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.Sell(*this, controller->PlayerId, slot);
+	}
+
+	bool World::RunSellCard(Entity player, uint32_t card)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.SellCard(*this, controller->PlayerId, CardId(card));
+	}
+
+	bool World::RunSwapSigils(Entity player, uint32_t from, uint32_t to)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.SwapSigils(*this, controller->PlayerId, from, to);
+	}
+
+	bool World::RunShrine(Entity player, uint32_t choice)
+	{
+		const PlayerController* controller = m_Entities.TryGet<PlayerController>(player);
+		return controller && IsShardfall() && m_Run.UseShrine(*this, controller->PlayerId, choice);
+	}
+
+	float World::CastScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float momentum) const
+	{
+		if (IsShardfall())
+			return CardCastScale(m_Run.GetCards(playerId), healthFraction, manaBefore, maxMana, overloaded, momentum);
+		return m_Match.CastDamageScale(playerId, healthFraction, manaBefore, maxMana, overloaded, momentum);
 	}
 
 	uint32_t World::CountPlayers() const
@@ -1389,6 +1620,46 @@ namespace Game
 			if (const Transform* transform = m_Entities.TryGet<Transform>(entity))
 				history.Positions[m_Tick % HistoryLength] = transform->Position;
 		});
+	}
+
+	void World::ChangeArena(MapKind map, uint32_t seed)
+	{
+		m_Settings.Map = map;
+		m_Settings.Seed = seed;
+		m_Level = BuildLevel(map, seed);
+		m_NavGrid.Build(m_Level);
+		m_Navigation = {};
+		m_WideNavigation = {};
+		m_NavigationTimer = 0.0f;
+		m_WideNavigationTimer = 0.0f;
+		m_Echoes.clear();
+		m_Casts.clear();
+		m_Entities.Each<Replicated>([&](Entity entity, Replicated&)
+		{
+			if (!m_Entities.Has<PlayerController>(entity))
+				QueueDestroy(entity);
+		});
+		FlushDestroyed();
+		m_Entities.Each<PlayerController>([&](Entity entity, PlayerController& controller)
+		{
+			PlayerState& state = controller.State;
+			state.DashDistance = 0.0f;
+			state.Push = {};
+			state.Fall = 0.0f;
+			state.Airborne = false;
+			if (Transform* transform = m_Entities.TryGet<Transform>(entity))
+			{
+				transform->Position = FindSpawnPosition(controller.PlayerId);
+				state.Ledge = transform->Position;
+				if (MotionHistory* history = m_Entities.TryGet<MotionHistory>(entity))
+				{
+					history->Positions.fill(transform->Position);
+					history->FirstTick = m_Tick + 1;
+				}
+			}
+		});
+		MarkTargetsMoved();
+		m_Run.OnArenaChanged(*this);
 	}
 
 	void World::FlushDestroyed()

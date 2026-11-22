@@ -19,6 +19,8 @@ namespace Game
 		float AreaScale = 1.0f;
 		float PushScale = 1.0f;
 		uint8_t ExtraProjectiles = 0;
+		uint8_t ExtraPierce = 0;
+		uint8_t ExtraChain = 0;
 		float PvpScale = 1.0f;
 		float RangeScale = 1.0f;
 		float Durability = 0.0f;
@@ -50,6 +52,8 @@ namespace Game
 		float TempoStep = 0.0f;
 		float SnapWindow = 0.0f;
 		float StallRegen = 0.0f;
+		uint8_t DodgeCharges = 1;
+		float OvercastCost = 0.0f;
 
 		bool operator==(const PlayerTraits&) const = default;
 	};

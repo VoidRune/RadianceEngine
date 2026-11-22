@@ -17,11 +17,12 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 89;
+	constexpr uint32_t ProtocolVersion = 103;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -39,6 +40,7 @@ namespace Game
 		ServerKillFeed,
 		ServerChess,
 		ServerAchievement,
+		ServerRunRecap,
 		Count,
 	};
 
@@ -64,6 +66,13 @@ namespace Game
 		Quicksilver = 1u << 16,
 		Shattered = 1u << 17,
 		WardShattered = 1u << 18,
+		Guard = 1u << 19,
+		Staggered = 1u << 20,
+		Mirror = 1u << 21,
+		Shell = 1u << 22,
+		Empowered = 1u << 23,
+		Champion = 1u << 24,
+		Enraged = 1u << 25,
 	};
 
 	enum class ActionType : uint8_t
@@ -80,6 +89,18 @@ namespace Game
 		SetCosmetics,
 		JoinMatch,
 		StartRun,
+		RunPick,
+		RunReroll,
+		RunBanish,
+		RunSkip,
+		RunPause,
+		RunBuy,
+		RunSell,
+		RunSwapSigils,
+		RunShrine,
+		RunSellCard,
+		RunSocket,
+		RunUnsocket,
 		Count,
 	};
 
@@ -135,12 +156,12 @@ namespace Game
 
 	inline ClientAction PackRunRules(const RunRules& rules)
 	{
-		return { .Action = ActionType::StartRun, .Value = uint16_t(rules.StartMinute | (rules.StartLevel << 8)), .Target = rules.Spawns, .Extra = rules.Xp | (uint32_t(rules.Only) << 16) | (rules.Immortal ? 1u << 24 : 0u) };
+		return { .Action = ActionType::StartRun, .Value = uint16_t(rules.StartMinute | (rules.StartLevel << 8)), .Target = rules.Spawns, .Extra = rules.ShardRate | (uint32_t(rules.Only) << 16) | (rules.Immortal ? 1u << 24 : 0u) | (rules.Endless ? 1u << 25 : 0u) | (rules.AllRunes ? 1u << 26 : 0u) };
 	}
 
 	inline RunRules UnpackRunRules(const ClientAction& action)
 	{
-		return SanitizeRunRules({ .StartMinute = uint8_t(action.Value & 0xFFu), .StartLevel = uint8_t(action.Value >> 8), .Spawns = action.Target, .Xp = uint16_t(action.Extra & 0xFFFFu), .Only = uint8_t((action.Extra >> 16) & 0xFFu), .Immortal = (action.Extra >> 24) != 0 });
+		return SanitizeRunRules({ .StartMinute = uint8_t(action.Value & 0xFFu), .StartLevel = uint8_t(action.Value >> 8), .Spawns = action.Target, .ShardRate = uint16_t(action.Extra & 0xFFFFu), .Only = uint8_t((action.Extra >> 16) & 0xFFu), .Immortal = ((action.Extra >> 24) & 1u) != 0, .Endless = ((action.Extra >> 25) & 1u) != 0, .AllRunes = ((action.Extra >> 26) & 1u) != 0 });
 	}
 
 	struct SessionInfo
@@ -210,6 +231,28 @@ namespace Game
 		uint32_t Detail = 0;
 	};
 
+	struct RunRecapPlayer
+	{
+		uint32_t PlayerId = 0;
+		std::string Name;
+		uint32_t Kills = 0;
+		uint16_t Downs = 0;
+		uint16_t Revived = 0;
+		RunLoadout Loadout;
+		std::vector<RunPick> Picks;
+		std::vector<std::pair<AbilityId, uint32_t>> Damage;
+	};
+
+	struct ServerRunRecap
+	{
+		static constexpr MessageType Type = MessageType::ServerRunRecap;
+		bool Victory = false;
+		uint8_t Act = 1;
+		float RunClock = 0.0f;
+		uint16_t Rooms = 0;
+		std::vector<RunRecapPlayer> Players;
+	};
+
 	struct PlayerLook
 	{
 		Cosmetics Style;
@@ -264,7 +307,7 @@ namespace Game
 		bool Warded() const { return Kind == EntityKind::Player && Has(EntityFlags::Warded) && !Has(EntityFlags::Dead); }
 		float GetWard() const { return float(Ward) / 255.0f; }
 		bool AimsFromPoint() const { return Kind == EntityKind::Player && Has(EntityFlags::Attacking) && Variant == uint8_t(AbilityId::EarthSpike); }
-		bool Guarding() const { return Kind == EntityKind::Player && Has(EntityFlags::Attacking) && Variant == uint8_t(AbilityId::HexShield) && !Has(EntityFlags::Dead); }
+		bool Guarding() const { return ((Kind == EntityKind::Player && Has(EntityFlags::Attacking) && Variant == uint8_t(AbilityId::HexShield)) || Has(EntityFlags::Guard)) && !Has(EntityFlags::Dead); }
 		float GetGuard() const { return float(Charge) / 255.0f; }
 		float GetScale() const { return float(Scale) / 16.0f; }
 		float GetChargePower() const { return float(Charge) / 255.0f; }
@@ -304,6 +347,8 @@ namespace Game
 		uint32_t Watching = NoPlayer;
 		uint32_t KilledBy = NoPlayer;
 		BrawlLoadout Brawl;
+		RunLoadout Run;
+		uint8_t Revive = 0;
 		uint16_t Starlit = 0;
 		uint8_t Shield = 0;
 	};
@@ -335,6 +380,7 @@ namespace Game
 	void Write(ByteWriter& writer, const ServerKillFeed& message);
 	void Write(ByteWriter& writer, const ServerChess& message);
 	void Write(ByteWriter& writer, const ServerAchievement& message);
+	void Write(ByteWriter& writer, const ServerRunRecap& message);
 
 	bool Read(ByteReader& reader, ClientHello& message);
 	bool Read(ByteReader& reader, ClientInput& message);
@@ -347,6 +393,7 @@ namespace Game
 	bool Read(ByteReader& reader, ServerKillFeed& message);
 	bool Read(ByteReader& reader, ServerChess& message);
 	bool Read(ByteReader& reader, ServerAchievement& message);
+	bool Read(ByteReader& reader, ServerRunRecap& message);
 
 	template<typename T>
 	std::vector<uint8_t> Encode(const T& message)

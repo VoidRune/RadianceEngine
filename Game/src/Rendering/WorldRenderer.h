@@ -2,9 +2,12 @@
 #include "Rendering/Animation.h"
 #include "Rendering/Distortion.h"
 #include "Rendering/Glass.h"
+#include "Rendering/Grass.h"
 #include "Rendering/Lake.h"
 #include "Rendering/Lightning.h"
 #include "Rendering/Void.h"
+#include "Rendering/Sun.h"
+#include "Rendering/Portal.h"
 #include "Rendering/Lighting.h"
 #include "Rendering/ModelLibrary.h"
 #include "Rendering/Particles.h"
@@ -51,6 +54,9 @@ namespace Game
 	inline constexpr uint32_t MeshMetal = 16777216;
 	inline constexpr uint32_t MeshHeated = 33554432;
 	inline constexpr uint32_t MeshPolished = 67108864;
+	inline constexpr uint32_t MeshHero = 134217728;
+	inline constexpr uint32_t MeshDeep = 268435456;
+	inline constexpr uint32_t MeshHeartbeat = 536870912;
 	inline constexpr uint32_t MaterialTranslucent = 256;
 
 	struct LevelMeshDesc
@@ -66,6 +72,7 @@ namespace Game
 	{
 		float Roughness = 0.8f;
 		float Metallic = 0.0f;
+		bool Cut = false;
 	};
 
 	struct BoxInstance
@@ -158,6 +165,7 @@ namespace Game
 		float GetGuardBand() const { return HasGi() ? GiPresets[size_t(m_GiQuality)].GuardBand : 0.0f; }
 
 		void Begin(const WorldCamera& camera, const SceneLighting& lighting, float focusHeight = 0.0f, bool fadeBelowFocus = true);
+		void SetSight(const glm::vec3& feet, bool enabled) { m_Constants.Sight = glm::vec4(feet, enabled ? 1.0f : 0.0f); }
 		void Draw(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, const glm::vec3& color, float yaw = 0.0f, float emission = 0.0f, float ground = 0.0f, const BoxSurface& surface = {});
 		void DrawBox(const glm::vec3& center, const glm::vec3& halfExtents, const glm::vec3& color, float yaw = 0.0f, float emission = 0.0f, float ground = 0.0f, const BoxSurface& surface = {}) { Draw(MeshKind::Box, center, halfExtents, color, yaw, emission, ground, surface); }
 		void DrawShadowCaster(MeshKind mesh, const glm::vec3& center, const glm::vec3& halfExtents, float yaw = 0.0f);
@@ -169,6 +177,7 @@ namespace Game
 		void SubmitModel(uint32_t mesh, const ModelInstance& instance, bool shadowOnly = false);
 		void DrawSprite(const ParticleSprite& sprite) { m_Particles->DrawSprite(sprite); }
 		void DrawDecal(const GroundDecal& decal);
+		void StampGrass(const GroundDecal& decal);
 		void DrawLight(const SpellLight& light);
 		bool GetTranslucency() const { return m_Translucency; }
 		void SetTranslucency(bool enabled) { m_Translucency = enabled; }
@@ -187,8 +196,14 @@ namespace Game
 		void DrawDistortion(const Distorter& distorter) { m_Distortion->Draw(distorter); }
 		void DrawTrail(uint64_t key, const glm::vec3& position, const TrailStyle& style, float strength = 1.0f) { m_Trails->Emit(key, position, style, strength); }
 		TrailRenderer& GetTrails() { return *m_Trails; }
+		GrassRenderer& GetGrass() { return *m_Grass; }
+		void SetGrassField(const GrassField& field) { m_Grass->SetField(field); }
+		void SetGrassQuality(GrassQuality quality) { m_Grass->Quality = quality; }
+		GrassQuality GetGrassQuality() const { return m_Grass->Quality; }
 		void DrawLightning(const LightningShape& bolt) { m_Lightning->Draw(bolt); }
 		VoidRenderer& GetVoid() { return *m_Void; }
+		SunRenderer& GetSun() { return *m_Sun; }
+		PortalRenderer& GetPortal() { return *m_Portal; }
 		ScreenDistortion& GetDistortion() { return *m_Distortion; }
 		void Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex, const std::array<float, 4>& clearColor);
 
@@ -247,6 +262,7 @@ namespace Game
 			glm::mat4 ViewProjection;
 			glm::vec4 Focus;
 			glm::vec4 Eye{ 0.0f };
+			glm::vec4 Sight{ 0.0f };
 		};
 
 		static constexpr uint32_t BaseConstantsSize = uint32_t(sizeof(glm::mat4) + sizeof(glm::vec4));
@@ -266,6 +282,7 @@ namespace Game
 		void RenderShadows(Rdn::RenderGraph& graph, Rdn::RGImage shadowMap, const ShadowView& shadow, uint32_t boxCount, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
 		void RenderBackFaces(Rdn::RenderGraph& graph, Rdn::RGImage target, uint32_t boxCount, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
 		void RenderCharacters(Rdn::RenderGraph& graph, const GBuffer& gbuffer, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
+		void RenderXray(Rdn::RenderGraph& graph, Rdn::RGImage scene, const GBuffer& gbuffer, Rdn::Extent2D extent, const WorldCamera& camera, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex);
 		void DrawModelRanges(Rdn::CommandBuffer& cmd, uint32_t modelCount, uint32_t paletteCount, uint32_t frameIndex, bool characters) const;
 		void CreateMeshes();
 		void EnsureCapacity(uint32_t instances);
@@ -377,6 +394,7 @@ namespace Game
 		glm::vec2 m_ShadowExtent{ 0.0f };
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelRanges;
 		std::vector<uint32_t> m_ModelCharacterCounts;
+		std::vector<uint8_t> m_ModelHeroMeshes;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelShadowRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelDissolveRanges;
 		std::vector<std::pair<uint32_t, uint32_t>> m_ModelGlassRanges;
@@ -394,7 +412,16 @@ namespace Game
 		std::unique_ptr<ScreenDistortion> m_Distortion;
 		std::unique_ptr<GlassRenderer> m_Glass;
 		std::unique_ptr<TrailRenderer> m_Trails;
+		std::unique_ptr<GrassRenderer> m_Grass;
 		std::unique_ptr<LightningRenderer> m_Lightning;
 		std::unique_ptr<VoidRenderer> m_Void;
+		std::unique_ptr<SunRenderer> m_Sun;
+		std::unique_ptr<PortalRenderer> m_Portal;
+		std::unique_ptr<Rdn::Shader> m_XrayShader;
+		std::unique_ptr<Rdn::Pipeline> m_XrayMaskPipeline;
+		std::unique_ptr<Rdn::Shader> m_XrayCompositeVertex;
+		std::unique_ptr<Rdn::Shader> m_XrayCompositeShader;
+		std::unique_ptr<Rdn::Pipeline> m_XrayPipeline;
+		std::unique_ptr<Rdn::GpuImage> m_PortalNoise;
 	};
 }

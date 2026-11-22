@@ -25,7 +25,7 @@ namespace Game
 		constexpr float PageWidth = 480.0f;
 		constexpr float PageTop = 112.0f;
 		constexpr float PageHeight = 676.0f;
-		constexpr float SettingsPageHeight = 814.0f;
+		constexpr float SettingsPageHeight = 850.0f;
 
 		bool NameCharacter(uint32_t codepoint)
 		{
@@ -209,13 +209,13 @@ namespace Game
 		UiDrawList& draw = ui.Draw();
 		const glm::vec2 anchor(MenuX + 300.0f, 140.0f);
 		const UiRect titleRect{ anchor.x - 320.0f, anchor.y - 52.0f, 640.0f, 84.0f };
-		TextStyle title = Theme::Title(78.0f);
-		title.Tracking = 10.0f;
+		TextStyle title = Theme::Title(58.0f);
+		title.Tracking = 7.0f;
 		title.ShadowColor = UiColor(0.0f);
 		title.GlowColor = UiColor(0.0f);
 		UiDrawList glyphs(draw.GetAssets());
 		glyphs.Reset(ui.GetScale());
-		glyphs.TextAligned(titleRect, "RADIANCE", title, { 0.5f, 0.5f });
+		glyphs.TextAligned(titleRect, "APEX OF MAGIC", title, { 0.5f, 0.5f });
 		m_TitleGlyphs = glyphs.GetPrimitives();
 		m_TitleWarmth.resize(m_TitleGlyphs.size(), 0.0f);
 		const float cooling = std::exp(-ui.GetDeltaTime() * 1.2f);
@@ -244,12 +244,7 @@ namespace Game
 			glyph.Colors.y = PackColor(WithAlpha(glm::mix(Hex(0xEAD7AE), Hex(0xF5B860), warmth), (0.82f + 0.18f * warmth) * alpha));
 			draw.Primitive(glyph);
 		}
-		TextStyle subtitle = Theme::Caps(15.0f, Theme::Muted, 6.0f);
-		subtitle.ColorBottom = Theme::Faint;
-		draw.SetHalo(Rgba(0.0f, 0.0f, 0.02f, 0.45f));
-		draw.TextAligned({ anchor.x - 200.0f, anchor.y + 34.0f, 400.0f, 22.0f }, "co-op action rpg", subtitle, { 0.5f, 0.5f });
-		draw.SetHalo(UiColor(0.0f));
-		ui.Separator({ anchor.x - 140.0f, anchor.y + 64.0f, 280.0f, 10.0f });
+		ui.Separator({ anchor.x - 140.0f, anchor.y + 40.0f, 280.0f, 10.0f });
 	}
 
 	void MainMenuState::DrawMenu(Ui& ui, UiRect)

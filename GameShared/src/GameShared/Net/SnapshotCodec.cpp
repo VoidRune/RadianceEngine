@@ -207,7 +207,7 @@ namespace Game
 
 		uint8_t HitFlags(const HitEvent& hit)
 		{
-			return uint8_t((hit.Critical ? 1 : 0) | (hit.OnPlayer ? 2 : 0) | (uint32_t(hit.Damages) << 2) | (hit.Guarded ? 0x40 : 0) | (hit.Warded ? 0x80 : 0));
+			return uint8_t((hit.Critical ? 1 : 0) | (hit.OnPlayer ? 2 : 0) | (uint32_t(hit.Damages) << 2) | (hit.Killed ? 0x20 : 0) | (hit.Guarded ? 0x40 : 0) | (hit.Warded ? 0x80 : 0));
 		}
 	}
 
@@ -228,6 +228,7 @@ namespace Game
 			}
 			same->Damage = uint16_t(std::min(uint32_t(same->Damage) + hit.Damage, 65535u));
 			same->Critical = same->Critical || hit.Critical;
+			same->Killed = same->Killed || hit.Killed;
 		}
 		hits = std::move(merged);
 	}
@@ -534,7 +535,8 @@ namespace Game
 			const uint8_t flags = reader.Read<uint8_t>();
 			hit.Critical = (flags & 1) != 0;
 			hit.OnPlayer = (flags & 2) != 0;
-			hit.Damages = Element(std::min<uint32_t>((flags >> 2) & 0xFu, uint32_t(Element::Count) - 1));
+			hit.Damages = Element(std::min<uint32_t>((flags >> 2) & 0x7u, uint32_t(Element::Count) - 1));
+			hit.Killed = (flags & 0x20) != 0;
 			hit.Guarded = (flags & 0x40) != 0;
 			hit.Warded = (flags & 0x80) != 0;
 			const uint8_t layout = reader.Read<uint8_t>();

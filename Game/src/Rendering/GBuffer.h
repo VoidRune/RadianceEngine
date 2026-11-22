@@ -8,6 +8,7 @@ namespace Game
 	inline constexpr Rdn::Format SurfaceFormat = Rdn::Format::A2B10G10R10_Unorm;
 	inline constexpr Rdn::Format EmissionFormat = Rdn::Format::R16G16B16A16_Sfloat;
 	inline constexpr Rdn::Format DepthFormat = Rdn::Format::D32_Sfloat;
+	inline constexpr Rdn::Format HeroMaskFormat = Rdn::Format::R8G8B8A8_Unorm;
 
 	struct GBuffer
 	{

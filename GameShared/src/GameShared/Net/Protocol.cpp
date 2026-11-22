@@ -34,6 +34,8 @@ namespace Game
 			writer.Write(skill.AreaScale);
 			writer.Write(skill.PushScale);
 			writer.Write(skill.ExtraProjectiles);
+			writer.Write(skill.ExtraPierce);
+			writer.Write(skill.ExtraChain);
 			writer.Write(skill.RangeScale);
 			writer.Write(skill.Durability);
 		}
@@ -52,6 +54,8 @@ namespace Game
 			skill.AreaScale = reader.Read<float>();
 			skill.PushScale = reader.Read<float>();
 			skill.ExtraProjectiles = reader.Read<uint8_t>();
+			skill.ExtraPierce = reader.Read<uint8_t>();
+			skill.ExtraChain = reader.Read<uint8_t>();
 			skill.RangeScale = reader.Read<float>();
 			skill.Durability = reader.Read<float>();
 			return skill.Ability <= AbilityId::Count;
@@ -62,6 +66,7 @@ namespace Game
 			for (const SkillTraits& skill : traits.Skills)
 				WriteSkill(writer, skill);
 			WriteSkill(writer, traits.Dodge);
+			writer.Write(traits.DodgeCharges);
 			writer.Write(traits.MoveSpeed);
 			writer.Write(traits.AreaScale);
 			writer.Write(traits.ProjectileSpeedScale);
@@ -81,6 +86,7 @@ namespace Game
 			writer.Write(traits.TempoStep);
 			writer.Write(traits.SnapWindow);
 			writer.Write(traits.StallRegen);
+			writer.Write(traits.OvercastCost);
 		}
 
 		bool ReadTraits(ByteReader& reader, PlayerTraits& traits)
@@ -90,6 +96,7 @@ namespace Game
 					return false;
 			if (!ReadSkill(reader, traits.Dodge) || traits.Dodge.Ability >= AbilityId::Count)
 				return false;
+			traits.DodgeCharges = reader.Read<uint8_t>();
 			traits.MoveSpeed = reader.Read<float>();
 			traits.AreaScale = reader.Read<float>();
 			traits.ProjectileSpeedScale = reader.Read<float>();
@@ -109,6 +116,7 @@ namespace Game
 			traits.TempoStep = reader.Read<float>();
 			traits.SnapWindow = reader.Read<float>();
 			traits.StallRegen = reader.Read<float>();
+			traits.OvercastCost = reader.Read<float>();
 			return !reader.Failed();
 		}
 
@@ -221,6 +229,90 @@ namespace Game
 			return !reader.Failed() && spells && offer;
 		}
 
+		void WriteRunCard(ByteWriter& writer, const RunCard& card)
+		{
+			writer.Write(card.Kind);
+			writer.Write(card.Id);
+		}
+
+		bool ReadRunCard(ByteReader& reader, RunCard& card)
+		{
+			card.Kind = reader.Read<RunCardKind>();
+			card.Id = reader.Read<uint8_t>();
+			return RunCardValid(card);
+		}
+
+		void WriteRunLoadout(ByteWriter& writer, const RunLoadout& loadout)
+		{
+			WriteBytes(writer, loadout.Spells);
+			WriteBytes(writer, loadout.Ranks);
+			writer.Write(loadout.Cards);
+			writer.Write(loadout.Second);
+			writer.Write(loadout.Third);
+			for (const RunCard& card : loadout.Offer)
+				WriteRunCard(writer, card);
+			writer.Write(loadout.Offers);
+			writer.Write(loadout.Rerolls);
+			writer.Write(loadout.Banishes);
+			writer.Write(loadout.Revives);
+			writer.Write(loadout.Focus);
+			writer.Write(loadout.Rested);
+			writer.Write(loadout.Shards);
+			WriteBytes(writer, loadout.Sigils);
+			writer.Write(loadout.Duos);
+			writer.Write(loadout.Curses);
+			for (const RunCard& card : loadout.Stock)
+				WriteRunCard(writer, card);
+			writer.Write(loadout.Sold);
+			writer.Write(loadout.Wounds);
+			writer.Write(loadout.Draughts);
+			for (const RuneSockets& sockets : loadout.Sockets)
+				WriteBytes(writer, sockets);
+			writer.Write(loadout.Runes);
+		}
+
+		bool ReadRunLoadout(ByteReader& reader, RunLoadout& loadout)
+		{
+			ReadBytes(reader, loadout.Spells);
+			ReadBytes(reader, loadout.Ranks);
+			loadout.Cards = reader.Read<CardMask>();
+			loadout.Second = reader.Read<CardMask>();
+			loadout.Third = reader.Read<CardMask>();
+			for (RunCard& card : loadout.Offer)
+				if (!ReadRunCard(reader, card))
+					return false;
+			loadout.Offers = reader.Read<uint8_t>();
+			loadout.Rerolls = reader.Read<uint8_t>();
+			loadout.Banishes = reader.Read<uint8_t>();
+			loadout.Revives = reader.Read<uint8_t>();
+			loadout.Focus = reader.Read<RunCardKind>();
+			loadout.Rested = reader.Read<uint8_t>();
+			loadout.Shards = reader.Read<uint16_t>();
+			ReadBytes(reader, loadout.Sigils);
+			loadout.Duos = reader.Read<uint8_t>();
+			loadout.Curses = reader.Read<uint8_t>();
+			for (RunCard& card : loadout.Stock)
+				if (!ReadRunCard(reader, card))
+					return false;
+			loadout.Sold = reader.Read<uint8_t>();
+			loadout.Wounds = reader.Read<uint8_t>();
+			loadout.Draughts = reader.Read<uint8_t>();
+			for (RuneSockets& sockets : loadout.Sockets)
+			{
+				ReadBytes(reader, sockets);
+				if (!std::all_of(sockets.begin(), sockets.end(), [](RuneId id) { return id == RuneId::None || id < RuneId::Count; }))
+					return false;
+			}
+			loadout.Runes = reader.Read<RuneMask>();
+			if (!std::all_of(loadout.Sigils.begin(), loadout.Sigils.end(), [](SigilId id) { return id == SigilId::None || id < SigilId::Count; }))
+				return false;
+			if (loadout.Focus > RunCardKind::Rune)
+				return false;
+			const bool spells = std::all_of(loadout.Spells.begin(), loadout.Spells.end(), [](AbilityId id) { return id <= AbilityId::Count; });
+			const bool ranks = std::all_of(loadout.Ranks.begin(), loadout.Ranks.end(), [](uint8_t rank) { return rank >= 1 && rank <= MaxSpellRank; });
+			return !reader.Failed() && spells && ranks;
+		}
+
 		void WriteState(ByteWriter& writer, const PlayerState& state)
 		{
 			writer.Write(state.DashDirection);
@@ -248,6 +340,7 @@ namespace Game
 			writer.Write(state.Footing);
 			writer.Write(state.CastSlot);
 			writer.Write(state.HeldButtons);
+			writer.Write(state.Pending);
 			writer.Write(state.RecastSlot);
 			writer.Write(state.RecastTimer);
 			writer.Write(state.RecastAge);
@@ -295,6 +388,7 @@ namespace Game
 			state.Footing = reader.Read<float>();
 			state.CastSlot = reader.Read<int8_t>();
 			state.HeldButtons = reader.Read<uint8_t>();
+			state.Pending = reader.Read<uint8_t>();
 			state.RecastSlot = reader.Read<int8_t>();
 			state.RecastTimer = reader.Read<float>();
 			state.RecastAge = reader.Read<float>();
@@ -382,9 +476,13 @@ namespace Game
 			writer.Write(session.Run.StartMinute);
 			writer.Write(session.Run.StartLevel);
 			writer.Write(session.Run.Spawns);
-			writer.Write(session.Run.Xp);
+			writer.Write(session.Run.ShardRate);
 			writer.Write(session.Run.Only);
+			writer.Write(session.Run.Affix);
 			writer.Write(uint8_t(session.Run.Immortal ? 1 : 0));
+			writer.Write(uint8_t(session.Run.Endless ? 1 : 0));
+			writer.Write(uint8_t(session.Run.AllRunes ? 1 : 0));
+			writer.Write(session.Run.Seed);
 			writer.Write(session.Epoch);
 		}
 
@@ -397,9 +495,13 @@ namespace Game
 			session.Run.StartMinute = reader.Read<uint8_t>();
 			session.Run.StartLevel = reader.Read<uint8_t>();
 			session.Run.Spawns = reader.Read<uint16_t>();
-			session.Run.Xp = reader.Read<uint16_t>();
+			session.Run.ShardRate = reader.Read<uint16_t>();
 			session.Run.Only = reader.Read<uint8_t>();
+			session.Run.Affix = reader.Read<uint8_t>();
 			session.Run.Immortal = reader.Read<uint8_t>() != 0;
+			session.Run.Endless = reader.Read<uint8_t>() != 0;
+			session.Run.AllRunes = reader.Read<uint8_t>() != 0;
+			session.Run.Seed = reader.Read<uint32_t>();
 			session.Run = SanitizeRunRules(session.Run);
 			session.Epoch = reader.Read<uint32_t>();
 			return !reader.Failed() && session.Mode < GameMode::Count && session.Map < MapKind::Count;
@@ -581,6 +683,77 @@ namespace Game
 		return !reader.Failed() && message.Id < Achievement::Count;
 	}
 
+	void Write(ByteWriter& writer, const ServerRunRecap& message)
+	{
+		writer.Write(uint8_t(message.Victory ? 1 : 0));
+		writer.Write(message.Act);
+		writer.Write(message.RunClock);
+		writer.Write(message.Rooms);
+		writer.Write(uint8_t(std::min<size_t>(message.Players.size(), ShardfallMaxPlayers)));
+		for (size_t i = 0; i < std::min<size_t>(message.Players.size(), ShardfallMaxPlayers); i++)
+		{
+			const RunRecapPlayer& player = message.Players[i];
+			writer.Write(player.PlayerId);
+			writer.Write(player.Name);
+			writer.Write(player.Kills);
+			writer.Write(player.Downs);
+			writer.Write(player.Revived);
+			WriteRunLoadout(writer, player.Loadout);
+			const size_t picks = std::min<size_t>(player.Picks.size(), UINT8_MAX);
+			writer.Write(uint8_t(picks));
+			for (size_t p = 0; p < picks; p++)
+			{
+				WriteRunCard(writer, player.Picks[p].Card);
+				writer.Write(player.Picks[p].Stage);
+			}
+			const size_t spells = std::min<size_t>(player.Damage.size(), size_t(AbilityId::Count));
+			writer.Write(uint8_t(spells));
+			for (size_t s = 0; s < spells; s++)
+			{
+				writer.Write(player.Damage[s].first);
+				writer.Write(player.Damage[s].second);
+			}
+		}
+	}
+
+	bool Read(ByteReader& reader, ServerRunRecap& message)
+	{
+		message.Victory = reader.Read<uint8_t>() != 0;
+		message.Act = reader.Read<uint8_t>();
+		message.RunClock = reader.Read<float>();
+		message.Rooms = reader.Read<uint16_t>();
+		const uint8_t count = reader.Read<uint8_t>();
+		if (count > ShardfallMaxPlayers)
+			return false;
+		message.Players.resize(count);
+		for (RunRecapPlayer& player : message.Players)
+		{
+			player.PlayerId = reader.Read<uint32_t>();
+			player.Name = reader.ReadString();
+			player.Kills = reader.Read<uint32_t>();
+			player.Downs = reader.Read<uint16_t>();
+			player.Revived = reader.Read<uint16_t>();
+			if (!ReadRunLoadout(reader, player.Loadout))
+				return false;
+			player.Picks.resize(reader.Read<uint8_t>());
+			for (RunPick& pick : player.Picks)
+			{
+				if (!ReadRunCard(reader, pick.Card))
+					return false;
+				pick.Stage = reader.Read<uint16_t>();
+			}
+			player.Damage.resize(reader.Read<uint8_t>());
+			for (auto& [spell, amount] : player.Damage)
+			{
+				spell = reader.Read<AbilityId>();
+				amount = reader.Read<uint32_t>();
+				if (spell >= AbilityId::Count)
+					return false;
+			}
+		}
+		return !reader.Failed();
+	}
+
 	void Write(ByteWriter& writer, const ServerChess& message)
 	{
 		writer.Write(message.Revision);
@@ -700,11 +873,27 @@ namespace Game
 			writer.Write(run.Act);
 			writer.Write(run.ActClock);
 			writer.Write(run.RunClock);
+			writer.Write(run.PhaseClock);
 			writer.Write(run.Alive);
 			writer.Write(run.Goal);
-			writer.Write(run.Level);
-			writer.Write(run.Xp);
-			writer.Write(run.XpGoal);
+			writer.Write(run.Rooms);
+			writer.Write(run.Guardians);
+			writer.Write(run.Rift);
+			writer.Write(uint8_t((run.Paused ? 1 : 0) | (run.Fighting ? 2 : 0)));
+			writer.Write(run.Wave);
+			writer.Write(run.Waves);
+			writer.Write(run.Lull);
+			writer.Write(run.Room);
+			writer.Write(run.Route);
+			writer.Write(uint8_t(run.Cleared ? 1 : 0));
+			writer.Write(run.RoomClock);
+			writer.Write(run.Par);
+			writer.Write(run.Medal);
+			writer.Write(uint8_t(std::lround(std::clamp(run.Momentum, 0.0f, 1.0f) * 255.0f)));
+			WriteBytes(writer, run.Votes);
+			writer.Write(run.Golds);
+			writer.Write(run.Champion);
+			writer.Write(run.ChampionPhase);
 		}
 
 		const LocalPlayerState& local = message.LocalPlayer;
@@ -727,6 +916,11 @@ namespace Game
 			}
 			if (status.Mode == GameMode::Hub)
 				writer.Write(local.Starlit);
+			if (status.Mode == GameMode::Shardfall)
+			{
+				WriteRunLoadout(writer, local.Run);
+				writer.Write(local.Revive);
+			}
 		}
 	}
 
@@ -760,12 +954,32 @@ namespace Game
 			run.Act = reader.Read<uint8_t>();
 			run.ActClock = reader.Read<float>();
 			run.RunClock = reader.Read<float>();
+			run.PhaseClock = reader.Read<float>();
 			run.Alive = reader.Read<uint16_t>();
 			run.Goal = reader.Read<uint16_t>();
-			run.Level = reader.Read<uint16_t>();
-			run.Xp = reader.Read<uint32_t>();
-			run.XpGoal = reader.Read<uint32_t>();
-			if (uint8_t(run.Phase) > uint8_t(RunPhase::Travel))
+			run.Rooms = reader.Read<uint16_t>();
+			run.Guardians = reader.Read<uint8_t>();
+			run.Rift = reader.Read<uint8_t>();
+			const uint8_t runFlags = reader.Read<uint8_t>();
+			run.Paused = (runFlags & 1u) != 0;
+			run.Fighting = (runFlags & 2u) != 0;
+			run.Wave = reader.Read<uint8_t>();
+			run.Waves = reader.Read<uint8_t>();
+			run.Lull = reader.Read<float>();
+			run.Room = reader.Read<uint8_t>();
+			run.Route = reader.Read<uint32_t>();
+			run.Cleared = reader.Read<uint8_t>() != 0;
+			run.RoomClock = reader.Read<float>();
+			run.Par = reader.Read<float>();
+			run.Medal = reader.Read<RoomMedal>();
+			run.Momentum = float(reader.Read<uint8_t>()) / 255.0f;
+			ReadBytes(reader, run.Votes);
+			run.Golds = reader.Read<uint16_t>();
+			run.Champion = reader.Read<uint32_t>();
+			run.ChampionPhase = reader.Read<uint8_t>();
+			if (run.Medal >= RoomMedal::Count || (run.Room != NoRoom && run.Room >= MapRooms))
+				return false;
+			if (uint8_t(run.Phase) > uint8_t(RunPhase::Defeat))
 				return false;
 		}
 
@@ -786,6 +1000,10 @@ namespace Game
 			local.KilledBy = DequantizeOwner(reader.Read<uint8_t>());
 			if (status.Mode == GameMode::Hub)
 				local.Starlit = reader.Read<uint16_t>();
+			if (status.Mode == GameMode::Shardfall && !ReadRunLoadout(reader, local.Run))
+				return false;
+			if (status.Mode == GameMode::Shardfall)
+				local.Revive = reader.Read<uint8_t>();
 			if (status.Mode == GameMode::Brawl)
 			{
 				if (!ReadLoadout(reader, local.Brawl))

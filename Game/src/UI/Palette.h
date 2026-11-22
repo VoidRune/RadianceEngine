@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/RunMap.h"
 #include <glm/glm.hpp>
 #include <cmath>
 #include <cstdint>
@@ -6,6 +7,25 @@
 
 namespace Game
 {
+	inline constexpr glm::vec3 RoomTones[] = {
+		{ 0.70f, 0.70f, 0.75f },
+		{ 1.00f, 0.66f, 0.30f },
+		{ 1.00f, 0.30f, 0.34f },
+		{ 0.42f, 1.00f, 0.62f },
+		{ 1.00f, 0.85f, 0.35f },
+		{ 0.55f, 0.90f, 1.00f },
+		{ 0.76f, 0.52f, 1.00f },
+	};
+	static_assert(std::size(RoomTones) == size_t(RoomKind::Count));
+
+	inline glm::vec3 RoomTone(RoomKind kind)
+	{
+		return RoomTones[size_t(kind) < std::size(RoomTones) ? size_t(kind) : 0];
+	}
+
+	inline constexpr glm::vec3 HealAltarTone = { 1.00f, 0.55f, 0.35f };
+	inline constexpr glm::vec3 TrainAltarTone = { 0.45f, 0.75f, 1.00f };
+
 	inline constexpr glm::vec3 PlayerColors[] = {
 		{ 0.239f, 0.545f, 1.000f },
 		{ 1.000f, 0.239f, 0.431f },
@@ -33,6 +53,10 @@ namespace Game
 	inline constexpr glm::vec3 LootColors[] = {
 		{ 0.95f, 0.25f, 0.30f },
 		{ 0.25f, 0.45f, 1.00f },
+		{ 0.55f, 0.85f, 1.00f },
+		{ 1.00f, 0.45f, 0.18f },
+		{ 0.60f, 0.92f, 1.00f },
+		{ 1.00f, 0.80f, 0.35f },
 	};
 
 	inline glm::vec3 PlayerColor(uint32_t playerId)

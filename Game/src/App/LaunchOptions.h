@@ -41,6 +41,7 @@ namespace Game
 		uint8_t MenuPage = 0;
 		std::optional<uint8_t> Tonemap;
 		std::optional<uint8_t> Shadows;
+		std::optional<uint8_t> Grass;
 		std::optional<uint8_t> Gi;
 		std::optional<bool> Vsync;
 		std::optional<uint32_t> FrameCap;
@@ -60,10 +61,13 @@ namespace Game
 		std::optional<std::array<float, 6>> ShotCamera;
 		bool Distortion = true;
 		bool Trails = true;
+		bool Sun = true;
+		bool KitRim = true;
 		bool Translucency = true;
 		bool PointLights = true;
 		bool Refraction = true;
 		uint8_t DistortionStage = 0;
+		bool GrassStage = false;
 		bool Steam = true;
 		std::optional<uint64_t> ConnectLobby;
 	};

@@ -87,7 +87,7 @@ namespace Game
 		{
 		case GameMode::Hub:
 			presence.Token = "#Status_Hub";
-			presence.Status = "In Emberhold";
+			presence.Status = "In the Sun's Cradle";
 			break;
 		case GameMode::Brawl:
 			presence.Map = map;
@@ -234,7 +234,7 @@ namespace Game
 				draw.Rect({ bar.X, bar.Y, bar.W * float(progress) / float(def.Goal), bar.H }, { .Fill = WithAlpha(Theme::Gold, 0.85f), .Radius = 2.5f });
 			}
 			draw.TextFit({ text.X, text.Y, text.W, 22.0f }, secret ? "Hidden achievement" : def.Name, Theme::Bold(16.0f, earned ? Theme::GoldLight : Theme::Text));
-			draw.TextWrapped({ text.X, text.Y + 24.0f, text.W, text.H - 24.0f }, secret ? "A secret of Emberhold." : def.Description, Theme::Body(13.5f, earned ? Theme::Muted : Theme::Faint));
+			draw.TextWrapped({ text.X, text.Y + 24.0f, text.W, text.H - 24.0f }, secret ? "A secret of the Sun's Cradle." : def.Description, Theme::Body(13.5f, earned ? Theme::Muted : Theme::Faint));
 		}
 	}
 

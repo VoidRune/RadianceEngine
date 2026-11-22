@@ -17,5 +17,6 @@ namespace Game
 		bool Guarded = false;
 		bool Warded = false;
 		uint8_t Ability = UINT8_MAX;
+		bool Killed = false;
 	};
 }

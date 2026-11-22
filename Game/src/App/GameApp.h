@@ -51,6 +51,7 @@ namespace Game
 		uint32_t FrameCap = GraphicsPreset{}.FrameCap;
 		uint32_t RenderScale = GraphicsPreset{}.RenderScale;
 		AntiAliasing Aa = GraphicsPreset{}.Aa;
+		GrassQuality Grass = GraphicsPreset{}.Grass;
 		float ScreenShake = 1.0f;
 		bool ShowControls = true;
 		bool ShowPerformance = false;
@@ -63,6 +64,7 @@ namespace Game
 		bool Distortion = true;
 		bool Trails = true;
 		uint8_t DistortionStage = 0;
+		bool GrassStage = false;
 		NetworkSimulation Simulation;
 	};
 

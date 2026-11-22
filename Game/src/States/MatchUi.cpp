@@ -263,6 +263,6 @@ namespace Game
 			for (size_t column = 0; column < values.size(); column++)
 				draw.TextAligned({ row.Right() - columns + float(column) * ColumnWidth, row.Y, ColumnWidth, row.H }, values[column], Theme::Body(15.0f, column == 0 ? Theme::Text : Theme::Muted), { 0.5f, 0.5f });
 		}
-		draw.TextAligned({ panel.X, panel.Bottom() - 32.0f, panel.W, 22.0f }, "Returning to Emberhold in " + std::to_string(int(std::ceil(status.MatchTime))), Theme::Body(14.0f, Theme::Faint), { 0.5f, 0.5f });
+		draw.TextAligned({ panel.X, panel.Bottom() - 32.0f, panel.W, 22.0f }, "Returning to the Sun's Cradle in " + std::to_string(int(std::ceil(status.MatchTime))), Theme::Body(14.0f, Theme::Faint), { 0.5f, 0.5f });
 	}
 }

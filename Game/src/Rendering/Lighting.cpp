@@ -182,6 +182,7 @@ namespace Game
 			.ViewProjection = camera.ViewProjection,
 			.LavaTransform = environment.LavaTransform,
 			.LavaParams = glm::vec4(environment.LavaLight ? lighting.LavaLight : 0.0f, lighting.LavaLine, lighting.Pulse, lighting.Fury),
+			.DepthHole = lighting.DepthHole,
 		};
 		const uint32_t lightCount = m_CullPipeline ? uint32_t(std::min<size_t>(lights.size(), MaxSceneLights)) : 0;
 		frame.Translucent = glm::vec4(translucency ? 1.0f : 0.0f, float(lightCount), PointLightGain, 0.0f);
