@@ -32,6 +32,8 @@ void main()
 	if (sprite.Info.y == AlignVelocity)
 	{
 		vec3 axis = sprite.AxisStretch.xyz;
+		if (sprite.Info.x == ShapeFlameSheet)
+			axis -= Frame.CameraForward.xyz * dot(axis, Frame.CameraForward.xyz);
 		float length2 = dot(axis, axis);
 		axis = length2 > 1e-8 ? axis * inversesqrt(length2) : Frame.CameraRight.xyz;
 		vec3 side = cross(Frame.CameraForward.xyz, axis);
@@ -53,7 +55,7 @@ void main()
 			vec3 right = cross(vec3(0.0, 1.0, 0.0), normal);
 			right = dot(right, right) > 1e-6 ? normalize(right) : Frame.CameraRight.xyz;
 			vec3 up = cross(normal, right);
-			world = center + right * rotated.x + up * rotated.y;
+			world = center + right * rotated.x + up * (rotated.y * (size + sprite.AxisStretch.w) / max(size, 1e-4));
 		}
 		else
 			world = center + Frame.CameraRight.xyz * rotated.x + Frame.CameraUp.xyz * rotated.y;

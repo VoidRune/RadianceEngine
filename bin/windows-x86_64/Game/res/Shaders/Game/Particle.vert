@@ -41,6 +41,7 @@ void main()
 	if (align == AlignVelocity)
 	{
 		vec3 velocity = particle.VelocityLife.xyz;
+		velocity.y += material.Motion.w;
 		vec3 axis = velocity - Frame.CameraForward.xyz * dot(velocity, Frame.CameraForward.xyz);
 		float speed = length(axis);
 		axis = speed > 1e-4 ? axis / speed : Frame.CameraRight.xyz;
@@ -69,6 +70,6 @@ void main()
 	outColor = color;
 	outShapeSeed = uvec2(uint(material.Look.x + 0.5), particle.Info.y);
 	outLook = vec3(material.Look.y, material.Look.z, material.Motion.y);
-	outParams = vec4(0.0);
+	outParams = outShapeSeed.x == ShapeFire ? vec4(t, 0.0, 0.0, 0.0) : vec4(0.0);
 	gl_Position = Frame.ViewProjection * vec4(world, 1.0);
 }

@@ -215,9 +215,9 @@ namespace Game
 		case CardId::ManaSingularity: return UiIcon::Sunbeams;
 		case CardId::MindOverMatter: return UiIcon::PsychicWaves;
 		case CardId::BloodMagic: return UiIcon::DrippingBlade;
-		case CardId::EchoChamber: return UiIcon::EchoRipples;
+		case CardId::Refraction: return UiIcon::Prism;
 		case CardId::UnstableArcana: return UiIcon::UnstableOrb;
-		case CardId::Quicksilver: return UiIcon::Run;
+		case CardId::Archmage: return UiIcon::PointyHat;
 		default: return UiIcon::Upgrade;
 		}
 	}

@@ -263,6 +263,7 @@ namespace Game
 		m_Grass = std::make_unique<GrassRenderer>(device, allocator);
 		m_Lightning = std::make_unique<LightningRenderer>(device, allocator);
 		m_Void = std::make_unique<VoidRenderer>(device, allocator);
+		m_Blast = std::make_unique<BlastRenderer>(device, allocator);
 		m_Sun = std::make_unique<SunRenderer>(device, allocator);
 		m_Portal = std::make_unique<PortalRenderer>(device, allocator);
 		if (m_ModelVertexShader)
@@ -306,6 +307,7 @@ namespace Game
 		m_Grass.reset();
 		m_Lightning.reset();
 		m_Void.reset();
+		m_Blast.reset();
 		m_Sun.reset();
 		m_Portal.reset();
 		m_Lake.reset();
@@ -1056,6 +1058,7 @@ namespace Game
 		m_Grass->BeginFrame(m_Particles->GetTime());
 		m_Lightning->BeginFrame(m_Particles->GetTime());
 		m_Void->BeginFrame(m_Particles->GetTime());
+		m_Blast->BeginFrame(m_Particles->GetTime());
 		m_Sun->BeginFrame(m_Particles->GetTime());
 		m_Portal->BeginFrame(m_Particles->GetTime());
 		if (lighting.Grade != m_Post->GetGrade() && !m_Post->HasCustomLut())
@@ -1577,6 +1580,7 @@ namespace Game
 			m_Glass->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera, m_Lighting, environment, m_Particles->GetTime(), m_Lights);
 			m_Trails->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
 			m_Lightning->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
+			m_Blast->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
 			m_Particles->Draw(graph, scene, gbuffer.Emission, gbuffer.Depth, frameIndex);
 			m_Void->Render(graph, scene, gbuffer.Emission, gbuffer.Depth, extent, frameIndex, camera);
 		}

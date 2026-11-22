@@ -19,6 +19,7 @@ namespace Game
 		Smoke,
 		Wisp,
 		Swipe,
+		Blaze,
 	};
 
 	struct TrailStyle

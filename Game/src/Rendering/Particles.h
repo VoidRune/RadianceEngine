@@ -41,6 +41,11 @@ namespace Game
 		Inferno,
 		Hex,
 		Leaf,
+		Bubble,
+		Pearl,
+		Fire,
+		FlameSheet,
+		FlameWall,
 	};
 
 	enum class DecalShape : uint8_t
@@ -68,6 +73,7 @@ namespace Game
 		AftershockMark,
 		ResonanceMark,
 		HeartRune,
+		RitualMark,
 	};
 
 	enum class ParticleAlign : uint8_t

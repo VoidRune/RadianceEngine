@@ -142,6 +142,7 @@ namespace Game
 		FireSpellCast,
 		HexShield,
 		ObsidianBlades,
+		Prism,
 		Count,
 	};
 

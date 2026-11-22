@@ -22,7 +22,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 103;
+	constexpr uint32_t ProtocolVersion = 104;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -63,7 +63,7 @@ namespace Game
 		Ignited = 1 << 13,
 		Marked = 1 << 14,
 		Barrier = 1 << 15,
-		Quicksilver = 1u << 16,
+		Archmage = 1u << 16,
 		Shattered = 1u << 17,
 		WardShattered = 1u << 18,
 		Guard = 1u << 19,
@@ -73,6 +73,7 @@ namespace Game
 		Empowered = 1u << 23,
 		Champion = 1u << 24,
 		Enraged = 1u << 25,
+		BloodShield = 1u << 26,
 	};
 
 	enum class ActionType : uint8_t
@@ -351,6 +352,7 @@ namespace Game
 		uint8_t Revive = 0;
 		uint16_t Starlit = 0;
 		uint8_t Shield = 0;
+		int32_t BloodShield = 0;
 	};
 
 	struct ServerSnapshot

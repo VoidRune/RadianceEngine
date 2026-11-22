@@ -431,7 +431,10 @@ namespace Game
 	{
 		while (!m_PendingHits.empty() && double(m_PendingHits.front().Tick) <= m_RenderTick + 1.0)
 		{
-			m_NewHits.push_back(m_PendingHits.front().Hit);
+			const HitEvent& hit = m_PendingHits.front().Hit;
+			const EntityState* target = hit.Attacker != NoPlayer && hit.OnPlayer ? FindEntity(hit.Target) : nullptr;
+			if (!target || target->Kind != EntityKind::Player || target->Owner != hit.Attacker)
+				m_NewHits.push_back(hit);
 			m_PendingHits.pop_front();
 		}
 		while (m_PendingHits.size() > 512)
@@ -1045,9 +1048,9 @@ namespace Game
 			self.Flags |= uint16_t(m_PredictedState.Fall < FallSeconds ? EntityFlags::Falling : EntityFlags::Lifted);
 		constexpr uint16_t ServerFlags = uint16_t(EntityFlags::Burning) | uint16_t(EntityFlags::Ignited) | uint16_t(EntityFlags::Marked) | uint16_t(EntityFlags::Barrier);
 		if (const auto server = std::find_if(m_Entities.begin(), m_Entities.end(), [&](const EntityState& entity) { return entity.NetId == m_Welcome.PlayerNetId; }); server != m_Entities.end())
-			self.Flags |= server->Flags & ServerFlags;
-		if (m_PredictedState.Momentum >= QuicksilverSeconds && HasCard(m_LocalPlayer.Brawl.Cards, CardId::Quicksilver))
-			self.Flags |= uint32_t(EntityFlags::Quicksilver);
+			self.Flags |= server->Flags & (ServerFlags | uint32_t(EntityFlags::BloodShield));
+		if (GetTraits().WeaveStacks > 0 && m_PredictedState.Weave >= GetTraits().WeaveStacks)
+			self.Flags |= uint32_t(EntityFlags::Archmage);
 		if (m_PredictedState.CastSlot >= 0)
 		{
 			const SkillTraits& skill = GetTraits().Skills[size_t(m_PredictedState.CastSlot)];

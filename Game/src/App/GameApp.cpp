@@ -1,4 +1,5 @@
 #include "GameApp.h"
+#include <RadianceEngine/Graphics/ShaderCompiler.h>
 #include "Audio/GameAudio.h"
 #include "Online/SteamPlatform.h"
 #include "Rendering/EmberIslandArt.h"
@@ -38,6 +39,7 @@ namespace Game
 	{
 		constexpr uint32_t AudioCaptureRate = 48000;
 		constexpr const char* PreferencesPath = "Settings.ini";
+		constexpr double BackgroundFrameRate = 30.0;
 
 		Rdn::PresentMode PresentModeFor(bool vsync)
 		{
@@ -229,6 +231,8 @@ namespace Game
 		m_Settings.Trails = options.Trails;
 		m_Settings.DistortionStage = options.DistortionStage;
 		m_Settings.GrassStage = options.GrassStage;
+		m_Settings.FireStage = options.FireStage;
+		m_Settings.StageTime = options.StageTime;
 		m_Settings.StartMode = options.StartMode;
 		m_Settings.Rules = options.Rules;
 		m_Settings.Run = options.Run;
@@ -295,6 +299,10 @@ namespace Game
 			m_Settings.ScreenShake = *options.ScreenShake;
 		m_Settings.ShowPerformance = options.ShowPerformance;
 		m_PresentQueue = std::make_unique<Rdn::PresentQueue>(m_Device.get(), PresentModeFor(m_Settings.Vsync));
+		if (options.Latency)
+			m_PresentQueue->SetLatencyMode(Rdn::LatencyMode(*options.Latency));
+		if (options.ShaderCache)
+			Rdn::ShaderCompiler::SetCacheDirectory("ShaderCache");
 		m_Allocator = std::make_unique<Rdn::ResourceAllocator>(m_Device.get());
 		m_Graph = std::make_unique<Rdn::RenderGraph>(m_Device.get(), m_Allocator.get());
 		m_ProfileGpu = options.ProfileGpu;
@@ -537,21 +545,36 @@ namespace Game
 		double previous = 0.0;
 		while (m_Running && !m_Window->IsClosed())
 		{
+			if (!m_Window->IsMinimized())
+				m_PresentQueue->WaitForLatency(double(m_RefreshRate));
 			m_Window->PollEvents();
 			NetLibrary::RunCallbacks();
 			const double now = m_Clock.ElapsedSeconds();
 			m_Uptime = now;
 			const double interval = now - previous;
-			const float dt = float(std::min(interval, 0.25));
 			previous = now;
 
 			const bool minimized = m_Window->IsMinimized();
+			const bool background = !minimized && !m_Window->IsFocused() && m_ScreenshotPath.empty() && !m_State->NeedsFullRate();
+			if (now - m_RefreshCheck >= 1.0)
+			{
+				m_RefreshRate = m_Window->GetRefreshRate();
+				m_RefreshCheck = now;
+			}
+			double paced = interval;
+			if (m_Settings.Vsync && !minimized && !background && m_PresentQueue->GetPresentMode() == Rdn::PresentMode::Fifo)
+				paced = m_Pacer.Pace(interval, double(m_RefreshRate));
+			else
+				m_Pacer.Reset();
+			const float dt = float(std::min(paced, 0.25));
 			Frame(dt, minimized);
 			if (m_NextState)
 				m_State = std::move(m_NextState);
 			double slept = 0.0;
 			if (minimized)
 				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			else if (background)
+				slept = m_Limiter.Wait(BackgroundFrameRate);
 			else if (!m_Settings.Vsync)
 				slept = m_Limiter.Wait(double(m_Settings.FrameCap));
 			if (m_Settings.ShowPerformance && !minimized)

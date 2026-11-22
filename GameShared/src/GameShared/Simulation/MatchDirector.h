@@ -83,9 +83,10 @@ namespace Game
 		uint32_t GetMarkedBy(uint32_t playerId) const { return playerId < MaxPlayers && m_Brawlers[playerId].MarkTime > 0.0f ? m_Brawlers[playerId].MarkedBy : NoPlayer; }
 		bool HasCrystalWard(uint32_t playerId) const { return playerId < MaxPlayers && m_Brawlers[playerId].WardUp; }
 		uint8_t GetWardGauge(uint32_t playerId) const;
+		int32_t GetBloodShield(uint32_t playerId) const;
 		bool BreakCrystalWard(World& world, Entity target, uint32_t victim);
 		void NoteSpellHit(World& world, uint32_t attacker, uint8_t ability);
-		float CastDamageScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float momentum) const;
+		float CastDamageScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float weave) const;
 		int32_t ShapeDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount);
 		void AfterDamage(World& world, Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt);
 		void NoteDeath(uint32_t victim);
@@ -139,6 +140,7 @@ namespace Game
 			float WardTimer = 0.0f;
 			float HurtAge = 0.0f;
 			float RallyBank = 0.0f;
+			int32_t BloodShield = 0;
 			float LifeBank = 0.0f;
 			float FlowAt = -1e9f;
 			float IgniteLeft = 0.0f;

@@ -1,5 +1,6 @@
 #version 450
 #include "Trail.glsl"
+#include "Fire.glsl"
 
 layout(std430, set = 0, binding = 1) readonly buffer StyleBuffer { TrailStyle Styles[]; };
 layout(set = 0, binding = 2) uniform sampler2D SceneDepth;
@@ -56,7 +57,23 @@ void main()
 	float window = 1.0 - v2;
 	float body = 0.0;
 	float core = 0.0;
-	if (look == TrailFlame)
+	vec3 tone = inColor.rgb;
+	float hot = 1.0;
+	if (look == TrailBlaze)
+	{
+		float bend = v + (Noise(vec2(s * 0.8, v * 1.5 + seed)) - 0.5) * 0.3;
+		float r1 = 1.0 - abs(Noise(vec2(s * 0.6, bend * 3.5 + seed)) * 2.0 - 1.0);
+		float r2 = 1.0 - abs(Noise(vec2(s * 1.2, bend * 6.5 - seed)) * 2.0 - 1.0);
+		float filaments = (pow(r1, 4.0) * 0.75 + pow(r2, 6.0) * 0.5) * (1.0 - 0.7 * age);
+		float cloud = Noise(vec2(s * 1.2, v * 2.2 + seed * 3.0));
+		float shape = exp(-v2 * 2.2);
+		float line = exp(-v2 * 14.0) * (1.0 - age) * (1.0 - age);
+		body = clamp(shape * (0.25 + 0.45 * cloud) * (1.0 - 0.7 * age) + filaments * shape * 1.1 + line, 0.0, 1.0);
+		float heat = (shape * (0.35 + 0.4 * cloud) + filaments * shape * 0.8 + line * 0.7) * mix(1.0, 0.4, age);
+		tone = FireRamp(inColor.rgb, heat);
+		hot = FireHot(heat);
+	}
+	else if (look == TrailFlame)
 	{
 		float n = 0.65 * Noise(vec2(s * 3.0, v * 1.7 + seed)) + 0.35 * Noise(vec2(s * 7.0, v * 3.5 - seed));
 		float reach = max(1.0 - (0.35 + 0.6 * age) * n, 0.08);
@@ -111,7 +128,7 @@ void main()
 	float fade = clamp((sceneZ - trailZ) / style.Look.w, 0.0, 1.0);
 	float alpha = inColor.a * fade;
 	float additive = style.Look.z;
-	vec3 radiance = (inColor.rgb * body + style.Core.rgb * (core * style.Core.a)) * alpha;
+	vec3 radiance = (tone * body + style.Core.rgb * (core * style.Core.a)) * alpha;
 	outScene = vec4(radiance, clamp(body * alpha, 0.0, 1.0) * (1.0 - additive));
-	outEmission = vec4(radiance * (style.Look.y * 2.0), 0.0);
+	outEmission = vec4(radiance * (style.Look.y * 2.0 * hot), 0.0);
 }

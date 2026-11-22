@@ -51,6 +51,7 @@ namespace Game
 		uint8_t OverloadEvery = 0;
 		float TempoStep = 0.0f;
 		float SnapWindow = 0.0f;
+		uint8_t WeaveStacks = 0;
 		float StallRegen = 0.0f;
 		uint8_t DodgeCharges = 1;
 		float OvercastCost = 0.0f;

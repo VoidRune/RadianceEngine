@@ -143,7 +143,9 @@ namespace Game
 		uint8_t Overload = 0;
 		uint8_t RecastAbility = UINT8_MAX;
 		float ManaStall = 0.0f;
-		float Momentum = 0.0f;
+		uint8_t Weave = 0;
+		uint8_t WeaveSpell = UINT8_MAX;
+		float WeaveFade = 0.0f;
 		float Tempo = 0.0f;
 		uint8_t TempoStacks = 0;
 		float Snap = 0.0f;

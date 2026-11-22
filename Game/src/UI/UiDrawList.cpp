@@ -133,6 +133,16 @@ namespace Game
 		primitive.Params = glm::vec4(fill, phase, wave, 0.0f);
 	}
 
+	void UiDrawList::OrbAura(glm::vec2 center, float radius, OrbAuraStyle style, float amount, UiColor light, UiColor deep, float phase)
+	{
+		if (style == OrbAuraStyle::None || amount <= 0.0f)
+			return;
+		UiPrimitive& primitive = Add(UiMode::Orb, center, glm::vec2(radius));
+		primitive.Colors = glm::uvec4(PackColor(light), PackColor(deep), 0u, 0u);
+		primitive.Shape = glm::vec4(std::clamp(amount, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f);
+		primitive.Params = glm::vec4(0.0f, phase, 0.0f, float(style));
+	}
+
 	void UiDrawList::Sigil(glm::vec2 center, float radius, const SigilStyle& style)
 	{
 		if (radius <= 0.5f || (style.Color.a <= 0.0f && style.Fill.a <= 0.0f))

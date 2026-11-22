@@ -31,6 +31,9 @@ namespace Game
 	namespace
 	{
 		constexpr float HurtFlashSeconds = 0.08f;
+		constexpr float HealthTrailHold = 0.45f;
+		constexpr float HealthTrailRate = 0.9f;
+		constexpr float WardRegrowSeconds = 0.6f;
 		constexpr float CrystalFormSeconds = 0.45f;
 		constexpr float CrystalBurstHeight = 1.0f;
 		constexpr float FlashCover = 0.65f;
@@ -188,7 +191,7 @@ namespace Game
 			case AbilityId::Comet:
 				return 0.5f;
 			case AbilityId::PurpleFireball:
-				return 0.2f + 0.4f * blast;
+				return 0.2f + 0.5f * blast;
 			case AbilityId::EarthSpike:
 				return 0.35f;
 			case AbilityId::StormStrike:
@@ -479,6 +482,7 @@ namespace Game
 		m_SpikeRuins.clear();
 		m_NovaFields.clear();
 		m_VoidWells.clear();
+		m_FireballBursts.clear();
 		m_Arcs.clear();
 		m_ArcFades.clear();
 		m_Shields.clear();
@@ -1072,6 +1076,8 @@ namespace Game
 		}
 		m_CameraPlaced = true;
 
+		if (m_App.GetSettings().FireStage != 0)
+			m_ZoomTarget = m_Zoom = m_App.GetSettings().FireStage == 2 ? 1.0f : CameraZoomMin;
 		m_Zoom += (m_ZoomTarget - m_Zoom) * std::min(1.0f, dt * CameraZoomRate);
 		const float aspect = float(std::max(m_Extent.Width, 1u)) / float(std::max(m_Extent.Height, 1u));
 		glm::vec3 focus = m_CameraTarget - glm::vec3(0.0f, 0.0f, CameraFocusOffset * m_Zoom);
@@ -1199,6 +1205,10 @@ namespace Game
 			fx.Flash = std::max(fx.Flash - dt, 0.0f);
 			fx.Age += fx.Stop > 0.0f ? 0.0f : dt;
 			fx.Stop = std::max(fx.Stop - dt, 0.0f);
+			const float health = float(fx.Last.Health) / 255.0f;
+			fx.TrailHold = std::max(fx.TrailHold - dt, 0.0f);
+			fx.BloodFlash = std::max(fx.BloodFlash - dt * 2.5f, 0.0f);
+			fx.Trail = health >= fx.Trail ? health : fx.TrailHold > 0.0f ? fx.Trail : std::max(health, fx.Trail - HealthTrailRate * dt);
 		}
 		for (const EntityState& entity : m_Client.GetEntities())
 		{
@@ -1236,8 +1246,8 @@ namespace Game
 				{
 					if (!inserted && fx.Last.Has(EntityFlags::Barrier) && !entity.Has(EntityFlags::Dead) && fx.CrystalForm > 0.3f)
 					{
-						ShatterCrystalWard(Ground(entity.Position), m_Time, entity.NetId, m_WardShards);
-						m_Effects->Burst(Fx::ShieldShatter, Ground(entity.Position, CrystalBurstHeight), glm::vec3(0.0f, 1.0f, 0.0f), 0.8f);
+						m_Effects->Burst(Fx::ArcaneBurst, Ground(entity.Position, CrystalBurstHeight), glm::vec3(0.0f, 1.0f, 0.0f), 1.1f, glm::vec3(0.6f, 0.88f, 1.0f));
+						m_Effects->AirShockwave(Ground(entity.Position, CrystalBurstHeight), 1.4f, 0.3f, 0.06f, 0.2f);
 					}
 					fx.CrystalForm = 0.0f;
 				}
@@ -1288,6 +1298,7 @@ namespace Game
 			if (!inserted && entity.Health < fx.LastHealth)
 			{
 				fx.Flash = HurtFlashSeconds;
+				fx.TrailHold = HealthTrailHold;
 				fx.FlashColor = glm::vec3(1.0f);
 				fx.Hurt = true;
 			}
@@ -1303,6 +1314,15 @@ namespace Game
 			{
 				WardStruck(hit);
 				continue;
+			}
+			if (const auto shielded = m_Fx.find(hit.Target); shielded != m_Fx.end() && shielded->second.Last.Has(EntityFlags::BloodShield) && !shielded->second.Last.Has(EntityFlags::Barrier))
+			{
+				shielded->second.BloodFlash = 1.0f;
+				if (hit.Guarded)
+				{
+					m_Effects->Burst(Fx::ShieldImpact, Ground(hit.Position, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0.7f, glm::vec3(1.0f, 0.16f, 0.24f));
+					continue;
+				}
 			}
 			if (hit.Guarded)
 			{
@@ -1821,10 +1841,8 @@ namespace Game
 		const glm::vec3 center = Ground(entity.Position, fireball ? FireballBlastHeight : 0.5f);
 		if (fireball)
 		{
-			const float violet = FireballViolet(blast);
-			if (violet < 0.999f)
-				m_Effects->Burst(Fx::Explosion, center, Heading(entity.Facing), 0.8f * scale, glm::vec3(1.0f - violet));
-			m_Effects->Burst(*fx, center, Heading(entity.Facing), scale, glm::vec3(std::max(violet, 0.15f)));
+			m_Effects->FlameRing(Ground(entity.Position), def.ImpactRadius * scale, blast, FireballFlameHue(blast), FireballBlastSpin);
+			m_FireballBursts.push_back({ .Ground = Ground(entity.Position), .Radius = def.ImpactRadius * scale, .Power = blast, .Seed = entity.NetId });
 			return;
 		}
 		const glm::vec3 forward = Heading(entity.Facing);
@@ -1872,6 +1890,9 @@ namespace Game
 			m_Effects->Trail(Fx::Campfire, (6ull << 40) | flame.Key, flame.Position, dt, 0.85f);
 		}
 		std::erase_if(m_Flames, [](const Flame& flame) { return flame.Life <= 0.0f; });
+		for (FireballBurst& burst : m_FireballBursts)
+			burst.Age += dt;
+		std::erase_if(m_FireballBursts, [](const FireballBurst& burst) { return burst.Age >= FireballBlastLife(burst.Power); });
 		if (const Level* level = m_Client.GetLevel(); level && level->Kind == MapKind::FrozenLake)
 			m_Effects->Trail(Fx::Snowfall, 7ull << 40, m_CameraTarget + glm::vec3(0.0f, 4.5f, 1.5f), dt, 1.0f);
 		if (const Level* level = m_Client.GetLevel(); level && level->Kind == MapKind::FrozenLake && m_Client.GetSession().Mode == GameMode::Brawl)
@@ -1950,13 +1971,40 @@ namespace Game
 			emit(forge.GetFallSpots(), Fx::FallSpray, 14ull);
 		}
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
-		for (size_t i = 0; i < fires.size(); i++)
+		const std::vector<LevelFire> staged = StageFires();
+		for (size_t i = 0; i < fires.size() + staged.size(); i++)
 		{
-			const LevelFire& fire = fires[i];
+			const LevelFire& fire = i < fires.size() ? fires[i] : staged[i - fires.size()];
 			if (LengthSquared(Vec2(fire.Position.x, fire.Position.z) - Vec2(m_CameraTarget.x, m_CameraTarget.z)) > 26.0f * 26.0f)
 				continue;
-			const Fx fx = fire.Kind == FireKind::Campfire ? Fx::Campfire : fire.Kind == FireKind::Lantern ? Fx::LanternFlame : Fx::CandleFlame;
+			const Fx fx = fire.Kind == FireKind::Campfire ? Fx::Campfire : fire.Kind == FireKind::Candle ? Fx::CandleFlame : fire.Kind == FireKind::Torch ? Fx::TorchFlame : Fx::LanternFlame;
 			m_Effects->Trail(fx, (2ull << 40) | uint64_t(i), fire.Position, dt, fire.Scale);
+		}
+		for (int i = 0; i < 1 && m_App.GetSettings().FireStage; i++)
+		{
+			glm::vec3 center;
+			float facing = 0.0f;
+			if (StageBolt(i, center, facing))
+				m_Effects->Trail(Fx::EmberTrail, (40ull << 40) | uint64_t(i), center, dt);
+		}
+		if (m_App.GetSettings().FireStage)
+		{
+			for (int i = 0; i < StageBlastCount(); i++)
+			{
+				glm::vec3 ground;
+				float power = 0.0f;
+				if (const float age = StageBlast(i, ground, power); age < 0.0f || age >= dt)
+					continue;
+				const float radius = GetAbility(AbilityId::PurpleFireball).ImpactRadius + (FireballFullBlast - GetAbility(AbilityId::PurpleFireball).ImpactRadius) * power;
+				m_Effects->FlameRing(ground, radius, power, FireballFlameHue(power), FireballBlastSpin);
+				m_Effects->Impact(AbilityId::PurpleFireball, ground, 0.0f, radius / GetAbility(AbilityId::PurpleFireball).ImpactRadius, FireballColor(power), 950u + uint32_t(i), [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+			}
+			glm::vec3 center;
+			float facing = 0.0f;
+			if (StageBolt(1, center, facing))
+				m_Effects->Trail(Fx::FireballWake, 41ull << 40, center, dt, FireballFullSize, FireballFlameTint(1.0f));
+			const FireballLook charge = StageCharge();
+			m_Effects->Trail(Fx::FireballKindle, 42ull << 40, charge.Center, dt, 0.6f + 0.4f * charge.Size, FireballFlameTint(charge.Power));
 		}
 		if (const Level* level = m_Client.GetLevel())
 			for (size_t i = 0; i < level->Props.size(); i++)
@@ -1982,14 +2030,7 @@ namespace Game
 				const AbilityId ability = AbilityOf(entity);
 				if (const std::optional<Fx> trail = TrailFor(ability))
 				{
-					glm::vec3 tint(1.0f);
-					if (ability == AbilityId::PurpleFireball)
-					{
-						const float violet = FireballViolet(FireballPowerOf(entity.GetScale()));
-						tint = glm::vec3(violet);
-						if (violet < 0.999f)
-							m_Effects->Trail(Fx::FireTrail, uint64_t(entity.NetId) | (12ull << 40), ProjectilePoint(entity), dt, entity.GetScale(), glm::vec3(1.0f - violet));
-					}
+					const glm::vec3 tint = ability == AbilityId::PurpleFireball ? FireballFlameTint(FireballPowerOf(entity.GetScale())) : glm::vec3(1.0f);
 					m_Effects->Trail(*trail, entity.NetId, ProjectilePoint(entity), dt, IsChargedShot(ability) ? entity.GetScale() : 1.0f, tint);
 				}
 				if (ability == AbilityId::FrostSpear && entity.GetScale() >= SpearLaneSize)
@@ -2054,8 +2095,7 @@ namespace Game
 					const FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? &fx->second : nullptr);
 					const float violet = FireballViolet(look.Power);
 					const float size = 0.6f + 0.4f * look.Size;
-					m_Effects->Trail(Fx::FireballKindle, uint64_t(entity.NetId) | (12ull << 40), look.Center, dt, size, glm::vec3(1.0f - violet));
-					m_Effects->Trail(Fx::FireballAura, uint64_t(entity.NetId) | (13ull << 40), look.Center, dt, size, glm::vec3(violet));
+					m_Effects->Trail(Fx::FireballKindle, uint64_t(entity.NetId) | (12ull << 40), look.Center, dt, size, FireballFlameTint(look.Power));
 					const glm::vec3 streak = glm::mix(glm::vec3(0.75f, 0.32f, 0.08f), glm::vec3(0.45f, 0.18f, 0.8f), violet);
 					const float reach = 0.9f + 0.45f * look.Size;
 					const float surface = 1.4f * FireballBallRadius * look.Size * look.Grow;
@@ -2453,15 +2493,35 @@ namespace Game
 		renderer.SetSight(m_CameraTarget, !m_Overview);
 		m_LevelRenderer.Draw(renderer, *level, ComputeView());
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
-		for (size_t i = 0; i < fires.size(); i++)
+		const std::vector<LevelFire> staged = StageFires();
+		for (size_t i = 0; i < fires.size() + staged.size(); i++)
 		{
-			const LevelFire& fire = fires[i];
+			const LevelFire& fire = i < fires.size() ? fires[i] : staged[i - fires.size()];
 			if (LengthSquared(Vec2(fire.Position.x, fire.Position.z) - Vec2(m_CameraTarget.x, m_CameraTarget.z)) > 26.0f * 26.0f)
 				continue;
 			const float phase = float(i) * 1.7f;
 			const float flicker = 0.85f + 0.1f * std::sin(m_Time * 13.0f + phase) + 0.05f * std::sin(m_Time * 29.0f + phase * 2.3f);
-			const float size = fire.Kind == FireKind::Campfire ? 0.9f : fire.Kind == FireKind::Lantern ? 0.32f : 0.16f;
-			renderer.DrawSprite({ .Position = fire.Position + glm::vec3(0.0f, fire.Kind == FireKind::Campfire ? 0.25f : 0.02f, 0.0f), .Size = size * fire.Scale, .Color = glm::vec4(glm::vec3(1.0f, 0.55f, 0.22f) * flicker, 0.35f), .Shape = ParticleShape::Glow, .Softness = 1.0f });
+			const bool campfire = fire.Kind == FireKind::Campfire;
+			const float size = campfire ? 0.9f : fire.Kind == FireKind::Torch ? 0.45f : fire.Kind == FireKind::Lantern ? 0.32f : 0.16f;
+			renderer.DrawSprite({ .Position = fire.Position + glm::vec3(0.0f, campfire ? 0.25f : 0.02f, 0.0f), .Size = size * fire.Scale, .Color = glm::vec4(glm::vec3(1.0f, 0.55f, 0.22f) * flicker, 0.35f), .Shape = ParticleShape::Glow, .Emission = 0.3f, .Softness = 1.0f });
+			const float s = fire.Scale;
+			const uint32_t seed = uint32_t(i) * 7u + 3u;
+			const glm::vec3 lean(0.07f * std::sin(m_Time * 1.3f + phase), 1.0f, 0.05f * std::sin(m_Time * 1.7f + phase * 0.7f));
+			switch (fire.Kind)
+			{
+			case FireKind::Campfire:
+				DrawHeatHaze(renderer, fire.Position + glm::vec3(0.0f, 0.9f * s, 0.0f), 0.55f * s, 0.02f, 3.0f, 1.4f, seed);
+				break;
+			case FireKind::Torch:
+				DrawHeatHaze(renderer, fire.Position + glm::vec3(0.0f, 0.4f * s, 0.0f), 0.25f * s, 0.015f, 3.5f, 1.4f, seed);
+				break;
+			case FireKind::Lantern:
+				DrawFlame(renderer, { .Base = fire.Position, .Axis = lean * glm::vec3(0.4f, 1.0f, 0.4f), .Width = 0.055f * s, .Height = 0.14f * s, .Wild = 0.3f, .Speed = 1.8f, .Seed = seed });
+				break;
+			case FireKind::Candle:
+				DrawFlame(renderer, { .Base = fire.Position, .Axis = lean * glm::vec3(0.3f, 1.0f, 0.3f), .Width = 0.024f * s, .Height = 0.065f * s, .Wild = 0.15f, .Speed = 1.6f, .Seed = seed });
+				break;
+			}
 		}
 		m_Effects->Draw(renderer, m_SpellMeshes);
 		DrawArcFades(renderer);
@@ -2549,6 +2609,10 @@ namespace Game
 		DrawChessTable(renderer);
 		if (m_App.GetSettings().DistortionStage != 0)
 			DrawDistortionStage(renderer);
+		if (m_App.GetSettings().FireStage)
+			DrawFireStage(renderer);
+		for (const FireballBurst& burst : m_FireballBursts)
+			DrawFireballBlast(renderer, { .Center = burst.Ground + glm::vec3(0.0f, FireballBlastHeight, 0.0f), .Ground = burst.Ground, .Radius = burst.Radius, .Power = burst.Power, .Age = burst.Age }, burst.Seed);
 		const PlayerState& state = m_Client.GetPredictedState();
 		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
 		if (m_AimPoint && self && !m_Paused && !m_Overview && m_HoveredPortal < 0)
@@ -2905,7 +2969,9 @@ namespace Game
 	void SessionState::DrawFireballCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const
 	{
 		const auto fx = m_Fx.find(entity.NetId);
-		const FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? &fx->second : nullptr);
+		FireballLook look = ChargingFireball(entity, fx != m_Fx.end() ? &fx->second : nullptr);
+		look.Ground = base.y;
+		look.Grounded = true;
 		DrawPurpleFireball(renderer, look, m_Time, entity.NetId);
 		const glm::vec3 color = FireballColor(look.Power);
 		DrawRuneCircle(renderer, { .Center = base, .Radius = (0.75f + 0.4f * look.Power) * look.Grow, .Color = color, .Intensity = 0.2f + 0.28f * look.Power + 0.12f * look.Flash, .Spin = 1.2f + 1.0f * look.Power, .Progress = look.Power, .Appear = look.Grow, .Seed = entity.NetId });
@@ -4251,6 +4317,8 @@ namespace Game
 			look.Forward = Heading(entity.Facing);
 			look.Size = entity.GetScale();
 			look.Power = power;
+			look.Ground = base.y;
+			look.Grounded = true;
 			look.Flying = true;
 			DrawPurpleFireball(renderer, look, m_Time, entity.NetId);
 			renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability, power, look.Size));
@@ -4330,11 +4398,7 @@ namespace Game
 		if (CreditOf(ability) == AbilityId::GlacialNova)
 			return;
 		if (ability == AbilityId::PurpleFireball)
-		{
-			const float radius = def.ImpactRadius * scale;
-			DrawFireballBlast(renderer, { .Center = Ground(entity.Position, FireballBlastHeight), .Ground = base, .Radius = radius, .Power = std::clamp((radius - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f), .Age = age, .Life = def.EffectDuration }, entity.NetId);
 			return;
-		}
 		if (ability == AbilityId::HookAnchor || ability == AbilityId::HookPull || ability == AbilityId::HookYank)
 		{
 			DrawHook(renderer, entity, age);
@@ -4633,7 +4697,33 @@ namespace Game
 			return pixels ? std::optional<glm::vec2>(ui.ToLogical(*pixels)) : std::nullopt;
 		};
 		const auto onScreen = [&](const glm::vec2& point) { return point.x > -60.0f && point.y > -60.0f && point.x < size.x + 60.0f && point.y < size.y + 60.0f; };
+		const auto healthBar = [&](const UiRect& bar, float fraction, float trail, UiColor color, UiColor edge, float shield, bool shielded)
+		{
+			constexpr float Cut = 1.0f;
+			const UiRect frame = bar.Expand(1.5f);
+			draw.Rect(frame.Translate({ 0.0f, 1.5f }), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.4f), .Softness = 3.0f });
+			draw.Rect(frame, { .Fill = Rgba(0.02f, 0.015f, 0.04f, 0.92f), .Border = shielded ? Hex(0xFF3355, 0.95f) : edge, .BorderWidth = 1.0f, .Chamfer = Cut });
+			draw.Rect(bar, { .Fill = WithAlpha(Darken(color, 0.78f), 0.95f) });
+			if (trail > fraction + 0.002f)
+				draw.Rect({ bar.X + bar.W * fraction, bar.Y, bar.W * (trail - fraction), bar.H }, { .Fill = Rgba(1.0f, 0.94f, 0.86f, 0.92f) });
+			if (fraction > 0.0f)
+			{
+				const float filled = bar.W * fraction;
+				draw.Rect({ bar.X, bar.Y, filled, bar.H }, { .Fill = Lighten(color, 0.35f), .FillBottom = Darken(color, 0.22f) });
+				if (filled > 3.0f)
+					draw.Rect({ bar.X + 1.5f, bar.Y, filled - 3.0f, 1.0f }, { .Fill = Rgba(1.0f, 1.0f, 1.0f, 0.38f) });
+			}
+			for (int i = 1; i < 4; i++)
+				draw.Rect({ bar.X + bar.W * float(i) * 0.25f - 0.5f, bar.Y, 1.0f, bar.H }, { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.5f) });
+			if (shield > 0.0f)
+			{
+				const UiRect line{ bar.X, frame.Y - 3.5f, bar.W * std::min(shield, 1.0f), 2.0f };
+				draw.Rect(line, { .Fill = Hex(0xFF5C78), .Glow = Hex(0xFF2E4D, 0.6f), .GlowSize = 4.0f });
+			}
+		};
 		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
+		const LocalPlayerState& local = m_Client.GetLocalPlayer();
+		const bool fighting = m_Client.GetSession().Mode != GameMode::Hub;
 		for (const EntityState& entity : m_Client.GetEntities())
 		{
 			if (IsBossKind(entity.Kind))
@@ -4641,21 +4731,39 @@ namespace Game
 			const bool enemy = IsEnemyKind(entity.Kind);
 			const bool elite = entity.Has(EntityFlags::Elite);
 			const bool teammate = entity.Kind == EntityKind::Player && entity.NetId != m_Client.GetPlayerNetId() && !entity.Has(EntityFlags::Dead);
+			const bool mine = entity.Kind == EntityKind::Player && entity.NetId == m_Client.GetPlayerNetId() && !entity.Has(EntityFlags::Dead) && fighting;
 			const bool dummy = entity.Kind == EntityKind::Dummy && entity.Health < 255;
-			if (!(enemy && (entity.Health < 255 || elite)) && !teammate && !dummy)
+			if (!(enemy && (entity.Health < 255 || elite)) && !teammate && !dummy && !mine)
 				continue;
 			const std::optional<glm::vec2> point = screen(entity.Kind == EntityKind::Player ? BodyBase(entity, BarHeight(entity)) : Ground(entity.Position, BarHeight(entity)));
 			if (!point || !onScreen(*point))
 				continue;
 			const bool rival = m_Client.IsHostile(entity);
 			const bool marked = rival && m_Client.GetSession().Mode != GameMode::Brawl;
-			const float width = (entity.Kind == EntityKind::Brute ? 70.0f : rival ? 58.0f : 46.0f) * (elite ? 1.25f : 1.0f);
-			const float height = elite || rival ? 7.0f : 6.0f;
+			const bool body = entity.Kind == EntityKind::Player;
+			const float width = (entity.Kind == EntityKind::Brute ? 70.0f : body ? (mine ? 70.0f : 64.0f) : rival ? 58.0f : 46.0f) * (elite ? 1.25f : 1.0f);
+			const float height = body ? 7.0f : elite || rival ? 6.0f : 5.0f;
 			const UiRect bar = UiRect::Centered(*point - glm::vec2(0.0f, height * 0.5f), { width, height });
 			const float fraction = float(entity.Health) / 255.0f;
-			const UiColor color = marked ? Hex(0xE04A3C) : dummy ? Hex(0xFF8A3A) : !enemy ? WithAlpha(ColorOf(entity.Owner)) : elite ? WithAlpha(EliteGold) : Hex(0xE04A3C);
-			draw.Rect(bar.Expand(1.5f), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.78f), .Radius = 3.5f, .Border = elite ? WithAlpha(EliteGold, 0.9f) : UiColor(0.0f), .BorderWidth = elite ? 1.0f : 0.0f });
-			draw.Rect({ bar.X, bar.Y, bar.W * fraction, bar.H }, { .Fill = Lighten(color, 0.3f), .FillBottom = Darken(color, 0.25f), .Radius = 2.5f });
+			const auto fx = m_Fx.find(entity.NetId);
+			const float trail = fx != m_Fx.end() ? std::max(fx->second.Trail, fraction) : fraction;
+			const UiColor color = mine ? Hex(0xF0485E) : marked ? Hex(0xE04A3C) : dummy ? Hex(0xFF8A3A) : !enemy ? WithAlpha(ColorOf(entity.Owner)) : elite ? WithAlpha(EliteGold) : Hex(0xE04A3C);
+			const float low = body && fraction < 0.3f ? 0.6f + 0.4f * std::sin(m_Time * 8.0f) : 0.0f;
+			UiColor edge = elite ? WithAlpha(EliteGold, 0.9f) : mine ? WithAlpha(Theme::GoldLight, 0.75f) : WithAlpha(Lighten(color, 0.2f), body ? 0.55f : 0.3f);
+			if (low > 0.0f)
+				edge = glm::mix(edge, Hex(0xFF3B3B), low);
+			const float cap = float(std::max(local.MaxHealth, 1)) / (1.0f + BloodMagicHealth) * BloodMagicOverheal;
+			const float shield = mine && local.BloodShield > 0 ? float(local.BloodShield) / std::max(cap, 1.0f) : 0.0f;
+			healthBar(bar, fraction, trail, color, edge, shield, entity.Has(EntityFlags::BloodShield));
+			if (const PlayerTraits& traits = m_Client.GetTraits(); mine && traits.MaxMana > 0.0f)
+			{
+				const float mana = std::clamp(m_Client.GetPredictedState().Mana / traits.MaxMana, 0.0f, 1.0f);
+				const UiRect well{ bar.X, bar.Bottom() + 2.5f, bar.W, 3.0f };
+				draw.Rect(well.Expand(1.0f), { .Fill = Rgba(0.02f, 0.015f, 0.04f, 0.92f) });
+				draw.Rect(well, { .Fill = Hex(0x10163A, 0.95f) });
+				if (mana > 0.0f)
+					draw.Rect({ well.X, well.Y, well.W * mana, well.H }, { .Fill = Hex(0x8DB4FF), .FillBottom = Hex(0x3D5BD6) });
+			}
 			if (elite)
 				draw.Icon(UiIcon::Crown, { bar.X - 19.0f, bar.Center().y - 8.0f, 16.0f, 16.0f }, { .Color = WithAlpha(EliteGold), .ShadowColor = Rgba(0.0f, 0.0f, 0.0f, 0.8f) });
 			if (enemy && elite && entity.Tag != 0)
@@ -5325,6 +5433,14 @@ namespace Game
 		const float manaFraction = traits.MaxMana > 0.0f ? state.Mana / traits.MaxMana : 0.0f;
 		const float danger = state.Alive ? std::clamp((0.35f - healthFraction) / 0.25f, 0.0f, 1.0f) : 0.0f;
 		orb(plate.X - OrbRadius - 8.0f, healthFraction, Hex(0xFF5F6F), Hex(0x5E0A24), Hex(0xFF7A96), std::to_string(std::max(local.Health, 0)) + " / " + std::to_string(local.MaxHealth), 0.0f, danger);
+		if (local.BloodShield > 0 && state.Alive)
+		{
+			const glm::vec2 healthCenter(plate.X - OrbRadius - 8.0f, size.y - 18.0f - OrbRadius);
+			const float cap = std::max(float(local.MaxHealth) / (1.0f + BloodMagicHealth) * BloodMagicOverheal, 1.0f);
+			const float share = std::clamp(float(local.BloodShield) / cap, 0.0f, 1.0f);
+			draw.OrbAura(healthCenter, OrbRadius, OrbAuraStyle::BloodShield, share, Hex(0xFF6E86), Hex(0x24020A));
+			draw.TextAligned(UiRect::Centered({ healthCenter.x, healthCenter.y - OrbRadius - 26.0f }, { 220.0f, 18.0f }), "+" + std::to_string(local.BloodShield) + " blood shield", Theme::Floating(14.0f, Hex(0xFF8095), UiFont::Bold), { 0.5f, 0.5f });
+		}
 		const SessionInfo& session = m_Client.GetSession();
 		const bool brawlDamage = session.Mode == GameMode::Brawl && session.Rules.Mode == BrawlMode::Damage;
 		if (session.Mode == GameMode::Brawl && !brawlDamage)
@@ -5371,14 +5487,15 @@ namespace Game
 					std::snprintf(label, sizeof(label), "Your mana shields you");
 				tone = Hex(0x9DBBFF);
 			}
-			else if (apex == CardId::Quicksilver)
+			else if (apex == CardId::Archmage)
 			{
-				const float charge = std::clamp(state.Momentum / QuicksilverSeconds, 0.0f, 1.0f);
-				if (charge >= 1.0f)
-					std::snprintf(label, sizeof(label), "Quicksilver: +%d%% damage", int(std::lround((QuicksilverDamage - 1.0f) * 100.0f)));
+				if (state.Weave >= ArchmageStacks)
+					std::snprintf(label, sizeof(label), "Weave full: next spell instant, +%d%%", int(std::lround(ArchmageDamage * float(ArchmageStacks) * 100.0f)));
+				else if (state.Weave > 0)
+					std::snprintf(label, sizeof(label), "Weave %u: +%d%% damage", unsigned(state.Weave), int(std::lround(ArchmageDamage * float(state.Weave) * 100.0f)));
 				else
-					std::snprintf(label, sizeof(label), "Quicksilver %d%%", int(charge * 100.0f));
-				tone = charge >= 1.0f ? Hex(0xDDE8FF) : Theme::Muted;
+					std::snprintf(label, sizeof(label), "Weave different spells");
+				tone = state.Weave >= ArchmageStacks ? Hex(0xFFE2A8) : state.Weave > 0 ? Hex(0xF2D8A6) : Theme::Muted;
 			}
 			const uint8_t surgeKind = state.Surge & 0x0F;
 			if (state.Surge != m_SeenSurge)
@@ -5415,7 +5532,15 @@ namespace Game
 			const glm::vec2 healthCenter(plate.X - OrbRadius - 8.0f, size.y - 18.0f - OrbRadius);
 			const bool up = local.Shield == 255;
 			const float reform = float(local.Shield) / 10.0f;
-			draw.Circle(healthCenter, OrbRadius + 4.0f, UiColor(0.0f), WithAlpha(Hex(0xBFE6FF), up ? 0.85f : 0.25f), up ? 2.2f : 1.2f);
+			if (!up)
+				m_WardUpAt = -1.0f;
+			else if (m_WardUpAt < 0.0f)
+				m_WardUpAt = m_Time;
+			if (up)
+			{
+				const float grow = std::clamp((m_Time - m_WardUpAt) / WardRegrowSeconds, 0.0f, 1.0f);
+				draw.OrbAura(healthCenter, OrbRadius, OrbAuraStyle::CrystalWard, grow * grow * (3.0f - 2.0f * grow), Hex(0xE4F4FF), Hex(0x4F7FB0));
+			}
 			char ward[40];
 			if (up)
 				std::snprintf(ward, sizeof(ward), "Crystal Ward");
@@ -5423,6 +5548,8 @@ namespace Game
 				std::snprintf(ward, sizeof(ward), "Ward re-forms in %.0f s", double(std::ceil(reform)));
 			draw.TextAligned(UiRect::Centered({ healthCenter.x, healthCenter.y - OrbRadius - 26.0f }, { 200.0f, 18.0f }), ward, Theme::Floating(14.0f, up ? Hex(0xCFEBFF) : Theme::Muted, UiFont::Bold), { 0.5f, 0.5f });
 		}
+		else
+			m_WardUpAt = -1.0f;
 
 		const float buffY = plate.Y - 40.0f;
 
@@ -5649,7 +5776,7 @@ namespace Game
 			if (!empty && !dodge && cards != 0)
 			{
 				const UiColor glow = WithAlpha(ApexColor(m_Time + float(slot) * 0.8f));
-				if (HasCard(cards, CardId::EchoChamber) && EchoesInChamber(skill.Ability))
+				if (HasCard(cards, CardId::Refraction) && Refracts(skill.Ability))
 					draw.TextAligned(rect.Shrink(6.0f, 4.0f), "x3", Theme::Floating(12.5f, glow, UiFont::Bold), { 1.0f, 0.0f });
 				if (HasCard(cards, CardId::UnstableArcana) && slot >= 1)
 					draw.Rect(rect.Expand(2.5f), { .Border = WithAlpha(glow, 0.85f), .BorderWidth = 1.4f, .Glow = WithAlpha(glow, 0.2f), .GlowSize = 8.0f, .Chamfer = 11.0f });
@@ -5816,5 +5943,128 @@ namespace Game
 		DrawHeatHaze(renderer, spot(-1.9f, 0.0f) + glm::vec3(0.0f, 1.0f, 0.0f), 1.1f, 0.035f, 3.0f, 1.4f, 11u);
 		DrawImplosion(renderer, spot(1.5f, 0.0f) + glm::vec3(0.0f, 1.0f, 0.0f), 1.3f, 0.14f, m_Time * 1.2f);
 		DrawGravityLens(renderer, spot(4.9f, 0.0f) + glm::vec3(0.0f, 1.4f, 0.0f), 0.32f, 0.62f, glm::vec3(0.75f, 0.55f, 1.1f) * 0.7f);
+	}
+}
+
+namespace Game
+{
+	glm::vec3 SessionState::StageSpot(float across, float along) const
+	{
+		const glm::vec3 right = glm::normalize(glm::vec3(m_Camera.View[0][0], 0.0f, m_Camera.View[2][0]));
+		const glm::vec3 depth(-right.z, 0.0f, right.x);
+		const glm::vec3 point = glm::vec3(m_CameraTarget.x, 0.0f, m_CameraTarget.z) + right * across + depth * along;
+		return Ground(Vec2(point.x, point.z));
+	}
+
+	std::vector<LevelFire> SessionState::StageFires() const
+	{
+		if (m_App.GetSettings().FireStage != 1)
+			return {};
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		return {
+			{ StageSpot(-2.5f, -1.4f) + up * 0.05f, 0.9f, FireKind::Campfire },
+			{ StageSpot(-1.2f, -1.4f) + up * 0.8f, 0.55f, FireKind::Campfire },
+			{ StageSpot(-0.1f, -1.4f) + up * 1.3f, 1.0f, FireKind::Lantern },
+			{ StageSpot(0.9f, -1.4f) + up * 1.0f, 1.0f, FireKind::Candle },
+			{ StageSpot(1.05f, -1.4f) + up * 1.02f, 1.0f, FireKind::Candle },
+			{ StageSpot(2.1f, -1.4f) + up * 1.6f, 1.0f, FireKind::Torch },
+		};
+	}
+
+	bool SessionState::StageBolt(int index, glm::vec3& center, float& facing) const
+	{
+		constexpr float Flight = 6.5f / 11.5f;
+		const float t = std::fmod(m_Time + 0.5f * float(index), 1.0f) / Flight;
+		if (t >= 1.0f)
+			return false;
+		const glm::vec3 right = glm::normalize(glm::vec3(m_Camera.View[0][0], 0.0f, m_Camera.View[2][0]));
+		center = StageSpot(-3.25f + 6.5f * t, index == 0 ? -2.9f : 0.9f) + glm::vec3(0.0f, 1.0f, 0.0f);
+		facing = std::atan2(right.z, right.x);
+		return true;
+	}
+
+	int SessionState::StageBlastCount() const
+	{
+		return m_App.GetSettings().FireStage == 2 ? 6 : 1;
+	}
+
+	float SessionState::StageBlast(int index, glm::vec3& ground, float& power) const
+	{
+		constexpr float Period = 2.4f;
+		struct Spot
+		{
+			float Across;
+			float Along;
+			float Power;
+			float Delay;
+		};
+		static constexpr Spot Spots[] = {
+			{ -5.5f, 2.5f, 1.0f, 0.0f },
+			{ 0.0f, 2.9f, 1.0f, 0.15f },
+			{ 5.5f, 2.5f, 1.0f, 0.3f },
+			{ -4.5f, -2.6f, 0.0f, 0.08f },
+			{ 0.0f, -2.9f, 0.45f, 0.22f },
+			{ 4.5f, -2.6f, 0.75f, 0.36f },
+		};
+		if (m_App.GetSettings().FireStage == 2)
+		{
+			const Spot& spot = Spots[index];
+			power = spot.Power;
+			ground = StageSpot(spot.Across, spot.Along);
+			if (m_App.GetSettings().StageTime >= 0.0f)
+				return m_App.GetSettings().StageTime - spot.Delay;
+			return std::fmod(m_Time - spot.Delay + 10.0f * Period, Period);
+		}
+		power = int(std::floor(m_Time / Period)) % 2 == 0 ? 1.0f : 0.0f;
+		ground = StageSpot(1.8f, 0.3f);
+		return std::fmod(m_Time, Period);
+	}
+
+	FireballLook SessionState::StageCharge() const
+	{
+		FireballLook look;
+		look.Power = std::min(std::fmod(m_Time / 3.0f, 1.0f) * 1.25f, 1.0f);
+		look.Size = FireballShot(look.Power).Size;
+		look.Center = StageSpot(-2.2f, 0.4f) + glm::vec3(0.0f, FireballHoldHeight, 0.0f);
+		look.Ground = look.Center.y - FireballHoldHeight;
+		look.Grounded = true;
+		return look;
+	}
+
+	void SessionState::DrawFireStage(WorldRenderer& renderer) const
+	{
+		glm::vec3 center;
+		float facing = 0.0f;
+		if (StageBolt(0, center, facing))
+		{
+			const glm::vec3 color = SkillColor(AbilityId::EmberBolt);
+			DrawProjectileVisual(renderer, AbilityId::EmberBolt, center, facing, color, m_Time, 900u);
+			renderer.DrawLight({ .Position = center, .Radius = 2.8f, .Color = glm::pow(color, glm::vec3(2.2f)) * (SpellLightGain * 0.7f) });
+			renderer.DrawTrail(40ull << 40, center, ProjectileTrail(AbilityId::EmberBolt));
+		}
+		if (StageBolt(1, center, facing))
+		{
+			FireballLook look;
+			look.Center = center;
+			look.Forward = Heading(facing);
+			look.Size = FireballFullSize;
+			look.Power = 1.0f;
+			look.Ground = center.y - 1.0f;
+			look.Grounded = true;
+			look.Flying = true;
+			DrawPurpleFireball(renderer, look, m_Time, 901u);
+			renderer.DrawTrail(41ull << 40, center, ProjectileTrail(AbilityId::PurpleFireball, 1.0f, FireballFullSize));
+			renderer.DrawLight({ .Position = center, .Radius = 5.0f, .Color = FireballColor(1.0f) * (SpellLightGain * 2.0f) });
+		}
+		const FireballLook charge = StageCharge();
+		DrawPurpleFireball(renderer, charge, m_Time, 902u);
+		for (int i = 0; i < StageBlastCount(); i++)
+		{
+			glm::vec3 ground;
+			float power = 0.0f;
+			const float age = StageBlast(i, ground, power);
+			const float radius = GetAbility(AbilityId::PurpleFireball).ImpactRadius + (FireballFullBlast - GetAbility(AbilityId::PurpleFireball).ImpactRadius) * power;
+			DrawFireballBlast(renderer, { .Center = ground + glm::vec3(0.0f, FireballBlastHeight, 0.0f), .Ground = ground, .Radius = radius, .Power = power, .Age = age }, 903u + uint32_t(i));
+		}
 	}
 }

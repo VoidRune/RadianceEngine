@@ -85,6 +85,7 @@ namespace Game
 			writer.Write(traits.OverloadEvery);
 			writer.Write(traits.TempoStep);
 			writer.Write(traits.SnapWindow);
+			writer.Write(traits.WeaveStacks);
 			writer.Write(traits.StallRegen);
 			writer.Write(traits.OvercastCost);
 		}
@@ -115,6 +116,7 @@ namespace Game
 			traits.OverloadEvery = reader.Read<uint8_t>();
 			traits.TempoStep = reader.Read<float>();
 			traits.SnapWindow = reader.Read<float>();
+			traits.WeaveStacks = reader.Read<uint8_t>();
 			traits.StallRegen = reader.Read<float>();
 			traits.OvercastCost = reader.Read<float>();
 			return !reader.Failed();
@@ -351,7 +353,9 @@ namespace Game
 			writer.Write(state.Overload);
 			writer.Write(state.RecastAbility);
 			writer.Write(state.ManaStall);
-			writer.Write(state.Momentum);
+			writer.Write(state.Weave);
+			writer.Write(state.WeaveSpell);
+			writer.Write(state.WeaveFade);
 			writer.Write(state.Tempo);
 			writer.Write(state.TempoStacks);
 			writer.Write(state.Snap);
@@ -399,7 +403,9 @@ namespace Game
 			state.Overload = reader.Read<uint8_t>();
 			state.RecastAbility = reader.Read<uint8_t>();
 			state.ManaStall = reader.Read<float>();
-			state.Momentum = reader.Read<float>();
+			state.Weave = reader.Read<uint8_t>();
+			state.WeaveSpell = reader.Read<uint8_t>();
+			state.WeaveFade = reader.Read<float>();
 			state.Tempo = reader.Read<float>();
 			state.TempoStacks = reader.Read<uint8_t>();
 			state.Snap = reader.Read<float>();
@@ -913,6 +919,7 @@ namespace Game
 			{
 				WriteLoadout(writer, local.Brawl);
 				writer.Write(local.Shield);
+				writer.Write(uint16_t(std::clamp(local.BloodShield, 0, 65535)));
 			}
 			if (status.Mode == GameMode::Hub)
 				writer.Write(local.Starlit);
@@ -1009,6 +1016,7 @@ namespace Game
 				if (!ReadLoadout(reader, local.Brawl))
 					return false;
 				local.Shield = reader.Read<uint8_t>();
+				local.BloodShield = reader.Read<uint16_t>();
 			}
 		}
 		return !reader.Failed();

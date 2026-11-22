@@ -766,7 +766,17 @@ namespace Game
 		if (controller && damage.Pvp)
 			amount = std::min(amount, std::max(1, int32_t(float(controller->Traits.MaxHealth) * PvpMaxHitFraction)));
 		if (controller && world.IsDamageBrawl())
+		{
 			amount = world.ShapeBrawlDamage(controller->State, controller->PlayerId, damage.Attacker, damage.Ability, damage.Unmitigated, controller->State.Chill > 0.0f, amount);
+			if (amount <= 0)
+			{
+				const Transform* body = entities.TryGet<Transform>(target);
+				const Replicated* replicated = entities.TryGet<Replicated>(target);
+				if (body && replicated)
+					world.RecordHit({ .Target = replicated->NetId, .Position = body->Position, .Damage = 0, .OnPlayer = true, .Guarded = true });
+				return true;
+			}
+		}
 		if (world.IsShardfall())
 		{
 			if (controller)

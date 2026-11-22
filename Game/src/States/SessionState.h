@@ -52,6 +52,7 @@ namespace Game
 		void Update(float dt) override;
 		void DrawUi() override;
 		bool Render(Rdn::RenderGraph& graph, Rdn::RGImage target, Rdn::Extent2D extent, uint32_t frameIndex) override;
+		bool NeedsFullRate() const override { return m_Server && m_Server->GetPlayerCount() > 1; }
 
 	private:
 		enum class Critter : uint8_t
@@ -94,6 +95,9 @@ namespace Game
 		struct EntityFx
 		{
 			uint8_t LastHealth = 255;
+			float Trail = 1.0f;
+			float TrailHold = 0.0f;
+			float BloodFlash = 0.0f;
 			float Flash = 0.0f;
 			glm::vec3 FlashColor{ 1.0f };
 			float Stop = 0.0f;
@@ -475,6 +479,13 @@ namespace Game
 		void DrawChess();
 		void DrawChessTable(WorldRenderer& renderer) const;
 		void DrawDistortionStage(WorldRenderer& renderer) const;
+		std::vector<LevelFire> StageFires() const;
+		void DrawFireStage(WorldRenderer& renderer) const;
+		glm::vec3 StageSpot(float across, float along) const;
+		bool StageBolt(int index, glm::vec3& center, float& facing) const;
+		int StageBlastCount() const;
+		float StageBlast(int index, glm::vec3& ground, float& power) const;
+		FireballLook StageCharge() const;
 		void UpdateChess();
 		void CommitChessMove(uint8_t from, uint8_t to, Chess::Piece promotion);
 		Chess::Position ShownChessPosition() const;
@@ -525,6 +536,7 @@ namespace Game
 		float m_AimDistance = 0.0f;
 		float m_Time = 0.0f;
 		uint8_t m_SeenSurge = 0;
+		float m_WardUpAt = -1.0f;
 		float m_SurgeTime = -10.0f;
 		float m_Fps = 0.0f;
 		float m_FpsWindow = 0.0f;
@@ -595,6 +607,15 @@ namespace Game
 			uint32_t Key = 0;
 		};
 		std::vector<Flame> m_Flames;
+		struct FireballBurst
+		{
+			glm::vec3 Ground{ 0.0f };
+			float Radius = 1.0f;
+			float Power = 0.0f;
+			float Age = 0.0f;
+			uint32_t Seed = 0;
+		};
+		std::vector<FireballBurst> m_FireballBursts;
 		uint32_t m_FlameKeys = 0;
 		int32_t m_HoveredPortal = -1;
 		int32_t m_ReachablePortal = -1;

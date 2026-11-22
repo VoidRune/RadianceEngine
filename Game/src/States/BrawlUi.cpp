@@ -1,6 +1,7 @@
 #include "SessionState.h"
 #include "App/GameApp.h"
 #include "Audio/GameAudio.h"
+#include "Rendering/LevelArt.h"
 #include "Rendering/Models.h"
 #include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
@@ -32,7 +33,8 @@ namespace Game
 		static_assert(std::size(CardKeys) == CardChoices);
 		constexpr float CardNewsSeconds = 9.0f;
 		constexpr float ApexNewsSeconds = 4.5f;
-		constexpr glm::vec3 QuicksilverGlow{ 0.82f, 0.9f, 1.05f };
+		constexpr glm::vec3 ArchmageGlow{ 1.0f, 0.78f, 0.46f };
+		constexpr glm::vec3 BloodShieldGlow{ 0.95f, 0.06f, 0.14f };
 		constexpr float CrumbleRange = 18.0f;
 		constexpr float StrikeSight = 24.0f;
 		constexpr float StrikeRumble = 0.5f;
@@ -868,8 +870,10 @@ namespace Game
 		const float awake = live ? std::clamp((clock - RingStart + RingWarning) / (RingSettle - RingStart + RingWarning), 0.0f, 1.0f) : 0.0f;
 		const glm::vec3 summit = Ground(peak.Center);
 		const float glow = 0.16f + 0.25f * build + 0.9f * awake + 1.2f * m_RitualPulse;
-		DrawRuneCircle(renderer, { .Center = summit, .Radius = peak.Ritual - 0.1f, .Color = RitualBlue, .Intensity = glow, .Spin = 0.0f, .Seed = level->Seed % 7u + 3u });
-		DrawRuneCircle(renderer, { .Center = summit, .Radius = peak.Ritual + 1.65f, .Color = RitualBlue * 0.85f, .Intensity = 0.7f * glow, .Spin = 0.0f, .Inner = (peak.Ritual + 0.95f) / (peak.Ritual + 1.65f), .Seed = level->Seed % 5u + 11u });
+		const float charge = std::clamp(0.25f * build + awake + m_RitualPulse, 0.0f, 1.0f);
+		const SummitCourse border = SummitBorderCourse();
+		DrawSpellMark(renderer, { .Center = summit, .Radius = border.Outer, .Yaw = border.Turn, .Color = RitualBlue, .Intensity = 2.0f * glow, .Progress = charge, .Kind = SpellMarkKind::Ritual, .Seed = level->Seed % 7u + 3u, .Inner = border.Inner, .Cells = uint32_t(border.Count) });
+		DrawSpellMark(renderer, { .Center = summit, .Radius = peak.Ritual + 1.65f, .Color = RitualBlue * 0.85f, .Intensity = 1.5f * glow, .Progress = charge, .Kind = SpellMarkKind::Ritual, .Seed = level->Seed % 5u + 11u });
 		if (m_RitualPulse > 0.0f)
 		{
 			const glm::vec3 spire = summit + glm::vec3(0.0f, SpireTop, 0.0f);
@@ -1007,22 +1011,42 @@ namespace Game
 			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 1.95f, 0.0f), 0.32f, MarkGlow * (1.0f * pulse), 0.025f);
 			DrawGlow(renderer, base + glm::vec3(0.0f, 1.95f, 0.0f), 0.3f, MarkGlow * (0.2f * pulse));
 		}
-		if (entity.Has(EntityFlags::Quicksilver))
+		if (entity.Has(EntityFlags::BloodShield) && !entity.Has(EntityFlags::Dead))
+		{
+			const float pulse = 0.75f + 0.25f * std::sin(m_Time * 4.5f + float(entity.NetId) * 0.8f);
+			const auto fx = m_Fx.find(entity.NetId);
+			const float flash = fx != m_Fx.end() ? fx->second.BloodFlash : 0.0f;
+			float strength = 0.85f;
+			if (entity.NetId == m_Client.GetPlayerNetId())
+			{
+				const LocalPlayerState& local = m_Client.GetLocalPlayer();
+				const float cap = std::max(float(local.MaxHealth) / (1.0f + BloodMagicHealth) * BloodMagicOverheal, 1.0f);
+				strength = 0.45f + 0.55f * std::clamp(float(local.BloodShield) / cap, 0.0f, 1.0f);
+			}
+			DrawBloodBubble(renderer, base + glm::vec3(0.0f, 0.92f, 0.0f), m_Camera.Eye, 0.98f, BloodShieldGlow * (0.75f + 0.25f * pulse), strength, flash, entity.NetId);
+		}
+		const bool crescendo = entity.Has(EntityFlags::Archmage);
+		const uint32_t weave = crescendo ? ArchmageStacks : entity.NetId == m_Client.GetPlayerNetId() ? m_Client.GetPredictedState().Weave : 0u;
+		if (weave > 0)
+		{
+			const float spin = m_Time * (crescendo ? 3.2f : 1.9f) + float(entity.NetId) * 0.9f;
+			for (uint32_t mote = 0; mote < weave; mote++)
+			{
+				const float angle = spin + 2.0f * Pi * float(mote) / float(ArchmageStacks);
+				const glm::vec3 point = base + glm::vec3(0.62f * std::cos(angle), 1.05f + 0.08f * std::sin(angle * 2.0f + m_Time * 3.0f), 0.62f * std::sin(angle));
+				DrawGlow(renderer, point, crescendo ? 0.2f : 0.15f, ArchmageGlow * (crescendo ? 1.3f : 0.8f), 0.35f);
+			}
+		}
+		if (crescendo)
 		{
 			const float pulse = 0.75f + 0.25f * std::sin(m_Time * 9.0f + float(entity.NetId));
-			DrawGroundGlow(renderer, base, 0.95f, QuicksilverGlow, 0.6f * pulse);
-			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 0.8f, QuicksilverGlow * (0.9f * pulse), 0.03f);
-			DrawGlow(renderer, base + glm::vec3(0.0f, 0.9f, 0.0f), 0.8f, QuicksilverGlow * (0.12f * pulse), 0.5f);
-		}
-		else if (entity.NetId == m_Client.GetPlayerNetId() && HasCard(m_Client.GetLocalPlayer().Brawl.Cards, CardId::Quicksilver))
-		{
-			const float charge = std::clamp(m_Client.GetPredictedState().Momentum / QuicksilverSeconds, 0.0f, 1.0f);
-			if (charge > 0.05f)
-				DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 0.3f + 0.5f * charge, QuicksilverGlow * (0.45f * charge), 0.022f);
+			DrawGroundGlow(renderer, base, 0.95f, ArchmageGlow, 0.55f * pulse);
+			DrawFloatingRing(renderer, base + glm::vec3(0.0f, 0.06f, 0.0f), 0.8f, ArchmageGlow * (0.9f * pulse), 0.03f);
+			DrawGlow(renderer, base + glm::vec3(0.0f, 1.05f, 0.0f), 0.8f, ArchmageGlow * (0.12f * pulse), 0.5f);
 		}
 		if (entity.Has(EntityFlags::Barrier))
 			if (const auto fx = m_Fx.find(entity.NetId); fx != m_Fx.end())
-				DrawCrystalWard(renderer, base, fx->second.CrystalForm, m_Time, entity.NetId);
+				DrawCrystalWard(renderer, base, m_Camera.Eye, fx->second.CrystalForm, m_Time, entity.NetId);
 	}
 
 	void SessionState::DrawSkyWarnings()
@@ -1388,7 +1412,7 @@ namespace Game
 		const float fade = std::clamp(news.Age / 0.25f, 0.0f, 1.0f) * std::clamp((ApexNewsSeconds - news.Age) / 0.25f, 0.0f, 1.0f);
 		const float solid = std::min(1.0f, fade * 2.0f);
 		const UiColor apex = WithAlpha(ApexColor(m_Time), fade);
-		const UiRect panel = UiRect::Centered({ ui.GetSize().x * 0.5f, 66.0f + 10.0f * (1.0f - fade) }, { 580.0f, 104.0f });
+		const UiRect panel = UiRect::Centered({ ui.GetSize().x * 0.5f, 66.0f + 10.0f * (1.0f - fade) }, { 720.0f, 104.0f });
 		draw.Shadow(panel, 22.0f, 28.0f, WithAlpha(apex, 0.4f * fade), { 0.0f, 0.0f });
 		draw.Rect(panel, { .Fill = Rgba(0.1f, 0.05f, 0.16f, solid), .FillBottom = Rgba(0.04f, 0.02f, 0.07f, solid), .Border = apex, .BorderWidth = 2.0f, .Glow = WithAlpha(apex, 0.22f * fade), .GlowSize = 22.0f, .Chamfer = 14.0f, .Stars = 0.5f * fade });
 		draw.Rect(panel.Shrink(5.0f), { .Border = WithAlpha(apex, 0.35f * fade), .BorderWidth = 1.0f, .Chamfer = 11.0f });

@@ -49,6 +49,21 @@ namespace Game
 			return float(Hash(x, y, salt) & 0xFFFF) / 65535.0f;
 		}
 
+		constexpr float SummitRingEdges[] = { 0.9f, 1.55f, 2.2f, 2.88f, 3.56f };
+		constexpr float SummitStoneLength = 0.78f;
+		constexpr float SummitStoneGap = 0.04f;
+		constexpr int32_t SummitBorderRing = int32_t(std::size(SummitRingEdges)) - 2;
+
+		SummitCourse CourseOf(int32_t ring)
+		{
+			SummitCourse course;
+			course.Inner = SummitRingEdges[ring] + SummitStoneGap * 0.5f;
+			course.Outer = SummitRingEdges[ring + 1] - SummitStoneGap * 0.5f;
+			course.Count = std::max(6, int32_t(std::lround(TwoPi * 0.5f * (course.Inner + course.Outer) / SummitStoneLength)));
+			course.Turn = Unit(ring, 3, 0xA17Bu) * TwoPi;
+			return course;
+		}
+
 		glm::mat4 RotationY(float angle)
 		{
 			const float c = std::cos(angle);
@@ -107,11 +122,6 @@ namespace Game
 		glm::vec3 Uniform(float scale)
 		{
 			return glm::vec3(scale);
-		}
-
-		ArtPart Flame(glm::vec3 offset, float radius)
-		{
-			return { .Offset = offset, .Glow = radius };
 		}
 
 		ArtPart Fire(glm::vec3 offset, FireKind kind, float scale = 1.0f)
@@ -225,7 +235,7 @@ namespace Game
 			case PropId::WallTorch:
 				return { { {
 					{ .Mesh = "torch_mounted", .Offset = { 0.0f, 1.5f, 0.0f }, .Scale = Uniform(0.85f) },
-					Flame({ 0.0f, 1.97f, -0.38f }, 0.09f),
+					Fire({ 0.0f, 1.94f, -0.38f }, FireKind::Torch),
 				} } };
 			case PropId::PottedPlant:
 				return { { {
@@ -4084,9 +4094,6 @@ namespace Game
 
 			void SummitStones()
 			{
-				constexpr float RingEdges[] = { 0.9f, 1.55f, 2.2f, 2.88f, 3.56f };
-				constexpr float StoneLength = 0.78f;
-				constexpr float Gap = 0.04f;
 				const std::optional<uint32_t> material = m_Renderer.FindMaterialSlot("PavingStone");
 				if (!material)
 					return;
@@ -4095,25 +4102,26 @@ namespace Game
 				const PavingStyle ritual{ .Shoulder = 0.86f, .Dome = 0.008f, .Rim = 0.014f, .Bed = 0.08f, .Tilt = 0.012f, .Lift = 0.008f, .Texture = 0.8f, .Light = { 0.86f, 0.88f, 0.92f }, .Dark = { 0.46f, 0.47f, 0.5f }, .Salt = 0xA17Au };
 				const PavingStyle border{ .Shoulder = 0.84f, .Dome = 0.006f, .Rim = 0.016f, .Bed = 0.14f, .Tilt = 0.01f, .Lift = 0.004f, .Texture = 0.75f, .Light = { 0.62f, 0.64f, 0.7f }, .Dark = { 0.32f, 0.33f, 0.37f }, .Salt = 0xA17Du };
 				PavingBatch batch;
-				for (int32_t ring = 0; ring + 1 < int32_t(std::size(RingEdges)); ring++)
+				for (int32_t ring = 0; ring + 1 < int32_t(std::size(SummitRingEdges)); ring++)
 				{
-					const float inner = RingEdges[ring] + Gap * 0.5f;
-					const float outer = RingEdges[ring + 1] - Gap * 0.5f;
-					const int32_t count = std::max(6, int32_t(std::lround(TwoPi * 0.5f * (inner + outer) / StoneLength)));
-					const float turn = Unit(ring, 3, 0xA17Bu) * TwoPi;
+					const SummitCourse course = CourseOf(ring);
+					const float inner = course.Inner;
+					const float outer = course.Outer;
+					const int32_t count = course.Count;
+					const float wobble = ring == SummitBorderRing ? 0.0f : 0.3f;
 					std::vector<float> cuts(size_t(count) + 1);
 					for (int32_t k = 0; k <= count; k++)
-						cuts[size_t(k)] = turn + TwoPi * (float(k % count) + (k % count == 0 ? 0.0f : 0.3f * (Unit(ring, k, 0xA17Cu) - 0.5f))) / float(count) + (k == count ? TwoPi : 0.0f);
+						cuts[size_t(k)] = course.Turn + TwoPi * (float(k % count) + (k % count == 0 ? 0.0f : wobble * (Unit(ring, k, 0xA17Cu) - 0.5f))) / float(count) + (k == count ? TwoPi : 0.0f);
 					for (int32_t k = 0; k < count; k++)
 					{
-						const float from = cuts[size_t(k)] + Gap * 0.5f / inner;
-						const float to = cuts[size_t(k + 1)] - Gap * 0.5f / inner;
+						const float from = cuts[size_t(k)] + SummitStoneGap * 0.5f / inner;
+						const float to = cuts[size_t(k + 1)] - SummitStoneGap * 0.5f / inner;
 						Outline outline;
 						for (int32_t s = 0; s <= 2; s++)
 							outline.push_back(middle + FromAngle(std::lerp(from, to, float(s) / 2.0f)) * inner);
 						for (int32_t s = 2; s >= 0; s--)
 							outline.push_back(middle + FromAngle(std::lerp(from, to, float(s) / 2.0f)) * outer);
-						LayStone(batch, outline, ring + 2 == int32_t(std::size(RingEdges)) ? border : ritual, floor, ring, k);
+						LayStone(batch, outline, ring == SummitBorderRing ? border : ritual, floor, ring, k);
 					}
 				}
 				if (batch.Indices.empty())
@@ -5954,6 +5962,11 @@ namespace Game
 			std::vector<Scorch> m_Scorches;
 			std::vector<Vec2> m_Formations;
 		};
+	}
+
+	SummitCourse SummitBorderCourse()
+	{
+		return CourseOf(SummitBorderRing);
 	}
 
 	void RegisterPeakMeshes(WorldRenderer& renderer)

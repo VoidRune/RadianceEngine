@@ -40,6 +40,8 @@ namespace Rdn
 		void SetFullscreen(bool fullscreen);
 		bool IsFullscreen() const { return m_IsFullscreen; }
 		bool IsMinimized() const;
+		bool IsFocused() const;
+		uint32_t GetRefreshRate() const;
 		void SetTitle(const std::string& title);
 		std::string GetClipboardText() const;
 		void SetClipboardText(const std::string& text);

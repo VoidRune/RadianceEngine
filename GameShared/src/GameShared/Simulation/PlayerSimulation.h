@@ -45,6 +45,7 @@ namespace Game
 		uint8_t Released = 0;
 		uint8_t Recast = 0;
 		uint8_t Overloaded = 0;
+		uint8_t Weave = 0;
 		float BloodCost = 0.0f;
 		float ManaBefore = 0.0f;
 		float Charge = 0.0f;
@@ -68,6 +69,8 @@ namespace Game
 
 	bool IsInPortalRange(const Level& level, Vec2 position, uint32_t portal);
 	bool CanCast(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
+	float SpellCost(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
+	bool IsCrescendo(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
 	bool IsOverloaded(const PlayerState& state, const PlayerTraits& traits, uint32_t slot);
 	bool IsRecastable(AbilityId ability);
 	bool AwaitsNovaRecast(const PlayerState& state, uint32_t slot);

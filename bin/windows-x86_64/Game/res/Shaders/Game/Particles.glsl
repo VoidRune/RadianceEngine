@@ -78,6 +78,9 @@ const uint ShapeStar = 4u;
 const uint ShapeShard = 5u;
 const uint ShapeDebris = 6u;
 const uint ShapeFlame = 7u;
+const uint ShapeFire = 19u;
+const uint ShapeFlameSheet = 20u;
+const uint ShapeFlameWall = 21u;
 
 const uint AlignBillboard = 0u;
 const uint AlignVelocity = 1u;

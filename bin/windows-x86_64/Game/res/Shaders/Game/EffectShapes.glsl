@@ -7,6 +7,8 @@ const uint ShapeBeam = 13u;
 const uint ShapeInferno = 14u;
 const uint ShapeHex = 15u;
 const uint ShapeLeaf = 16u;
+const uint ShapeBubble = 17u;
+const uint ShapePearl = 18u;
 
 const uint DecalRunes = 0u;
 const uint DecalSector = 1u;
@@ -31,6 +33,7 @@ const uint DecalContact = 19u;
 const uint DecalAftershockMark = 20u;
 const uint DecalResonanceMark = 21u;
 const uint DecalHeartRune = 22u;
+const uint DecalRitualMark = 23u;
 
 const float Tau = 6.28318531;
 
@@ -560,8 +563,71 @@ vec3 ResonanceMarkShape(vec2 p, float radius, float pixel, float progress, float
 	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4)) * vec3(grow, grow, 1.0);
 }
 
-vec3 SpellMarkShape(uint shape, vec2 p, float radius, float pixel, float progress, float appear, uint seed, float time)
+vec3 RitualMarkShape(vec2 p, float radius, float inner, float pixel, float progress, uint seed, float time)
 {
+	float r = length(p);
+	if (r > radius + 0.25)
+		return vec3(0.0);
+	float angle = atan(p.y, p.x);
+	float t = clamp(progress, 0.0, 1.0);
+	uint stones = seed >> 16u;
+	bool paved = stones > 0u && inner > 0.0;
+	uint salt = seed & 0xFFFFu;
+	float outer = paved ? radius : radius - 0.12;
+	float band = paved ? radius - inner : min(0.62, radius * 0.2);
+	float bottom = outer - band;
+	float mid = 0.5 * (bottom + outer);
+	float crawl = pow(0.5 + 0.5 * cos(angle * 2.0 - time * 0.5 + float(salt & 31u)), 6.0);
+	vec3 mark = vec3(0.0);
+	if (paved && (r < bottom - 0.05 || r > outer + 0.05))
+		return vec3(0.0);
+
+	if (!paved)
+	{
+		float arcs = smoothstep(0.36, 0.5, ValueNoise(vec2(angle * radius * 0.8 + float(salt & 63u), 3.7)));
+		float rimWidth = 0.035 * (0.55 + 0.9 * ValueNoise(vec2(angle * radius * 6.0, 9.1 + float(salt & 15u))));
+		float rim = (1.0 - smoothstep(rimWidth - pixel, rimWidth + pixel, abs(r - radius))) * arcs;
+		mark.x = max(mark.x, rim * 0.75);
+		mark = MarkAccumulate(mark, rim * (0.3 + 0.3 * crawl) * mix(0.6, 1.0, t), 0.0);
+	}
+
+	float cells = paved ? float(stones) : max(6.0, floor(Tau * mid / (band * 1.3)));
+	float spun = fract(angle / Tau) * cells;
+	float cell = floor(spun);
+	float cellWidth = Tau * mid / cells;
+	uint key = uint(cell) + salt * 131u;
+	float roll = HashUnit(key * 7u + 3u);
+	float breathe = 0.5 + 0.5 * sin(time * 0.8 + HashUnit(key * 29u) * Tau);
+	float lit = mix(0.5, 1.0, t) * (0.75 + 0.25 * breathe) * (0.85 + 0.45 * crawl);
+	if (roll < (paved ? 0.7 : 0.6))
+	{
+		float lift = paved ? 0.0 : (HashUnit(key * 13u + 5u) - 0.5) * band * 0.3;
+		float scale = band * (paved ? 0.34 : 0.4) * mix(0.85, 1.05, HashUnit(key * 17u + 9u));
+		vec2 g = vec2((fract(spun) - 0.5) * cellWidth, r - mid - lift) / scale;
+		if (abs(g.y) < 1.6)
+		{
+			vec4 glyph = RuneGlyph(g, key, pixel / scale);
+			mark.x = max(mark.x, glyph.x * 0.85);
+			mark.y += (glyph.y * 0.45 + glyph.z * 0.95 + glyph.w * 0.2) * lit;
+			mark.z += glyph.z * 0.5 * lit * t;
+		}
+	}
+	else if (!paved)
+	{
+		vec2 dotAt = vec2((HashUnit(key * 41u) - 0.5) * 0.6, (HashUnit(key * 43u) - 0.5) * 0.5) * band;
+		vec2 q = vec2((fract(spun) - 0.5) * cellWidth, r - mid) - dotAt;
+		float blot = band * 0.07 * (0.6 + 0.8 * HashUnit(key * 47u));
+		float dotInk = 1.0 - smoothstep(blot - pixel, blot + pixel, length(q) + (ValueNoise(q * 40.0 + float(salt & 63u)) - 0.5) * blot * 0.6);
+		mark.x = max(mark.x, dotInk * 0.7);
+		mark.y += dotInk * 0.25 * lit;
+	}
+	return vec3(mark.x, mark.y, mark.z / max(mark.y, 1e-4));
+}
+
+vec3 SpellMarkShape(uint shape, vec2 p, float radius, float inner, float pixel, float progress, float appear, uint seed, float time)
+{
+	if (shape == DecalRitualMark)
+		return RitualMarkShape(p, radius, inner, pixel, progress, seed, time);
 	if (shape == DecalCometMark)
 		return CometMarkShape(p, radius, pixel, progress, appear, seed, time);
 	if (shape == DecalStormMark)
@@ -1161,6 +1227,127 @@ float HexShape(vec2 uv, uint seed, vec4 params, float pixel)
 	return glow * inside;
 }
 
+float RimVeins(float angle, float r, float pixel, float salt, float time, float reachScale)
+{
+	float d = 1.0 - r;
+	float span = max(r, 0.05);
+	float vein = 0.0;
+	for (int i = 0; i < 14; i++)
+	{
+		float fi = float(i);
+		float h1 = fract(sin(fi * 12.9898 + salt) * 43758.5453);
+		float h2 = fract(sin(fi * 78.233 + salt * 1.7) * 24634.6345);
+		float h3 = fract(sin(fi * 39.425 + salt * 2.3) * 14375.8573);
+		float reach = (0.22 + 0.38 * h2) * reachScale;
+		if (d > reach + 0.02)
+			continue;
+		float t = clamp(d / reach, 0.0, 1.0);
+		float a = (fi + 0.8 * h1) * 0.44879895;
+		float meander = (0.75 * sin(d * (3.0 + 2.0 * h3) + fi * 2.1 + time * 0.2) + 0.12 * sin(d * 13.0 + fi * 5.3 - time * 0.15)) * d;
+		float diff = abs(mod(angle - a - meander + 3.14159265, 6.2831853) - 3.14159265) * span;
+		float w = (0.022 + 0.014 * h3) * pow(1.0 - t, 0.9) + 0.002;
+		vein = max(vein, (1.0 - smoothstep(w - pixel, w + pixel, diff)) * (0.65 + 0.35 * h3));
+		float start = reach * (0.3 + 0.3 * h1);
+		float stretch = reach * (0.4 + 0.3 * h2);
+		float s = d - start;
+		if (s >= 0.0 && s <= stretch)
+		{
+			float side = h3 > 0.5 ? 1.0 : -1.0;
+			float u = s / stretch;
+			float bend = a + meander + side * (0.55 * s * (1.0 - 0.6 * u) + 0.06 * sin(s * 9.0 + fi));
+			float bd = abs(mod(angle - bend + 3.14159265, 6.2831853) - 3.14159265) * span;
+			float bw = 0.6 * w * pow(1.0 - u, 0.8) + 0.0015;
+			vein = max(vein, (1.0 - smoothstep(bw - pixel, bw + pixel, bd)) * 0.75);
+		}
+	}
+	return vein;
+}
+
+float BubbleShape(vec2 uv, uint seed, vec4 params, float pixel, float time)
+{
+	float r = length(uv);
+	if (r >= 1.0)
+		return 0.0;
+	float z = sqrt(max(1.0 - r * r, 0.0));
+	float silhouette = 1.0 - smoothstep(1.0 - pixel * 2.0, 1.0, r);
+	float salt = float(seed & 255u) * 0.71;
+	float strength = params.x > 0.0 ? params.x : 1.0;
+	float flash = params.y;
+	if (params.w > 0.5)
+	{
+		float shell = pow(1.0 - z, 3.5) * 0.9 + pow(1.0 - z, 1.2) * 0.06;
+		float shimmer = 0.6 + 0.4 * sin(uv.y * 9.0 + uv.x * 3.0 - time * 1.4);
+		vec2 p = Rotate(uv / max(z, 0.3), time * 0.08) * 2.6 + float(seed & 63u) * 1.7;
+		vec2 cell = floor(p);
+		vec2 local = p - cell;
+		float first = 8.0;
+		float second = 8.0;
+		uint owner = 0u;
+		for (int y = -1; y <= 1; y++)
+			for (int x = -1; x <= 1; x++)
+			{
+				vec2 g = vec2(float(x), float(y));
+				ivec2 c = ivec2(cell + g) + 1024;
+				uint h = uint(c.x) * 73856093u ^ uint(c.y) * 19349663u;
+				vec2 d = g + vec2(HashUnit(h), HashUnit(h * 7u + 3u)) * 0.8 + 0.1 - local;
+				float dd = dot(d, d);
+				if (dd < first)
+				{
+					second = first;
+					first = dd;
+					owner = h;
+				}
+				else if (dd < second)
+					second = dd;
+			}
+		float border = sqrt(second) - sqrt(first);
+		float crack = 1.0 - smoothstep(0.015, 0.06, border);
+		float facet = HashUnit(owner * 13u + 5u);
+		float glint = pow(0.5 + 0.5 * sin(time * 1.3 + facet * 30.0), 12.0);
+		float reach = 0.12 + 0.88 * pow(1.0 - z, 0.8);
+		float fracture = (crack * 0.32 + facet * 0.025 + glint * 0.06) * reach;
+		return (shell * shimmer + fracture + flash * 0.3 * pow(1.0 - z, 2.0)) * strength * silhouette;
+	}
+	vec2 sphere = vec2(asin(clamp(uv.x / max(sqrt(1.0 - uv.y * uv.y), 1e-3), -1.0, 1.0)), asin(clamp(uv.y, -1.0, 1.0)));
+	vec2 drift = vec2(time * 0.04, time * 0.09);
+	float thick = 1.0 / max(z, 0.07);
+	float edge = smoothstep(0.1, 0.95, 1.0 - z);
+	float pool = 0.75 + 0.5 * ValueNoise(sphere * 1.1 + drift + salt);
+	float veins = RimVeins(atan(uv.y, uv.x), r, pixel * 1.2, salt, time, 0.75);
+	if (params.z > 0.5)
+	{
+		float film = 1.0 - exp(-0.075 * thick * pool * (0.6 + 0.4 * strength));
+		return clamp(film + veins * 0.66, 0.0, 0.92) * silhouette;
+	}
+	float rim = pow(1.0 - z, 4.0) * (1.4 + 0.8 * flash) + pow(1.0 - z, 1.6) * 0.18;
+	vec2 glint = uv - vec2(-0.36, 0.44);
+	float wet = exp(-dot(glint, glint) * 90.0) * 0.9 + exp(-dot(glint, glint) * 14.0) * 0.12;
+	return ((rim * (0.75 + 0.25 * strength) + flash * 0.2 * edge) * (1.0 - 0.45 * veins) + veins * 0.16 * (0.4 + 0.6 * edge) + wet) * silhouette;
+}
+
+float PearlShape(vec2 uv, uint seed, float time)
+{
+	float r = length(uv);
+	if (r >= 1.0)
+		return 0.0;
+	float angle = atan(uv.y, uv.x);
+	float facets = 7.0;
+	float wedge = 6.2831853 / facets;
+	float turn = float(seed & 63u) * 0.37 + time * 0.6;
+	float local = mod(angle + turn, wedge);
+	float mid = angle - local + 0.5 * wedge;
+	bool table = r < 0.46;
+	vec3 n = table ? vec3(0.0, 0.0, 1.0) : normalize(vec3(cos(mid) * 0.85, sin(mid) * 0.85, 1.0));
+	float light = max(dot(n, normalize(vec3(-0.45, 0.55, 0.7))), 0.0);
+	float shade = 0.25 + 0.75 * light * light;
+	float seam = table ? 0.0 : 1.0 - smoothstep(0.0, 0.05, min(local, wedge - local) * r);
+	float girdle = exp(-pow((r - 0.46) / 0.03, 2.0));
+	float glint = pow(max(dot(n, normalize(vec3(-0.3, 0.4, 0.87))), 0.0), 60.0) * 1.4;
+	float core = exp(-r * r * 6.0) * 0.5;
+	float rim = pow(r, 6.0) * 0.6;
+	return (shade * 0.7 + core + seam * 0.6 + girdle * 0.5 + glint + rim) * (1.0 - smoothstep(0.92, 1.0, r));
+}
+
 float LeafShape(vec2 uv, uint seed, float pixel)
 {
 	float spin = float(seed % 628u) * 0.01;
@@ -1182,8 +1369,99 @@ float LeafShape(vec2 uv, uint seed, float pixel)
 	return max(blade, stem);
 }
 
+float PeriodicNoise(vec2 p, float period)
+{
+	vec2 cell = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	uint x0 = uint(mod(cell.x, period));
+	uint x1 = uint(mod(cell.x + 1.0, period));
+	uint y0 = uint(int(cell.y) + 4096);
+	uint y1 = y0 + 1u;
+	float a = float(Hash(x0 * 1973u + y0 * 9277u) & 0xFFFFu) / 65535.0;
+	float b = float(Hash(x1 * 1973u + y0 * 9277u) & 0xFFFFu) / 65535.0;
+	float c = float(Hash(x0 * 1973u + y1 * 9277u) & 0xFFFFu) / 65535.0;
+	float d = float(Hash(x1 * 1973u + y1 * 9277u) & 0xFFFFu) / 65535.0;
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+vec2 FlameWallField(vec2 uv, uint seed, vec4 params, float time)
+{
+	const float Period = 24.0;
+	float x = params.x + uv.x * params.z;
+	float y = uv.y * 0.5 + 0.5;
+	float t = time * 2.4;
+	float salt = float(seed & 63u) * 3.7;
+	float wx = PeriodicNoise(vec2(x, y * 1.6 - t + salt), Period) - 0.5;
+	float wy = PeriodicNoise(vec2(x + 7.0, y * 1.6 - t * 1.3 + salt), Period) - 0.5;
+	vec2 w = vec2(x + wx * 0.6, y + wy * 0.25);
+	float r1 = 1.0 - abs(PeriodicNoise(vec2(w.x * 2.0, w.y * 2.2 - t + salt), Period * 2.0) * 2.0 - 1.0);
+	float r2 = 1.0 - abs(PeriodicNoise(vec2(w.x * 4.0, w.y * 3.5 - t * 1.4 + salt + 11.0), Period * 4.0) * 2.0 - 1.0);
+	float filaments = pow(r1, 3.0) * 0.75 + pow(r2, 5.0) * 0.45;
+	float cloud = 0.6 * PeriodicNoise(vec2(w.x * 2.0, w.y * 1.8 - t + salt + 5.0), Period * 2.0) + 0.4 * PeriodicNoise(vec2(w.x * 4.0, w.y * 3.6 - t * 1.5 + salt + 23.0), Period * 4.0);
+	float swell = PeriodicNoise(vec2(x * 0.5, salt - t * 0.15), Period * 0.5);
+	float reach = params.y * (0.45 + 0.75 * cloud) * (0.55 + 0.75 * swell);
+	float body = (1.0 - smoothstep(reach * 0.35, reach, y)) * smoothstep(0.0, 0.06, y);
+	float alpha = clamp(body * (0.35 + 0.8 * cloud) + filaments * body * 1.1, 0.0, 1.0);
+	float heat = (body * (0.55 + 0.5 * cloud) + filaments * body * 0.7) * mix(1.15, 0.5, clamp(y / max(params.y, 0.05), 0.0, 1.0)) * params.w;
+	float side = cos(uv.x * 1.5707963);
+	float window = side * side * (1.0 - smoothstep(0.9, 1.0, uv.y));
+	return vec2(alpha, heat) * window;
+}
+
+vec2 FireField(uint shape, vec2 uv, uint seed, vec4 params, float time)
+{
+	if (shape == ShapeFlameWall)
+		return FlameWallField(uv, seed, params, time);
+	bool puff = shape == ShapeFire;
+	float age = puff ? params.x : 0.0;
+	float wild = puff ? 1.0 : params.x;
+	float speed = puff ? 1.4 : params.y;
+	vec2 p = vec2(uv.y, uv.x);
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.731;
+	float comet = puff ? 0.0 : clamp(params.z, 0.0, 1.0);
+	float body;
+	float rise;
+	float head = 0.0;
+	if (puff)
+	{
+		vec2 q = vec2(p.x * (1.3 + 0.9 * (p.y + 1.0)), p.y * 0.85 + 0.15);
+		body = exp(-3.2 * dot(q, q));
+		rise = clamp(p.y * 0.5 + 0.5, 0.0, 1.0);
+	}
+	else
+	{
+		float tail = p.y + mix(0.45, 0.6, comet);
+		vec2 q = vec2(p.x * mix(1.5, 1.7, comet) * (1.0 + mix(1.2, 0.7, comet) * clamp(tail, 0.0, 2.0)), tail * (tail > 0.0 ? mix(0.8, 0.6, comet) : mix(1.9, 2.4, comet)));
+		body = exp(-2.4 * dot(q, q));
+		rise = clamp(tail / mix(1.2, 1.5, comet), 0.0, 1.0);
+		vec2 c = vec2(p.x * 3.4, tail * 4.2);
+		head = comet * exp(-dot(c, c));
+		float round = clamp(params.w, 0.0, 1.0);
+		vec2 b = vec2(p.x, p.y > 0.0 ? p.y * 0.72 : p.y);
+		body = mix(body, exp(-3.4 * dot(b, b)), round);
+		rise = mix(rise, clamp(p.y * 0.6 + 0.4, 0.0, 1.0), round);
+		head = max(head, round * 0.4 * exp(-8.0 * dot(p, p)));
+	}
+	float t = time * speed;
+	vec2 warp = vec2(ValueNoise(p * 1.8 + vec2(0.0, -t) + offset), ValueNoise(p * 1.8 + vec2(5.2, -t * 1.3) + offset)) - 0.5;
+	vec2 w = p + warp * (0.45 + 0.3 * wild) * (1.0 - 0.7 * comet);
+	vec2 grain = mix(vec2(2.2, 0.9), vec2(4.2, 0.55), comet);
+	float r1 = 1.0 - abs(ValueNoise(vec2(w.x * grain.x, w.y * grain.y - t) + offset * 1.3) * 2.0 - 1.0);
+	float r2 = 1.0 - abs(ValueNoise(vec2(w.x * grain.x * 1.8, w.y * grain.y * 1.6 - t * 1.4) + offset * 2.1 + 11.0) * 2.0 - 1.0);
+	float filaments = pow(r1, 3.0) * 0.75 + pow(r2, 5.0) * 0.45;
+	float cloud = Fbm(w * 2.0 + vec2(0.0, -t) + offset);
+	float fade = puff ? 1.0 - smoothstep(0.5, 1.0, age) : 1.0;
+	float alpha = clamp(pow(body, 0.7) * (0.2 + 0.9 * cloud * cloud) + filaments * body * 1.2 + head, 0.0, 1.0) * fade;
+	float heat = (body * (0.55 + 0.55 * cloud) + filaments * body * 0.7) * mix(1.1, 0.55, rise) * (puff ? mix(1.1, 0.5, age) : 1.0) + head * 0.55;
+	float window = (1.0 - smoothstep(0.82, 1.0, abs(uv.x))) * (1.0 - smoothstep(0.82, 1.0, abs(uv.y)));
+	return vec2(alpha, heat) * window;
+}
+
 float ParticleShape(uint shape, vec2 uv, uint seed, vec4 params, float pixel, float time)
 {
+	if (shape == ShapeFire || shape == ShapeFlameSheet || shape == ShapeFlameWall)
+		return FireField(shape, uv, seed, params, time).y;
 	float r2 = dot(uv, uv);
 	float edge = 1.0 - smoothstep(0.75, 1.0, sqrt(r2));
 	if (shape == ShapeSpark)
@@ -1237,5 +1515,9 @@ float ParticleShape(uint shape, vec2 uv, uint seed, vec4 params, float pixel, fl
 		return HexShape(uv, seed, params, pixel);
 	if (shape == ShapeLeaf)
 		return LeafShape(uv, seed, pixel);
+	if (shape == ShapeBubble)
+		return BubbleShape(uv, seed, params, pixel, time);
+	if (shape == ShapePearl)
+		return PearlShape(uv, seed, time);
 	return exp(-4.0 * r2) * edge;
 }

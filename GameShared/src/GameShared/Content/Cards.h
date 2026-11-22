@@ -58,9 +58,9 @@ namespace Game
 		ManaSingularity,
 		MindOverMatter,
 		BloodMagic,
-		EchoChamber,
+		Refraction,
 		UnstableArcana,
-		Quicksilver,
+		Archmage,
 		Multishot,
 		Piercing,
 		ChainReaction,
@@ -182,13 +182,13 @@ namespace Game
 		{ CardId::QuickTongue, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Quick Tongue", "You cast and charge spells 20% faster.", nullptr, TagStorm },
 		{ CardId::Tempo, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Tempo", "Each spell you cast makes your casting 6% faster for 3 seconds, stacking up to 30%.", nullptr, TagStorm },
 		{ CardId::SnapCast, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Snap Cast", "The first spell you cast within 1.5 s of a dodge goes off instantly. Charged spells start fully charged.", nullptr, TagStorm | TagGuard },
-		{ CardId::ApexOfMagic, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Apex of Magic", "Casting and cooldowns are 300% faster, but every spell costs 50% more mana.", nullptr, TagStorm | TagMana, InDamage },
+		{ CardId::ApexOfMagic, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Apex of Magic", "Casting and cooldowns are 300% faster, but every spell costs 30% more mana.", nullptr, TagStorm | TagMana, InDamage },
 		{ CardId::ManaSingularity, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Mana Singularity", "Spells cost no mana and deal 1% more damage for every 2 mana you hold. Hits drain your mana as well as your health.", nullptr, TagMana, InDamage },
 		{ CardId::MindOverMatter, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Mind over Matter", "Half of every hit drains your mana instead of your health. After a hit, your mana comes back 75% slower for 2 seconds.", nullptr, TagMana | TagGuard, InDamage },
-		{ CardId::BloodMagic, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Blood Magic", "You have no mana. Spells cost 1 health per 5 mana instead, deal 30% more and heal you for all the damage they deal. You also get 10 more health.", nullptr, TagBlood, InDamage },
-		{ CardId::EchoChamber, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Echo Chamber", "Every spell casts two extra copies at 60% strength: projectiles fan out beside it and area spells land around your target. Cooldowns are 40% longer. Warp, wards, Chain Hook and Frost Nova don't echo.", nullptr, TagStorm, InDamage },
+		{ CardId::BloodMagic, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Blood Magic", "No mana: spells cost 1 health per 5 mana and heal you for all the damage they deal. You get 20% more health, and overhealing builds a blood shield worth up to 20% more. Under 30% health you regenerate 1 health a second.", nullptr, TagBlood, InDamage },
+		{ CardId::Refraction, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Refraction", "Every spell refracts into two extra copies at 50% strength: projectiles fan out beside it and area spells land around your target. Cooldowns are 40% longer. Warp, wards, Chain Hook and Frost Nova don't refract.", nullptr, TagStorm, InDamage },
 		{ CardId::UnstableArcana, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Unstable Arcana", "Every spell you cast surges at random: double damage, 75% more area, two extra copies, or no cooldown.", nullptr, 0, InDamage },
-		{ CardId::Quicksilver, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Quicksilver", "Keep moving to build charge. After 1.2 s on the move your spells deal double damage. Standing still drains it and every hit you take halves it.", nullptr, TagStorm, InDamage },
+		{ CardId::Archmage, CardKind::Wild, CardRarity::Apex, AbilityId::Count, "Archmage", "Each spell unlike your last adds a Weave, up to 4. Per Weave: +30% damage, 15% faster cooldowns, 12.5% cheaper spells. At 4 your next new spell is instant and restarts the weave. Repeating a spell or 5 s idle unravels it.", nullptr, TagStorm | TagMana, InDamage },
 		{ CardId::Multishot, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Multishot", "Your projectile spells fire one more projectile, each 10% weaker.", nullptr, TagMana, InRun },
 		{ CardId::Piercing, CardKind::Wild, CardRarity::Common, AbilityId::Count, "Piercing", "Your projectiles pass through one more crawler.", nullptr, TagFrost, InRun },
 		{ CardId::ChainReaction, CardKind::Wild, CardRarity::Rare, AbilityId::Count, "Chain Reaction", "Your chaining spells jump one more time. At rank II every projectile chains once.", nullptr, TagStorm, InRun },
@@ -363,7 +363,7 @@ namespace Game
 	inline constexpr float ApexChance = 0.12f;
 	inline constexpr float ApexCatchUp = 0.25f;
 	inline constexpr float ApexMagicSpeed = 4.0f;
-	inline constexpr float ApexMagicCost = 1.5f;
+	inline constexpr float ApexMagicCost = 1.3f;
 	inline constexpr float ManaSingularityDamage = 0.005f;
 	inline constexpr float ManaSingularityDrain = 1.0f;
 	inline constexpr float MindOverMatterShare = 0.5f;
@@ -371,20 +371,24 @@ namespace Game
 	inline constexpr float MindOverMatterStall = 2.0f;
 	inline constexpr float MindOverMatterRegen = 0.25f;
 	inline constexpr float BloodMagicRate = 0.2f;
-	inline constexpr float BloodMagicDamage = 1.3f;
+	inline constexpr float BloodMagicDamage = 1.0f;
 	inline constexpr float BloodMagicHeal = 1.0f;
-	inline constexpr int32_t BloodMagicHealth = 10;
+	inline constexpr float BloodMagicHealth = 0.2f;
 	inline constexpr float BloodMagicRegen = 0.0f;
-	inline constexpr float EchoChamberShare = 0.6f;
-	inline constexpr float EchoChamberCooldown = 1.4f;
-	inline constexpr float EchoChamberFan = 0.21f;
-	inline constexpr float EchoChamberArea = 0.7f;
+	inline constexpr float BloodMagicMendHealth = 0.3f;
+	inline constexpr float BloodMagicMendRate = 1.0f;
+	inline constexpr float BloodMagicOverheal = 0.2f;
+	inline constexpr float RefractionShare = 0.5f;
+	inline constexpr float RefractionCooldown = 1.4f;
+	inline constexpr float RefractionFan = 0.21f;
+	inline constexpr float RefractionArea = 0.7f;
 	inline constexpr float ArcanaDamage = 2.0f;
 	inline constexpr float ArcanaArea = 1.75f;
-	inline constexpr float QuicksilverSeconds = 1.2f;
-	inline constexpr float QuicksilverDamage = 2.0f;
-	inline constexpr float QuicksilverDrain = 2.0f;
-	inline constexpr float QuicksilverHit = 0.5f;
+	inline constexpr uint8_t ArchmageStacks = 4;
+	inline constexpr float ArchmageDamage = 0.3f;
+	inline constexpr float ArchmageCooldown = 0.15f;
+	inline constexpr float ArchmageMana = 0.125f;
+	inline constexpr float ArchmageFade = 5.0f;
 
 	enum class ArcanaSurge : uint8_t
 	{

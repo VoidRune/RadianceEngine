@@ -260,6 +260,7 @@ namespace Game
 			brawler.MarkedBy = NoPlayer;
 			brawler.HurtAge = 0.0f;
 			brawler.RallyBank = 0.0f;
+			brawler.BloodShield = 0;
 			brawler.LifeBank = 0.0f;
 			brawler.FlowAt = -1e9f;
 			brawler.ScaldedBy = -1;
@@ -899,11 +900,11 @@ namespace Game
 				m_Brawlers[order[rank]].Points += PlacementPoints[rank];
 	}
 
-	float MatchDirector::CastDamageScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float momentum) const
+	float MatchDirector::CastDamageScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float weave) const
 	{
 		if (!IsDamageMode() || playerId >= MaxPlayers)
 			return 1.0f;
-		return CardCastScale(m_Brawlers[playerId].Loadout.Cards, healthFraction, manaBefore, maxMana, overloaded, momentum);
+		return CardCastScale(m_Brawlers[playerId].Loadout.Cards, healthFraction, manaBefore, maxMana, overloaded, weave);
 	}
 
 	int32_t MatchDirector::ShapeDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount)
@@ -933,8 +934,6 @@ namespace Game
 			}
 		}
 		int32_t result = std::max(1, int32_t(std::lround(scaled)));
-		if (attacker < MaxPlayers && attacker != victim)
-			state.Momentum *= QuicksilverHit;
 		if (HasCard(target.Loadout.Cards, CardId::MindOverMatter))
 		{
 			state.ManaStall = MindOverMatterStall;
@@ -943,7 +942,18 @@ namespace Game
 			state.Mana = std::max(state.Mana - float(absorbed) * MindOverMatterRatio, 0.0f);
 			result -= absorbed;
 		}
+		if (target.BloodShield > 0)
+		{
+			const int32_t soaked = std::min(target.BloodShield, result);
+			target.BloodShield -= soaked;
+			result -= soaked;
+		}
 		return result;
+	}
+
+	int32_t MatchDirector::GetBloodShield(uint32_t playerId) const
+	{
+		return IsDamageMode() && playerId < MaxPlayers ? m_Brawlers[playerId].BloodShield : 0;
 	}
 
 	uint8_t MatchDirector::GetWardGauge(uint32_t playerId) const
@@ -1014,7 +1024,13 @@ namespace Game
 				if (HasCard(cards, CardId::Siphon))
 					controller->State.Mana = std::min(controller->Traits.MaxMana, controller->State.Mana + SiphonMana);
 				if (HasCard(cards, CardId::BloodMagic))
-					health->Current = std::min(health->Max, health->Current + int32_t(std::lround(float(dealt) * BloodMagicHeal)));
+				{
+					const int32_t heal = int32_t(std::lround(float(dealt) * BloodMagicHeal));
+					const int32_t mend = std::min(heal, std::max(health->Max - health->Current, 0));
+					const int32_t cap = int32_t(std::lround(float(health->Max) / (1.0f + BloodMagicHealth) * BloodMagicOverheal));
+					health->Current += mend;
+					m_Brawlers[attacker].BloodShield = std::min(cap, m_Brawlers[attacker].BloodShield + heal - mend);
+				}
 			}
 			if (HasCard(cards, CardId::Kindling) && source != AbilityId::EmberBolt)
 				Ignite(victim, attacker, KindlingDamage, KindlingSeconds);
@@ -1115,15 +1131,17 @@ namespace Game
 				brawler.WardUp = brawler.WardTimer <= 0.0f;
 			}
 			Health* health = entities.TryGet<Health>(entity);
-			if (!health || !HasCard(cards, CardId::Rally))
+			const bool rally = HasCard(cards, CardId::Rally);
+			const bool blood = HasCard(cards, CardId::BloodMagic);
+			if (!health || (!rally && !blood))
 				return;
-			const int32_t ceiling = int32_t(std::floor(RallyHealth * float(health->Max)));
+			const int32_t ceiling = int32_t(std::floor(std::max(rally ? RallyHealth : 0.0f, blood ? BloodMagicMendHealth : 0.0f) * float(health->Max)));
 			if (health->Current >= ceiling || brawler.HurtAge < RallyPause)
 			{
 				brawler.RallyBank = 0.0f;
 				return;
 			}
-			brawler.RallyBank += RallyRate * dt;
+			brawler.RallyBank += std::max(rally ? RallyRate : 0.0f, blood ? BloodMagicMendRate : 0.0f) * dt;
 			const int32_t heal = int32_t(brawler.RallyBank);
 			brawler.RallyBank -= float(heal);
 			health->Current = std::min(ceiling, health->Current + heal);

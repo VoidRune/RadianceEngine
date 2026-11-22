@@ -54,6 +54,8 @@ namespace Game
 		void Update(World& world);
 		bool IsReady() const { return !m_Collapse.empty(); }
 		float Clearance(Vec2 position) const;
+		float Footing(Vec2 position) const;
+		float PathDistance(uint32_t playerId, Vec2 position) const;
 		float CollapseIn(Vec2 position) const;
 		float Slide(Vec2 position) const;
 		float GetClock() const { return m_Clock; }
@@ -63,6 +65,9 @@ namespace Game
 		void BuildCells(const World& world);
 		void PlanCollapse(const World& world);
 		void RefreshClearance(const World& world);
+		void RefreshPaths(World& world);
+		void FloodPath(Vec2 source, std::vector<float>& field);
+		float Sample(const std::vector<float>& field, Vec2 position) const;
 
 		int32_t m_Width = 0;
 		int32_t m_Height = 0;
@@ -72,6 +77,11 @@ namespace Game
 		std::vector<float> m_CellTime;
 		std::vector<float> m_Collapse;
 		std::vector<float> m_Clearance;
+		std::vector<float> m_Footing;
+		std::vector<uint8_t> m_Walkable;
+		std::array<std::vector<float>, MaxPlayers> m_Paths;
+		std::array<float, MaxPlayers> m_PathClock{};
+		std::vector<std::pair<float, int32_t>> m_Open;
 		std::vector<float> m_ToDanger;
 		std::vector<float> m_ToSafety;
 		std::vector<float> m_Slide;
@@ -194,6 +204,9 @@ namespace Game
 		Vec2 m_Push;
 		float m_Health = 1.0f;
 		int32_t m_Life = 0;
+		int32_t m_LastLife = 0;
+		float m_Engaged = 0.0f;
+		float m_Reach = 6.5f;
 		float m_SelfFling = 1.0f;
 		float m_Reserve = 0.0f;
 		bool m_Alive = false;

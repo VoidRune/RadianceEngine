@@ -13,18 +13,118 @@ import stations
 
 NAME = 'Summit'
 
-RUNES = [
-    [((0.0, 0.0), (0.0, 1.0)), ((0.0, 0.62), (0.42, 0.88)), ((0.0, 0.34), (0.42, 0.6))],
-    [((-0.3, 0.0), (-0.3, 1.0)), ((-0.3, 1.0), (0.3, 0.68)), ((0.3, 0.68), (0.3, 0.0))],
-    [((0.0, 0.0), (0.0, 1.0)), ((0.0, 0.76), (0.36, 0.5)), ((0.36, 0.5), (0.0, 0.24))],
-    [((0.0, 0.0), (0.0, 1.0)), ((0.0, 0.56), (-0.4, 0.96)), ((0.0, 0.56), (0.4, 0.96))],
-    [((0.0, 0.0), (0.0, 1.0)), ((0.0, 1.0), (-0.4, 0.66)), ((0.0, 1.0), (0.4, 0.66))],
-    [((-0.3, 1.0), (0.22, 0.66)), ((0.22, 0.66), (-0.22, 0.34)), ((-0.22, 0.34), (0.3, 0.0))],
-    [((-0.32, 0.0), (-0.32, 1.0)), ((0.32, 0.0), (0.32, 1.0)), ((-0.32, 1.0), (0.32, 0.5)), ((0.32, 1.0), (-0.32, 0.5))],
-    [((-0.34, 0.12), (0.34, 0.88)), ((0.34, 0.12), (-0.34, 0.88)), ((0.0, 0.0), (0.0, 1.0))],
-    [((0.0, 0.0), (0.0, 1.0)), ((-0.34, 0.5), (0.34, 0.5)), ((-0.24, 0.2), (0.24, 0.8))],
-    [((-0.28, 0.0), (0.0, 0.5)), ((0.0, 0.5), (-0.28, 1.0)), ((0.28, 0.0), (0.0, 0.5)), ((0.0, 0.5), (0.28, 1.0))],
+RUNE_CHOICES = 10
+LEGACY_STROKES = [3, 3, 3, 3, 3, 3, 4, 3, 3, 4]
+
+BRUSH_RUNES = [
+    ([((0.0, -0.9), (0.0, 0.0), (0.0, 0.9)), ((0.0, 0.05), (0.12, 0.45), (0.45, 0.8)), ((0.0, 0.05), (-0.12, 0.45), (-0.45, 0.8))], None),
+    ([((-0.1, -0.9), (-0.1, 0.0), (-0.1, 0.9)), ((-0.1, 0.6), (0.65, 0.35), (-0.1, -0.05))], None),
+    ([((0.0, 0.88), (0.7, 0.0), (0.0, -0.88)), ((0.0, 0.88), (-0.7, 0.0), (0.0, -0.88))], (0.0, 0.0, 0.13)),
+    ([((-0.45, 0.85), (0.15, 0.05), (0.45, -0.85)), ((0.45, 0.85), (-0.15, 0.05), (-0.45, -0.85))], None),
+    ([((0.0, -0.9), (0.0, -0.3), (0.0, 0.3)), ((-0.5, 0.88), (0.0, 0.05), (0.5, 0.88))], None),
+    ([((0.35, 0.85), (-0.75, 0.0), (0.35, -0.85))], (0.12, 0.0, 0.14)),
+    ([((0.0, -0.9), (0.0, 0.0), (0.0, 0.88)), ((-0.45, 0.35), (-0.1, 0.55), (0.0, 0.88)), ((0.45, 0.35), (0.1, 0.55), (0.0, 0.88))], None),
+    ([((-0.45, 0.35), (0.0, 1.0), (0.45, 0.35)), ((-0.45, 0.35), (0.0, -0.3), (0.45, 0.35)), ((0.0, 0.0), (0.0, -0.45), (0.0, -0.9))], (0.0, 0.35, 0.11)),
+    ([((0.0, -0.9), (0.0, 0.0), (0.0, 0.9)), ((0.0, 0.5), (0.5, 0.0), (0.0, -0.5)), ((0.0, 0.5), (-0.5, 0.0), (0.0, -0.5))], None),
+    ([((-0.05, 0.9), (-0.55, 0.45), (-0.05, 0.05)), ((0.05, -0.05), (0.55, -0.45), (0.05, -0.9))], None),
+    ([((0.0, -0.9), (0.0, -0.45), (0.0, 0.3)), ((-0.5, 0.88), (-0.45, 0.2), (0.0, 0.05)), ((0.5, 0.88), (0.45, 0.2), (0.0, 0.05))], None),
+    ([((0.0, -0.9), (0.0, 0.0), (0.0, 0.9)), ((-0.45, 0.6), (0.0, 0.5), (0.45, 0.3)), ((-0.45, -0.05), (0.0, -0.15), (0.45, -0.35))], None),
+    ([((0.0, -0.9), (0.15, 0.0), (0.0, 0.9)), ((0.05, 0.6), (0.3, 0.5), (0.5, 0.78)), ((0.08, -0.05), (-0.25, -0.15), (-0.5, 0.08))], None),
+    ([((0.0, -0.88), (-0.6, 0.15), (0.05, 0.85)), ((0.05, 0.85), (0.55, 0.4), (0.1, 0.1))], (0.28, -0.45, 0.11)),
+    ([((-0.42, -0.65), (-0.55, 0.15), (-0.25, 0.7)), ((0.0, -0.88), (0.08, 0.0), (0.0, 0.9)), ((0.42, -0.65), (0.55, 0.15), (0.25, 0.7))], None),
+    ([((0.0, -0.9), (0.0, 0.0), (0.0, 0.9)), ((-0.5, 0.25), (0.0, 0.55), (0.5, 0.25)), ((0.0, -0.9), (0.35, -0.85), (0.48, -0.55))], None),
 ]
+
+BRUSH_WIDTH = 0.078
+BRUSH_SAMPLES = 14
+
+
+def smooth(a, b, x):
+    t = min(max((x - a) / (b - a), 0.0), 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def brush_profile(s):
+    return (0.6 + 0.55 * smooth(0.0, 0.1, s) - 0.15 * smooth(0.1, 0.3, s)) * (1.0 - 0.78 * smooth(0.35, 1.0, s))
+
+
+def painted_slab(points, normals, widths, lift=0.004, sink=0.014):
+    bm = bmesh.new()
+    count = len(points)
+    rows = []
+    for i in range(count):
+        p, n = points[i], normals[i]
+        tangent = (points[min(i + 1, count - 1)] - points[max(i - 1, 0)]).normalized()
+        side = n.cross(tangent).normalized()
+        w = widths[i]
+        rows.append([bm.verts.new(p + n * lift - side * w), bm.verts.new(p + n * lift + side * w), bm.verts.new(p - n * sink - side * w), bm.verts.new(p - n * sink + side * w)])
+    for i in range(count - 1):
+        a, b = rows[i], rows[i + 1]
+        bm.faces.new((a[0], a[1], b[1], b[0]))
+        bm.faces.new((a[2], b[2], b[3], a[3]))
+        bm.faces.new((a[0], b[0], b[2], a[2]))
+        bm.faces.new((a[1], a[3], b[3], b[1]))
+    bm.faces.new((rows[0][0], rows[0][2], rows[0][3], rows[0][1]))
+    bm.faces.new((rows[-1][0], rows[-1][1], rows[-1][3], rows[-1][2]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    return bm
+
+
+def painted_dot(rim, normal, lift=0.004, sink=0.014):
+    bm = bmesh.new()
+    top = [bm.verts.new(p + normal * lift) for p in rim]
+    bottom = [bm.verts.new(p - normal * sink) for p in rim]
+    bm.faces.new(top)
+    bm.faces.new(list(reversed(bottom)))
+    for i in range(len(rim)):
+        j = (i + 1) % len(rim)
+        bm.faces.new((top[i], bottom[i], bottom[j], top[j]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    return bm
+
+
+def painted_glyph(place, size, target, material, name, key):
+    local = random.Random(f'{name}:{key}')
+    strokes, dot = BRUSH_RUNES[local.randrange(len(BRUSH_RUNES))]
+    mirror = -1.0 if local.random() < 0.5 else 1.0
+    tilt = local.uniform(-0.1, 0.1)
+    scale = local.uniform(0.92, 1.05)
+    width = BRUSH_WIDTH * local.uniform(0.85, 1.15)
+
+    def at(gx, gy):
+        x = gx * mirror * scale
+        y = gy * scale
+        x, y = x * math.cos(tilt) - y * math.sin(tilt), x * math.sin(tilt) + y * math.cos(tilt)
+        return place(x * 0.5, (y + 1.0) * 0.5)
+
+    parts = []
+    for index, (a, b, c) in enumerate(strokes):
+        points, normals, widths = [], [], []
+        heft = 1.1 if index == 0 else 0.92
+        for step in range(BRUSH_SAMPLES):
+            s = step / (BRUSH_SAMPLES - 1)
+            gx = (1 - s) ** 2 * a[0] + 2 * (1 - s) * s * b[0] + s * s * c[0]
+            gy = (1 - s) ** 2 * a[1] + 2 * (1 - s) * s * b[1] + s * s * c[1]
+            point, normal = at(gx, gy)
+            points.append(point)
+            normals.append(normal)
+            widths.append(size * width * heft * brush_profile(s) * local.uniform(0.82, 1.12))
+        parts.append(pk.part(f'{name}_Rune{index}', painted_slab(points, normals, widths), target, material, rng=local))
+    if dot:
+        center, normal = at(dot[0], dot[1])
+        rim = []
+        for step in range(12):
+            angle = step / 12 * math.tau
+            point, _ = at(dot[0] + math.cos(angle) * dot[2] * 0.55, dot[1] + math.sin(angle) * dot[2] * 0.55)
+            rim.append(center + (point - center) * local.uniform(0.85, 1.1))
+        parts.append(pk.part(f'{name}_RuneDot', painted_dot(rim, normal), target, material, rng=local))
+    return parts
+
+
+def legacy_draws(rng, glyph):
+    for _ in range(LEGACY_STROKES[glyph % RUNE_CHOICES]):
+        for _ in range(3):
+            rng.uniform(-40.0, 40.0)
 
 
 def granite_material(name, light=(0.25, 0.25, 0.245), dark=(0.085, 0.09, 0.098), bake_size=1024):
@@ -138,17 +238,14 @@ def face_y(depth, taper, height, z):
     return -0.5 * depth * (1.0 + (taper - 1.0) * z / height)
 
 
-def rune_strokes(glyph, origin, size, target, material, name, rng, plane='XZ', facing=-1.0, depth=0.0, lean=0.0):
-    parts = []
-    for index, ((ax, az), (bx, bz)) in enumerate(RUNES[glyph % len(RUNES)]):
-        a = Vector((origin[0] + ax * size, origin[1], origin[2] + az * size))
-        b = Vector((origin[0] + bx * size, origin[1], origin[2] + bz * size))
-        a.x += lean * a.z
-        b.x += lean * b.z
-        bm = pk.rod(a, b, size * 0.07, steps=4)
-        obj = pk.part(f'{name}_Rune{index}', bm, target, material, rng=rng)
-        parts.append(obj)
-    return parts
+def rune_strokes(glyph, origin, size, target, material, name, rng, lean=0.0):
+    legacy_draws(rng, glyph)
+
+    def place(px, pz):
+        z = origin[2] + pz * size
+        return Vector((origin[0] + px * size + lean * z, origin[1], z)), Vector((0.0, -1.0, 0.0))
+
+    return painted_glyph(place, size, target, material, name, glyph)
 
 
 def standing_stone(key, size, m, target, rng):
@@ -156,7 +253,7 @@ def standing_stone(key, size, m, target, rng):
     taper, lean = 0.8, rng.uniform(-0.04, 0.04)
     body = pk.part(f'StandingStone{key}_Body', monolith(width, depth, height, rng, taper=taper, lean=lean), target, m['granite'], rng=rng, smooth=35.0)
     parts = [body]
-    glyphs = rng.sample(range(len(RUNES)), 3)
+    glyphs = rng.sample(range(RUNE_CHOICES), 3)
     for row, glyph in enumerate(glyphs):
         z = height * (0.42 + 0.17 * row)
         y = face_y(depth, taper, height, z) - 0.006
@@ -164,21 +261,19 @@ def standing_stone(key, size, m, target, rng):
     return kit.join(parts, f'StandingStone_{key}')
 
 
-def surface_y(tree, x, z, side):
-    location = tree.ray_cast(Vector((x, side * 5.0, z)), Vector((0.0, -side, 0.0)))[0]
-    return location.y if location is not None else side * 0.4
-
-
 def carved_runes(glyph, z, size, side, tree, target, material, name, rng, lean=0.0):
-    parts = []
-    for index, stroke in enumerate(RUNES[glyph % len(RUNES)]):
-        ends = []
-        for px, pz in stroke:
-            height = z + pz * size
-            x = -side * px * size + lean * height
-            ends.append(Vector((x, surface_y(tree, x, height, side) + side * 0.006, height)))
-        parts.append(pk.part(f'{name}_Rune{index}', pk.rod(ends[0], ends[1], size * 0.07, steps=4), target, material, rng=rng))
-    return parts
+    legacy_draws(rng, glyph)
+    outward = Vector((0.0, side, 0.0))
+
+    def place(px, pz):
+        height = z + pz * size
+        x = -side * px * size + lean * height
+        location, normal, _, _ = tree.ray_cast(Vector((x, side * 5.0, height)), -outward)
+        if location is None:
+            return Vector((x, side * 0.4, height)), outward
+        return location, (normal.normalized() + outward).normalized()
+
+    return painted_glyph(place, size, target, material, name, glyph)
 
 
 def ritual_monolith(key, size, m, target, rng):
@@ -191,7 +286,7 @@ def ritual_monolith(key, size, m, target, rng):
     tree = BVHTree.FromBMesh(body)
     parts = [plinth, pk.part(f'Monolith{key}_Body', body, target, m['granite'], rng=rng, smooth=35.0)]
     for side, rows in ((-1.0, 4), (1.0, 3)):
-        for row, glyph in enumerate(rng.sample(range(len(RUNES)), rows)):
+        for row, glyph in enumerate(rng.sample(range(RUNE_CHOICES), rows)):
             parts += carved_runes(glyph, lift + height * (0.24 + 0.15 * row), 0.3, side, tree, target, m['rune'], f'Monolith{key}_{int(side > 0)}{row}', rng, lean=lean)
     return kit.join(parts, f'Monolith_{key}')
 
@@ -204,7 +299,7 @@ def glyph_stone(key, size, m, target, rng):
             arch = 1.0 - (vertex.co.x / (width * 0.5)) ** 2
             vertex.co.z = height * 0.7 + (vertex.co.z - height * 0.7) * max(arch, 0.15)
     parts = [pk.part(f'GlyphStone{key}_Body', bm, target, m['granite'], rng=rng, smooth=35.0)]
-    glyphs = rng.sample(range(len(RUNES)), 2)
+    glyphs = rng.sample(range(RUNE_CHOICES), 2)
     for row, glyph in enumerate(glyphs):
         z = height * (0.2 + 0.32 * row)
         parts += rune_strokes(glyph, (0.0, face_y(depth, 0.86, height, z) - 0.006, z), 0.22, target, m['rune'], f'GlyphStone{key}_{row}', rng)
@@ -244,7 +339,7 @@ def storm_spire(m, target, rng):
         for row in range(2):
             z = 1.4 + row * 0.95 + face * 0.22
             half_at = 0.5 * 0.62 * (1.0 + (0.64 - 1.0) * (z - 0.6) / 3.2)
-            strokes = rune_strokes(rng.randrange(len(RUNES)), (0.0, -half_at - 0.006, z), 0.26, target, m['rune'], f'Spire_{face}_{row}', rng)
+            strokes = rune_strokes(rng.randrange(RUNE_CHOICES), (0.0, -half_at - 0.006, z), 0.26, target, m['rune'], f'Spire_{face}_{row}', rng)
             for stroke in strokes:
                 stroke.matrix_world = rotation @ stroke.matrix_world
             parts += strokes
@@ -264,7 +359,7 @@ def stone_gate(m, target, rng):
         vertex.co = Vector((z - 1.475, y, 2.45 + x + 0.24 - sag))
     bmesh.ops.recalc_face_normals(lintel, faces=lintel.faces[:])
     parts.append(pk.part('Gate_Lintel', lintel, target, m['granite'], rng=rng, smooth=35.0))
-    for index, glyph in enumerate(rng.sample(range(len(RUNES)), 4)):
+    for index, glyph in enumerate(rng.sample(range(RUNE_CHOICES), 4)):
         x = -0.75 + index * 0.5
         parts += rune_strokes(glyph, (x, -0.35, 2.52), 0.17, target, m['rune'], f'Gate_{index}', rng)
     return kit.join(parts, 'StoneGate_A')

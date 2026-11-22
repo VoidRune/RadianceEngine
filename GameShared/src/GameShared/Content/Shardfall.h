@@ -1104,7 +1104,7 @@ namespace Game
 		return upgrades < MaxUpgradesPerSpell;
 	}
 
-	inline float CardCastScale(CardMask cards, float healthFraction, float manaBefore, float maxMana, bool overloaded, float momentum)
+	inline float CardCastScale(CardMask cards, float healthFraction, float manaBefore, float maxMana, bool overloaded, float weave)
 	{
 		float scale = overloaded ? OverloadScale : 1.0f;
 		if (HasCard(cards, CardId::Brimming) && maxMana > 0.0f && manaBefore >= BrimmingShare * maxMana)
@@ -1115,8 +1115,8 @@ namespace Game
 			scale *= 1.0f + ManaSingularityDamage * manaBefore;
 		if (HasCard(cards, CardId::BloodMagic))
 			scale *= BloodMagicDamage;
-		if (HasCard(cards, CardId::Quicksilver) && momentum >= QuicksilverSeconds)
-			scale *= QuicksilverDamage;
+		if (HasCard(cards, CardId::Archmage))
+			scale *= 1.0f + ArchmageDamage * weave;
 		return scale;
 	}
 }

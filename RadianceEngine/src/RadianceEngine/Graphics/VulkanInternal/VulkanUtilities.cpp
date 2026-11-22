@@ -8,6 +8,7 @@
 #include <iterator>
 #include <set>
 #include <string>
+#include <string_view>
 
 /* Needed for surface creation */
 #define GLFW_INCLUDE_VULKAN
@@ -23,6 +24,12 @@ namespace Rdn
             const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
             void* pUserData)
         {
+            constexpr std::string_view IgnoredMessages[] = {
+                "WARNING-Shader-OutputNotConsumed",
+            };
+            if (pCallbackData->pMessageIdName && std::ranges::find(IgnoredMessages, std::string_view(pCallbackData->pMessageIdName)) != std::end(IgnoredMessages))
+                return VK_FALSE;
+
             switch (messageSeverity)
             {
             case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
@@ -85,15 +92,28 @@ namespace Rdn
             VkPhysicalDeviceVulkan13Features Vulkan13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
             VkPhysicalDeviceAccelerationStructureFeaturesKHR AccelerationStructure{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
             VkPhysicalDeviceRayTracingPipelineFeaturesKHR RayTracingPipeline{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR };
+            VkPhysicalDevicePresentIdFeaturesKHR PresentId{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR };
+            VkPhysicalDevicePresentWaitFeaturesKHR PresentWait{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR };
 
             explicit DeviceFeatureChain(DeviceCapability capabilities)
             {
-                Core.pNext = &Vulkan12;
-                Vulkan12.pNext = &Vulkan13;
+                void** tail = &Core.pNext;
+                const auto link = [&](auto& feature)
+                {
+                    *tail = &feature;
+                    tail = &feature.pNext;
+                };
+                link(Vulkan12);
+                link(Vulkan13);
                 if (HasAny(capabilities & DeviceCapability::RayTracing))
                 {
-                    Vulkan13.pNext = &AccelerationStructure;
-                    AccelerationStructure.pNext = &RayTracingPipeline;
+                    link(AccelerationStructure);
+                    link(RayTracingPipeline);
+                }
+                if (HasAny(capabilities & DeviceCapability::PresentWait))
+                {
+                    link(PresentId);
+                    link(PresentWait);
                 }
             }
             DeviceFeatureChain(const DeviceFeatureChain&) = delete;
@@ -137,6 +157,11 @@ namespace Rdn
             RDN_DEVICE_FEATURE(RayTracingPipeline.rayTracingPipeline),
         };
 
+        const DeviceFeature PresentWaitFeatures[] = {
+            RDN_DEVICE_FEATURE(PresentId.presentId),
+            RDN_DEVICE_FEATURE(PresentWait.presentWait),
+        };
+
 #undef RDN_DEVICE_FEATURE
 
         const char* const RequiredDeviceExtensions[] = {
@@ -154,6 +179,11 @@ namespace Rdn
             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         };
 
+        const char* const PresentWaitExtensions[] = {
+            VK_KHR_PRESENT_ID_EXTENSION_NAME,
+            VK_KHR_PRESENT_WAIT_EXTENSION_NAME,
+        };
+
         struct CapabilityRequirements
         {
             DeviceCapability Capability;
@@ -164,6 +194,7 @@ namespace Rdn
 
         const CapabilityRequirements Capabilities[] = {
             { DeviceCapability::RayTracing, "ray tracing", RayTracingExtensions, RayTracingFeatures },
+            { DeviceCapability::PresentWait, "present wait", PresentWaitExtensions, PresentWaitFeatures },
         };
 
         QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface)

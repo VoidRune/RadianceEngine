@@ -264,7 +264,7 @@ namespace Game
 			if (skill.IsEmpty() || !skill.Usable)
 				return;
 			const bool overloaded = IsOverloaded(state, traits, slot);
-			const float cost = overloaded ? 0.0f : skill.ManaCost;
+			const float cost = overloaded ? 0.0f : SpellCost(state, traits, slot);
 			if (state.Mana + ReadyEpsilon < cost && traits.BloodRate <= 0.0f)
 				return;
 			actions.ManaBefore = state.Mana;
@@ -276,6 +276,15 @@ namespace Game
 			if (overloaded)
 				actions.Overloaded |= uint8_t(1u << slot);
 			state.Cooldowns[slot] = skill.Cooldown;
+			if (traits.WeaveStacks > 0)
+			{
+				actions.Weave = state.Weave;
+				state.Cooldowns[slot] = skill.Cooldown * std::max(1.0f - ArchmageCooldown * float(state.Weave), 0.0f);
+				const bool repeated = state.WeaveSpell == uint8_t(skill.Ability);
+				state.Weave = repeated ? 0 : state.Weave >= traits.WeaveStacks ? 1 : uint8_t(state.Weave + 1);
+				state.WeaveSpell = uint8_t(skill.Ability);
+				state.WeaveFade = ArchmageFade;
+			}
 			if (traits.TempoStep > 0.0f)
 			{
 				state.TempoStacks = std::min<uint8_t>(uint8_t(state.TempoStacks + 1), TempoMaxStacks);
@@ -406,7 +415,18 @@ namespace Game
 	bool CanCast(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
 	{
 		const SkillTraits& skill = traits.Skills[slot];
-		return !skill.IsEmpty() && skill.Usable && state.Cooldowns[slot] <= ReadyEpsilon && (state.Mana + ReadyEpsilon >= skill.ManaCost || traits.BloodRate > 0.0f || IsOverloaded(state, traits, slot));
+		return !skill.IsEmpty() && skill.Usable && state.Cooldowns[slot] <= ReadyEpsilon && (state.Mana + ReadyEpsilon >= SpellCost(state, traits, slot) || traits.BloodRate > 0.0f || IsOverloaded(state, traits, slot));
+	}
+
+	float SpellCost(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
+	{
+		const float cost = traits.Skills[slot].ManaCost;
+		return traits.WeaveStacks > 0 ? cost * std::max(1.0f - ArchmageMana * float(state.Weave), 0.0f) : cost;
+	}
+
+	bool IsCrescendo(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
+	{
+		return traits.WeaveStacks > 0 && slot < AbilitySlots && state.Weave >= traits.WeaveStacks && state.WeaveSpell != uint8_t(traits.Skills[slot].Ability);
 	}
 
 	bool IsOverloaded(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
@@ -633,6 +653,12 @@ namespace Game
 		Cool(state.Tempo, dt);
 		if (state.Tempo <= 0.0f)
 			state.TempoStacks = 0;
+		Cool(state.WeaveFade, dt);
+		if (state.WeaveFade <= 0.0f)
+		{
+			state.Weave = 0;
+			state.WeaveSpell = UINT8_MAX;
+		}
 		if (state.RecastTimer > 0.0f)
 		{
 			state.RecastAge += dt;
@@ -658,12 +684,12 @@ namespace Game
 			state.CastTimer = 0.0f;
 			state.Push = {};
 			state.Fall = 0.0f;
-			state.Momentum = 0.0f;
+			state.Weave = 0;
+			state.WeaveSpell = UINT8_MAX;
 			return actions;
 		}
 		if (state.IsFalling())
 		{
-			state.Momentum = 0.0f;
 			Plunge(level, arena, transform, state, actions, dt);
 			return actions;
 		}
@@ -814,7 +840,7 @@ namespace Game
 						state.CastAim = SteerSpike(state.CastPoint, LengthSquared(away) > 0.01f ? Normalize(away) : aim, transform.Position + aim * input.AimDistance);
 					}
 					const SkillTraits& starting = traits.Skills[slot];
-					const bool snapped = state.Snap > 0.0f;
+					const bool snapped = state.Snap > 0.0f || IsCrescendo(state, traits, slot);
 					state.Snap = 0.0f;
 					if ((starting.CastTime <= ReadyEpsilon || snapped) && !IsCharged(starting))
 						Release(level, transform.Position, state, actions, traits, slot, aim, input.AimDistance);
@@ -847,10 +873,6 @@ namespace Game
 		}
 		DecayPush(level, transform.Position, state, dt);
 		Footing(level, next, transform, state, actions, dashed || dashing);
-		if (LengthSquared(move) > 1e-4f || dashed || dashing)
-			state.Momentum = std::min(state.Momentum + dt, QuicksilverSeconds);
-		else
-			state.Momentum = std::max(state.Momentum - QuicksilverDrain * dt, 0.0f);
 		Strike(arena, dt, transform, state);
 		return actions;
 	}

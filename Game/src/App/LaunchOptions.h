@@ -30,6 +30,7 @@ namespace Game
 		bool ExportProps = false;
 		NetworkSimulation Simulation;
 		bool Validation = true;
+		bool ShaderCache = true;
 		std::string ScreenshotPath;
 		std::string AudioCapturePath;
 		bool LogAudio = false;
@@ -45,6 +46,7 @@ namespace Game
 		std::optional<uint8_t> Gi;
 		std::optional<bool> Vsync;
 		std::optional<uint32_t> FrameCap;
+		std::optional<uint8_t> Latency;
 		std::optional<uint32_t> RenderScale;
 		std::optional<uint8_t> Aa;
 		std::optional<float> ScreenShake;
@@ -68,6 +70,8 @@ namespace Game
 		bool Refraction = true;
 		uint8_t DistortionStage = 0;
 		bool GrassStage = false;
+		uint8_t FireStage = 0;
+		float StageTime = -1.0f;
 		bool Steam = true;
 		std::optional<uint64_t> ConnectLobby;
 	};

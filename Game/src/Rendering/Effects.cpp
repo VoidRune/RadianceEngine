@@ -61,13 +61,25 @@ namespace Game
 					{ .Kind = K::Smoke, .Count = 5.0f, .Radius = 0.22f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 0.4f, 0.8f }, .Life = { 1.6f, 2.6f }, .Size = { 0.35f, 0.7f }, .Tint = { 0.6f, 0.6f, 0.6f } },
 				});
 				set(Fx::LanternFlame, {
-					{ .Kind = K::Fire, .Count = 16.0f, .Radius = 0.025f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.25f, .Speed = { 0.05f, 0.15f }, .Life = { 0.25f, 0.4f }, .Size = { 0.07f, 0.1f }, .Tint = { 0.9f, 0.85f, 0.75f } },
+					{ .Kind = K::Fire, .Count = 6.0f, .Radius = 0.025f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.25f, .Speed = { 0.05f, 0.15f }, .Life = { 0.25f, 0.4f }, .Size = { 0.07f, 0.1f }, .Tint = { 0.9f, 0.85f, 0.75f } },
+				});
+				set(Fx::TorchFlame, {
+					{ .Kind = K::Fire, .Count = 26.0f, .Radius = 0.05f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.3f, .Speed = { 0.2f, 0.5f }, .Life = { 0.3f, 0.5f }, .Size = { 0.1f, 0.16f } },
+					{ .Kind = K::Ember, .Count = 4.0f, .Radius = 0.05f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.6f, 1.6f }, .Life = { 0.6f, 1.2f }, .Size = { 0.015f, 0.025f } },
 				});
 				set(Fx::CandleFlame, {
-					{ .Kind = K::Fire, .Count = 12.0f, .Radius = 0.008f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.2f, .Speed = { 0.03f, 0.08f }, .Life = { 0.18f, 0.28f }, .Size = { 0.035f, 0.05f }, .Tint = { 0.9f, 0.85f, 0.75f } },
+					{ .Kind = K::Fire, .Count = 4.0f, .Radius = 0.008f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.2f, .Speed = { 0.03f, 0.08f }, .Life = { 0.18f, 0.28f }, .Size = { 0.035f, 0.05f }, .Tint = { 0.9f, 0.85f, 0.75f } },
+				});
+				set(Fx::EmberTrail, {
+					{ .Kind = K::EmberFlame, .Count = 40.0f, .Density = 7.0f, .Shape = SpawnShape::Segment, .Aimed = true, .Radius = 0.1f, .Cone = 0.4f, .Speed = { 1.5f, 3.5f }, .Life = { 0.14f, 0.28f }, .Size = { 0.19f, 0.3f } },
+					{ .Kind = K::Ember, .Count = 22.0f, .Density = 2.5f, .Shape = SpawnShape::Segment, .Aimed = true, .Radius = 0.08f, .Cone = 0.9f, .Speed = { 1.5f, 4.0f }, .Life = { 0.25f, 0.55f }, .Size = { 0.018f, 0.032f } },
+				});
+				set(Fx::FireballWake, {
+					{ .Kind = K::HueFlame, .Count = 40.0f, .Density = 7.0f, .Shape = SpawnShape::Segment, .Aimed = true, .Radius = 0.1f, .Cone = 0.4f, .Speed = { 1.5f, 3.5f }, .Life = { 0.16f, 0.32f }, .Size = { 0.19f, 0.3f } },
+					{ .Kind = K::HueSpark, .Count = 22.0f, .Density = 2.5f, .Shape = SpawnShape::Segment, .Aimed = true, .Radius = 0.1f, .Cone = 0.9f, .Speed = { 1.5f, 4.0f }, .Life = { 0.25f, 0.55f }, .Size = { 0.018f, 0.032f } },
 				});
 				set(Fx::FireTrail, {
-					{ .Kind = K::Fire, .Count = 45.0f, .Density = 6.0f, .Shape = SpawnShape::Segment, .Radius = 0.06f, .Speed = { 0.2f, 0.8f }, .Life = { 0.2f, 0.38f }, .Size = { 0.14f, 0.24f } },
+					{ .Kind = K::Fire, .Count = 45.0f, .Density = 6.0f, .Shape = SpawnShape::Segment, .Radius = 0.06f, .Speed = { 0.2f, 0.8f }, .Life = { 0.2f, 0.38f }, .Size = { 0.14f, 0.24f }, .Inherit = -0.06f },
 					{ .Kind = K::Ember, .Count = 18.0f, .Density = 2.0f, .Shape = SpawnShape::Segment, .Radius = 0.08f, .Speed = { 0.5f, 1.5f }, .Life = { 0.4f, 0.9f }, .Size = { 0.025f, 0.04f }, .Inherit = 0.15f },
 					{ .Kind = K::Smoke, .Count = 14.0f, .Density = 1.5f, .Shape = SpawnShape::Segment, .Radius = 0.08f, .Speed = { 0.1f, 0.4f }, .Life = { 0.5f, 0.9f }, .Size = { 0.15f, 0.25f } },
 				});
@@ -325,8 +337,8 @@ namespace Game
 				const glm::vec3 violetFlash{ 0.3f, 0.14f, 0.6f };
 				const glm::vec3 violetRing{ 0.34f, 0.13f, 0.8f };
 				set(Fx::FireballKindle, {
-					{ .Kind = K::Fire, .Count = 34.0f, .Radius = 0.12f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.25f, 0.7f }, .Life = { 0.2f, 0.4f }, .Size = { 0.1f, 0.17f }, .Tint = { 0.6f, 0.6f, 0.6f } },
-					{ .Kind = K::Ember, .Count = 8.0f, .Radius = 0.14f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.6f, 1.6f }, .Life = { 0.35f, 0.7f }, .Size = { 0.02f, 0.03f } },
+					{ .Kind = K::HueFlameRise, .Count = 34.0f, .Radius = 0.14f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.25f, 0.7f }, .Life = { 0.2f, 0.4f }, .Size = { 0.12f, 0.2f } },
+					{ .Kind = K::HueSpark, .Count = 8.0f, .Radius = 0.16f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.6f, 1.6f }, .Life = { 0.35f, 0.7f }, .Size = { 0.02f, 0.03f } },
 				});
 				set(Fx::FireballAura, {
 					{ .Kind = K::VioletFire, .Count = 40.0f, .Radius = 0.14f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.55f, .Speed = { 0.3f, 0.85f }, .Life = { 0.22f, 0.42f }, .Size = { 0.12f, 0.2f }, .Tint = { 0.4f, 0.4f, 0.4f } },
@@ -600,12 +612,49 @@ namespace Game
 		glow.Sizes = { 0.8f, 1.0f, 1.0f, 0.9f };
 		glow.Physics = { 0.0f, 1.0f, 0.0f, 0.0f };
 
-		ParticleMaterial& fire = define(ParticleKind::Fire, ParticleShape::Flame, ParticleAlign::Billboard, 1.0f, 1.2f);
-		SetColors(fire, { 4.5f, 2.6f, 0.8f, 0.0f }, { 4.0f, 2.0f, 0.5f, 0.9f }, { 2.2f, 0.6f, 0.1f, 0.6f }, { 0.4f, 0.08f, 0.02f, 0.0f }, { 0.0f, 0.12f, 0.5f, 1.0f });
+		ParticleMaterial& fire = define(ParticleKind::Fire, ParticleShape::Fire, ParticleAlign::Velocity, 0.4f, 0.6f);
+		SetColors(fire, { 1.35f, 0.6f, 0.16f, 0.0f }, { 1.3f, 0.57f, 0.15f, 1.0f }, { 1.1f, 0.46f, 0.11f, 1.0f }, { 0.75f, 0.28f, 0.06f, 0.0f }, { 0.0f, 0.08f, 0.6f, 1.0f });
 		fire.Sizes = { 0.5f, 1.0f, 0.85f, 0.4f };
 		fire.SizeTimes = { 0.0f, 0.25f, 0.6f, 1.0f };
 		fire.Physics = { 3.0f, 2.5f, 4.0f, 1.4f };
 		fire.Motion.y = 0.3f;
+		fire.Look.w = 0.08f;
+		fire.Motion.w = 1.2f;
+
+		ParticleMaterial& emberFlame = define(ParticleKind::EmberFlame, ParticleShape::Fire, ParticleAlign::Velocity, 0.4f, 0.7f);
+		SetColors(emberFlame, { 1.5f, 0.7f, 0.2f, 0.0f }, { 1.4f, 0.62f, 0.16f, 1.0f }, { 1.15f, 0.45f, 0.1f, 0.9f }, { 0.7f, 0.22f, 0.04f, 0.0f }, { 0.0f, 0.06f, 0.55f, 1.0f });
+		emberFlame.Sizes = { 0.7f, 1.0f, 0.9f, 0.5f };
+		emberFlame.SizeTimes = { 0.0f, 0.2f, 0.6f, 1.0f };
+		emberFlame.Physics = { 0.3f, 3.0f, 1.0f, 1.4f };
+		emberFlame.Motion.y = 0.3f;
+		emberFlame.Look.w = 0.35f;
+
+		const auto hued = [&](ParticleKind kind, ParticleShape shape, float additive, float emission) -> ParticleMaterial&
+		{
+			ParticleMaterial& material = define(kind, shape, ParticleAlign::Velocity, additive, emission);
+			SetColors(material, { 1.5f, 1.5f, 1.5f, 0.0f }, { 1.45f, 1.45f, 1.45f, 1.0f }, { 1.15f, 1.15f, 1.15f, 0.9f }, { 0.7f, 0.7f, 0.7f, 0.0f }, { 0.0f, 0.06f, 0.55f, 1.0f });
+			material.Sizes = { 0.7f, 1.0f, 0.9f, 0.5f };
+			material.SizeTimes = { 0.0f, 0.2f, 0.6f, 1.0f };
+			material.Motion.y = 0.3f;
+			return material;
+		};
+		ParticleMaterial& hueFlame = hued(ParticleKind::HueFlame, ParticleShape::Fire, 0.4f, 0.7f);
+		hueFlame.Physics = { 0.3f, 3.0f, 1.0f, 1.4f };
+		hueFlame.Look.w = 0.35f;
+		ParticleMaterial& hueRise = hued(ParticleKind::HueFlameRise, ParticleShape::Fire, 0.4f, 0.6f);
+		hueRise.Physics = { 3.0f, 2.5f, 4.0f, 1.4f };
+		hueRise.Look.w = 0.08f;
+		hueRise.Motion.w = 1.2f;
+		ParticleMaterial& hueBlast = hued(ParticleKind::HueBlast, ParticleShape::Fire, 0.4f, 0.4f);
+		hueBlast.Physics = { 0.3f, 5.0f, 0.6f, 1.2f };
+		hueBlast.Sizes = { 0.6f, 1.0f, 1.1f, 0.8f };
+		hueBlast.Look.w = 0.12f;
+		hueBlast.Motion.w = 0.25f;
+		ParticleMaterial& hueSpark = define(ParticleKind::HueSpark, ParticleShape::Spark, ParticleAlign::Velocity, 1.0f, 1.4f);
+		SetColors(hueSpark, { 3.0f, 3.0f, 3.0f, 1.0f }, { 2.2f, 2.2f, 2.2f, 1.0f }, { 1.0f, 1.0f, 1.0f, 0.8f }, { 0.25f, 0.25f, 0.25f, 0.0f }, { 0.0f, 0.4f, 0.8f, 1.0f });
+		hueSpark.Sizes = { 1.0f, 1.0f, 0.8f, 0.3f };
+		hueSpark.Physics = { 0.8f, 2.0f, 3.0f, 1.8f };
+		hueSpark.Look.w = 0.05f;
 
 		ParticleMaterial& ember = define(ParticleKind::Ember, ParticleShape::Spark, ParticleAlign::Velocity, 1.0f, 1.6f);
 		SetColors(ember, { 5.0f, 2.5f, 0.6f, 1.0f }, { 3.5f, 1.3f, 0.25f, 1.0f }, { 1.5f, 0.35f, 0.05f, 0.8f }, { 0.4f, 0.05f, 0.0f, 0.0f }, { 0.0f, 0.4f, 0.8f, 1.0f });
@@ -776,11 +825,11 @@ namespace Game
 		switch (ability)
 		{
 		case AbilityId::EmberBolt:
-			return Fx::FireTrail;
+			return Fx::EmberTrail;
 		case AbilityId::FrostSpear:
 			return Fx::SpearTrail;
 		case AbilityId::PurpleFireball:
-			return Fx::FireballTrail;
+			return Fx::FireballWake;
 		case AbilityId::Spit:
 			return Fx::PoisonTrail;
 		case AbilityId::TomeVolley:
@@ -967,6 +1016,73 @@ namespace Game
 			spawn.Count = count;
 			m_Particles.Spawn(spawn);
 		}
+	}
+
+	void EffectSystem::FlameRing(const glm::vec3& center, float radius, float power, const glm::vec3& hue, float spin)
+	{
+		constexpr float SparkDrag = 2.0f;
+		constexpr float DustDrag = 3.0f;
+		const glm::vec3 tint = hue / std::max({ hue.r, hue.g, hue.b, 1e-4f });
+		const int segments = 28 + int(8.0f * power);
+		const float twist = 0.35f * spin;
+		const float start = 0.35f * radius;
+		const float reach = (radius - start) / std::cos(twist);
+		for (int i = 0; i < segments; i++)
+		{
+			const float angle = 6.2832f * float(i) / float(segments);
+			const glm::vec3 radial(std::cos(angle), 0.0f, std::sin(angle));
+			const glm::vec3 heading(std::cos(angle + twist), 0.0f, std::sin(angle + twist));
+			ParticleSpawn spark;
+			spark.Material = uint32_t(ParticleKind::HueSpark);
+			spark.Count = 1u + uint32_t(2.0f * power);
+			spark.Origin = center + radial * start + Up * 0.3f;
+			spark.Radius = 0.1f * radius;
+			spark.Direction = glm::normalize(heading + Up * 0.25f);
+			spark.Cone = 0.3f;
+			spark.Speed = glm::vec2(0.8f, 1.05f) * (reach * SparkDrag);
+			spark.Life = { 0.35f, 0.6f + 0.3f * power };
+			spark.Size = { 0.025f, 0.045f };
+			spark.Tint = tint;
+			m_Particles.Spawn(spark);
+			if ((i & 1) != 0)
+				continue;
+			ParticleSpawn dust;
+			dust.Material = uint32_t(ParticleKind::Dust);
+			dust.Count = 1u + uint32_t(1.5f * power);
+			dust.Origin = center + radial * (0.3f * radius) + Up * 0.15f;
+			dust.Radius = 0.12f * radius;
+			dust.Direction = glm::normalize(heading + Up * 0.1f);
+			dust.Cone = 0.15f;
+			dust.Speed = glm::vec2(0.85f, 1.05f) * ((radius * 0.95f - 0.3f * radius) * DustDrag);
+			dust.Life = { 0.7f, 1.1f + 0.5f * power };
+			dust.Size = glm::vec2(0.8f, 1.2f) * ((0.12f + 0.06f * power) * radius);
+			dust.Tint = { 0.5f, 0.46f, 0.5f };
+			m_Particles.Spawn(dust);
+		}
+		ParticleSpawn debris;
+		debris.Material = uint32_t(ParticleKind::Bone);
+		debris.Count = 4u + uint32_t(14.0f * power);
+		debris.Origin = center + Up * 0.2f;
+		debris.Radius = 0.3f * radius;
+		debris.Direction = Up;
+		debris.Cone = 0.9f;
+		debris.Speed = { 3.0f, 5.0f + 4.0f * power };
+		debris.Life = { 0.8f, 1.4f };
+		debris.Size = glm::vec2(0.04f, 0.08f) * (0.8f + 0.6f * power);
+		debris.Tint = { 0.32f, 0.28f, 0.3f };
+		m_Particles.Spawn(debris);
+		ParticleSpawn embers;
+		embers.Material = uint32_t(ParticleKind::HueSpark);
+		embers.Count = 4u + uint32_t(18.0f * power);
+		embers.Origin = center + Up * 0.3f;
+		embers.Radius = 0.4f * radius;
+		embers.Direction = Up;
+		embers.Cone = 0.7f;
+		embers.Speed = { 3.0f, 6.0f + 3.0f * power };
+		embers.Life = { 0.8f, 1.2f + 0.5f * power };
+		embers.Size = { 0.02f, 0.04f };
+		embers.Tint = tint;
+		m_Particles.Spawn(embers);
 	}
 
 	void EffectSystem::Converge(uint64_t key, const glm::vec3& target, float radius, float rate, float life, float dt, float size, ParticleKind kind, const glm::vec3& tint, float swirl, float arrive)
@@ -1212,8 +1328,8 @@ namespace Game
 			burn.Roughness = 0.95f;
 			burn.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
 			Mark(burn, 5.0f + 3.0f * power, 0.04f, 0.6f, 1.0f, 0.15f, 1.6f);
-			GroundDecal heat = decal(DecalShape::Glow, ground, glm::vec2(radius * 1.1f));
-			heat.Color = glm::vec4(glm::mix(glm::vec3(0.5f, 0.18f, 0.05f), glm::vec3(0.32f, 0.08f, 0.62f), violet) * (0.8f + 0.6f * power), 1.0f);
+			GroundDecal heat = decal(DecalShape::Glow, ground, glm::vec2(radius * 0.7f));
+			heat.Color = glm::vec4(glm::mix(glm::vec3(0.5f, 0.18f, 0.05f), glm::vec3(0.32f, 0.08f, 0.62f), violet) * (0.25f + 0.2f * power), 1.0f);
 			Mark(heat, 0.7f, 0.01f, 0.3f, 1.0f, 0.18f);
 			if (power > 0.35f)
 			{
@@ -1224,13 +1340,7 @@ namespace Game
 				split.Params = glm::vec4(0.6f + 0.4f * power, 0.0f, 0.0f, 0.0f);
 				Mark(split, 4.0f + 3.0f * power, 0.02f, 0.5f, 1.0f, 0.14f, 2.6f);
 			}
-			shock(radius * 1.05f, 0.4f, 0.55f + 0.35f * power);
-			Shockwave(ground, radius * (1.35f + 0.25f * power), 0.4f + 0.3f * power, 0.06f + 0.2f * power, 0.22f + 0.25f * power);
-			if (power > 0.9f)
-			{
-				shock(radius * 1.45f, 0.6f, 0.4f);
-				Shockwave(ground, radius * 2.1f, 0.8f, 0.07f, 0.35f);
-			}
+			Shockwave(ground, radius * 1.1f, 0.32f + 0.08f * power, 0.05f + 0.16f * power, 0.22f + 0.25f * power);
 			break;
 		}
 		case AbilityId::FirebombFlame:

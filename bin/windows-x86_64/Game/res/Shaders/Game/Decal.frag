@@ -132,9 +132,9 @@ void main()
 		result = FractureShape(world.xz, pixelWorld, params.x, time);
 	else if (shape == DecalFissure)
 		result = FissureShape(uv, extent.xy, pixelWorld, params.x, params.y, params.z, seed, time);
-	else if ((shape >= DecalCometMark && shape <= DecalFirebombMark) || shape == DecalAftershockMark || shape == DecalResonanceMark)
+	else if ((shape >= DecalCometMark && shape <= DecalFirebombMark) || shape == DecalAftershockMark || shape == DecalResonanceMark || shape == DecalRitualMark)
 	{
-		vec3 mark = SpellMarkShape(shape, uv * extent.x, extent.x * params.z, pixelWorld, params.x, params.y, seed, time);
+		vec3 mark = SpellMarkShape(shape, uv * extent.x, extent.x * params.z, extent.x * params.w, pixelWorld, params.x, params.y, seed, time);
 		result = mark.xy;
 		float peak = max(max(decal.Color.r, decal.Color.g), decal.Color.b);
 		glow = mix(vec3(1.0), vec3(peak) / max(decal.Color.rgb, vec3(1e-3)), clamp(mark.z, 0.0, 0.6));

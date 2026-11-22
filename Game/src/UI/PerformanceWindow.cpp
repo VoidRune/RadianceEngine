@@ -188,6 +188,15 @@ namespace Game
 			ImGui::TextDisabled("GPU timings aren't available on this device");
 		ImGui::Text("Waiting: GPU and display %.2f ms, frame cap %.2f ms", shown.Wait / frames, sleep);
 		ImGui::Text("Limited by %s", Limit(interval, cpu, gpu, sleep, app.GetSettings().Vsync));
+		if (const Rdn::FramePacer& pacer = app.GetPacer(); pacer.IsLocked())
+			ImGui::Text("Frame pacing locked to %.2f Hz", 1.0 / pacer.GetPeriod());
+		else
+			ImGui::TextDisabled("Frame pacing off");
+		const Rdn::PresentQueue& present = app.GetPresentQueue();
+		if (present.GetLatencyFrames() > 0)
+			ImGui::Text("Latency %u %s, input to display %.1f ms, frame cost %.1f ms", present.GetLatencyFrames(), present.GetLatencyFrames() == 1 ? "frame" : "frames", present.GetDisplayLatency(), present.GetFrameCost());
+		else
+			ImGui::TextDisabled(present.SupportsPresentWait() ? "Latency control off" : "Latency control unavailable (no present wait)");
 	}
 
 	void PerformanceWindow::DrawGraph(GameApp& app)

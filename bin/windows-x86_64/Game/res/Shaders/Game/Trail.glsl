@@ -29,3 +29,4 @@ const uint TrailChain = 3u;
 const uint TrailSmoke = 4u;
 const uint TrailWisp = 5u;
 const uint TrailSwipe = 6u;
+const uint TrailBlaze = 7u;

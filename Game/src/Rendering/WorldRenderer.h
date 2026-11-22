@@ -6,6 +6,7 @@
 #include "Rendering/Lake.h"
 #include "Rendering/Lightning.h"
 #include "Rendering/Void.h"
+#include "Rendering/Blast.h"
 #include "Rendering/Sun.h"
 #include "Rendering/Portal.h"
 #include "Rendering/Lighting.h"
@@ -202,6 +203,7 @@ namespace Game
 		GrassQuality GetGrassQuality() const { return m_Grass->Quality; }
 		void DrawLightning(const LightningShape& bolt) { m_Lightning->Draw(bolt); }
 		VoidRenderer& GetVoid() { return *m_Void; }
+		BlastRenderer& GetBlast() { return *m_Blast; }
 		SunRenderer& GetSun() { return *m_Sun; }
 		PortalRenderer& GetPortal() { return *m_Portal; }
 		ScreenDistortion& GetDistortion() { return *m_Distortion; }
@@ -415,6 +417,7 @@ namespace Game
 		std::unique_ptr<GrassRenderer> m_Grass;
 		std::unique_ptr<LightningRenderer> m_Lightning;
 		std::unique_ptr<VoidRenderer> m_Void;
+		std::unique_ptr<BlastRenderer> m_Blast;
 		std::unique_ptr<SunRenderer> m_Sun;
 		std::unique_ptr<PortalRenderer> m_Portal;
 		std::unique_ptr<Rdn::Shader> m_XrayShader;

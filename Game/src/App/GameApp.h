@@ -9,6 +9,7 @@
 #include <GameShared/Net/Protocol.h>
 #include <GameShared/Save/CharacterProfile.h>
 #include <RadianceEngine/Core/FrameLimiter.h>
+#include <RadianceEngine/Core/FramePacer.h>
 #include <RadianceEngine/Core/Timer.h>
 #include <RadianceEngine/Graphics/Device.h>
 #include <RadianceEngine/Graphics/PresentQueue.h>
@@ -65,6 +66,8 @@ namespace Game
 		bool Trails = true;
 		uint8_t DistortionStage = 0;
 		bool GrassStage = false;
+		uint8_t FireStage = 0;
+		float StageTime = -1.0f;
 		NetworkSimulation Simulation;
 	};
 
@@ -104,6 +107,8 @@ namespace Game
 		void RememberSettings(SettingsGroup group);
 		const Rdn::DeviceProperties& GetDeviceProperties() const { return m_Device->GetProperties(); }
 		Rdn::PresentMode GetPresentMode() const { return m_PresentQueue->GetPresentMode(); }
+		const Rdn::FramePacer& GetPacer() const { return m_Pacer; }
+		const Rdn::PresentQueue& GetPresentQueue() const { return *m_PresentQueue; }
 		Rdn::Extent2D GetExtent() const { return m_PresentQueue->GetExtent(); }
 		Rdn::MemoryUsage GetMemoryUsage() const { return m_Allocator->GetDeviceLocalUsage(); }
 		GraphicsTier GetRecommendedGraphics() const { return m_RecommendedGraphics; }
@@ -136,6 +141,9 @@ namespace Game
 		std::optional<GraphicsTier> m_GraphicsTier;
 		Rdn::Timer m_Clock;
 		Rdn::FrameLimiter m_Limiter;
+		Rdn::FramePacer m_Pacer;
+		uint32_t m_RefreshRate = 0;
+		double m_RefreshCheck = -1.0;
 		FrameTiming m_FrameTiming;
 		std::unique_ptr<PerformanceWindow> m_Performance;
 		std::unique_ptr<Rdn::Window> m_Window;

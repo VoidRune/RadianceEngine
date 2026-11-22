@@ -20,7 +20,7 @@ namespace Game
 	inline constexpr float ChilledMoveScale = 0.7f;
 	inline constexpr float SpawnProtection = 2.0f;
 	inline constexpr float PvpRespawnDelay = 3.0f;
-	inline constexpr float MatchEndSeconds = 12.0f;
+	inline constexpr float MatchEndSeconds = 6.0f;
 	inline constexpr float KillCreditSeconds = 10.0f;
 
 	inline float PvpStunDuration(float stun)

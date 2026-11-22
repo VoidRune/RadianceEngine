@@ -238,7 +238,7 @@ namespace Game
 	inline constexpr float AfterburnSeconds = 0.8f;
 	inline constexpr float AfterburnDamagePerSecond = 8.0f;
 	inline constexpr float BrawlDraftSeconds = 20.0f;
-	inline constexpr float BrawlPickSeconds = 20.0f;
+	inline constexpr float BrawlPickSeconds = 12.0f;
 	inline constexpr float BrawlCountdownSeconds = 3.0f;
 	inline constexpr float BrawlOverSeconds = 3.5f;
 	inline constexpr float CollapseGrace = 9.0f;
@@ -847,7 +847,7 @@ namespace Game
 		return skill;
 	}
 
-	inline bool EchoesInChamber(AbilityId id)
+	inline bool Refracts(AbilityId id)
 	{
 		const AbilityKind kind = GetAbility(id).Kind;
 		return (kind == AbilityKind::Projectile || kind == AbilityKind::Ground) && id != AbilityId::ChainHook;
@@ -875,17 +875,19 @@ namespace Game
 			}
 			if (HasCard(cards, CardId::ManaSingularity))
 				skill.ManaCost = 0.0f;
-			if (HasCard(cards, CardId::EchoChamber) && EchoesInChamber(skill.Ability))
-				skill.Cooldown *= EchoChamberCooldown;
+			if (HasCard(cards, CardId::Refraction) && Refracts(skill.Ability))
+				skill.Cooldown *= RefractionCooldown;
 		}
 		if (HasCard(cards, CardId::BloodMagic))
 		{
 			traits.MaxMana = 0.0f;
 			traits.ManaRegen = 0.0f;
 			traits.BloodRate = BloodMagicRate;
-			traits.MaxHealth += BloodMagicHealth;
+			traits.MaxHealth += int32_t(std::lround(float(traits.MaxHealth) * BloodMagicHealth));
 			traits.Regeneration = BloodMagicRegen;
 		}
+		if (HasCard(cards, CardId::Archmage))
+			traits.WeaveStacks = ArchmageStacks;
 		if (HasCard(cards, CardId::MindOverMatter))
 			traits.StallRegen = MindOverMatterRegen;
 	}

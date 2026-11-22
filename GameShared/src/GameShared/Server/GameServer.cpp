@@ -787,10 +787,12 @@ namespace Game
 					state.Flags |= uint16_t(EntityFlags::Ignited);
 				if (m_World->GetMatch().GetMarkedBy(controller->PlayerId) != NoPlayer)
 					state.Flags |= uint16_t(EntityFlags::Marked);
+				if (m_World->GetMatch().GetBloodShield(controller->PlayerId) > 0)
+					state.Flags |= uint32_t(EntityFlags::BloodShield);
 				if (m_World->HasCrystalWard(controller->PlayerId))
 					state.Flags |= uint16_t(EntityFlags::Barrier);
-				if (controller->State.Momentum >= QuicksilverSeconds && m_World->GetMatch().HasPlayerCard(controller->PlayerId, CardId::Quicksilver))
-					state.Flags |= uint32_t(EntityFlags::Quicksilver);
+				if (controller->Traits.WeaveStacks > 0 && controller->State.Weave >= controller->Traits.WeaveStacks)
+					state.Flags |= uint32_t(EntityFlags::Archmage);
 				if (LengthSquared(controller->State.Push) > FlungSpeed * FlungSpeed)
 					state.Flags |= uint16_t(EntityFlags::Flung);
 				if (controller->State.IsFalling())
@@ -952,6 +954,7 @@ namespace Game
 		{
 			local.Brawl = m_World->GetMatch().GetLoadout(client.PlayerId);
 			local.Shield = m_World->GetMatch().GetWardGauge(client.PlayerId);
+			local.BloodShield = m_World->GetMatch().GetBloodShield(client.PlayerId);
 		}
 		if (m_Session.Mode == GameMode::Hub)
 			local.Starlit = m_World->GetStarlit(client.PlayerId);

@@ -27,6 +27,7 @@ namespace
 	constexpr size_t PoolSize = std::size(BrawlSpellPool);
 	constexpr size_t CardCount = size_t(CardId::Count);
 	constexpr uint64_t MinComboSeats = 150;
+	constexpr float LullGap = 6.0f;
 
 	size_t PoolIndex(AbilityId spell)
 	{
@@ -120,6 +121,11 @@ namespace
 		std::vector<float> Lengths;
 		std::vector<float> FirstFalls;
 		std::vector<float> KillTimes;
+		std::vector<float> LongestLulls;
+		double LullSeconds = 0.0;
+		uint64_t HoleFalls = 0;
+		uint64_t DashFalls = 0;
+		uint64_t Deaths = 0;
 		std::array<Share, size_t(BotSkill::Count)> Skills{};
 
 		void Merge(const Totals& other)
@@ -142,6 +148,11 @@ namespace
 				Skills[i].Merge(other.Skills[i]);
 			FirstFalls.insert(FirstFalls.end(), other.FirstFalls.begin(), other.FirstFalls.end());
 			KillTimes.insert(KillTimes.end(), other.KillTimes.begin(), other.KillTimes.end());
+			LongestLulls.insert(LongestLulls.end(), other.LongestLulls.begin(), other.LongestLulls.end());
+			LullSeconds += other.LullSeconds;
+			HoleFalls += other.HoleFalls;
+			DashFalls += other.DashFalls;
+			Deaths += other.Deaths;
 			for (size_t i = 0; i < Cards.size(); i++)
 			{
 				Cards[i].Merge(other.Cards[i]);
@@ -296,6 +307,18 @@ namespace
 		std::array<bool, MaxPlayers> started{};
 		std::array<CardOffer, MaxPlayers> lastOffer{};
 		std::array<uint16_t, MaxPlayers> roundPoints{};
+		std::array<Vec2, MaxPlayers> lastPlace{};
+		std::array<float, MaxPlayers> dashedAt{};
+		dashedAt.fill(-1e9f);
+		float lastStrike = 0.0f;
+		float longestLull = 0.0f;
+		const auto closeLull = [&](float now)
+		{
+			const float gap = now - lastStrike;
+			longestLull = std::max(longestLull, gap);
+			totals.LullSeconds += std::max(gap - LullGap, 0.0f);
+			lastStrike = now;
+		};
 		while (world.GetStatus().Match != MatchPhase::Ended && world.GetTick() < MatchTickLimit)
 		{
 			squad.Update(world);
@@ -310,8 +333,17 @@ namespace
 					return;
 				float& previous = attackAges[controller.PlayerId];
 				const bool struck = controller.LastAttackAge < previous && controller.LastAttacker != NoPlayer && controller.LastAbility < uint8_t(AbilityId::Count);
+				if (controller.State.Alive)
+				{
+					if (const Transform* place = world.GetEntities().TryGet<Transform>(entity))
+						lastPlace[controller.PlayerId] = place->Position;
+					if (controller.State.DashDistance > 0.0f)
+						dashedAt[controller.PlayerId] = match.GetBrawl().Clock;
+				}
 				if (struck)
 				{
+					if (match.GetBrawl().Phase == BrawlPhase::Fight)
+						closeLull(match.GetBrawl().Clock);
 					totals.Spells[controller.LastAbility].Hits++;
 					if (controller.LastAbility == uint8_t(AbilityId::Comet) && chained(controller.LastAttacker) && !chains[controller.LastAttacker].Hit)
 					{
@@ -358,6 +390,8 @@ namespace
 			{
 				if (event.Type == WorldEventType::RoundStarted)
 				{
+					lastStrike = 0.0f;
+					longestLull = 0.0f;
 					fallen = false;
 					hurtAt.fill(-1.0f);
 					seats.clear();
@@ -385,6 +419,8 @@ namespace
 					totals.FightMinutes += minutes;
 					totals.SeatMinutes += minutes * double(seats.size());
 					totals.Lengths.push_back(seconds);
+					closeLull(seconds);
+					totals.LongestLulls.push_back(longestLull);
 					for (const Seat& seat : seats)
 					{
 						const bool won = seat.PlayerId == event.PlayerId;
@@ -439,6 +475,15 @@ namespace
 				{
 					fallen = true;
 					totals.FirstFalls.push_back(match.GetBrawl().Clock);
+				}
+				if (kill.Victim < MaxPlayers)
+				{
+					totals.Deaths++;
+					if (IsBrawlLava(world.GetLevel(), match.GetBrawl(), lastPlace[kill.Victim]))
+					{
+						totals.HoleFalls++;
+						totals.DashFalls += match.GetBrawl().Clock - dashedAt[kill.Victim] < FallSeconds + 0.8f ? 1u : 0u;
+					}
 				}
 				if (kill.Victim < MaxPlayers && hurtAt[kill.Victim] >= 0.0f)
 				{
@@ -728,6 +773,9 @@ namespace
 		}
 		if (!totals.FirstFalls.empty())
 			md << "- The first mage falls after a median of " << Fixed(Quantile(totals.FirstFalls, 0.5), 0) << " s (middle half " << Fixed(Quantile(totals.FirstFalls, 0.25), 0) << " to " << Fixed(Quantile(totals.FirstFalls, 0.75), 0) << " s).\n";
+		if (!totals.LongestLulls.empty())
+			md << "- Longest stretch without a spell hit in a round: median " << Fixed(Quantile(totals.LongestLulls, 0.5), 1) << " s, 90% under " << Fixed(Quantile(totals.LongestLulls, 0.9), 1) << " s. Lulls past " << Fixed(LullGap, 0) << " s add up to " << Percent(totals.LullSeconds / std::max(totals.FightMinutes * 60.0, 1e-9)) << " of fighting time.\n";
+		md << "- " << Percent(double(totals.HoleFalls) / double(std::max<uint64_t>(totals.Deaths, 1))) << " of deaths were falls off the floor, " << Percent(double(totals.DashFalls) / double(std::max<uint64_t>(totals.HoleFalls, 1))) << " of those right after the mage's own dodge or blink.\n";
 		const double rounds = double(std::max<uint64_t>(totals.Rounds, 1));
 		md << "- " << Percent(double(totals.Empty) / rounds) << " of rounds ended with nobody standing.\n";
 		const double deaths = double(std::max<uint64_t>(totals.Knockouts + totals.Falls, 1));

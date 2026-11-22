@@ -233,7 +233,7 @@ namespace Game
 		void CastCopies(AbilityId ability, const AbilityContext& context);
 		void StargazeAt(const PlayerController& controller, Vec2 origin, const PlayerActions& actions);
 		PlayerTraits ComputeTraits(uint32_t playerId) const;
-		float CastScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float momentum) const;
+		float CastScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float weave) const;
 		void UpdateNavigation(float dt);
 		void RebuildTargets();
 		void RecordHistory();

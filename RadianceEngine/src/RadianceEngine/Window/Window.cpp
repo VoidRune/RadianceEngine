@@ -214,6 +214,18 @@ namespace Rdn
 		return glfwGetWindowAttrib(m_Window, GLFW_ICONIFIED) == GLFW_TRUE;
 	}
 
+	bool Window::IsFocused() const
+	{
+		return glfwGetWindowAttrib(m_Window, GLFW_FOCUSED) == GLFW_TRUE;
+	}
+
+	uint32_t Window::GetRefreshRate() const
+	{
+		GLFWmonitor* monitor = FindMonitor(m_Window);
+		const GLFWvidmode* mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+		return mode && mode->refreshRate > 0 ? uint32_t(mode->refreshRate) : 0u;
+	}
+
 	void Window::SetTitle(const std::string& title)
 	{
 		glfwSetWindowTitle(m_Window, title.c_str());

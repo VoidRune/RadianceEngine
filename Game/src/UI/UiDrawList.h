@@ -7,6 +7,13 @@
 
 namespace Game
 {
+	enum class OrbAuraStyle : uint8_t
+	{
+		None,
+		BloodShield,
+		CrystalWard,
+	};
+
 	struct RectStyle
 	{
 		UiColor Fill{ 0.0f };
@@ -127,6 +134,7 @@ namespace Game
 		void Line(glm::vec2 from, glm::vec2 to, float width, UiColor color);
 		void Triangle(glm::vec2 center, glm::vec2 size, float rotation, UiColor color, UiColor border = UiColor(0.0f), float borderWidth = 0.0f);
 		void Orb(glm::vec2 center, float radius, float fill, UiColor light, UiColor deep, UiColor glass, UiColor highlight, float phase, float wave = 0.035f);
+		void OrbAura(glm::vec2 center, float radius, OrbAuraStyle style, float amount, UiColor light, UiColor deep, float phase = 0.0f);
 		void Sigil(glm::vec2 center, float radius, const SigilStyle& style);
 		void Veil(const UiRect& rect, float appear);
 		void Primitive(const UiPrimitive& primitive) { m_Primitives.push_back(primitive); }

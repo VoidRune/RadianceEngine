@@ -43,6 +43,7 @@ namespace Rdn
     {
         None = 0,
         RayTracing = 0x00000001,
+        PresentWait = 0x00000002,
     };
     DEFINE_ENUM_FLAGS_OR(DeviceCapability)
     DEFINE_ENUM_FLAGS_AND(DeviceCapability)

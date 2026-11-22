@@ -25,6 +25,9 @@ namespace Game
 	inline constexpr float FireballHoldReach = 0.45f;
 	inline constexpr float FireballBallRadius = 0.2f;
 	inline constexpr float FireballBlastHeight = 0.75f;
+	inline constexpr float FireballBlastSpin = 1.0f;
+	inline constexpr float FireballBlastDome = 0.45f;
+	inline constexpr float FireballBlastLight = 6.0f;
 	inline constexpr float FireballSteps[] = { 0.33f, 0.66f };
 	inline constexpr float ObsidianLength = 0.95f;
 	inline constexpr float ObsidianHoldHeight = 1.05f;
@@ -147,6 +150,21 @@ namespace Game
 		float Kill = 0.0f;
 	};
 
+	struct FlameLook
+	{
+		glm::vec3 Base{ 0.0f };
+		glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+		float Width = 0.1f;
+		float Height = 0.3f;
+		glm::vec3 Color{ 1.3f, 0.57f, 0.15f };
+		float Wild = 0.5f;
+		float Speed = 2.0f;
+		float Comet = 0.0f;
+		float Additive = 0.3f;
+		float Emission = 0.35f;
+		uint32_t Seed = 0;
+	};
+
 	struct FireballLook
 	{
 		glm::vec3 Center{ 0.0f };
@@ -155,6 +173,8 @@ namespace Game
 		float Grow = 1.0f;
 		float Power = 0.0f;
 		float Flash = 0.0f;
+		float Ground = 0.0f;
+		bool Grounded = false;
 		bool Flying = false;
 	};
 
@@ -165,7 +185,6 @@ namespace Game
 		float Radius = 1.0f;
 		float Power = 0.0f;
 		float Age = 0.0f;
-		float Life = 0.6f;
 	};
 
 	struct HexShieldImpact
@@ -290,6 +309,7 @@ namespace Game
 		Firebomb,
 		Aftershock,
 		Resonance,
+		Ritual,
 	};
 
 	struct SpellMark
@@ -304,6 +324,8 @@ namespace Game
 		float Fade = 1.0f;
 		SpellMarkKind Kind = SpellMarkKind::Comet;
 		uint32_t Seed = 0;
+		float Inner = 0.0f;
+		uint32_t Cells = 0;
 	};
 
 	float RingExtent(float radius, float thickness);
@@ -321,6 +343,8 @@ namespace Game
 	void DrawBladeSlash(WorldRenderer& renderer, const BladeSlash& slash);
 	float FireballViolet(float power);
 	glm::vec3 FireballColor(float power);
+	glm::vec3 FireballFlameHue(float power);
+	glm::vec3 FireballFlameTint(float power);
 	void DrawPurpleFireball(WorldRenderer& renderer, const FireballLook& look, float time, uint32_t seed);
 	void DrawArcChannel(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float time, float intensity);
 	void DrawArcSparks(WorldRenderer& renderer, const glm::vec3& center, uint32_t seed, float reach, float intensity, uint32_t count);
@@ -331,6 +355,9 @@ namespace Game
 	void DrawStormBolt(WorldRenderer& renderer, const glm::vec3& ground, uint32_t seed, float age, float scale = 1.0f);
 	void DrawStormStrike(WorldRenderer& renderer, const StormStrikeLook& look, float time);
 	void DrawStormJump(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, uint32_t seed, float age, float time);
+	float FireballBlastFire(float power);
+	float FireballBlastSmoke(float power);
+	float FireballBlastLife(float power);
 	void DrawFireballBlast(WorldRenderer& renderer, const FireballBlastLook& look, uint32_t seed);
 	std::span<const HexShieldCell> HexShieldCells();
 	glm::vec3 HexShieldPoint(const glm::vec3& base, float facing, const glm::vec2& point, glm::vec3* normal = nullptr);
@@ -347,8 +374,7 @@ namespace Game
 	void ShatterDiamondWard(const DiamondWardLook& look, std::vector<DiamondShard>& shards);
 	void UpdateDiamondShards(std::vector<DiamondShard>& shards, float dt);
 	void DrawDiamondShards(WorldRenderer& renderer, std::span<const DiamondShard> shards);
-	void DrawCrystalWard(WorldRenderer& renderer, const glm::vec3& base, float form, float time, uint32_t seed);
-	void ShatterCrystalWard(const glm::vec3& base, float time, uint32_t seed, std::vector<DiamondShard>& shards);
+	void DrawCrystalWard(WorldRenderer& renderer, const glm::vec3& base, const glm::vec3& eye, float form, float time, uint32_t seed);
 
 	void DrawRuneCircle(WorldRenderer& renderer, const RuneCircle& circle);
 	void DrawGroundRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float intensity, float thickness, float dashes = 0.0f, float spin = 0.0f, uint32_t pattern = 0);
@@ -360,6 +386,7 @@ namespace Game
 	void DrawGlow(WorldRenderer& renderer, const glm::vec3& position, float size, const glm::vec3& color, float softness = 0.2f);
 	void DrawStar(WorldRenderer& renderer, const glm::vec3& position, float size, const glm::vec3& color, float rotation = 0.0f);
 	void DrawFloatingRing(WorldRenderer& renderer, const glm::vec3& center, float radius, const glm::vec3& color, float thickness);
+	void DrawBloodBubble(WorldRenderer& renderer, const glm::vec3& center, const glm::vec3& eye, float radius, const glm::vec3& color, float strength, float flash, uint32_t seed);
 	void DrawBeam(WorldRenderer& renderer, const glm::vec3& base, float height, float width, const glm::vec3& color, float emission = 1.0f);
 	void DrawStreak(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float width, const glm::vec3& color);
 	void DrawSlash(WorldRenderer& renderer, const glm::vec3& center, float facing, float reach, float halfArc, float sweep, const glm::vec3& color, bool mirrored, float inner = 0.45f);
@@ -373,6 +400,7 @@ namespace Game
 	void DrawShockwave(WorldRenderer& renderer, const glm::vec3& ground, float radius, float width, float strength, float facing = 0.0f, float halfArc = 3.1416f);
 	void DrawAirShockwave(WorldRenderer& renderer, const glm::vec3& center, float radius, float width, float strength);
 	void DrawHeatHaze(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength, float frequency, float rise, uint32_t seed);
+	void DrawFlame(WorldRenderer& renderer, const FlameLook& look);
 	void DrawImplosion(WorldRenderer& renderer, const glm::vec3& center, float radius, float strength, float phase, uint32_t pulses = 3);
 	void DrawGravityLens(WorldRenderer& renderer, const glm::vec3& center, float horizon, float einstein, const glm::vec3& ring, float strength = 1.0f);
 }

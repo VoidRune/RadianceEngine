@@ -2,9 +2,13 @@
 #include "RadianceEngine/Core/Log.h"
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <fstream>
 #include <iterator>
+#include <mutex>
+#include <optional>
 #include <string_view>
+#include <thread>
 
 #include <shaderc/shaderc.hpp>
 
@@ -114,8 +118,165 @@ namespace Rdn::ShaderCompiler
 			return message;
 		}
 
+		constexpr uint32_t CacheMagic = 0x56505352;
+		constexpr uint32_t CacheVersion = 1;
+		constexpr auto CacheLifetime = std::chrono::days(14);
+
+		std::filesystem::path s_CacheDirectory;
+		std::mutex s_CacheMutex;
+
+		uint64_t Hash(std::string_view data, uint64_t hash = 0xcbf29ce484222325ull)
+		{
+			for (const char c : data)
+				hash = (hash ^ uint8_t(c)) * 0x100000001b3ull;
+			return hash;
+		}
+
+		uint64_t HashValue(uint64_t value, uint64_t hash)
+		{
+			return Hash(std::string_view(reinterpret_cast<const char*>(&value), sizeof(value)), hash);
+		}
+
+		std::optional<uint64_t> HashFile(const std::string& path)
+		{
+			std::ifstream file(path, std::ios::binary);
+			if (!file)
+				return std::nullopt;
+			const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+			return Hash(content);
+		}
+
+		uint64_t CacheKey(const std::string& source, const StageInfo& stage, const std::string& name)
+		{
+			unsigned int spvVersion = 0, spvRevision = 0;
+			shaderc_get_spv_version(&spvVersion, &spvRevision);
+#if defined(DEBUG)
+			constexpr uint64_t debug = 1;
+#else
+			constexpr uint64_t debug = 0;
+#endif
+			uint64_t key = HashValue(CacheVersion, HashValue(debug, HashValue(uint64_t(stage.Kind), HashValue((uint64_t(spvVersion) << 32) | spvRevision, Hash(name)))));
+			return Hash(source, key);
+		}
+
+		std::filesystem::path CachePath(uint64_t key)
+		{
+			return s_CacheDirectory / std::format("{:016x}.spv", key);
+		}
+
+		template<typename T>
+		bool ReadValue(std::ifstream& file, T& value)
+		{
+			return bool(file.read(reinterpret_cast<char*>(&value), sizeof(T)));
+		}
+
+		template<typename T>
+		void WriteValue(std::ofstream& file, const T& value)
+		{
+			file.write(reinterpret_cast<const char*>(&value), sizeof(T));
+		}
+
+		bool LoadCached(uint64_t key, const StageInfo& stage, ShaderDesc& shaderDesc)
+		{
+			if (s_CacheDirectory.empty())
+				return false;
+			const std::filesystem::path path = CachePath(key);
+			std::ifstream file(path, std::ios::binary);
+			uint32_t magic = 0, version = 0, dependencyCount = 0;
+			if (!file || !ReadValue(file, magic) || !ReadValue(file, version) || magic != CacheMagic || version != CacheVersion || !ReadValue(file, dependencyCount) || dependencyCount > 256)
+				return false;
+
+			std::vector<ShaderSourceFile> dependencies;
+			for (uint32_t i = 0; i < dependencyCount; i++)
+			{
+				uint32_t length = 0;
+				uint64_t hash = 0;
+				if (!ReadValue(file, length) || length > 4096)
+					return false;
+				std::string dependency(length, '\0');
+				if (!file.read(dependency.data(), length) || !ReadValue(file, hash) || HashFile(dependency) != hash)
+					return false;
+				std::error_code error;
+				const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(dependency, error);
+				dependencies.push_back({ std::move(dependency), writeTime });
+			}
+
+			uint32_t wordCount = 0;
+			if (!ReadValue(file, wordCount) || wordCount == 0 || wordCount > (64u << 20))
+				return false;
+			std::vector<uint32_t> spirV(wordCount);
+			if (!file.read(reinterpret_cast<char*>(spirV.data()), std::streamsize(wordCount) * sizeof(uint32_t)) || spirV[0] != 0x07230203)
+				return false;
+			file.close();
+
+			std::error_code error;
+			std::filesystem::last_write_time(path, std::filesystem::file_time_type::clock::now(), error);
+			for (ShaderSourceFile& dependency : dependencies)
+			{
+				if (std::ranges::none_of(shaderDesc.SourceFiles, [&](const ShaderSourceFile& source) { return source.Path == dependency.Path; }))
+					shaderDesc.SourceFiles.push_back(std::move(dependency));
+			}
+			shaderDesc.SpirV = std::move(spirV);
+			shaderDesc.ShaderStage = stage.Stage;
+			return true;
+		}
+
+		void StoreCached(uint64_t key, const std::string& name, const ShaderDesc& shaderDesc)
+		{
+			if (s_CacheDirectory.empty())
+				return;
+			std::vector<std::pair<const std::string*, uint64_t>> dependencies;
+			for (const ShaderSourceFile& source : shaderDesc.SourceFiles)
+			{
+				if (source.Path == name)
+					continue;
+				const std::optional<uint64_t> hash = HashFile(source.Path);
+				if (!hash)
+					return;
+				dependencies.emplace_back(&source.Path, *hash);
+			}
+
+			const std::filesystem::path path = CachePath(key);
+			std::filesystem::path temporary = path;
+			temporary += std::format(".{}.tmp", std::hash<std::thread::id>{}(std::this_thread::get_id()) ^ uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
+			{
+				std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+				if (!file)
+					return;
+				WriteValue(file, CacheMagic);
+				WriteValue(file, CacheVersion);
+				WriteValue(file, uint32_t(dependencies.size()));
+				for (const auto& [dependency, hash] : dependencies)
+				{
+					WriteValue(file, uint32_t(dependency->size()));
+					file.write(dependency->data(), std::streamsize(dependency->size()));
+					WriteValue(file, hash);
+				}
+				WriteValue(file, uint32_t(shaderDesc.SpirV.size()));
+				file.write(reinterpret_cast<const char*>(shaderDesc.SpirV.data()), std::streamsize(shaderDesc.SpirV.size() * sizeof(uint32_t)));
+				if (!file)
+				{
+					file.close();
+					std::error_code error;
+					std::filesystem::remove(temporary, error);
+					return;
+				}
+			}
+			std::error_code error;
+			std::filesystem::rename(temporary, path, error);
+			if (error)
+				std::filesystem::remove(temporary, error);
+		}
+
 		bool CompileSource(const std::string& source, const StageInfo& stage, const std::string& name, ShaderDesc& shaderDesc)
 		{
+			const uint64_t key = CacheKey(source, stage, name);
+			{
+				std::lock_guard lock(s_CacheMutex);
+				if (LoadCached(key, stage, shaderDesc))
+					return true;
+			}
+
 			shaderc::CompileOptions options;
 			options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 			options.SetPreserveBindings(true);
@@ -140,7 +301,34 @@ namespace Rdn::ShaderCompiler
 
 			shaderDesc.SpirV.assign(result.cbegin(), result.cend());
 			shaderDesc.ShaderStage = stage.Stage;
+			std::lock_guard lock(s_CacheMutex);
+			StoreCached(key, name, shaderDesc);
 			return true;
+		}
+	}
+
+	void SetCacheDirectory(const std::filesystem::path& directory)
+	{
+		std::lock_guard lock(s_CacheMutex);
+		s_CacheDirectory.clear();
+		if (directory.empty())
+			return;
+		std::error_code error;
+		std::filesystem::create_directories(directory, error);
+		if (error)
+		{
+			RDN_LOG_WARNING("Shader cache disabled: can't create {} ({})", directory.generic_string(), error.message());
+			return;
+		}
+		s_CacheDirectory = directory;
+
+		const auto cutoff = std::filesystem::file_time_type::clock::now() - CacheLifetime;
+		for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(directory, error))
+		{
+			const std::filesystem::path& path = entry.path();
+			const bool cacheFile = path.extension() == ".spv" || path.extension() == ".tmp";
+			if (cacheFile && entry.last_write_time(error) < cutoff)
+				std::filesystem::remove(path, error);
 		}
 	}
 

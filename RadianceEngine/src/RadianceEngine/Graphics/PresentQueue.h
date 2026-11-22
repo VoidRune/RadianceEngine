@@ -19,6 +19,14 @@ namespace Rdn
 		Format              PresentFormat;
 	};
 
+	enum class LatencyMode
+	{
+		Off,
+		Auto,
+		One,
+		Two,
+	};
+
 	class Device;
 	class PresentQueue
 	{
@@ -29,6 +37,14 @@ namespace Rdn
 		~PresentQueue();
 		PresentQueue(const PresentQueue&) = delete;
 		PresentQueue& operator=(const PresentQueue&) = delete;
+
+		void WaitForLatency(double refreshRate);
+		void SetLatencyMode(LatencyMode mode) { m_LatencyMode = mode; }
+		LatencyMode GetLatencyMode() const { return m_LatencyMode; }
+		bool SupportsPresentWait() const { return m_PresentWaitSupported; }
+		uint32_t GetLatencyFrames() const { return m_Latency; }
+		float GetDisplayLatency() const { return m_DisplayLatency; }
+		float GetFrameCost() const { return m_CostAverage; }
 
 		[[nodiscard]] std::optional<FrameContext> BeginFrame();
 		void Submit();
@@ -50,10 +66,35 @@ namespace Rdn
 			CommandBufferHandle Cmd;
 			SemaphoreHandle     AcquireSemaphore;
 			FenceHandle         InFlightFence;
+			QueryPoolHandle     Timestamps;
+			bool                TimestampsWritten = false;
 		};
 
 		bool CreateSwapchain();
 		void DestroySwapchainResources();
+		void UpdateLatency(double cost);
+
+		static constexpr size_t SampleHistory = 8;
+
+		bool m_PresentWaitSupported = false;
+		LatencyMode m_LatencyMode = LatencyMode::Auto;
+		uint32_t m_Latency = 0;
+		uint64_t m_PresentId = 0;
+		uint64_t m_DisplayedId = 0;
+		double m_SampleTimes[SampleHistory] = {};
+		double m_Period = 0.0;
+		double m_Wake = 0.0;
+		double m_LastWake = 0.0;
+		double m_Blocked = 0.0;
+		double m_GpuCost = -1.0;
+		bool m_Missed = false;
+		bool m_WasOver = false;
+		double m_Over = 0.0;
+		uint32_t m_Hold = 120;
+		uint32_t m_Good = 0;
+		uint32_t m_Backoff = 300;
+		float m_DisplayLatency = 0.0f;
+		float m_CostAverage = 0.0f;
 
 		Device* m_Device;
 		DeviceHandle m_LogicalDevice;

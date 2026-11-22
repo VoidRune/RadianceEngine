@@ -45,6 +45,7 @@ namespace Game
 		Campfire,
 		Lantern,
 		Candle,
+		Torch,
 	};
 
 	struct LevelFire
@@ -94,6 +95,15 @@ namespace Game
 	inline constexpr float FloorTop = 0.025f;
 	inline constexpr float FloorBottom = 0.075f;
 
+	struct SummitCourse
+	{
+		float Inner = 0.0f;
+		float Outer = 0.0f;
+		float Turn = 0.0f;
+		int32_t Count = 0;
+	};
+
+	SummitCourse SummitBorderCourse();
 	void RegisterPeakMeshes(WorldRenderer& renderer);
 	LevelScene BuildLevelScene(const Level& level, WorldRenderer& renderer);
 	std::optional<float> SampleGround(const LevelScene& scene, Vec2 position);

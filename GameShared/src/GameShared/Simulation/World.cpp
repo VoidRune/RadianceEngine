@@ -203,7 +203,7 @@ namespace Game
 			const int32_t price = std::min(life->Current - 1, std::max(1, int32_t(std::lround(actions.BloodCost))));
 			life->Current -= price;
 			if (const Replicated* replicated = m_Entities.TryGet<Replicated>(player))
-				RecordHit({ replicated->NetId, transform->Position, uint16_t(price), false, true, Element::Physical, NoPlayer });
+				RecordHit({ .Target = replicated->NetId, .Position = transform->Position, .Damage = uint16_t(price), .OnPlayer = true, .Damages = Element::Physical, .Attacker = controller->PlayerId });
 		}
 		if (actions.Raised)
 			m_Match.NoteCast(controller->PlayerId);
@@ -240,7 +240,7 @@ namespace Game
 				continue;
 			const SkillTraits& skill = traits.Skills[slot];
 			AbilityContext eruption = context;
-			eruption.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, controller->State.Momentum) * NovaEruptionScale(actions.RecastAge);
+			eruption.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, float(controller->State.Weave)) * NovaEruptionScale(actions.RecastAge);
 			eruption.PushScale = NovaEruptionPush(actions.RecastAge) * skill.PushScale;
 			eruption.AreaScale = traits.AreaScale * skill.AreaScale;
 			eruption.PvpScale = skill.PvpScale;
@@ -249,7 +249,7 @@ namespace Game
 			EruptFrostNova(*this, actions.RecastPoint, eruption);
 		}
 		const bool damage = UsesBrawlDamage();
-		const bool chamber = damage && HasCard(context.Cards, CardId::EchoChamber);
+		const bool refraction = damage && HasCard(context.Cards, CardId::Refraction);
 		const bool arcana = damage && HasCard(context.Cards, CardId::UnstableArcana);
 		for (uint32_t slot = 0; slot < AbilitySlots; slot++)
 		{
@@ -257,7 +257,7 @@ namespace Game
 				continue;
 			const SkillTraits& skill = traits.Skills[slot];
 			const AbilityDef& ability = GetAbility(skill.Ability);
-			context.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, actions.ManaBefore, traits.MaxMana, (actions.Overloaded & (1u << slot)) != 0, controller->State.Momentum);
+			context.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, actions.ManaBefore, traits.MaxMana, (actions.Overloaded & (1u << slot)) != 0, float(actions.Weave));
 			if (skill.Ability == AbilityId::ChainHook && damage)
 				context.DamageScale *= (HasCard(context.Cards, CardId::Whiplash) ? WhiplashDamage : 1.0f) * (HasCard(context.Cards, CardId::LongChain) ? LongChainDamage : 1.0f);
 			context.AreaScale = traits.AreaScale * skill.AreaScale;
@@ -277,7 +277,7 @@ namespace Game
 			if (arcana && !guard)
 			{
 				surge = ArcanaSurge(1u + m_Random.Below(4u));
-				if (surge == ArcanaSurge::Copies && !EchoesInChamber(skill.Ability))
+				if (surge == ArcanaSurge::Copies && !Refracts(skill.Ability))
 					surge = ArcanaSurge::Power;
 				if (surge == ArcanaSurge::Area && !IsAreaSpell(skill.Ability))
 					surge = ArcanaSurge::Refund;
@@ -294,7 +294,7 @@ namespace Game
 			ExecuteAbility(*this, skill.Ability, context);
 			if (IsShardfall())
 				m_Run.AfterCast(*this, player, *controller, slot, skill.Ability, context);
-			if ((chamber && EchoesInChamber(skill.Ability)) || surge == ArcanaSurge::Copies)
+			if ((refraction && Refracts(skill.Ability)) || surge == ArcanaSurge::Copies)
 				CastCopies(skill.Ability, context);
 			if (slot > 0 && ability.Kind != AbilityKind::Dash && ability.Kind != AbilityKind::Ward && (IsShardfall() ? m_Run.ConsumeEcho(controller->PlayerId) : m_Match.ConsumeEcho(controller->PlayerId)))
 				m_Echoes.push_back({ player, skill.Ability, context, EchoDelay });
@@ -312,20 +312,20 @@ namespace Game
 		const AbilityDef& ability = GetAbility(id);
 		AbilityContext copy = context;
 		copy.Tag = 0;
-		copy.DamageScale *= EchoChamberShare;
-		copy.PushScale *= EchoChamberShare;
+		copy.DamageScale *= RefractionShare;
+		copy.PushScale *= RefractionShare;
 		const float facing = AngleOf(context.Direction);
 		for (const float side : { -1.0f, 1.0f })
 		{
 			AbilityContext cast = copy;
 			if (ability.Kind == AbilityKind::Projectile)
-				cast.Direction = FromAngle(facing + side * EchoChamberFan);
+				cast.Direction = FromAngle(facing + side * RefractionFan);
 			else if (ability.Shape == StrikeShape::Line)
 				cast.Target = context.Target + FromAngle(facing + side * (Pi * 0.5f)) * (ability.Width * context.AreaScale * 1.6f);
 			else
 			{
 				const float reach = std::max(ability.ImpactRadius, ability.Reach) * context.AreaScale;
-				cast.AreaScale *= EchoChamberArea;
+				cast.AreaScale *= RefractionArea;
 				cast.Target = context.Target + FromAngle(facing + side * (2.0f * Pi / 3.0f)) * reach;
 			}
 			ExecuteAbility(*this, id, cast);
@@ -1414,11 +1414,11 @@ namespace Game
 		return controller && IsShardfall() && m_Run.UseShrine(*this, controller->PlayerId, choice);
 	}
 
-	float World::CastScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float momentum) const
+	float World::CastScale(uint32_t playerId, float healthFraction, float manaBefore, float maxMana, bool overloaded, float weave) const
 	{
 		if (IsShardfall())
-			return CardCastScale(m_Run.GetCards(playerId), healthFraction, manaBefore, maxMana, overloaded, momentum);
-		return m_Match.CastDamageScale(playerId, healthFraction, manaBefore, maxMana, overloaded, momentum);
+			return CardCastScale(m_Run.GetCards(playerId), healthFraction, manaBefore, maxMana, overloaded, weave);
+		return m_Match.CastDamageScale(playerId, healthFraction, manaBefore, maxMana, overloaded, weave);
 	}
 
 	uint32_t World::CountPlayers() const
