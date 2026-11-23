@@ -229,7 +229,7 @@ namespace Game
 			hit.PushReach = projectile.ImpactRadius;
 			StrikeCircle(world, position, projectile.ImpactRadius, hit, projectile.Side, projectile.Rewind);
 			const AbilityDef& ability = GetAbility(AbilityId(projectile.Ability));
-			world.SpawnEffect(ability.Id, position, AngleOf(projectile.Velocity), owner, tag, ability.ImpactRadius > 0.0f ? projectile.ImpactRadius / ability.ImpactRadius : 1.0f);
+			world.SpawnEffect(ability.Id, position, AngleOf(projectile.Velocity), owner, tag, ability.ImpactRadius > 0.0f ? projectile.ImpactRadius / ability.ImpactRadius : 1.0f, projectile.Charge);
 			if (HasRune(projectile.Runes, RuneId::Linger))
 				world.SpawnLinger(position, 0.0f, projectile.ImpactRadius * LingerRadius, projectile.Damage, projectile.Damages, owner, projectile.Source, projectile.Side, projectile.Runes, projectile.Depth);
 		}

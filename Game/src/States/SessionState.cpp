@@ -1831,9 +1831,9 @@ namespace Game
 		const AbilityDef& def = GetAbility(ability);
 		const float scale = ability == AbilityId::StormJump ? 0.7f : entity.GetScale();
 		const bool fireball = ability == AbilityId::PurpleFireball;
-		const float blast = fireball ? std::clamp((def.ImpactRadius * scale - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f) : 0.0f;
+		const float blast = fireball ? entity.GetChargePower() : 0.0f;
 		const glm::vec3 tint = fireball ? FireballColor(blast) : CreditOf(ability) == AbilityId::StormStrike ? StormTelegraph : EffectColor(entity);
-		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, tint, entity.NetId,[this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, tint, entity.NetId,[this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); }, blast);
 		Rumble(Ground(entity.Position), ImpactRumble(ability, blast), entity.Owner);
 		const std::optional<Fx> fx = EffectBurstFor(ability);
 		if (!fx)
@@ -1997,7 +1997,7 @@ namespace Game
 					continue;
 				const float radius = GetAbility(AbilityId::PurpleFireball).ImpactRadius + (FireballFullBlast - GetAbility(AbilityId::PurpleFireball).ImpactRadius) * power;
 				m_Effects->FlameRing(ground, radius, power, FireballFlameHue(power), FireballBlastSpin);
-				m_Effects->Impact(AbilityId::PurpleFireball, ground, 0.0f, radius / GetAbility(AbilityId::PurpleFireball).ImpactRadius, FireballColor(power), 950u + uint32_t(i), [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+				m_Effects->Impact(AbilityId::PurpleFireball, ground, 0.0f, radius / GetAbility(AbilityId::PurpleFireball).ImpactRadius, FireballColor(power), 950u + uint32_t(i), [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); }, power);
 			}
 			glm::vec3 center;
 			float facing = 0.0f;
@@ -2030,7 +2030,7 @@ namespace Game
 				const AbilityId ability = AbilityOf(entity);
 				if (const std::optional<Fx> trail = TrailFor(ability))
 				{
-					const glm::vec3 tint = ability == AbilityId::PurpleFireball ? FireballFlameTint(FireballPowerOf(entity.GetScale())) : glm::vec3(1.0f);
+					const glm::vec3 tint = ability == AbilityId::PurpleFireball ? FireballFlameTint(entity.GetChargePower()) : glm::vec3(1.0f);
 					m_Effects->Trail(*trail, entity.NetId, ProjectilePoint(entity), dt, IsChargedShot(ability) ? entity.GetScale() : 1.0f, tint);
 				}
 				if (ability == AbilityId::FrostSpear && entity.GetScale() >= SpearLaneSize)
@@ -4311,7 +4311,7 @@ namespace Game
 		}
 		if (ability == AbilityId::PurpleFireball)
 		{
-			const float power = FireballPowerOf(entity.GetScale());
+			const float power = entity.GetChargePower();
 			FireballLook look;
 			look.Center = center;
 			look.Forward = Heading(entity.Facing);
@@ -5019,7 +5019,7 @@ namespace Game
 		if (!lines.empty())
 			y += 4.0f;
 		const bool board = Rdn::Input::IsKeyDown(Rdn::KeyCode::Tab) && !m_Paused && !m_App.UiWantsKeyboard();
-		draw.TextAligned({ frame.X + 11.0f, y, frame.W - 22.0f, 16.0f }, board ? "Release Tab to close" : "Hold Tab for the scoreboard", Theme::Body(12.0f, Theme::Faint), { 0.0f, 0.5f });
+		draw.TextAligned({ frame.X + 11.0f, y, frame.W - 22.0f, 16.0f }, board ? (mode == GameMode::Brawl ? "Hover a card to read it, release Tab to close" : "Release Tab to close") : "Hold Tab for the scoreboard", Theme::Body(12.0f, Theme::Faint), { 0.0f, 0.5f });
 		if (board)
 			DrawScoreboard();
 		if (!m_App.GetSettings().ShowControls)
@@ -5073,7 +5073,7 @@ namespace Game
 		constexpr float HeaderHeight = 28.0f;
 		constexpr float ColumnWidth = 70.0f;
 		constexpr float PingWidth = 64.0f;
-		const float nameWidth = brawl ? 330.0f : 280.0f;
+		const float nameWidth = brawl ? 370.0f : 280.0f;
 		const float columns = float(labels.size()) * ColumnWidth + PingWidth;
 		const float width = 44.0f + 36.0f + nameWidth + columns;
 		const float height = 92.0f + 26.0f + float(players.size()) * RowHeight + float(teams.size()) * (HeaderHeight + 6.0f) + (watchers.empty() ? 0.0f : 30.0f) + 16.0f;
@@ -5132,26 +5132,34 @@ namespace Game
 			if (brawl && player.Cards != 0)
 			{
 				const uint32_t count = CountCards(player.Cards);
-				UiRect icons = name.CutRight(std::min(118.0f, float(count) * 15.0f + 6.0f));
+				UiRect icons = name.CutRight(std::min(176.0f, float(count) * 19.0f + 6.0f));
 				float x = icons.X;
+				const auto hover = [&](const UiRect& rect, CardId card)
+				{
+					if (ui.Interact(Ui::MakeId("boardcard", uint64_t(player.PlayerId) * 256u + uint64_t(card)), rect).Hovered)
+						ShowCardTooltip(card);
+				};
 				const CardId apex = HeldApex(player.Cards);
 				if (apex != CardId::Count)
 				{
 					const UiColor glow = WithAlpha(ApexColor(m_Time));
-					const UiRect mark{ x, row.Center().y - 9.0f, 18.0f, 18.0f };
+					const UiRect mark{ x, row.Center().y - 10.0f, 20.0f, 20.0f };
 					draw.Rect(mark, { .Fill = Rgba(0.08f, 0.04f, 0.12f, 0.95f), .Border = glow, .BorderWidth = 1.2f, .Glow = WithAlpha(glow, 0.35f), .GlowSize = 8.0f, .Chamfer = 4.0f });
 					draw.Icon(IconFor(apex), mark.Shrink(2.5f), { .Color = Lighten(glow, 0.45f), .ColorBottom = glow, .Outline = 0.8f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.8f) });
-					x += 21.0f;
+					hover(mark, apex);
+					x += 24.0f;
 				}
 				for (const CardDef& card : Cards)
 				{
 					if (!HasCard(player.Cards, card.Id) || card.Rarity == CardRarity::Apex)
 						continue;
-					if (x + 13.0f > icons.Right())
+					if (x + 16.0f > icons.Right())
 						break;
 					const UiColor tint = CardIconTint(card);
-					draw.Icon(IconFor(card.Id), { x, row.Center().y - 6.5f, 13.0f, 13.0f }, { .Color = Lighten(tint, 0.45f), .ColorBottom = tint, .Outline = 0.8f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.8f) });
-					x += 15.0f;
+					const UiRect mark{ x, row.Center().y - 8.0f, 16.0f, 16.0f };
+					draw.Icon(IconFor(card.Id), mark, { .Color = Lighten(tint, 0.45f), .ColorBottom = tint, .Outline = 0.8f, .OutlineColor = Rgba(0.0f, 0.0f, 0.0f, 0.8f) });
+					hover(mark, card.Id);
+					x += 19.0f;
 				}
 			}
 			const TextStyle nameStyle = Theme::Bold(15.0f, Lighten(color, 0.45f));

@@ -38,7 +38,7 @@ namespace
 	{
 		uint32_t Matches = 200;
 		uint32_t Players = 6;
-		uint8_t Rounds = 5;
+		uint8_t Rounds = 8;
 		BotSkill Skill = BotSkill::Normal;
 		bool MixedSkill = false;
 		uint32_t Threads = std::max(std::thread::hardware_concurrency(), 2u) - 1u;

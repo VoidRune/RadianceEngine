@@ -1220,7 +1220,7 @@ namespace Game
 		}
 	}
 
-	void EffectSystem::Impact(AbilityId ability, const glm::vec3& ground, float facing, float scale, const glm::vec3& color, uint32_t seed, const HeightAt& heightAt)
+	void EffectSystem::Impact(AbilityId ability, const glm::vec3& ground, float facing, float scale, const glm::vec3& color, uint32_t seed, const HeightAt& heightAt, float power)
 	{
 		const AbilityDef& def = GetAbility(ability);
 		const float radius = def.ImpactRadius * scale;
@@ -1320,7 +1320,6 @@ namespace Game
 			break;
 		case AbilityId::PurpleFireball:
 		{
-			const float power = std::clamp((radius - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f);
 			const float violet = std::clamp(power * 1.25f, 0.0f, 1.0f);
 			GroundDecal burn = decal(DecalShape::Scorch, ground, glm::vec2(radius * (0.55f + 0.1f * power)));
 			burn.Color = glm::vec4(glm::mix(glm::vec3(1.5f, 0.52f, 0.14f), glm::vec3(0.75f, 0.2f, 1.25f), violet), 1.0f);

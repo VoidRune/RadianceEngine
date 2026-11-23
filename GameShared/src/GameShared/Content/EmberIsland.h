@@ -6,7 +6,7 @@
 
 namespace Game
 {
-	inline constexpr Vec2 EmberCenter{ 30.5f, 30.5f };
+	inline constexpr Vec2 EmberCenter{ 54.5f, 35.5f };
 	inline constexpr float EmberRadius = 16.6f;
 	inline constexpr float EmberHarmonics[] = { 2.0f, 0.5f, -0.35f, 5.0f, 0.12f, -0.18f, 7.0f, -0.2f, 0.1f, 11.0f, 0.12f, 0.1f, 13.0f, -0.08f, 0.12f };
 	inline constexpr float EmberLobes[] = {

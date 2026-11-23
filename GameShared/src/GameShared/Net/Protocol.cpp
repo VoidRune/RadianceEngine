@@ -817,7 +817,7 @@ namespace Game
 			writer.Write(PackCosmetics(player.Look.Style));
 			writer.Write(player.Team);
 			writer.Write(player.Placement);
-			writer.Write(uint8_t((player.Host ? 1 : 0) | (player.Choosing ? 2 : 0) | (player.Bot ? 4 : 0) | (player.Spectator ? 8 : 0)));
+			writer.Write(uint8_t((player.Host ? 1 : 0) | (player.Choosing ? 2 : 0) | (player.Bot ? 4 : 0) | (player.Spectator ? 8 : 0) | (player.Rematch ? 16 : 0)));
 			writer.Write(player.Score);
 			writer.Write(player.Rounds);
 			writer.Write(player.Honors);
@@ -845,6 +845,7 @@ namespace Game
 			player.Choosing = (flags & 2u) != 0;
 			player.Bot = (flags & 4u) != 0;
 			player.Spectator = (flags & 8u) != 0;
+			player.Rematch = (flags & 16u) != 0;
 			player.Score = reader.Read<uint16_t>();
 			player.Rounds = reader.Read<uint8_t>();
 			player.Honors = reader.Read<uint8_t>();

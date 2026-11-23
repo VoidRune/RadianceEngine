@@ -204,7 +204,8 @@ namespace Game
 		uint32_t bands = 0;
 		for (size_t i = 0; i < players.size() && !teams.empty(); i++)
 			bands += i == 0 || players[i].Team != players[i - 1].Team ? 1u : 0u;
-		const float height = 168.0f + float(players.size()) * RowHeight + float(bands) * 34.0f;
+		const bool rematch = status.Mode == GameMode::Brawl;
+		const float height = 168.0f + float(players.size()) * RowHeight + float(bands) * 34.0f + (rematch ? 54.0f : 0.0f);
 		const UiRect panel = UiRect::Centered({ ui.GetSize().x * 0.5f, ui.GetSize().y * 0.5f + 40.0f }, { 380.0f + columns, height });
 		ui.Panel(panel, 12.0f, false);
 		std::string title;
@@ -263,6 +264,27 @@ namespace Game
 			for (size_t column = 0; column < values.size(); column++)
 				draw.TextAligned({ row.Right() - columns + float(column) * ColumnWidth, row.Y, ColumnWidth, row.H }, values[column], Theme::Body(15.0f, column == 0 ? Theme::Text : Theme::Muted), { 0.5f, 0.5f });
 		}
-		draw.TextAligned({ panel.X, panel.Bottom() - 32.0f, panel.W, 22.0f }, "Returning to the Sun's Cradle in " + std::to_string(int(std::ceil(status.MatchTime))), Theme::Body(14.0f, Theme::Faint), { 0.5f, 0.5f });
+		std::string footer = "Returning to the Sun's Cradle in " + std::to_string(int(std::ceil(status.MatchTime)));
+		if (rematch)
+		{
+			const PlayerInfo* me = m_Client.FindPlayer(m_Client.GetPlayerId());
+			const bool host = me && me->Host;
+			const bool voted = me && me->Rematch;
+			uint32_t votes = 0;
+			uint32_t voters = 0;
+			for (const PlayerInfo& player : m_Client.GetPlayers())
+				if (!player.Bot)
+				{
+					voters++;
+					votes += player.Rematch ? 1u : 0u;
+				}
+			const char* label = host ? "Rematch" : voted ? "Rematch requested" : "Vote for a rematch";
+			const UiRect button = UiRect::Centered({ panel.Center().x, panel.Bottom() - 62.0f }, { 260.0f, 40.0f });
+			if (ui.Button(Ui::MakeId("rematch"), button, label, voted ? ButtonKind::Normal : ButtonKind::Primary, true, voted ? UiIcon::Hourglass : UiIcon::CheckMark))
+				m_Client.VoteRematch(!voted);
+			if (votes > 0)
+				footer = std::to_string(votes) + " of " + std::to_string(voters) + " want a rematch   \xC2\xB7   " + footer;
+		}
+		draw.TextAligned({ panel.X, panel.Bottom() - 32.0f, panel.W, 22.0f }, footer, Theme::Body(14.0f, Theme::Faint), { 0.5f, 0.5f });
 	}
 }

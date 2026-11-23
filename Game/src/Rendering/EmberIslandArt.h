@@ -8,7 +8,6 @@ namespace Game
 {
 	class WorldRenderer;
 	class SunRenderer;
-	struct GrassField;
 	struct Level;
 	struct LevelView;
 	struct EmberSunPulse;
@@ -16,13 +15,10 @@ namespace Game
 	class EmberIslandArt
 	{
 	public:
-		static inline bool KitRim = true;
-
 		void Build(WorldRenderer& renderer, const Level& level);
 		void Clear();
 		bool IsBuilt() const { return !m_Parts.empty(); }
 		void Draw(WorldRenderer& renderer, const LevelView& view) const;
-		void FillGrass(const WorldRenderer& renderer, const Level& level, GrassField& field) const;
 
 	private:
 		static constexpr int RuneSlots = 40;
@@ -32,25 +28,14 @@ namespace Game
 			uint32_t Mesh = 0;
 			glm::vec3 Min{ 0.0f };
 			glm::vec3 Max{ 0.0f };
-			bool Heart = false;
 		};
 
-		struct Rock
-		{
-			uint32_t Mesh = 0;
-			glm::mat4 Place{ 1.0f };
-			glm::vec3 Min{ 0.0f };
-			glm::vec3 Max{ 0.0f };
-		};
-
-		bool BuildRocks(WorldRenderer& renderer);
 		void DrawRunes(WorldRenderer& renderer, float time, const EmberSunPulse& pulse) const;
 		void Smoulder(WorldRenderer& renderer, SunRenderer& sun, float time, const glm::vec3& center, const glm::vec3& spanA, const glm::vec3& spanB, const glm::vec3& lamp, float heat, uint32_t seed) const;
 
 		glm::mat4 m_Place{ 1.0f };
 		glm::vec3 m_Heart{ 0.0f };
 		std::vector<Part> m_Parts;
-		std::vector<Rock> m_Rocks;
 		std::array<uint8_t, RuneSlots> m_Glyphs{};
 		std::vector<std::pair<int, uint32_t>> m_Drifts;
 

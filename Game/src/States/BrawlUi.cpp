@@ -1534,6 +1534,8 @@ namespace Game
 				draw.TextAligned(area, empty, Theme::Body(13.5f, Theme::Faint), { 0.0f, 0.5f });
 			return;
 		}
+		const float count = float(CountCards(cards));
+		size = std::max(std::min(size, (area.W + 6.0f) / count - 6.0f), 16.0f);
 		for (const CardDef& card : Cards)
 		{
 			if (!HasCard(cards, card.Id) || area.W < size)
@@ -1548,6 +1550,11 @@ namespace Game
 			if (ui.Interact(Ui::MakeId("ownedcard", uint64_t(card.Id) + uint64_t(size * 1000.0f)), tile).Hovered)
 				DescribeCard(ui.Tooltip(), card.Id, ShownBrawlMode());
 		}
+	}
+
+	void SessionState::ShowCardTooltip(CardId card)
+	{
+		DescribeCard(m_App.GetUi().Tooltip(), card, ShownBrawlMode());
 	}
 
 	void SessionState::DrawSpellStrip(const UiRect& area)
@@ -1662,6 +1669,8 @@ namespace Game
 			for (uint32_t i = 0; i < CardChoices; i++)
 				if (Rdn::Input::IsKeyPressed(CardKeys[i]) && loadout.Offer[i] != CardId::Count)
 					TakeCard(i, loadout.Offer[i]);
+		if (!offered && !m_App.UiWantsKeyboard() && Rdn::Input::IsKeyPressed(Rdn::KeyCode::Enter))
+			m_Client.SetBrawlReady(!loadout.Ready);
 		if (!m_LoadoutOpen)
 			return;
 
@@ -1807,7 +1816,7 @@ namespace Game
 		draw.TextAligned(cardsArea.CutTop(14.0f), "YOUR CARDS", ownedStyle, { 0.0f, 0.5f });
 		DrawCardRow(cardsArea, loadout.Cards, 28.0f, "None yet");
 		UiRect button = row.CutLeft(260.0f).Shrink(10.0f, 0.0f);
-		if (ui.Button(Ui::MakeId("brawlready"), button, loadout.Ready ? "Waiting for the others" : "Ready", loadout.Ready ? ButtonKind::Normal : ButtonKind::Primary, true, loadout.Ready ? UiIcon::Hourglass : UiIcon::CheckMark))
+		if (ui.Button(Ui::MakeId("brawlready"), button, loadout.Ready ? "Waiting for the others" : "Ready  (Enter)", loadout.Ready ? ButtonKind::Normal : ButtonKind::Primary, true, loadout.Ready ? UiIcon::Hourglass : UiIcon::CheckMark))
 			m_Client.SetBrawlReady(!loadout.Ready);
 		const std::string waiting = !picking && brawl.Players < 2 ? std::string("Waiting for a rival. Ready starts a round on your own") : Format("%u of %u ready, %s in %s s", unsigned(brawl.Ready), unsigned(std::max<uint8_t>(brawl.Players, 1)), picking ? "next round" : "first round", Seconds(brawl.Timer).c_str());
 		draw.TextWrapped(row.Shrink(6.0f, 4.0f), waiting, Theme::Body(13.5f, Theme::Muted), 1.0f);

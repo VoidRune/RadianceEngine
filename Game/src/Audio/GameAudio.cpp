@@ -758,7 +758,7 @@ namespace Game
 		}
 		case AbilityId::PurpleFireball:
 		{
-			const float power = FireballPowerOf(entity.GetScale());
+			const float power = entity.GetChargePower();
 			PlayAt(Cue::FireLaunch, at, (0.65f + 0.3f * power) * loud, 1.2f - 0.45f * power);
 			if (power > 0.4f)
 				PlayAt(Cue::WhooshHeavy, at, 0.7f * power * loud, 0.85f);
@@ -890,7 +890,7 @@ namespace Game
 			break;
 		case AbilityId::PurpleFireball:
 		{
-			const float power = std::clamp((def.ImpactRadius * scale - def.ImpactRadius) / (FireballFullBlast - def.ImpactRadius), 0.0f, 1.0f);
+			const float power = entity.GetChargePower();
 			PlayAt(Cue::Explosion, at, 0.6f + 0.4f * power, 1.25f - 0.5f * power);
 			PlayAt(Cue::FireImpact, at, 0.6f + 0.3f * power, 1.1f - 0.3f * power);
 			if (power > 0.5f)

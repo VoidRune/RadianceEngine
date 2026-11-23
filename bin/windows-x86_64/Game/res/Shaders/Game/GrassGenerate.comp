@@ -168,7 +168,7 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 	float patches = GrassNoise(p * 0.45 + 17.0);
 	if (GrassUnit(GrassHash(h ^ 0x9e3779b9u)) >= field.g * mix(0.7, 1.0, patches))
 		return false;
-	if (!Visible(vec3(p.x, field.r + 0.6 * Frame.Shape.x, p.y), 2.2 * Frame.Shape.x + Frame.Shape.z))
+	if (!Visible(vec3(p.x, field.r + 0.6 * Frame.Shape.x, p.y), 2.2 * Frame.Shape.x * (1.0 + 2.0 * clamp(field.g - 1.0, 0.0, 1.0)) + Frame.Shape.z))
 		return false;
 
 	vec4 fx = textureLod(Effects, ((p - Frame.Effects.xy) * Frame.Effects.z + 0.5) * Frame.EffectSize.zw, 0.0);
@@ -179,6 +179,8 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 	float laidAmount = min(length(laid), 1.0);
 
 	float lush = smoothstep(0.0, 0.6, field.g);
+	float tall = clamp(field.g - 1.0, 0.0, 1.0);
+	float meadow = mix(0.8, 1.25, GrassNoise(p * 0.09 + vec2(3.0, 11.0)));
 	float clover = smoothstep(0.62, 0.74, GrassNoise(p * 0.32 + vec2(41.0, 7.0))) * lush;
 	vec2 flowerCoord = p * 0.21 + vec2(-13.0, 29.0);
 	float flowers = smoothstep(0.64, 0.8, GrassNoise(flowerCoord)) * lush;
@@ -235,7 +237,7 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 
 	if (kind == GrassFlower)
 	{
-		height = Frame.Shape.x * (1.45 + 0.4 * r1) * (1.0 - burnt);
+		height = Frame.Shape.x * (1.45 + 0.4 * r1) * (1.0 + 0.6 * tall) * (1.0 - burnt);
 		bend = 0.12 + 0.12 * r2;
 		width = (0.06 + 0.025 * r3) * (1.0 - burnt);
 		uint meadow = GrassHash2(ivec2(floor(flowerCoord)), 13u);
@@ -254,10 +256,12 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 		height = Frame.Shape.x * (1.0 + Frame.Shape.y * (clumpRand * 2.0 - 1.0));
 		height *= 1.0 - 0.4 * smoothstep(0.15, 0.9, dist);
 		height *= 0.75 + 0.5 * r1;
-		height *= mix(0.4, 1.0, lush) * mix(0.85, 1.1, patches);
+		height *= mix(0.4, 1.0, lush) * mix(0.85, 1.1, patches) * meadow;
+		height *= 1.0 + tall * (0.6 + 1.0 * r1);
 		height *= (1.0 - 0.45 * clover) * mix(1.0, stagger < 0.6 ? 0.22 : 0.03, burnt);
 		bend = Frame.Shape.w * (0.5 + r2) * (0.6 + 0.7 * smoothstep(0.2, 0.9, dist));
-		width = Frame.Shape.z * (0.75 + 0.5 * r3);
+		width = Frame.Shape.z * (0.75 + 0.5 * r3) * (1.0 - 0.18 * tall);
+		bend *= 1.0 + 0.45 * tall;
 		float lod = smoothstep(Frame.Grid.z, Frame.Grid.w, distance(Frame.Eye.xyz, base));
 		if (GrassUnit(GrassHash(h ^ 0x9b05688cu)) < lod)
 		{

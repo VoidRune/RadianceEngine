@@ -58,6 +58,7 @@ namespace Game
 		uint32_t GetStyleVersion() const { return m_StyleVersion; }
 		void ChooseCard(uint32_t choice);
 		void SetBrawlReady(bool ready);
+		void VoteRematch(bool rematch);
 		void PickRunCard(uint32_t choice);
 		void RerollRunCards();
 		void BanishRunCard(uint32_t choice);
@@ -138,6 +139,7 @@ namespace Game
 			uint8_t Pierce = 0;
 			uint8_t Scale = 16;
 			uint8_t Blast = 16;
+			uint8_t Charge = 0;
 			bool Explodes = false;
 			bool Caught = false;
 			bool Reflected = false;
@@ -154,6 +156,7 @@ namespace Game
 			float Facing = 0.0f;
 			float Remaining = 0.0f;
 			uint8_t Scale = 16;
+			uint8_t Charge = 0;
 			bool Pending = false;
 		};
 

@@ -245,6 +245,11 @@ namespace Game
 		SendAction(ActionType::BrawlReady, ready ? 1u : 0u);
 	}
 
+	void GameClient::VoteRematch(bool rematch)
+	{
+		SendAction(ActionType::Rematch, rematch ? 1u : 0u);
+	}
+
 	void GameClient::PickRunCard(uint32_t choice)
 	{
 		SendAction(ActionType::RunPick, choice);
@@ -751,6 +756,7 @@ namespace Game
 					.Pierce = uint8_t(pattern.Pierce + CardPierce(ability.Id, m_LocalPlayer.Brawl.Cards)),
 					.Scale = uint8_t(std::clamp(std::lround(shot.Size * 16.0f), 1l, 255l)),
 					.Blast = uint8_t(std::clamp(std::lround(blast * 16.0f), 1l, 255l)),
+					.Charge = IsChargedShot(ability.Id) ? PackCharge(charge) : uint8_t(0),
 					.Explodes = shot.Blast > 0.0f,
 					.Floor = LaunchFloor(*m_Level, origin),
 				});
@@ -845,7 +851,7 @@ namespace Game
 				projectile.LastHit = entity.NetId;
 			}
 			if (projectile.Lifetime <= 0.0f && projectile.Explodes)
-				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = projectile.Index, .Ability = projectile.Ability, .Position = projectile.Position, .Facing = AngleOf(projectile.Velocity), .Remaining = GetAbility(projectile.Ability).EffectDuration, .Scale = projectile.Blast });
+				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = projectile.Index, .Ability = projectile.Ability, .Position = projectile.Position, .Facing = AngleOf(projectile.Velocity), .Remaining = GetAbility(projectile.Ability).EffectDuration, .Scale = projectile.Blast, .Charge = projectile.Charge });
 			if (projectile.Lifetime <= 0.0f && projectile.Ability == AbilityId::ChainHook && !projectile.Reflected)
 			{
 				const AbilityId end = projectile.Caught ? AbilityId::HookPull : AbilityId::HookAnchor;
@@ -1071,8 +1077,8 @@ namespace Game
 		m_View.push_back(self);
 
 		for (const PredictedProjectile& projectile : m_PredictedProjectiles)
-			m_View.push_back({ .NetId = PredictedNetIdBase + (uint32_t(projectile.Tag) << 4) + projectile.Index, .Kind = EntityKind::Projectile, .Position = Lerp(projectile.Previous, projectile.Position, alpha), .Facing = AngleOf(projectile.Velocity), .Owner = playerId, .Tag = projectile.Tag, .Variant = uint8_t(projectile.Ability), .Scale = projectile.Scale });
+			m_View.push_back({ .NetId = PredictedNetIdBase + (uint32_t(projectile.Tag) << 4) + projectile.Index, .Kind = EntityKind::Projectile, .Position = Lerp(projectile.Previous, projectile.Position, alpha), .Facing = AngleOf(projectile.Velocity), .Owner = playerId, .Tag = projectile.Tag, .Variant = uint8_t(projectile.Ability), .Scale = projectile.Scale, .Charge = projectile.Charge });
 		for (const PredictedEffect& effect : m_PredictedEffects)
-			m_View.push_back({ .NetId = (effect.Pending ? PredictedEffectNetIdBase : PredictedImpactNetIdBase) + (uint32_t(effect.Tag) << 4) + effect.Index, .Kind = EntityKind::Effect, .Position = effect.Position, .Facing = effect.Facing, .Owner = playerId, .Tag = effect.Tag, .Variant = uint8_t(effect.Ability), .Scale = effect.Scale, .Flags = uint16_t(effect.Pending ? uint16_t(EntityFlags::Pending) : 0) });
+			m_View.push_back({ .NetId = (effect.Pending ? PredictedEffectNetIdBase : PredictedImpactNetIdBase) + (uint32_t(effect.Tag) << 4) + effect.Index, .Kind = EntityKind::Effect, .Position = effect.Position, .Facing = effect.Facing, .Owner = playerId, .Tag = effect.Tag, .Variant = uint8_t(effect.Ability), .Scale = effect.Scale, .Flags = uint16_t(effect.Pending ? uint16_t(EntityFlags::Pending) : 0), .Charge = effect.Charge });
 	}
 }

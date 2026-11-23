@@ -1,5 +1,6 @@
 #include "Level.h"
 #include "GameShared/Content/Forge.h"
+#include "GameShared/Content/HubLayout.h"
 #include <cmath>
 
 namespace Game
@@ -152,6 +153,15 @@ namespace Game
 		}
 		for (const WallSegment& wall : Walls)
 			Shapes.push_back(MakeWallShape(wall));
+		if (Kind == MapKind::Hub)
+		{
+			for (const HubBlock& block : HubBlocks)
+				if (block.Solid)
+					Shapes.push_back(block.Mesh == MeshKind::Cylinder ? MakeCircle(EmberCenter + block.Center, block.Half.x, Block::All) : MakeBox(EmberCenter + block.Center, block.Half, block.Yaw, Block::All));
+			for (const Vec2 scaffold : HubScaffoldPosts)
+				for (const Vec2 corner : { Vec2(-1.0f, -1.0f), Vec2(1.0f, -1.0f), Vec2(1.0f, 1.0f), Vec2(-1.0f, 1.0f) })
+					Shapes.push_back(MakeCircle(EmberCenter + scaffold + corner * HubScaffoldHalf, HubScaffoldPost + 0.05f, Block::Movement));
+		}
 		if (Kind == MapKind::Caldera)
 		{
 			const Vec2 gate = ForgeCenter + Vec2(0.0f, ForgeHiltLine - 0.5f * SluiceThickness);

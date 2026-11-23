@@ -44,7 +44,7 @@ namespace Game
 		constexpr glm::vec4 RootColor{ 0.034f, 0.062f, 0.019f, 0.6f };
 		constexpr glm::vec4 TipColor{ 0.115f, 0.165f, 0.05f, 0.62f };
 		constexpr glm::vec4 DryColor{ 0.2f, 0.17f, 0.08f, 0.7f };
-		constexpr glm::vec4 BladeShape{ 0.28f, 0.3f, 0.0f, 0.35f };
+		constexpr glm::vec4 BladeShape{ 0.32f, 0.34f, 0.0f, 0.35f };
 		constexpr float NormalLift = 0.45f;
 		constexpr float RootOcclusion = 0.3f;
 		constexpr float MinPixels = 0.75f;

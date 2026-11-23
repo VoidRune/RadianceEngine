@@ -2,7 +2,6 @@
 #include <RadianceEngine/Graphics/ShaderCompiler.h>
 #include "Audio/GameAudio.h"
 #include "Online/SteamPlatform.h"
-#include "Rendering/EmberIslandArt.h"
 #include "Rendering/MenuBackdrop.h"
 #include "Rendering/ModelSources.h"
 #include "Rendering/LevelArt.h"
@@ -358,7 +357,6 @@ namespace Game
 		m_WorldRenderer->GetDistortion().Enabled = m_Settings.Distortion;
 		m_WorldRenderer->GetTrails().Enabled = m_Settings.Trails;
 		m_WorldRenderer->GetSun().Enabled = options.Sun;
-		EmberIslandArt::KitRim = options.KitRim;
 		m_WorldRenderer->SetTranslucency(options.Translucency);
 		m_WorldRenderer->SetPointLights(options.PointLights);
 		m_WorldRenderer->SetGlassModels(options.Refraction);

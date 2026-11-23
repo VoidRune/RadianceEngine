@@ -198,7 +198,7 @@ namespace Game
 		void Spike(const glm::vec3& base, float height, float yaw, float lean, uint32_t variant, float life);
 		void Shockwave(const glm::vec3& ground, float radius, float life, float strength, float width = 0.25f, float facing = 0.0f, float halfArc = 3.1416f);
 		void AirShockwave(const glm::vec3& center, float radius, float life, float strength, float width = 0.2f);
-		void Impact(AbilityId ability, const glm::vec3& ground, float facing, float scale, const glm::vec3& color, uint32_t seed, const HeightAt& heightAt);
+		void Impact(AbilityId ability, const glm::vec3& ground, float facing, float scale, const glm::vec3& color, uint32_t seed, const HeightAt& heightAt, float power = 0.0f);
 		void Update(float dt);
 		void Draw(WorldRenderer& renderer, const SpellMeshes& meshes) const;
 		void EndFrame();

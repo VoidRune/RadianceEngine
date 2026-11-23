@@ -1044,9 +1044,10 @@ namespace Game
 		if (boost != 1.0f && UsesBrawlDamage())
 			damage = ScaleDamage(damage, boost);
 		const float lifetime = (pattern.Speed > 0.0f ? ChargedRange(ability, context.Charge) / pattern.Speed : 0.0f) * context.RangeScale;
+		const uint8_t power = charged ? uint8_t(std::lround(std::clamp(context.Charge, 0.0f, 1.0f) * 255.0f)) : uint8_t(0);
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, position, AngleOf(direction));
-		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = context.Owner, .Tag = context.Tag, .Variant = uint8_t(ability.Id), .Scale = ScaleByte(shot.Size) });
+		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = context.Owner, .Tag = context.Tag, .Variant = uint8_t(ability.Id), .Scale = ScaleByte(shot.Size), .Charge = power });
 		m_Entities.Add<Projectile>(entity, Projectile{
 			.Velocity = direction * pattern.Speed,
 			.Lifetime = lifetime,
@@ -1073,6 +1074,7 @@ namespace Game
 			.Runes = context.Runes,
 			.Depth = context.Depth,
 			.Bounces = uint8_t(loose && HasRune(context.Runes, RuneId::Bounce) ? RuneBounces : 0),
+			.Charge = power,
 		});
 		if (context.Side == Team::Players)
 		{
@@ -1089,7 +1091,7 @@ namespace Game
 			return {};
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, position, AngleOf(projectile.Velocity));
-		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = owner, .Tag = tag, .Variant = projectile.Ability, .Scale = ScaleByte(scale) });
+		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Projectile, .Owner = owner, .Tag = tag, .Variant = projectile.Ability, .Scale = ScaleByte(scale), .Charge = projectile.Charge });
 		Projectile copy = projectile;
 		copy.Floor = FloorAt(m_Level.Map, position, projectile.Floor);
 		m_Entities.Add<Projectile>(entity, copy);
@@ -1101,11 +1103,11 @@ namespace Game
 		return SpawnEffect(ability.Id, position, AngleOf(context.Direction), context.Owner, tag, context.AreaScale);
 	}
 
-	Entity World::SpawnEffect(AbilityId ability, Vec2 position, float facing, uint32_t owner, uint16_t tag, float scale)
+	Entity World::SpawnEffect(AbilityId ability, Vec2 position, float facing, uint32_t owner, uint16_t tag, float scale, uint8_t charge)
 	{
 		const Entity entity = m_Entities.Create();
 		m_Entities.Add<Transform>(entity, position, facing);
-		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Effect, .Owner = owner, .Tag = tag, .Variant = uint8_t(ability), .Scale = ScaleByte(scale) });
+		m_Entities.Add<Replicated>(entity, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Effect, .Owner = owner, .Tag = tag, .Variant = uint8_t(ability), .Scale = ScaleByte(scale), .Charge = charge });
 		m_Entities.Add<Effect>(entity, GetAbility(ability).EffectDuration);
 		return entity;
 	}

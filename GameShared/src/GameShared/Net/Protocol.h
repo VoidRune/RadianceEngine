@@ -22,7 +22,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 104;
+	constexpr uint32_t ProtocolVersion = 107;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 
@@ -102,6 +102,7 @@ namespace Game
 		RunSellCard,
 		RunSocket,
 		RunUnsocket,
+		Rematch,
 		Count,
 	};
 
@@ -279,6 +280,7 @@ namespace Game
 		bool Choosing = false;
 		bool Bot = false;
 		bool Spectator = false;
+		bool Rematch = false;
 	};
 
 	struct ServerPlayerList

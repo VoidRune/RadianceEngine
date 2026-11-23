@@ -87,6 +87,7 @@ namespace Game
 		if (m_Config.Listen && m_Config.Relay && !m_Net.ListenRelay())
 			RDN_LOG_WARNING("Friends can only join with the address while the Steam relay is unavailable");
 		MapKind map = m_Config.Map;
+		m_BrawlChoice = IsBrawlMap(map) ? map : RandomBrawlMap;
 		if (m_Config.StartMode == GameMode::Brawl && !IsBrawlMap(map))
 			map = map == RandomBrawlMap ? BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))] : MapKind::Caldera;
 		else if (m_Config.StartMode == GameMode::Shardfall && !IsShardfallMap(map))
@@ -172,6 +173,7 @@ namespace Game
 			client.Player = m_World->SpawnPlayer(client.PlayerId, client.Spells);
 			client.PendingInputs.clear();
 			client.Buffering = true;
+			client.Rematch = false;
 			ServerTravel travel;
 			travel.PlayerNetId = m_World->GetEntities().TryGet<Replicated>(client.Player)->NetId;
 			travel.Session = m_Session;
@@ -218,8 +220,36 @@ namespace Game
 			return;
 		}
 		m_ReturnTimer += dt;
-		if (m_ReturnTimer >= (runOver ? RunEndSeconds : MatchEndSeconds) && !m_PendingTravel)
+		const bool everyone = std::none_of(m_Clients.begin(), m_Clients.end(), [](const Client& client) { return client.Joined && !client.Rematch; });
+		if (!runOver && status.Mode == GameMode::Brawl && everyone && GetPlayerCount() > 0 && !m_PendingTravel)
+			StartBrawl(m_BrawlChoice, m_Session.Rules);
+		if (m_ReturnTimer >= (runOver ? RunEndSeconds : ReturnSeconds()) && !m_PendingTravel)
 			Travel(GameMode::Hub, MapKind::Hub);
+	}
+
+	float GameServer::ReturnSeconds() const
+	{
+		const bool voted = std::any_of(m_Clients.begin(), m_Clients.end(), [](const Client& client) { return client.Joined && client.Rematch; });
+		return MatchEndSeconds + (voted ? RematchWaitSeconds : 0.0f);
+	}
+
+	void GameServer::StartBrawl(MapKind choice, const MatchRules& rules)
+	{
+		m_BrawlChoice = choice;
+		const MapKind map = choice == RandomBrawlMap ? BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))] : choice;
+		Travel(GameMode::Brawl, map, rules);
+		RDN_LOG("Spellbrawl on {}", GetMapDef(map).Name);
+	}
+
+	void GameServer::OnRematch(Client& client, bool rematch)
+	{
+		if (m_Session.Mode != GameMode::Brawl || m_World->GetMatch().GetPhase() != MatchPhase::Ended || m_PendingTravel || client.Rematch == rematch)
+			return;
+		client.Rematch = rematch;
+		RDN_LOG("{} {} a rematch", client.Name, rematch ? "wants" : "no longer wants");
+		if (rematch && client.Host)
+			StartBrawl(m_BrawlChoice, m_Session.Rules);
+		BroadcastPlayerList();
 	}
 
 	void GameServer::SendRecap()
@@ -412,17 +442,16 @@ namespace Game
 			if (m_World->IsHub())
 			{
 				const GameMode mode = GameMode(std::min<uint32_t>(action.Value, uint32_t(GameMode::Count)));
-				MapKind map = MapKind(std::min<uint32_t>(action.Target, uint32_t(MapKind::Count)));
-				if (mode == GameMode::Brawl && map == RandomBrawlMap)
-					map = BrawlMaps[m_BotRandom.Below(uint32_t(std::size(BrawlMaps)))];
-				if (mode == GameMode::Brawl && IsBrawlMap(map))
+				const MapKind map = MapKind(std::min<uint32_t>(action.Target, uint32_t(MapKind::Count)));
+				if (mode == GameMode::Brawl && (map == RandomBrawlMap || IsBrawlMap(map)))
 				{
-					const MatchRules rules = action.Rules;
-					Travel(mode, map, rules);
-					const std::string teams = rules.Teams >= 2 ? std::to_string(rules.Teams) + " team " : std::string();
-					RDN_LOG("{} started a {} round {}spellbrawl on {}", client.Name, rules.Rounds, teams, GetMapDef(map).Name);
+					StartBrawl(map, action.Rules);
+					RDN_LOG("{} started a {} round {}spellbrawl", client.Name, action.Rules.Rounds, action.Rules.Teams >= 2 ? std::to_string(action.Rules.Teams) + " team " : std::string());
 				}
 			}
+			break;
+		case ActionType::Rematch:
+			OnRematch(client, action.Value != 0);
 			break;
 		case ActionType::StartRun:
 			if (m_World->IsHub())
@@ -737,6 +766,8 @@ namespace Game
 		snapshot.Epoch = m_Session.Epoch;
 		snapshot.Tick = m_World->GetTick();
 		snapshot.Status = m_World->GetStatus();
+		if (IsPvpMode(snapshot.Status.Mode) && snapshot.Status.Match == MatchPhase::Ended)
+			snapshot.Status.MatchTime = std::max(ReturnSeconds() - m_ReturnTimer, 0.0f);
 		snapshot.Hits = m_World->TakeHits();
 		if (m_World->IsShardfall())
 		{
@@ -755,7 +786,7 @@ namespace Game
 			const Transform* transform = entities.TryGet<Transform>(entity);
 			if (!transform)
 				return;
-			EntityState state{ .NetId = replicated.NetId, .Kind = replicated.Kind, .Position = transform->Position, .Facing = transform->Facing, .Owner = replicated.Owner, .Tag = replicated.Tag, .Variant = replicated.Variant, .Scale = replicated.Scale };
+			EntityState state{ .NetId = replicated.NetId, .Kind = replicated.Kind, .Position = transform->Position, .Facing = transform->Facing, .Owner = replicated.Owner, .Tag = replicated.Tag, .Variant = replicated.Variant, .Scale = replicated.Scale, .Charge = replicated.Charge };
 			if (const Health* health = entities.TryGet<Health>(entity))
 				state.Health = HealthFraction(*health);
 			if (const PlayerController* controller = entities.TryGet<PlayerController>(entity))
@@ -1005,6 +1036,7 @@ namespace Game
 			info.Ping = m_Net.GetPing(client.Connection);
 			info.Host = client.Host;
 			info.Honors = client.Honors;
+			info.Rematch = client.Rematch;
 			list.Players.push_back(info);
 		}
 		for (const Bot& bot : m_Bots)

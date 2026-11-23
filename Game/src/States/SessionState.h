@@ -425,6 +425,7 @@ namespace Game
 		void TakeCard(uint32_t choice, CardId card);
 		void DrawCardFace(const UiRect& rect, CardId id, float hover, float fade, std::optional<uint32_t> key, bool taken, float reveal, float burst, float burnAway = 0.0f);
 		void DrawCardRow(UiRect area, CardMask cards, float size, const char* empty);
+		void ShowCardTooltip(CardId card);
 		void DrawRunCardFace(const UiRect& rect, const RunCard& card, float hover, std::optional<uint32_t> key, float reveal, bool banishing);
 		void DrawRunSpells(UiRect area, const RunLoadout& loadout, float size);
 		void DrawRunOffer();

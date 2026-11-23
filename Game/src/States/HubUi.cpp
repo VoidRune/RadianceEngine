@@ -3,6 +3,7 @@
 #include "Rendering/Models.h"
 #include "UI/Palette.h"
 #include "UI/Ui.h"
+#include <GameShared/Content/HubLayout.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -132,5 +133,12 @@ namespace Game
 			const std::string tally = Format("Falls today: %u", unsigned(m_Client.GetStatus().HubFalls));
 			label(Ui::MakeId("fallboard"), board->Position, 2.2f, UiIcon::SkullCrossedBones, "Days since someone fell off: 0", tally.c_str(), false);
 		}
+		if (level->Kind == MapKind::Hub && m_Client.GetSession().Mode == GameMode::Hub)
+			for (size_t i = 0; i < std::size(HubSigns); i++)
+			{
+				const Vec2 spot = EmberCenter + HubSigns[i].Position;
+				if (LengthSquared(spot - self->Position) <= HubSignReach * HubSignReach)
+					label(Ui::MakeId("hubsign", i), spot, 2.0f, UiIcon::AnvilImpact, HubSigns[i].Title, "Work in progress", false);
+			}
 	}
 }

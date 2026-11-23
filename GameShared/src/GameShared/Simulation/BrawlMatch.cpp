@@ -753,8 +753,15 @@ namespace Game
 			score.Out = true;
 			m_Fallen.push_back(victim);
 		}
+		const uint32_t follow = killer < MaxPlayers && killer != victim ? killer : NoPlayer;
 		if (PlayerController* controller = world.GetEntities().TryGet<PlayerController>(player))
-			controller->Watching = killer < MaxPlayers && killer != victim ? killer : NoPlayer;
+			controller->Watching = follow;
+		if (follow != NoPlayer)
+			world.GetEntities().Each<PlayerController>([&](Entity, PlayerController& watcher)
+			{
+				if (!watcher.State.Alive && watcher.Watching == victim)
+					watcher.Watching = follow;
+			});
 	}
 
 	bool MatchDirector::PickSpell(World& world, Entity player, uint32_t playerId, uint32_t slot, AbilityId spell)

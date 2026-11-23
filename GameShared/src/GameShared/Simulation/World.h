@@ -92,7 +92,7 @@ namespace Game
 		Entity SpawnProjectile(const AbilityDef& ability, const ProjectilePattern& pattern, Vec2 position, Vec2 direction, int32_t damage, const AbilityContext& context);
 		Entity SpawnProjectileCopy(const Projectile& projectile, Vec2 position, uint32_t owner, float scale = 1.0f, uint16_t tag = 0);
 		Entity SpawnEffect(const AbilityDef& ability, const AbilityContext& context, Vec2 position, uint16_t tag);
-		Entity SpawnEffect(AbilityId ability, Vec2 position, float facing, uint32_t owner, uint16_t tag, float scale);
+		Entity SpawnEffect(AbilityId ability, Vec2 position, float facing, uint32_t owner, uint16_t tag, float scale, uint8_t charge = 0);
 		Entity SpawnPendingStrike(const AbilityDef& ability, Vec2 position, int32_t damage, const AbilityContext& context);
 		Entity SpawnCardStrike(AbilityId visual, Vec2 position, float facing, float delay, float radius, float push, uint8_t perks, bool visible, const AbilityContext& context);
 		Entity SpawnResonance(const AbilityDef& spell, Vec2 position, float delay, float radius, int32_t damage, float push, const AbilityContext& context);

@@ -91,6 +91,7 @@ namespace Game
 			AchievementMask Awarded = 0;
 			uint64_t SnapshotBytes = 0;
 			uint32_t Snapshots = 0;
+			bool Rematch = false;
 		};
 
 		struct Bot
@@ -112,6 +113,9 @@ namespace Game
 		void ApplyTravel();
 		void ApplyArenaChange();
 		void CheckReturn(float dt);
+		float ReturnSeconds() const;
+		void StartBrawl(MapKind choice, const MatchRules& rules);
+		void OnRematch(Client& client, bool rematch);
 		void FlushNotices();
 		void SendRecap();
 		void RemoveClient(ConnectionId connection);
@@ -143,6 +147,7 @@ namespace Game
 		SessionInfo m_Session;
 		std::optional<SessionInfo> m_PendingTravel;
 		float m_ReturnTimer = 0.0f;
+		MapKind m_BrawlChoice = RandomBrawlMap;
 		uint32_t m_TravelCount = 0;
 		std::vector<Client> m_Clients;
 		std::vector<Bot> m_Bots;

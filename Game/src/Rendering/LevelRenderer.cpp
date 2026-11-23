@@ -1,9 +1,8 @@
 #include "LevelRenderer.h"
-#include <GameShared/Content/PortalTerrace.h>
 #include "Rendering/Models.h"
 #include "Rendering/SpellVisuals.h"
 #include "Rendering/WorldRenderer.h"
-#include <GameShared/Content/EmberIsland.h>
+#include <GameShared/Content/HubLayout.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <array>
@@ -800,12 +799,9 @@ namespace Game
 			return relief.GetPlateau().RimDistance(position) >= 0.0f ? relief.Height(position) : SampleGround(m_Scene, position).value_or(-60.0f);
 		if (m_Forge.IsBuilt())
 			return m_Forge.GroundHeight(brawl, clock, position);
-		if (m_Ember.IsBuilt() && EmberEdgeDistance(position) > -0.5f)
-		{
-			if (const std::optional<float> terrace = PortalTerraceGround(position - EmberCenter - EmberGateOffset))
-				return *terrace + EmberFootLift;
-			return EmberGround(position - EmberCenter) + EmberFootLift;
-		}
+		if (m_Ember.IsBuilt())
+			if (const std::optional<float> height = HubGround(position))
+				return *height + EmberFootLift;
 		if (m_Island.IsBuilt())
 			if (const std::optional<float> height = m_Island.GroundHeight(brawl, clock, position))
 				return *height;
@@ -880,8 +876,6 @@ namespace Game
 		m_Portals.Build(renderer, level);
 		m_Trees.Build(renderer, level);
 		m_Ember.Build(renderer, level);
-		if (m_Ember.IsBuilt())
-			m_Ember.FillGrass(renderer, level, m_Scene.Grass);
 		renderer.SetGrassField(m_Scene.Grass);
 		const TileMap& map = level.Map;
 		m_LavaRuns.clear();

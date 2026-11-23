@@ -21,6 +21,7 @@ namespace Game
 	inline constexpr float SpawnProtection = 2.0f;
 	inline constexpr float PvpRespawnDelay = 3.0f;
 	inline constexpr float MatchEndSeconds = 6.0f;
+	inline constexpr float RematchWaitSeconds = 12.0f;
 	inline constexpr float KillCreditSeconds = 10.0f;
 
 	inline float PvpStunDuration(float stun)
@@ -73,7 +74,7 @@ namespace Game
 		uint8_t Teams = 0;
 		uint8_t ScoreGoal = 15;
 		uint8_t Minutes = 8;
-		uint8_t Rounds = 5;
+		uint8_t Rounds = 8;
 		uint8_t Bots = 0;
 		uint8_t BotLevel = 1;
 		BrawlMode Mode = BrawlMode::Damage;

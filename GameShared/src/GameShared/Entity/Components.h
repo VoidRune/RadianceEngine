@@ -93,6 +93,7 @@ namespace Game
 		uint16_t Tag = 0;
 		uint8_t Variant = 0;
 		uint8_t Scale = 16;
+		uint8_t Charge = 0;
 		uint32_t Visibility = NoPlayer;
 	};
 
@@ -295,6 +296,7 @@ namespace Game
 		uint32_t Runes = 0;
 		uint8_t Depth = 0;
 		uint8_t Bounces = 0;
+		uint8_t Charge = 0;
 	};
 
 	struct Effect

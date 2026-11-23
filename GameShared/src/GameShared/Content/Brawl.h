@@ -141,7 +141,7 @@ namespace Game
 	{
 		BrawlPhase Phase = BrawlPhase::Draft;
 		uint8_t Round = 0;
-		uint8_t Rounds = 5;
+		uint8_t Rounds = 8;
 		float Timer = 0.0f;
 		float Clock = -1e5f;
 		CollapsePlan Plan;
@@ -777,11 +777,6 @@ namespace Game
 			.Size = mix(1.0f, FireballFullSize),
 			.Blast = mix(fireball.ImpactRadius, FireballFullBlast),
 		};
-	}
-
-	inline float FireballPowerOf(float size)
-	{
-		return std::clamp((size - 1.0f) / (FireballFullSize - 1.0f), 0.0f, 1.0f);
 	}
 
 	inline uint8_t CardPierce(AbilityId id, CardMask cards)

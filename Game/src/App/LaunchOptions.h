@@ -64,7 +64,6 @@ namespace Game
 		bool Distortion = true;
 		bool Trails = true;
 		bool Sun = true;
-		bool KitRim = true;
 		bool Translucency = true;
 		bool PointLights = true;
 		bool Refraction = true;
