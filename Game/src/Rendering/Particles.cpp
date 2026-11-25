@@ -192,7 +192,7 @@ namespace Game
 		m_LightDraw = CreateDraw(vertex, light, { ParticleLightFormat }, {}, Rdn::BlendMode::Additive);
 		m_SpriteLightDraw = CreateDraw(sprite, light, { ParticleLightFormat }, {}, Rdn::BlendMode::Additive);
 		using enum Rdn::BlendMode;
-		m_DecalDraw = CreateDraw(decalVertex, decalFragment, { AlbedoFormat, SurfaceFormat, EmissionFormat }, { R | G | B, B | A, All }, Premultiplied, { Premultiplied, Premultiplied, Max });
+		m_DecalDraw = CreateDraw(decalVertex, decalFragment, { AlbedoFormat, SurfaceFormat, EmissionFormat }, { R | G | B, B | A, R | G | B }, Premultiplied, { Premultiplied, Premultiplied, Max });
 		return true;
 	}
 

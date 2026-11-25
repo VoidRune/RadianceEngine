@@ -58,6 +58,7 @@ namespace Game
 	inline constexpr uint32_t MeshHero = 134217728;
 	inline constexpr uint32_t MeshDeep = 268435456;
 	inline constexpr uint32_t MeshHeartbeat = 536870912;
+	inline constexpr uint32_t MeshWorn = 1073741824;
 	inline constexpr uint32_t MaterialTranslucent = 256;
 
 	struct LevelMeshDesc
@@ -198,7 +199,9 @@ namespace Game
 		void DrawTrail(uint64_t key, const glm::vec3& position, const TrailStyle& style, float strength = 1.0f) { m_Trails->Emit(key, position, style, strength); }
 		TrailRenderer& GetTrails() { return *m_Trails; }
 		GrassRenderer& GetGrass() { return *m_Grass; }
-		void SetGrassField(const GrassField& field) { m_Grass->SetField(field); }
+		void SetGrassField(const GrassField& field);
+		void SetMaterialLook(uint32_t slot, const glm::vec3& tint, float relief, float joint);
+		void SetReliefMask(uint32_t slot, uint32_t width, uint32_t height, const std::vector<uint8_t>& mask, glm::vec2 origin, float step);
 		void SetGrassQuality(GrassQuality quality) { m_Grass->Quality = quality; }
 		GrassQuality GetGrassQuality() const { return m_Grass->Quality; }
 		void DrawLightning(const LightningShape& bolt) { m_Lightning->Draw(bolt); }
@@ -363,6 +366,7 @@ namespace Game
 		std::vector<uint32_t> m_LevelIndices;
 		uint32_t m_LibraryMeshes = 0;
 		uint32_t m_TilingMaterialBase = 0;
+		uint32_t m_ReliefMaskSlot = UINT32_MAX;
 		uint32_t m_PlainMaterial = 0;
 		std::vector<EnvironmentGpu> m_Environments;
 		std::unique_ptr<Rdn::GpuImage> m_BlackEnvironment;

@@ -1180,6 +1180,57 @@ namespace Game
 		renderer.DrawLight({ .Position = look.Ground + Up * (0.6f * look.Radius * FireballBlastDome + 0.3f), .Radius = look.Radius * (2.2f + 1.2f * look.Power), .Color = FireballColor(look.Power) * (FireballBlastLight * peak * fade) });
 	}
 
+	void DrawComet(WorldRenderer& renderer, const CometLook& look, float time, uint32_t seed)
+	{
+		const float s = look.Scale;
+		const glm::vec3 forward = look.Direction;
+		const glm::vec3 head = look.Center - forward * (0.1f * s);
+		const float flicker = 0.92f + 0.08f * std::sin(time * 23.0f + float(seed & 255u));
+		DrawGlow(renderer, head, 1.8f * s, glm::vec3(0.2f, 0.06f, 0.014f) * flicker);
+		DrawFlame(renderer, { .Base = head, .Axis = -forward, .Width = 0.95f * s, .Height = 4.4f * s, .Color = { 0.95f, 0.34f, 0.07f }, .Wild = 1.0f, .Speed = 4.0f, .Comet = 1.0f, .Additive = 0.25f, .Emission = 0.3f, .Seed = seed });
+		DrawFlame(renderer, { .Base = head - forward * (0.1f * s), .Axis = -forward, .Width = 0.62f * s, .Height = 2.8f * s, .Color = { 1.05f, 0.44f, 0.1f }, .Wild = 1.0f, .Speed = 5.0f, .Comet = 0.8f, .Additive = 0.25f, .Emission = 0.3f, .Seed = seed * 13u + 7u });
+		ParticleSprite ball = Sprite(ParticleShape::FlameSheet, look.Center - forward * (0.15f * s), 0.75f * s, glm::vec3(1.0f, 0.4f, 0.09f));
+		ball.Align = ParticleAlign::Velocity;
+		ball.Axis = -forward;
+		ball.Additive = 0.25f;
+		ball.Emission = 0.3f;
+		ball.Softness = 0.15f;
+		ball.Params = glm::vec4(1.0f, 3.0f, 0.0f, 0.7f);
+		ball.Seed = seed * 7u + 3u;
+		renderer.DrawSprite(ball);
+		DrawGlow(renderer, look.Center, 0.12f * s, glm::vec3(1.1f, 0.8f, 0.45f) * flicker);
+	}
+
+	void DrawCometBlast(WorldRenderer& renderer, const CometBlastLook& look, uint32_t seed)
+	{
+		if (look.Age < 0.0f || look.Age >= CometBlastSmoke)
+			return;
+		const float t = look.Age / CometBlastFire;
+		const float smoke = look.Age / CometBlastSmoke;
+		const float R = look.Radius * 0.9f;
+		renderer.GetBlast().Draw({
+			.Ground = look.Ground,
+			.Radius = R,
+			.Fire = t,
+			.Smoke = smoke,
+			.SmokeAmount = 0.85f,
+			.Power = 0.7f,
+			.Violet = 0.0f,
+			.Spin = 0.3f,
+			.Height = 0.6f,
+			.Seed = seed,
+		});
+		const float haze = 1.0f - glm::smoothstep(0.3f, 1.0f, smoke);
+		DrawHeatHaze(renderer, look.Ground + Up * (0.5f + 0.2f * R), R * 1.2f, 0.02f * haze, 1.6f / R, 1.4f, seed);
+		if (t >= 1.0f)
+			return;
+		const float fade = 1.0f - glm::smoothstep(0.45f, 1.0f, t);
+		const float flash = std::exp(-t * 10.0f);
+		DrawGroundGlow(renderer, look.Ground, R * 1.15f, glm::vec3(0.5f, 0.15f, 0.03f) * (0.35f * fade), 1.0f);
+		DrawGroundGlow(renderer, look.Ground, R * 0.65f, glm::vec3(1.2f, 0.95f, 0.6f) * (0.8f * flash), 1.0f);
+		renderer.DrawLight({ .Position = look.Ground + Up * (0.4f * R + 0.3f), .Radius = R * 2.8f, .Color = CometLight * (CometBlastLight * (0.35f + 2.0f * flash) * fade) });
+	}
+
 	namespace
 	{
 		struct ShieldFrame
@@ -1768,6 +1819,32 @@ namespace Game
 		renderer.DrawDecal(decal);
 	}
 
+	GroundDecal FireballCraterDecal(const glm::vec3& ground, float radius, float power, uint32_t seed)
+	{
+		const float violet = std::clamp(power * 1.25f, 0.0f, 1.0f);
+		return CraterDecal(ground, radius * (1.05f + 0.15f * power), glm::mix(CometCraterGlow, glm::vec3(0.8f, 0.22f, 1.35f), violet), seed);
+	}
+
+	float FireballCraterCooling(float power)
+	{
+		return 0.9f - 0.4f * std::clamp(power, 0.0f, 1.0f);
+	}
+
+	GroundDecal CraterDecal(const glm::vec3& ground, float extent, const glm::vec3& glow, uint32_t seed)
+	{
+		GroundDecal crater;
+		crater.Center = ground;
+		crater.Extent = glm::vec2(extent);
+		crater.Depth = 0.75f;
+		crater.Shape = DecalShape::Crater;
+		crater.Color = glm::vec4(glow, 1.0f);
+		crater.Tint = glm::vec4(1.0f);
+		crater.Roughness = 0.95f;
+		crater.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+		crater.Seed = seed;
+		return crater;
+	}
+
 	GroundDecal SpellMarkDecal(const SpellMark& mark)
 	{
 		static constexpr DecalShape Shapes[] = { DecalShape::CometMark, DecalShape::StormMark, DecalShape::VoidMark, DecalShape::FirebombMark, DecalShape::AftershockMark, DecalShape::ResonanceMark, DecalShape::RitualMark };
@@ -2054,6 +2131,21 @@ namespace Game
 			style.Scroll = 4.0f;
 			style.Taper = 0.3f;
 			style.Spacing = 0.1f;
+			break;
+		case AbilityId::Comet:
+			style.Look = TrailLook::Blaze;
+			style.Head = { 1.2f, 0.5f, 0.12f };
+			style.Tail = { 0.75f, 0.22f, 0.05f };
+			style.Additive = 0.35f;
+			style.Width = 0.8f * size;
+			style.WidthCurve = { 1.0f, 0.75f, 0.45f, 0.1f };
+			style.AlphaCurve = { 1.0f, 0.8f, 0.45f, 0.0f };
+			style.Life = 0.22f;
+			style.Emission = 0.45f;
+			style.Tiling = 0.5f;
+			style.Scroll = 3.0f;
+			style.Taper = 0.3f;
+			style.Spacing = 0.3f;
 			break;
 		case AbilityId::PurpleFireball:
 		{

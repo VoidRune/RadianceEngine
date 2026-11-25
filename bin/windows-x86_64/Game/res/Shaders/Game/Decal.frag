@@ -126,6 +126,12 @@ void main()
 		result = VoidFieldShape(uv, extent.x, pixelWorld, params.x, params.y, params.z, params.w, seed, time);
 	else if (shape == DecalCracks)
 		result = CracksShape(uv, pixel, extent.x, params.x, seed);
+	else if (shape == DecalCrater)
+	{
+		CraterLook crater = CraterShape(uv, extent.x, pixelWorld, params.x, seed);
+		result = vec2(crater.Coverage, crater.Glow);
+		albedo *= crater.Albedo;
+	}
 	else if (shape == DecalCharge)
 		result = ChargeShape(uv, pixel, params.x, seed, time);
 	else if (shape == DecalFracture)

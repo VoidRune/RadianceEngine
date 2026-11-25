@@ -22,7 +22,7 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 107;
+	constexpr uint32_t ProtocolVersion = 109;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
 

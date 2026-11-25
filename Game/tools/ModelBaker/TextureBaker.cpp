@@ -383,6 +383,15 @@ namespace Game
 				for (size_t i = 0; i < level.Pixels.size(); i++)
 					level.Pixels[i].a = std::max({ glow.Pixels[i].r, glow.Pixels[i].g, glow.Pixels[i].b });
 			}
+			if (input.Cells)
+			{
+				const FloatImage cells = Resample(*input.Cells, width, height);
+				for (size_t i = 0; i < level.Pixels.size(); i++)
+				{
+					level.Pixels[i].b = cells.Pixels[i].r;
+					level.Pixels[i].a = cells.Pixels[i].g;
+				}
+			}
 			std::vector<std::vector<uint8_t>> levels;
 			for (uint32_t mip = 0; mip < mipCount; mip++)
 			{

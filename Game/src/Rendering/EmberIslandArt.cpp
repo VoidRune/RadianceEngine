@@ -159,6 +159,8 @@ namespace Game
 			if (std::any_of(std::begin(FlatParts), std::end(FlatParts), [&](std::string_view flat) { return part.starts_with(flat); }))
 				renderer.AddMeshFlags(mesh, MeshGround);
 			renderer.AddMeshFlags(mesh, MeshDeep | MeshHeartbeat);
+			if (part.starts_with("Slabs"))
+				renderer.AddMeshFlags(mesh, MeshWorn);
 			if (std::any_of(std::begin(ShadowlessParts), std::end(ShadowlessParts), [&](std::string_view shadowless) { return part.starts_with(shadowless); }))
 				renderer.AddMeshFlags(mesh, MeshGround);
 			if (part.starts_with(DriftPrefix))

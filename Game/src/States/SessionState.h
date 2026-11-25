@@ -329,6 +329,10 @@ namespace Game
 		glm::vec3 EffectColor(const EntityState& entity) const;
 		glm::vec3 MeteorPoint(const EntityState& entity, float progress) const;
 		void DrawMeteor(WorldRenderer& renderer, const EntityState& entity, float progress) const;
+		void DrawCometFall(WorldRenderer& renderer, const glm::vec3& target, const glm::vec3& position, const glm::vec3& direction, float scale, float progress, uint32_t seed) const;
+		void CometLanded(const glm::vec3& ground, float radius, float scale, uint32_t seed);
+		void UpdateCometChunks(float dt);
+		void DrawCometChunks(WorldRenderer& renderer) const;
 		const EntityState* FindBody(uint32_t owner) const;
 		glm::vec3 HandOf(const EntityState& body) const;
 		std::optional<glm::vec3> LobPoint(const EntityState& entity, float age) const;
@@ -487,6 +491,7 @@ namespace Game
 		int StageBlastCount() const;
 		float StageBlast(int index, glm::vec3& ground, float& power) const;
 		FireballLook StageCharge() const;
+		float StageComet(glm::vec3& ground) const;
 		void UpdateChess();
 		void CommitChessMove(uint8_t from, uint8_t to, Chess::Piece promotion);
 		Chess::Position ShownChessPosition() const;
@@ -551,6 +556,7 @@ namespace Game
 		std::unique_ptr<CosmeticVisuals> m_Cosmetics;
 		std::unique_ptr<CrawlerSystem> m_Crawlers;
 		std::optional<uint32_t> m_MeteorMesh;
+		std::array<std::optional<uint32_t>, 4> m_ChunkMeshes;
 		std::optional<uint32_t> m_ObeliskMesh;
 		SpellMeshes m_SpellMeshes;
 		std::unordered_map<uint32_t, SpearPath> m_SpearPaths;
@@ -615,8 +621,24 @@ namespace Game
 			float Power = 0.0f;
 			float Age = 0.0f;
 			uint32_t Seed = 0;
+			bool Comet = false;
 		};
 		std::vector<FireballBurst> m_FireballBursts;
+		struct CometChunk
+		{
+			glm::vec3 Position{ 0.0f };
+			glm::vec3 Velocity{ 0.0f };
+			glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+			float Angle = 0.0f;
+			float Spin = 0.0f;
+			float Size = 0.1f;
+			float Age = 0.0f;
+			float Life = 1.0f;
+			uint64_t Key = 0;
+			uint8_t Mesh = 0;
+		};
+		std::vector<CometChunk> m_CometChunks;
+		uint32_t m_CometChunkKeys = 0;
 		uint32_t m_FlameKeys = 0;
 		int32_t m_HoveredPortal = -1;
 		int32_t m_ReachablePortal = -1;

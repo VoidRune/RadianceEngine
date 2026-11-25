@@ -27,6 +27,7 @@ namespace Game
 		float Size = 0.0f;
 		bool SplitNodes = false;
 		bool KeepOrigin = false;
+		float Joint = 0.0f;
 	};
 
 	struct ModelPack
@@ -129,6 +130,10 @@ namespace Game
 		{ .Path = "Original/Materials/ForgeJointSilver", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.5f },
 		{ .Path = "Original/Materials/ObservatoryMural", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 4.2f },
 		{ .Path = "PolyHaven/Textures/castle_wall_varriation", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
+		{ .Path = "PolyHaven/Textures/stone_tiles_02", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 5.0f, .Joint = 0.31f },
+		{ .Path = "PolyHaven/Textures/monastery_stone_floor", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 1.8f },
+		{ .Path = "PolyHaven/Textures/forest_ground_04", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 3.0f },
+		{ .Path = "PolyHaven/Textures/forrest_ground_01", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 3.0f },
 	};
 
 	inline constexpr ModelPack ModelPacks[] = {

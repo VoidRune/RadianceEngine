@@ -74,6 +74,7 @@ namespace Game
 		ResonanceMark,
 		HeartRune,
 		RitualMark,
+		Crater,
 	};
 
 	enum class ParticleAlign : uint8_t

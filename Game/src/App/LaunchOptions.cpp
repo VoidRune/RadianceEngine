@@ -31,7 +31,7 @@ namespace Game
 
 	LaunchOptions ParseLaunchOptions(int argc, char** argv)
 	{
-		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--new-character] [--no-save] [--export-props] [--shardfall] [--run-minute 0..12] [--run-level 1..30] [--spawns 0..300] [--shards 25..500] [--only quartz|jade|sapphire|ruby|amethyst|prismatic|duelist|archer|mage|brute|moth|wisp|obelisk] [--arena hollow|quarry|terrace] [--endless] [--run-seed n] [--affix hasted|warded|splitting|volatile|vampiric|reflective|random] [--immortal] [--runes] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--lag ms] [--loss percent] [--no-validation] [--no-shader-cache] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource|translucency] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--grass off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--latency off|auto|1|2] [--frame-cap 30..240] [--render-scale 50..100] [--aa off|smaa|ssaa1.5|ssaa2] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--menu-page 0..5] [--leviathan] [--no-distortion] [--no-trails] [--no-sun] [--no-translucency] [--no-point-lights] [--no-refraction] [--distortion-stage all|shockwaves] [--grass-stage] [--fire-stage [blast]] [--stage-time seconds] [--no-steam]";
+		constexpr std::string_view usage = "usage: Game [--host [port]] [--join address[:port]] [--name name] [--new-character] [--no-save] [--export-props] [--shardfall] [--run-minute 0..12] [--run-level 1..30] [--spawns 0..300] [--shards 25..500] [--only quartz|jade|sapphire|ruby|amethyst|prismatic|duelist|archer|mage|brute|moth|wisp|obelisk] [--arena hollow|quarry|terrace] [--endless] [--run-seed n] [--affix hasted|warded|splitting|volatile|vampiric|reflective|random] [--immortal] [--runes] [--brawl [rounds]] [--brawl-map caldera|lake|ruins|peak|random] [--brawl-mode damage|knockback] [--bots 0..11] [--bot-skill easy|normal|hard] [--teams 2..4] [--health 25..500] [--mana 25..500] [--damage 25..300] [--cast-speed 50..300] [--cooldown-speed 50..300] [--move-speed 50..200] [--mana-regen 0..300] [--knockback 25..300] [--random-spells] [--no-apex] [--apex-draft] [--no-crumble] [--no-winner-card] [--spectate] [--volume 0..1] [--music-volume 0..1] [--effects-volume 0..1] [--mute] [--lag ms] [--loss percent] [--no-validation] [--no-shader-cache] [--capture-audio file.wav] [--log-audio] [--debug-view lit|albedo|normal|roughness|metallic|occlusion|emission|sun|ambient|shadow|irradiance|gisource|translucency] [--tonemap softclip|neutral|agx|aces|linear] [--shadows off|low|high] [--grass off|low|high] [--gi off|low|medium|high] [--vsync on|off] [--latency off|auto|1|2] [--frame-cap 30..240] [--render-scale 50..100] [--aa off|smaa|ssaa1.5|ssaa2] [--screen-shake 0..100] [--performance] [--exposure x] [--no-grading] [--lighting-test] [--profile-gpu] [--menu-page 0..5] [--leviathan] [--no-distortion] [--no-trails] [--no-sun] [--no-translucency] [--no-point-lights] [--no-refraction] [--distortion-stage all|shockwaves] [--grass-stage] [--fire-stage [blast|comet]] [--stage-time seconds] [--no-steam]";
 		LaunchOptions options;
 		for (int i = 1; i < argc; i++)
 		{
@@ -414,9 +414,9 @@ namespace Game
 			else if (argument == "--fire-stage")
 			{
 				options.FireStage = 1;
-				if (hasValue && SameText("blast", value))
+				if (hasValue && (SameText("blast", value) || SameText("comet", value)))
 				{
-					options.FireStage = 2;
+					options.FireStage = SameText("blast", value) ? 2 : 3;
 					i++;
 				}
 			}

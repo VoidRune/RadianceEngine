@@ -172,6 +172,7 @@ namespace Game
 		AuraFrostFlurry,
 		AuraFrostCrownMist,
 		FallingLeaves,
+		CometDebris,
 		Count,
 	};
 
@@ -194,6 +195,7 @@ namespace Game
 		void Stream(Fx fx, const glm::vec3& center, const glm::vec3& direction, float rate, float dt);
 		void Converge(uint64_t key, const glm::vec3& target, float radius, float rate, float life, float dt, float size = 1.0f, ParticleKind kind = ParticleKind::Mote, const glm::vec3& tint = glm::vec3(1.0f), float swirl = 0.0f, float arrive = 1.0f);
 		void FlameRing(const glm::vec3& center, float radius, float power, const glm::vec3& hue, float spin);
+		void CometCrater(const glm::vec3& center, float radius);
 		void Mark(const GroundDecal& decal, float life, float fadeIn = 0.05f, float startScale = 1.0f, float endScale = 1.0f, float growTime = 0.25f, float cooling = 0.0f);
 		void Spike(const glm::vec3& base, float height, float yaw, float lean, uint32_t variant, float life);
 		void Shockwave(const glm::vec3& ground, float radius, float life, float strength, float width = 0.25f, float facing = 0.0f, float halfArc = 3.1416f);

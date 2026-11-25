@@ -2,6 +2,7 @@
 #include "GBuffer.glsl"
 #include "Material.glsl"
 #include "Sight.glsl"
+#include "Paving.glsl"
 #ifdef DISSOLVE
 #include "Dissolve.glsl"
 #endif
@@ -119,6 +120,17 @@ const float MeltSpoutHalf = 0.32;
 const float MeltSpoutTop = 1.12;
 const float MeltSpoutDepth = 0.07;
 const float MeltAge = 3.0;
+const int StoneSteps = 8;
+const int StoneShadowSteps = 4;
+const float StoneBulge = 2.0;
+const float StoneShade = 0.82;
+const float StonePolish = 0.34;
+const float WornWaveScale = 0.9;
+const float WornWave = 0.05;
+const float WornDentScale = 4.5;
+const float WornDent = 0.02;
+const float WornMatte = 0.56;
+const vec3 WornDust = vec3(0.16, 0.145, 0.13);
 
 struct Layer
 {
@@ -154,6 +166,61 @@ float HeightBlend(float heightA, float heightB, float weight)
 	return wb / (wa + wb);
 }
 
+float SunVisibility = 1.0;
+
+float StoneHeight(Material m, vec2 p, vec2 dx, vec2 dy)
+{
+	float s = m.Params.z;
+	float h = textureGrad(Textures[nonuniformEXT(m.Albedo)], p * s, dx * s, dy * s).a;
+	return PavingLevel(h, m.Color.a);
+}
+
+vec3 StoneMarch(Material m, vec2 p, vec2 dx, vec2 dy)
+{
+	vec2 drift = PavingDrift(pc.Eye.xyz, inWorld);
+	float step = 1.0 / float(StoneSteps);
+	float t = 0.0;
+	float gap = 1.0 - StoneHeight(m, p, dx, dy);
+	float lastT = 0.0;
+	float lastGap = gap;
+	for (int i = 0; i < StoneSteps && gap > 0.0; i++)
+	{
+		lastT = t;
+		lastGap = gap;
+		t += step;
+		gap = 1.0 - StoneHeight(m, p + drift * t, dx, dy) - t;
+	}
+	if (gap < 0.0)
+		t = mix(lastT, t, lastGap / max(lastGap - gap, 1e-4));
+	return vec3(p + drift * t, t);
+}
+
+float StoneShadow(Material m, vec2 p, float depth, vec2 dx, vec2 dy)
+{
+	vec3 toSun = vec3(pc.Focus.z, 0.0, pc.Focus.w);
+	toSun.y = sqrt(max(1.0 - dot(toSun.xz, toSun.xz), 0.0));
+	if (toSun.y < 0.05 || depth < 0.03)
+		return 1.0;
+	vec2 drift = toSun.xz / max(toSun.y, 0.25) * PavingDepth;
+	float blocked = 0.0;
+	for (int i = 1; i <= StoneShadowSteps; i++)
+	{
+		float rise = depth * float(i) / float(StoneShadowSteps);
+		blocked = max(blocked, (depth - rise) - (1.0 - StoneHeight(m, p + drift * rise, dx, dy)));
+	}
+	return 1.0 - smoothstep(0.0, 0.12, blocked);
+}
+
+vec3 StoneNormal(Material m, vec2 p, vec2 dx, vec2 dy)
+{
+	const float e = 0.03;
+	vec2 bx = dx * 2.0;
+	vec2 by = dy * 2.0;
+	float h0 = StoneHeight(m, p, bx, by);
+	vec2 slope = vec2(StoneHeight(m, p + vec2(e, 0.0), bx, by) - h0, StoneHeight(m, p + vec2(0.0, e), bx, by) - h0) * (PavingDepth * StoneBulge / e);
+	return normalize(vec3(-slope.x, slope.y, 1.0));
+}
+
 Layer Splat(uvec2 ids, vec4 color, vec2 uv)
 {
 	const float depth = 0.25;
@@ -161,6 +228,28 @@ Layer Splat(uvec2 ids, vec4 color, vec2 uv)
 	float weights[4] = float[](max(1.0 - color.r - color.g - color.b, 0.0), color.r, color.g, color.b);
 	vec2 dx = dFdx(uv);
 	vec2 dy = dFdy(uv);
+	vec2 at[4] = vec2[](uv, uv, uv, uv);
+	Material paving = materials[materialsOf[3]];
+	bool stones = paving.Extra.w > 0.5 && color.b > 0.002;
+	float stoneDepth = 0.0;
+	float stoneSun = 0.0;
+	float stoneShare = 0.0;
+	if (stones)
+	{
+		vec3 hit = StoneMarch(paving, uv, dx, dy);
+		at[3] = hit.xy;
+		stoneDepth = hit.z;
+		vec4 cell = textureLod(Textures[nonuniformEXT(paving.Surface)], hit.xy * paving.Params.z, 0.0);
+		vec2 centre = PavingCentre(hit.xy, cell.ba, paving.Params.z);
+		uint slot = uint(paving.Extra.w + 0.5);
+		vec2 size = vec2(textureSize(Textures[nonuniformEXT(slot)], 0));
+		float pave = textureLod(Textures[nonuniformEXT(slot)], ((centre - paving.Extra.xy) * paving.Extra.z + 0.5) / size, 0.0).r;
+		float laid = smoothstep(-0.02, 0.02, pave - PavingThreshold(centre));
+		weights[0] = max(1.0 - color.r - color.g, 0.0) * (1.0 - laid);
+		weights[1] *= 1.0 - laid;
+		weights[2] *= 1.0 - laid;
+		weights[3] = laid;
+	}
 	vec4 albedo[4];
 	float scores[4];
 	float top = -1e9;
@@ -172,7 +261,7 @@ Layer Splat(uvec2 ids, vec4 color, vec2 uv)
 		{
 			Material m = materials[materialsOf[i]];
 			float scale = m.Params.z;
-			albedo[i] = textureGrad(Textures[nonuniformEXT(m.Albedo)], uv * scale, dx * scale, dy * scale);
+			albedo[i] = textureGrad(Textures[nonuniformEXT(m.Albedo)], at[i] * scale, dx * scale, dy * scale);
 			scores[i] = albedo[i].a + 2.0 * weights[i];
 			top = max(top, scores[i]);
 		}
@@ -189,14 +278,46 @@ Layer Splat(uvec2 ids, vec4 color, vec2 uv)
 			continue;
 		Material m = materials[materialsOf[i]];
 		float scale = m.Params.z;
-		vec2 st = uv * scale;
-		result.Albedo += vec4(albedo[i].rgb * m.Color.rgb, albedo[i].a) * share;
-		result.Surface += textureGrad(Textures[nonuniformEXT(m.Surface)], st, dx * scale, dy * scale) * vec4(1.0, m.Params.x, m.Params.y, 1.0) * share;
+		vec2 st = at[i] * scale;
+		vec3 base = albedo[i].rgb * m.Color.rgb;
+		vec4 surface = textureGrad(Textures[nonuniformEXT(m.Surface)], st, dx * scale, dy * scale) * vec4(1.0, m.Params.x, m.Params.y, 1.0);
+		float relief = m.Params.w;
+		float lift = 0.0;
+		bool stone = stones && i == 3;
+		if (stone)
+			surface.ba = vec2(0.0);
+		if (relief > 0.0)
+		{
+			float cavity = smoothstep(m.Color.a - 0.07, m.Color.a + 0.19, albedo[i].a);
+			base *= mix(1.0, 0.3 + 0.7 * cavity, relief);
+			vec3 hue = mix(vec3(0.94, 0.98, 1.05), vec3(1.06, 0.98, 0.88), PavingNoise(uv * 0.19 + 9.0));
+			base *= mix(vec3(1.0), hue * (0.82 + 0.36 * PavingNoise(uv * 0.55 + 3.1)), relief);
+			surface.r *= mix(1.0, 0.3 + 0.7 * cavity, relief);
+			surface.g *= mix(1.0, 0.72, relief * smoothstep(m.Color.a + 0.19, m.Color.a + 0.37, albedo[i].a));
+			lift = 0.8 * relief;
+		}
+		if (stone)
+		{
+			float shadow = StoneShadow(m, at[i], stoneDepth, dx, dy);
+			base *= mix(StoneShade, 1.0, shadow);
+			surface.r *= mix(0.85, 1.0, shadow);
+			stoneSun += shadow * share;
+			stoneShare += share;
+			float worn = smoothstep(m.Color.a + 0.08, m.Color.a + 0.26, albedo[i].a) * (0.5 + 0.5 * PavingNoise(at[i] * 1.7 + 11.0));
+			surface.g = mix(surface.g, StonePolish, worn);
+		}
+		result.Albedo += vec4(base, albedo[i].a) * share;
+		result.Surface += surface * share;
 		vec3 normal = vec3(0.0, 0.0, 1.0);
 		if (m.Normal != 0u)
 		{
 			vec2 xy = textureGrad(Textures[nonuniformEXT(m.Normal)], st, dx * scale, dy * scale).rg * 2.0 - 1.0;
-			normal = vec3(xy, sqrt(max(1.0 - dot(xy, xy), 0.0)));
+			normal = normalize(vec3(xy * (1.0 + lift), sqrt(max(1.0 - dot(xy, xy), 0.0))));
+		}
+		if (stone)
+		{
+			vec3 bulge = StoneNormal(m, at[i], dx, dy);
+			normal = normalize(vec3(normal.xy + bulge.xy, normal.z * bulge.z));
 		}
 		result.Normal += normal * share;
 		total += share;
@@ -204,6 +325,7 @@ Layer Splat(uvec2 ids, vec4 color, vec2 uv)
 	result.Albedo /= total;
 	result.Surface /= total;
 	result.Normal = normalize(result.Normal);
+	SunVisibility = 1.0 - (stoneShare - stoneSun) / total;
 	return result;
 }
 
@@ -587,6 +709,28 @@ void main()
 		float glint = smoothstep(0.82, 0.97, VeinNoise(inWorld * 2.3 + mirror * 6.0));
 		heat += albedo * (lit * (PolishBase + PolishFresnel * grazing) + PolishGlint * glint * (1.0 - roughness));
 	}
+	bool worn = (flags & MeshWorn) != 0u;
+	if (worn)
+	{
+		vec3 p = inWorld;
+		const float e = 0.05;
+		float wave = VeinNoise(p * WornWaveScale + 17.0);
+		float dent = VeinNoise(p * WornDentScale + 5.0);
+		vec3 slope = vec3(VeinNoise((p + vec3(e, 0.0, 0.0)) * WornWaveScale + 17.0), VeinNoise((p + vec3(0.0, e, 0.0)) * WornWaveScale + 17.0), VeinNoise((p + vec3(0.0, 0.0, e)) * WornWaveScale + 17.0)) - wave;
+		slope = slope * (WornWave / e);
+		slope += (vec3(VeinNoise((p + vec3(e, 0.0, 0.0)) * WornDentScale + 5.0), VeinNoise((p + vec3(0.0, e, 0.0)) * WornDentScale + 5.0), VeinNoise((p + vec3(0.0, 0.0, e)) * WornDentScale + 5.0)) - dent) * (WornDent / e);
+		slope -= geometric * dot(slope, geometric);
+		n = normalize(n - slope);
+		float up = smoothstep(0.5, 0.9, geometric.y);
+		float dull = smoothstep(0.3, 0.62, VeinNoise(p * 0.65 + 3.1));
+		float smudge = smoothstep(0.5, 0.82, VeinNoise(p * 3.4 + 9.7));
+		float scuff = up * smoothstep(0.55, 0.85, VeinNoise(vec3(p.x * 9.0, p.y * 2.0, p.z * 9.0) + 21.0));
+		float cavity = 1.0 - smoothstep(0.35, 0.85, occlusion);
+		float matte = clamp(0.75 * dull + 0.5 * smudge + 0.6 * scuff + 0.8 * cavity, 0.0, 1.0) * mix(1.0, 0.45, metallic);
+		roughness = mix(roughness, max(roughness, WornMatte), matte);
+		albedo *= (0.84 + 0.32 * VeinNoise(p * 1.9 + 41.0)) * (0.88 + 0.24 * smoothstep(0.2, 0.7, dent));
+		albedo = mix(albedo, WornDust, (1.0 - metallic) * up * (0.35 * cavity + 0.12 * smudge));
+	}
 	if (rock && glaze > 0.0)
 	{
 		albedo = mix(albedo, albedo * 0.5 + vec3(0.012, 0.026, 0.034), glaze);
@@ -675,7 +819,13 @@ void main()
 	emitted += inBurn.rgb * (burn * burn);
 	translucency *= 1.0 - charred;
 #endif
+	if (splat || worn)
+	{
+		vec3 toSun = vec3(pc.Focus.z, 0.0, pc.Focus.w);
+		toSun.y = sqrt(max(1.0 - dot(toSun.xz, toSun.xz), 0.0));
+		SunVisibility *= clamp(abs(dot(n, toSun)) + 2.0 * occlusion - 1.0, 0.0, 1.0);
+	}
 	outAlbedo = vec4(albedo * (1.0 - glow), occlusion);
 	outSurface = PackSurface(n, roughness, metallic);
-	outEmission = vec4(emitted * (1.0 - fade), PackEmissionTag((flags & MeshHero) != 0u, translucency * (1.0 - glow)));
+	outEmission = vec4(emitted * (1.0 - fade), PackSunShadow(PackEmissionTag((flags & MeshHero) != 0u, translucency * (1.0 - glow)), SunVisibility));
 }

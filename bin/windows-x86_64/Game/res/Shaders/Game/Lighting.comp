@@ -37,6 +37,8 @@ layout(std140, set = 0, binding = 5) uniform LightingFrame
 	vec4 LavaTransform;
 	vec4 LavaParams;
 	vec4 DepthHole;
+	vec4 Sheen;
+	vec4 SheenRadiance;
 } Frame;
 layout(set = 0, binding = 6) uniform sampler2D ShadowMap;
 layout(set = 0, binding = 11) uniform sampler2D EnvironmentMap;
@@ -179,6 +181,26 @@ float BackLight(vec3 n, vec3 v, vec3 l, float ambient)
 	return pow(clamp(dot(v, -h), 0.0, 1.0), BackPower) * BackScale + max(-dot(n, l), 0.0) + ambient;
 }
 
+const float SheenFlatten = 0.4;
+const float SheenMinRoughness = 0.32;
+const float SheenMetal = 0.35;
+
+vec3 SheenLight(vec3 albedo, float metallic, float roughness, vec3 n, vec3 v)
+{
+	vec3 l = Frame.Sheen.xyz;
+	n = normalize(mix(n, vec3(0.0, 1.0, 0.0), SheenFlatten * smoothstep(0.5, 0.9, n.y)));
+	float cosO = dot(n, v);
+	float cosI = dot(n, l);
+	if (Frame.SheenRadiance.a <= 0.0 || cosO <= 0.0 || cosI <= 0.0)
+		return vec3(0.0);
+	vec3 h = normalize(v + l);
+	float cosOH = max(dot(v, h), 1e-8);
+	float alpha = SurfaceAlpha(max(roughness, SheenMinRoughness));
+	float specular = GgxD(dot(n, h), alpha) * GgxG2(cosO, cosI, alpha) / (4.0 * cosO);
+	vec3 fresnel = mix(vec3(FresnelDielectric(cosOH, SurfaceIor)), FresnelSchlick(albedo, cosOH) * SheenMetal, metallic);
+	return fresnel * specular * Frame.SheenRadiance.rgb;
+}
+
 vec3 PointBrdf(vec3 albedo, float metallic, float roughness, vec3 n, vec3 v, vec3 l, float cosI)
 {
 	vec3 h = normalize(v + l);
@@ -284,10 +306,12 @@ void main()
 		float shadow = cosI > 0.0 ? SunShadow(position, n, cosI) : 0.0;
 		if (shadow > 0.0 && Frame.Contact.z > 0.0 && Frame.Options.w > ShadowsLow)
 			shadow *= ContactShadow(position, n, l);
+		shadow *= UnpackSunVisibility(emissive.a);
 		vec3 sunIrradiance = Frame.SunRadiance.rgb * (max(cosI, 0.0) * shadow);
 		if (Frame.Eye.w > 0.0)
 			sunIrradiance *= mix(Frame.Eye.w, 1.0, 1.0 - smoothstep(Frame.Eye.z - 0.6, Frame.Eye.z + 1.6, length(position.xz - Frame.Eye.xy)));
 		vec3 sun = EvaluateBrdf(albedo.rgb, metallic, roughness, n, v, l) * sunIrradiance;
+		sun += SheenLight(albedo.rgb, metallic, roughness, n, v) * albedo.a;
 		float hole = HoleWeight(position);
 		float fade = DepthFade(Frame.CameraPosition.w, position.y) * (1.0 - hole);
 		bool environment = Frame.EnvironmentParams.x > 0.0;

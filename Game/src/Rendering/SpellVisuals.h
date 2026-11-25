@@ -29,6 +29,14 @@ namespace Game
 	inline constexpr float FireballBlastDome = 0.45f;
 	inline constexpr float FireballBlastLight = 6.0f;
 	inline constexpr float FireballSteps[] = { 0.33f, 0.66f };
+	inline constexpr float CometRockSize = 0.75f;
+	inline constexpr float CometBlastFire = 0.8f;
+	inline constexpr float CometBlastSmoke = 1.9f;
+	inline constexpr float CometBlastLight = 7.0f;
+	inline constexpr float CometCraterLife = 10.0f;
+	inline constexpr float CometCraterCooling = 0.45f;
+	inline constexpr glm::vec3 CometCraterGlow{ 1.6f, 0.52f, 0.13f };
+	inline constexpr glm::vec3 CometLight{ 1.0f, 0.4f, 0.1f };
 	inline constexpr float ObsidianLength = 0.95f;
 	inline constexpr float ObsidianHoldHeight = 1.05f;
 	inline constexpr float ObsidianFanReach = 0.5f;
@@ -187,6 +195,21 @@ namespace Game
 		float Age = 0.0f;
 	};
 
+	struct CometLook
+	{
+		glm::vec3 Center{ 0.0f };
+		glm::vec3 Direction{ 0.0f, -1.0f, 0.0f };
+		float Scale = 1.0f;
+		float Progress = 0.0f;
+	};
+
+	struct CometBlastLook
+	{
+		glm::vec3 Ground{ 0.0f };
+		float Radius = 1.0f;
+		float Age = 0.0f;
+	};
+
 	struct HexShieldImpact
 	{
 		glm::vec2 Point{ 0.0f };
@@ -330,6 +353,9 @@ namespace Game
 
 	float RingExtent(float radius, float thickness);
 	GroundDecal SpellMarkDecal(const SpellMark& mark);
+	GroundDecal CraterDecal(const glm::vec3& ground, float extent, const glm::vec3& glow, uint32_t seed);
+	GroundDecal FireballCraterDecal(const glm::vec3& ground, float radius, float power, uint32_t seed);
+	float FireballCraterCooling(float power);
 	void DrawSpellMark(WorldRenderer& renderer, const SpellMark& mark);
 
 	SpellMeshes RegisterSpellMeshes(WorldRenderer& renderer);
@@ -359,6 +385,8 @@ namespace Game
 	float FireballBlastSmoke(float power);
 	float FireballBlastLife(float power);
 	void DrawFireballBlast(WorldRenderer& renderer, const FireballBlastLook& look, uint32_t seed);
+	void DrawComet(WorldRenderer& renderer, const CometLook& look, float time, uint32_t seed);
+	void DrawCometBlast(WorldRenderer& renderer, const CometBlastLook& look, uint32_t seed);
 	std::span<const HexShieldCell> HexShieldCells();
 	glm::vec3 HexShieldPoint(const glm::vec3& base, float facing, const glm::vec2& point, glm::vec3* normal = nullptr);
 	glm::vec2 HexShieldLocal(const glm::vec3& base, float facing, const glm::vec3& world);

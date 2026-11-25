@@ -183,6 +183,8 @@ namespace Game
 			.LavaTransform = environment.LavaTransform,
 			.LavaParams = glm::vec4(environment.LavaLight ? lighting.LavaLight : 0.0f, lighting.LavaLine, lighting.Pulse, lighting.Fury),
 			.DepthHole = lighting.DepthHole,
+			.Sheen = glm::vec4(glm::normalize(lighting.SheenToward), 0.0f),
+			.SheenRadiance = glm::vec4(lighting.SheenColor * lighting.SheenIntensity, lighting.SheenIntensity),
 		};
 		const uint32_t lightCount = m_CullPipeline ? uint32_t(std::min<size_t>(lights.size(), MaxSceneLights)) : 0;
 		frame.Translucent = glm::vec4(translucency ? 1.0f : 0.0f, float(lightCount), PointLightGain, 0.0f);

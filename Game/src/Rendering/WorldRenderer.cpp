@@ -431,6 +431,10 @@ namespace Game
 			m_Textures.push_back(createTexture(texture.Width, texture.Height, mips, format(texture.Format), texture.Pixels.data(), texture.Pixels.size()));
 			m_TextureSamplers.push_back(texture.Nearest ? m_NearestSampler.get() : texture.Repeat ? m_RepeatSampler.get() : m_ModelSampler.get());
 		}
+		const uint8_t unpaved = 0;
+		m_ReliefMaskSlot = uint32_t(m_Textures.size());
+		m_Textures.push_back(createTexture(1, 1, 1, Rdn::Format::R8_Unorm, &unpaved, sizeof(unpaved)));
+		m_TextureSamplers.push_back(m_ModelSampler.get());
 
 		const auto slot = [](uint32_t texture) { return texture == NoTexture ? 0u : texture + 2; };
 		m_GlassSurfaces.clear();
@@ -692,6 +696,49 @@ namespace Game
 	{
 		const std::optional<uint32_t> material = m_Models.FindMaterial(name);
 		return material ? std::optional<uint32_t>(m_TilingMaterialBase + *material) : std::nullopt;
+	}
+
+	void WorldRenderer::SetMaterialLook(uint32_t slot, const glm::vec3& tint, float relief, float joint)
+	{
+		if (slot >= m_Materials.size() || slot < m_TilingMaterialBase)
+			return;
+		MaterialGpu& material = m_Materials[slot];
+		if (material.Color == glm::vec4(tint, joint) && material.Params.w == relief)
+			return;
+		m_Device.WaitIdle();
+		material.Color = glm::vec4(tint, joint);
+		material.Params.w = relief;
+		UploadMaterials();
+	}
+
+	void WorldRenderer::SetReliefMask(uint32_t slot, uint32_t width, uint32_t height, const std::vector<uint8_t>& mask, glm::vec2 origin, float step)
+	{
+		if (slot >= m_Materials.size() || slot < m_TilingMaterialBase || m_ReliefMaskSlot >= m_Textures.size() || mask.size() != size_t(width) * height || width == 0 || height == 0)
+			return;
+		m_Device.WaitIdle();
+		m_Allocator.ReleaseResource(m_Textures[m_ReliefMaskSlot].get());
+		auto image = std::make_unique<Rdn::GpuImage>();
+		m_Allocator.CreateGpuImage(image.get(), Rdn::GpuImageDesc{ .ImageSize = { width, height, 1 }, .Format = Rdn::Format::R8_Unorm, .UsageFlags = Rdn::ImageUsage::Sampled | Rdn::ImageUsage::TransferDst });
+		m_Allocator.SetImageData(image.get(), mask.data(), mask.size(), Rdn::ImageLayout::ShaderReadOnlyOptimal);
+		m_Textures[m_ReliefMaskSlot] = std::move(image);
+		for (Rdn::DescriptorSet* set : { m_TextureSet.get(), m_ShadowTextureSet.get(), m_BackTextureSet.get() })
+			if (set)
+				m_Allocator.ReleaseResource(set);
+		BindTextures();
+		m_Materials[slot].Extra = glm::vec4(origin, 1.0f / step, float(m_ReliefMaskSlot));
+		UploadMaterials();
+	}
+
+	void WorldRenderer::SetGrassField(const GrassField& field)
+	{
+		GrassPaving paving;
+		if (field.PavingMaterial && *field.PavingMaterial < m_Materials.size())
+		{
+			const MaterialGpu& material = m_Materials[*field.PavingMaterial];
+			if (material.Albedo != 0 && material.Albedo < m_Textures.size() && material.Surface != 0 && material.Surface < m_Textures.size())
+				paving = { .Image = m_Textures[material.Albedo].get(), .Cells = m_Textures[material.Surface].get(), .Scale = material.Params.z, .Joint = field.PavingJoint };
+		}
+		m_Grass->SetField(field, paving);
 	}
 
 	std::optional<int32_t> WorldRenderer::FindEnvironment(std::string_view name) const
@@ -1068,7 +1115,8 @@ namespace Game
 		m_Lighting.FocusHeight = focusHeight;
 		m_FocusHeight = focusHeight;
 		m_Constants.ViewProjection = camera.ViewProjection;
-		m_Constants.Focus = glm::vec4(fadeBelowFocus ? focusHeight : -1e4f, 0.0f, 0.0f, 0.0f);
+		const glm::vec3 toSun = -glm::normalize(lighting.SunDirection);
+		m_Constants.Focus = glm::vec4(fadeBelowFocus ? focusHeight : -1e4f, 0.0f, toSun.x, toSun.z);
 		m_Constants.Eye = glm::vec4(camera.Eye, lighting.Rain > 0.0f ? lighting.Rain : -lighting.Pulse);
 		m_Constants.Sight = glm::vec4(0.0f);
 	}
@@ -1270,6 +1318,12 @@ namespace Game
 			stamp.Heat = std::clamp(decal.Params.x, 0.0f, 1.0f) * alpha * size;
 			break;
 		}
+		case DecalShape::Crater:
+			stamp.Kind = GrassStampKind::Burn;
+			stamp.Extent = decal.Extent * 0.55f;
+			stamp.Strength = alpha;
+			stamp.Heat = 0.3f * std::clamp(decal.Params.x, 0.0f, 1.0f) * alpha;
+			break;
 		case DecalShape::Cracks:
 			if (decal.Params.x <= 0.0f)
 				return;

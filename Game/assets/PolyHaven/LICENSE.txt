@@ -1,5 +1,9 @@
 Every asset in this folder comes from Poly Haven (https://polyhaven.com) and is released under
 CC0 1.0 Universal (public domain): https://creativecommons.org/publicdomain/zero/1.0/
 
-Textures (1k):
+Textures:
   castle_wall_varriation  https://polyhaven.com/a/castle_wall_varriation
+  stone_tiles_02  https://polyhaven.com/a/stone_tiles_02
+  monastery_stone_floor  https://polyhaven.com/a/monastery_stone_floor
+  forest_ground_04  https://polyhaven.com/a/forest_ground_04
+  forrest_ground_01  https://polyhaven.com/a/forrest_ground_01

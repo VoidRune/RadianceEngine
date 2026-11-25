@@ -24,6 +24,11 @@ PIECES = {
     'Islet': ('InvertedMountain.glb', 0.35),
     'Stalactite': ('FloatingStalactite.glb', 0.35),
     'Spike': ('Spike.glb', 0.35),
+    'Slab': ('CrackedSlab.glb', 0.6),
+    'Spire': ('RockSpire.glb', 1.0),
+    'Rubble': ('RubblePile.glb', 1.0),
+    'SplitPillar': ('SplitPillar.glb', 1.0),
+    'Steps': ('SteppedRocks.glb', 0.8),
 }
 SCALE = 8.0
 WELD = 1e-6

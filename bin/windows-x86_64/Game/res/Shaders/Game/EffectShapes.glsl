@@ -34,6 +34,7 @@ const uint DecalAftershockMark = 20u;
 const uint DecalResonanceMark = 21u;
 const uint DecalHeartRune = 22u;
 const uint DecalRitualMark = 23u;
+const uint DecalCrater = 24u;
 
 const float Tau = 6.28318531;
 
@@ -899,6 +900,115 @@ vec2 CracksShape(vec2 uv, float pixel, float radius, float heat, uint seed)
 	float branch = Line(abs(local - branchPath) / count * Tau * r, width * 0.7, pixel) * step(fork, r) * (1.0 - smoothstep(branchEnd - 0.06, branchEnd, r));
 	float lines = max(crack, branch);
 	return vec2(max(lines, (1.0 - smoothstep(0.0, 0.3, r)) * 0.55), lines * heat * 0.7);
+}
+
+struct CraterLook
+{
+	float Coverage;
+	float Glow;
+	vec3 Albedo;
+};
+
+CraterLook CraterShape(vec2 uv, float radius, float pixelWorld, float heat, uint seed)
+{
+	CraterLook look = CraterLook(0.0, 0.0, vec3(0.0));
+	float r = length(uv);
+	if (r >= 0.98)
+		return look;
+	vec2 p = uv * radius;
+	float pixel = pixelWorld / radius;
+	vec2 dir = uv / max(r, 1e-4);
+	vec2 offset = vec2(float(seed & 255u), float((seed >> 8) & 255u)) * 0.731;
+	float detail = 1.0 - smoothstep(0.012, 0.04, pixelWorld);
+	float lobes = ValueNoise(dir * 1.4 + offset) - 0.5;
+	float wobble = ValueNoise(dir * 5.0 + offset * 1.7) - 0.5;
+	float edge = 0.46 * (1.0 + 0.36 * lobes + 0.12 * wobble);
+	float grain = ValueNoise(p * 8.0 + offset * 3.1);
+	float fine = mix(0.5, ValueNoise(p * 26.0 - offset), detail);
+	float swept = ValueNoise(dir * 11.0 + offset * 2.3);
+
+	float rim = edge * (1.0 + 0.08 * (grain - 0.5));
+	float burn = 1.0 - smoothstep(rim * 0.8, rim, r);
+	float halo = (1.0 - smoothstep(rim, rim * 1.45, r)) * 0.4;
+	float charred = max(burn * (0.9 + 0.08 * swept + 0.06 * (fine - 0.5)), halo * (0.7 + 0.3 * fine));
+
+	float angle = atan(uv.y, uv.x);
+	float turn = fract(angle / Tau + 0.5);
+	float rays = 0.0;
+	float splats = 0.0;
+	for (int layer = 0; layer < 2; layer++)
+	{
+		float count = layer == 0 ? 29.0 : 61.0;
+		float sector = floor(turn * count);
+		for (int k = -1; k <= 1; k++)
+		{
+			float s = sector + float(k);
+			uint key = Hash(uint(mod(s, count)) * 7u + seed * 131u + uint(layer) * 977u);
+			if (HashUnit(key + 8u) < (layer == 0 ? 0.12 : 0.35))
+				continue;
+			float rayAngle = ((s + 0.2 + 0.6 * HashUnit(key)) / count - 0.5) * Tau;
+			vec2 d = vec2(cos(rayAngle), sin(rayAngle));
+			float along = dot(uv, d);
+			if (along <= 0.0)
+				continue;
+			float across = abs(dot(uv, vec2(-d.y, d.x)));
+			float start = edge * 0.75;
+			float len = layer == 0 ? edge * 1.15 + 0.4 * HashUnit(key + 1u) : edge * (1.05 + 0.3 * HashUnit(key + 1u));
+			float t = clamp((along - start) / (len - start), 0.0, 1.0);
+			float base = layer == 0 ? 0.02 + 0.028 * HashUnit(key + 2u) : 0.012 + 0.014 * HashUnit(key + 2u);
+			float width = base * (1.0 - 0.85 * pow(t, 0.8));
+			float breakup = smoothstep(0.3, 0.6, ValueNoise(vec2(along * radius * 5.0, float(key & 1023u))));
+			float ray = Line(across, width, pixel) * step(start, along) * (1.0 - smoothstep(len * 0.9, len, along)) * mix(1.0, breakup, 0.6 * t * t);
+			float strength = pow(1.0 - t, 0.5) * (0.6 + 0.4 * HashUnit(key + 3u)) * (layer == 0 ? 1.0 : 0.85);
+			rays = max(rays, ray * strength);
+			if (layer == 0 && HashUnit(key + 4u) > 0.6)
+			{
+				float size = base * (0.45 + 0.35 * HashUnit(key + 6u));
+				vec2 drop = vec2((along - len * (1.02 + 0.1 * HashUnit(key + 5u))) / 2.4, across);
+				splats = max(splats, Line(length(drop), size, pixel) * (0.6 + 0.3 * HashUnit(key + 7u)));
+			}
+		}
+	}
+
+	float dust = smoothstep(edge * 0.75, edge * 1.1, r) * (1.0 - smoothstep(0.6, 0.94, r)) * smoothstep(0.3, 0.75, grain * 0.65 + fine * 0.35 + 0.08);
+
+	vec2 cell = floor(p * 6.0 + 400.0);
+	uint fleckKey = Hash(uint(cell.x) * 7919u + uint(cell.y) * 104729u + seed);
+	vec2 spot = (cell + 0.2 + 0.6 * vec2(float((fleckKey >> 8) & 255u), float((fleckKey >> 16) & 255u)) / 255.0 - 400.0) / 6.0;
+	float fleckSize = 0.007 + 0.014 * float(fleckKey >> 24) / 255.0;
+	float zone = smoothstep(edge * 0.9, edge * 1.1, r) * (1.0 - smoothstep(edge * 1.4, edge * 1.9, r));
+	float fleck = step(0.72, float(fleckKey & 255u) / 255.0) * Line(length(p - spot), fleckSize, pixelWorld) * zone;
+
+	float soot = clamp(max(max(charred, rays * 0.95), max(splats, fleck * 0.85)), 0.0, 1.0);
+	float film = dust * 0.5 * (1.0 - soot);
+	look.Coverage = soot + film;
+	vec3 sootColor = mix(vec3(0.03, 0.027, 0.025), vec3(0.085, 0.07, 0.055), smoothstep(0.0, edge, r) * (1.0 - burn * 0.5));
+	vec3 dustColor = vec3(0.44, 0.4, 0.35) * (0.85 + 0.3 * fine);
+	look.Albedo = (sootColor * soot + dustColor * film) / max(look.Coverage, 1e-4);
+
+	float h = clamp(heat, 0.0, 1.0);
+	if (h > 0.003)
+	{
+		float hot = ValueNoise(p * 2.2 + offset * 1.9) * 0.6 + ValueNoise(p * 5.5 - offset) * 0.4 + 0.55 * (1.0 - r / (edge * 0.6));
+		float level = 1.25 - 0.55 * h;
+		float core = smoothstep(level, level + 0.18, hot) * (0.7 + 0.3 * fine);
+		vec2 emberCell = floor(p * 3.2 + 300.0);
+		float emberGlow = 0.0;
+		for (int j = 0; j <= 1; j++)
+			for (int i = 0; i <= 1; i++)
+			{
+				vec2 c = emberCell + vec2(float(i), float(j)) - (1.0 - step(0.5, fract(p * 3.2 + 300.0)));
+				uint ek = Hash(uint(c.x) * 7919u + uint(c.y) * 104729u + seed * 3u + 11u);
+				if (float(ek & 255u) / 255.0 > 0.18)
+					continue;
+				vec2 at = (c + 0.15 + 0.7 * vec2(float((ek >> 8) & 255u), float((ek >> 16) & 255u)) / 255.0 - 300.0) / 3.2;
+				float size = 0.025 + 0.04 * float(ek >> 24) / 255.0;
+				float dist = length(p - at);
+				emberGlow = max(emberGlow, exp(-dist * dist / (size * size)) * (1.0 - smoothstep(edge * 0.3, edge * 0.6, length(at) / radius)));
+			}
+		look.Glow = (core * 0.55 + emberGlow * 0.8) * pow(h, 1.2) * burn;
+	}
+	return look;
 }
 
 float NovaArm(vec2 p, float angle, float reach, float pixel, uint key)

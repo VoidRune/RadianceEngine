@@ -117,12 +117,13 @@ namespace Game
 					{ .Kind = K::Smoke, .Count = 18.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.5f, 0.0f }, .Cone = 0.5f, .Speed = { 0.5f, 1.5f }, .Life = { 1.0f, 1.8f }, .Size = { 0.45f, 0.8f } },
 				});
 				set(Fx::MeteorImpact, {
-					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.18f, 0.18f }, .Size = { 1.6f, 1.6f } },
-					{ .Kind = K::Fire, .Count = 44.0f, .Outward = true, .Radius = 0.6f, .Direction = { 0.0f, 0.8f, 0.0f }, .Cone = 0.5f, .Speed = { 3.0f, 7.0f }, .Life = { 0.45f, 0.9f }, .Size = { 0.35f, 0.6f }, .Tint = { 0.6f, 0.6f, 0.6f } },
-					{ .Kind = K::Ember, .Count = 50.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 1.2f, 0.0f }, .Cone = 0.6f, .Speed = { 5.0f, 12.0f }, .Life = { 0.7f, 1.6f }, .Size = { 0.035f, 0.06f } },
-					{ .Kind = K::Spark, .Count = 26.0f, .Outward = true, .Radius = 0.3f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 7.0f, 14.0f }, .Life = { 0.5f, 1.1f }, .Size = { 0.035f, 0.06f } },
-					{ .Kind = K::Smoke, .Count = 24.0f, .Outward = true, .Radius = 0.8f, .Direction = { 0.0f, 0.6f, 0.0f }, .Cone = 0.5f, .Speed = { 0.8f, 2.0f }, .Life = { 1.2f, 2.2f }, .Size = { 0.6f, 1.0f } },
-					{ .Kind = K::Bone, .Count = 24.0f, .Outward = true, .Radius = 0.5f, .Direction = { 0.0f, 1.4f, 0.0f }, .Cone = 0.5f, .Speed = { 3.0f, 7.0f }, .Life = { 1.0f, 1.8f }, .Size = { 0.05f, 0.09f }, .Tint = { 0.35f, 0.3f, 0.27f } },
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.14f, 0.14f }, .Size = { 1.3f, 1.3f }, .Tint = { 0.55f, 0.45f, 0.35f } },
+					{ .Kind = K::Spark, .Count = 34.0f, .Outward = true, .Radius = 0.3f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.75f, .Speed = { 6.0f, 13.0f }, .Life = { 0.5f, 1.1f }, .Size = { 0.03f, 0.055f } },
+					{ .Kind = K::Ember, .Count = 30.0f, .Outward = true, .Radius = 0.7f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 2.0f, 5.5f }, .Life = { 0.9f, 1.8f }, .Size = { 0.03f, 0.05f } },
+				});
+				set(Fx::CometDebris, {
+					{ .Kind = K::Ember, .Count = 14.0f, .Density = 3.0f, .Shape = SpawnShape::Segment, .Radius = 0.04f, .Speed = { 0.2f, 0.8f }, .Life = { 0.25f, 0.55f }, .Size = { 0.02f, 0.035f }, .Inherit = 0.1f },
+					{ .Kind = K::Smoke, .Count = 6.0f, .Density = 2.0f, .Shape = SpawnShape::Segment, .Radius = 0.05f, .Speed = { 0.1f, 0.4f }, .Life = { 0.5f, 0.9f }, .Size = { 0.12f, 0.22f }, .Tint = { 0.8f, 0.8f, 0.8f } },
 				});
 				set(Fx::FrostNova, {
 					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.4f, 0.4f }, .Size = { 4.4f, 4.4f }, .Tint = { 0.5f, 0.9f, 1.6f }, .Lift = -0.45f },
@@ -568,9 +569,9 @@ namespace Game
 				cast(Fx::CastArcane, ParticleKind::Arcane, glm::vec3(1.0f));
 				cast(Fx::CastNature, ParticleKind::Heal, glm::vec3(1.0f));
 				set(Fx::MeteorTrail, {
-					{ .Kind = K::Fire, .Count = 40.0f, .Density = 9.0f, .Shape = SpawnShape::Segment, .Radius = 0.3f, .Speed = { 0.3f, 1.2f }, .Life = { 0.25f, 0.5f }, .Size = { 0.3f, 0.5f }, .Tint = { 0.7f, 0.7f, 0.7f } },
-					{ .Kind = K::Ember, .Count = 30.0f, .Density = 3.0f, .Shape = SpawnShape::Segment, .Radius = 0.35f, .Speed = { 1.0f, 3.0f }, .Life = { 0.5f, 1.1f }, .Size = { 0.03f, 0.05f }, .Inherit = 0.1f },
-					{ .Kind = K::Smoke, .Count = 18.0f, .Density = 2.0f, .Shape = SpawnShape::Segment, .Radius = 0.35f, .Speed = { 0.2f, 0.6f }, .Life = { 0.7f, 1.2f }, .Size = { 0.4f, 0.7f } },
+					{ .Kind = K::EmberFlame, .Count = 30.0f, .Density = 4.0f, .Shape = SpawnShape::Segment, .Aimed = true, .Radius = 0.25f, .Cone = 0.35f, .Speed = { 2.0f, 5.0f }, .Life = { 0.16f, 0.32f }, .Size = { 0.4f, 0.65f } },
+					{ .Kind = K::Ember, .Count = 30.0f, .Density = 3.0f, .Shape = SpawnShape::Segment, .Aimed = true, .Radius = 0.3f, .Cone = 0.8f, .Speed = { 2.0f, 5.0f }, .Life = { 0.35f, 0.8f }, .Size = { 0.035f, 0.06f }, .Inherit = 0.1f },
+					{ .Kind = K::Smoke, .Count = 14.0f, .Density = 1.5f, .Shape = SpawnShape::Segment, .Radius = 0.35f, .Speed = { 0.2f, 0.6f }, .Life = { 0.6f, 1.1f }, .Size = { 0.45f, 0.8f } },
 				});
 				return fx;
 			}();
@@ -1085,6 +1086,56 @@ namespace Game
 		m_Particles.Spawn(embers);
 	}
 
+	void EffectSystem::CometCrater(const glm::vec3& center, float radius)
+	{
+		constexpr float DustDrag = 3.0f;
+		constexpr int Segments = 24;
+		for (int i = 0; i < Segments; i++)
+		{
+			const float angle = 6.2832f * float(i) / float(Segments);
+			const glm::vec3 radial(std::cos(angle), 0.0f, std::sin(angle));
+			ParticleSpawn surge;
+			surge.Material = uint32_t(ParticleKind::Dust);
+			surge.Count = 3;
+			surge.Origin = center + radial * (0.3f * radius) + Up * 0.15f;
+			surge.Radius = 0.12f * radius;
+			surge.Direction = glm::normalize(radial + Up * 0.12f);
+			surge.Cone = 0.2f;
+			surge.Speed = glm::vec2(0.8f, 1.05f) * (0.85f * radius * DustDrag);
+			surge.Life = { 1.4f, 2.4f };
+			surge.Size = glm::vec2(0.18f, 0.28f) * radius;
+			surge.Tint = { 1.0f, 0.95f, 0.9f };
+			m_Particles.Spawn(surge);
+		}
+		ParticleSpawn plume;
+		plume.Material = uint32_t(ParticleKind::Dust);
+		plume.Count = 20;
+		plume.Origin = center + Up * 0.5f;
+		plume.Radius = 0.3f * radius;
+		plume.Direction = Up;
+		plume.Cone = 0.5f;
+		plume.Speed = { 2.5f, 5.5f };
+		plume.Life = { 1.8f, 2.8f };
+		plume.Size = glm::vec2(0.22f, 0.34f) * radius;
+		plume.Tint = { 0.75f, 0.7f, 0.66f };
+		m_Particles.Spawn(plume);
+		ParticleSpawn grit;
+		grit.Material = uint32_t(ParticleKind::Bone);
+		grit.Count = 30;
+		grit.Shape = SpawnShape::Sphere;
+		grit.Outward = true;
+		grit.Origin = center + Up * 0.25f;
+		grit.Radius = 0.35f * radius;
+		grit.Direction = Up;
+		grit.Cone = 0.8f;
+		grit.Speed = { 4.0f, 9.5f };
+		grit.Life = { 1.0f, 1.6f };
+		grit.Size = { 0.035f, 0.08f };
+		grit.Tint = { 0.3f, 0.27f, 0.25f };
+		m_Particles.Spawn(grit);
+		Burst(Fx::MeteorImpact, center + Up * 0.4f, Up, radius / 2.8f);
+	}
+
 	void EffectSystem::Converge(uint64_t key, const glm::vec3& target, float radius, float rate, float life, float dt, float size, ParticleKind kind, const glm::vec3& tint, float swirl, float arrive)
 	{
 		ConvergeState& state = m_Converges[key];
@@ -1321,24 +1372,10 @@ namespace Game
 		case AbilityId::PurpleFireball:
 		{
 			const float violet = std::clamp(power * 1.25f, 0.0f, 1.0f);
-			GroundDecal burn = decal(DecalShape::Scorch, ground, glm::vec2(radius * (0.55f + 0.1f * power)));
-			burn.Color = glm::vec4(glm::mix(glm::vec3(1.5f, 0.52f, 0.14f), glm::vec3(0.75f, 0.2f, 1.25f), violet), 1.0f);
-			burn.Tint = glm::vec4(0.025f, 0.02f, 0.03f, 0.85f);
-			burn.Roughness = 0.95f;
-			burn.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-			Mark(burn, 5.0f + 3.0f * power, 0.04f, 0.6f, 1.0f, 0.15f, 1.6f);
+			Mark(FireballCraterDecal(ground, radius, power, seed), 6.0f + 4.0f * power, 0.03f, 0.75f, 1.0f, 0.15f, FireballCraterCooling(power));
 			GroundDecal heat = decal(DecalShape::Glow, ground, glm::vec2(radius * 0.7f));
 			heat.Color = glm::vec4(glm::mix(glm::vec3(0.5f, 0.18f, 0.05f), glm::vec3(0.32f, 0.08f, 0.62f), violet) * (0.25f + 0.2f * power), 1.0f);
 			Mark(heat, 0.7f, 0.01f, 0.3f, 1.0f, 0.18f);
-			if (power > 0.35f)
-			{
-				GroundDecal split = decal(DecalShape::Cracks, ground, glm::vec2(radius * 0.95f));
-				split.Color = glm::vec4(glm::mix(glm::vec3(1.3f, 0.4f, 0.1f), glm::vec3(0.6f, 0.15f, 1.0f), violet), 1.0f);
-				split.Tint = glm::vec4(0.03f, 0.025f, 0.03f, 0.85f);
-				split.Roughness = 0.9f;
-				split.Params = glm::vec4(0.6f + 0.4f * power, 0.0f, 0.0f, 0.0f);
-				Mark(split, 4.0f + 3.0f * power, 0.02f, 0.5f, 1.0f, 0.14f, 2.6f);
-			}
 			Shockwave(ground, radius * 1.1f, 0.32f + 0.08f * power, 0.05f + 0.16f * power, 0.22f + 0.25f * power);
 			break;
 		}
@@ -1380,12 +1417,13 @@ namespace Game
 			cracks(ground, 0.5f, 1.4f, 0.0f);
 			break;
 		case AbilityId::Comet:
-			scorch(ground, radius * 0.85f, 9.0f, 0.8f);
-			cracks(ground, radius * 1.05f, 8.0f, 1.0f);
-			shock(radius * 1.1f, 0.45f);
-			Mark(SpellMarkDecal({ .Center = ground, .Radius = radius, .Color = { 1.0f, 0.42f, 0.12f }, .Intensity = 0.95f, .Kind = SpellMarkKind::Comet, .Seed = seed }), 0.75f, 0.01f, 1.0f, 1.15f, 0.25f);
+		{
+			Mark(CraterDecal(ground, radius * 1.2f, CometCraterGlow, seed), CometCraterLife, 0.03f, 0.9f, 1.0f, 0.15f, CometCraterCooling);
+			shock(radius * 1.1f, 0.45f, 0.6f);
+			Mark(SpellMarkDecal({ .Center = ground, .Radius = radius, .Color = { 1.0f, 0.42f, 0.12f }, .Intensity = 0.6f, .Kind = SpellMarkKind::Comet, .Seed = seed }), 0.75f, 0.01f, 1.0f, 1.15f, 0.25f);
 			Shockwave(ground, radius * 1.8f, 0.6f, 0.26f, 0.45f);
 			break;
+		}
 		case AbilityId::Aftershock:
 			cracks(ground, radius * 0.9f, 6.0f, 1.0f);
 			shock(radius, 0.4f);

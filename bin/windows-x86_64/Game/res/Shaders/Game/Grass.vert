@@ -22,8 +22,9 @@ vec3 Bezier(vec3 a, vec3 b, vec3 c, float t)
 void main()
 {
 	uint index = uint(gl_InstanceIndex);
-	uint kind = index >= Frame.Draws[3].z ? GrassClover : index >= Frame.Draws[2].z ? GrassFlower : index >= Frame.Draws[1].z ? GrassFar : GrassNear;
+	uint kind = index >= Frame.Draws[5].z ? GrassFern : index >= Frame.Draws[4].z ? GrassSpike : index >= Frame.Draws[3].z ? GrassClover : index >= Frame.Draws[2].z ? GrassFlower : index >= Frame.Draws[1].z ? GrassFar : GrassNear;
 	GrassBlade blade = Blades[index];
+	vec4 tone = unpackUnorm4x8(blade.Shape.z);
 	vec3 base = blade.BaseHeight.xyz;
 	float height = blade.BaseHeight.w;
 	vec2 facingBend = unpackHalf2x16(blade.Shape.x);
@@ -39,8 +40,8 @@ void main()
 	float ripple = GrassNoise(base.xz * 0.9 - wind * time * 2.6 + 31.0);
 	float flutter = sin(time * (2.6 + 0.8 * fract(sizePhase.y)) + sizePhase.y);
 	float stiff = (1.0 - 0.85 * effects.z) * (1.0 - 0.6 * effects.x) * (1.0 - 0.6 * effects.w);
-	float sway = (Frame.Wind.z * (0.35 + 0.9 * gust + 0.35 * ripple) + 0.05 * flutter) * stiff;
-	vec3 lean = (kind == GrassClover ? vec3(0.0) : dir * facingBend.y) + vec3(wind.x, 0.0, wind.y) * sway;
+	float sway = (Frame.Wind.z * (0.35 + 0.9 * gust + 0.35 * ripple) + 0.05 * flutter) * stiff * (kind == GrassSpike ? 0.6 : 1.0);
+	vec3 drift = vec3(wind.x, 0.0, wind.y) * sway;
 
 	vec2 push = vec2(0.0);
 	float flatten = 0.0;
@@ -56,7 +57,9 @@ void main()
 		push += (dist > 1e-3 ? delta / dist : dir.xz) * k;
 		flatten = max(flatten, k);
 	}
-	lean += vec3(push.x, 0.0, push.y) * 1.6;
+	vec3 sway3 = drift;
+	drift += vec3(push.x, 0.0, push.y) * 1.6;
+	vec3 lean = (kind == GrassClover || kind == GrassFern ? vec3(0.0) : dir * facingBend.y) + drift;
 
 	vec3 tipDir = normalize(vec3(lean.x, 1.0, lean.z));
 	vec3 p2 = base + tipDir * (height * (1.0 - 0.35 * flatten));
@@ -80,6 +83,67 @@ void main()
 		normal = normalize(up - axis * tilt);
 		coords = vec2(3.0 + length(shape), shape.y);
 	}
+	else if (kind == GrassFern)
+	{
+		uint frond = vertex / FernFrondVertices;
+		uint local = vertex % FernFrondVertices;
+		uint row = local / 2u;
+		float side = (local & 1u) == 0u ? -1.0 : 1.0;
+		bool broad = tone.y > 0.07;
+		float seed = fract(sin(float(frond) * 12.9898 + sizePhase.y * 3.1) * 43758.5453);
+		float angle = facingBend.x + (float(frond) + 0.35 * (seed - 0.5)) * TwoPi / float(FernFronds);
+		vec3 outward = vec3(cos(angle), 0.0, sin(angle));
+		float reach = height * (0.72 + 0.28 * seed);
+		float press = max(flatten, effects.w);
+		float droop = facingBend.y + 0.45 * press;
+		float rise = (broad ? 0.45 : 0.85) * (1.0 - 0.6 * press);
+		vec2 away = push * (0.25 / max(length(push), 1.0));
+		vec3 a1 = base + outward * (reach * 0.38) + up * (reach * rise);
+		vec3 a2 = base + outward * (reach * (0.95 - 0.25 * droop)) + up * (reach * max(rise * 0.45 - droop, -0.15)) + (sway3 + vec3(away.x, 0.0, away.y)) * (reach * 0.8);
+		float t = float(row) / float(FernRows);
+		bool notch = !broad && (row & 1u) == 1u;
+		float along = notch || broad ? t : min(t + 0.45 / float(FernRows), 1.0);
+		position = Bezier(base, a1, a2, along);
+		vec3 tangent = normalize(2.0 * (1.0 - along) * (a1 - base) + 2.0 * along * (a2 - a1) + vec3(0.0, 1e-4, 0.0));
+		vec3 lateral = cross(up, tangent);
+		lateral = length(lateral) > 1e-4 ? normalize(lateral) : vec3(-outward.z, 0.0, outward.x);
+		vec3 face = normalize(cross(tangent, lateral));
+		if (face.y < 0.0)
+			face = -face;
+		float profile = broad ? pow(sin(3.14159 * min(t * 1.05, 1.0)), 0.6) : pow(sin(3.14159 * min(t * 1.1, 1.0)), 0.8) * (1.0 - 0.25 * t);
+		float halfWidth = 0.5 * sizePhase.x * profile * (notch ? 0.22 : 1.0);
+		position += lateral * (side * halfWidth) + face * (halfWidth * (broad ? 0.35 : 0.2));
+		normal = normalize(face - lateral * (side * (broad ? 0.3 : 0.15)));
+		coords = vec2(t, side * (notch ? 0.22 : 1.0));
+	}
+	else if (kind == GrassSpike && vertex >= SpikeStemVertices)
+	{
+		uint f = (vertex - SpikeStemVertices) / 4u;
+		uint c = (vertex - SpikeStemVertices) % 4u;
+		uint species = uint(tone.y * 7.0 + 0.5);
+		float u = float(f) / float(SpikeFlorets - 1u);
+		float start = species == 5u ? 0.7 : species == 4u ? 0.62 : species == 2u ? 0.5 : 0.42;
+		float t = mix(start, species == 5u ? 0.88 : 1.0, u);
+		vec3 center = Bezier(base, p1, p2, t);
+		vec3 tangent = normalize(2.0 * (1.0 - t) * (p1 - base) + 2.0 * t * (p2 - p1) + vec3(0.0, 1e-4, 0.0));
+		float bells = species <= 1u || species == 3u ? 1.0 : 0.0;
+		float angle = facingBend.x + mix(float(f) * 2.39996, 0.75 * sin(float(f) * 2.1 + sizePhase.y), bells);
+		vec3 heading = vec3(cos(angle), 0.0, sin(angle));
+		vec3 radial = heading - tangent * dot(tangent, heading);
+		radial = length(radial) > 1e-4 ? normalize(radial) : heading;
+		float s = sizePhase.x * (species == 5u ? 1.0 : 1.0 - 0.55 * u);
+		float spread = species == 5u ? 0.0 : species == 4u ? 0.25 : species == 2u ? 0.4 : 0.6;
+		center += radial * (spread * s) - tangent * (bells * 0.25 * s);
+		vec3 view = normalize(Frame.Eye.xyz - center);
+		vec3 side = cross(tangent, view);
+		side = length(side) > 1e-4 ? normalize(side) : radial;
+		float aspect = species == 5u ? 0.55 : species == 4u ? 0.45 : 0.8;
+		float stretch = species == 5u ? 1.6 : 1.0;
+		vec2 shape = c == 0u ? vec2(0.0, -1.0) : c == 1u ? vec2(1.0, 0.0) : c == 2u ? vec2(0.0, 1.0) : vec2(-1.0, 0.0);
+		position = center + side * (shape.x * 0.5 * s * aspect) + tangent * (shape.y * 0.5 * s * stretch);
+		normal = normalize(view * 0.55 + radial * 0.45 + up * 0.25);
+		coords = vec2(2.0 + 0.999 * u, shape.y);
+	}
 	else if (kind == GrassFlower && vertex >= 4u)
 	{
 		vec3 heading = normalize(p2 - p1 + vec3(0.0, 1e-4, 0.0));
@@ -102,8 +166,8 @@ void main()
 	}
 	else
 	{
-		bool stem = kind == GrassFlower;
-		uint segments = stem ? 1u : kind == GrassFar ? Frame.Counts.y : Frame.Counts.x;
+		bool stem = kind == GrassFlower || kind == GrassSpike;
+		uint segments = kind == GrassSpike ? 2u : stem ? 1u : kind == GrassFar ? Frame.Counts.y : Frame.Counts.x;
 		uint segment = min(vertex / 2u, segments);
 		float t = float(segment) / float(segments);
 		float side = !stem && segment == segments ? 0.0 : ((vertex & 1u) == 0u ? -1.0 : 1.0);
@@ -119,7 +183,7 @@ void main()
 		float edgeOn = 1.0 - abs(dot(normal, view));
 		vec3 widthDir = normalize(mix(across, screenSide, Frame.Look.w * edgeOn));
 		float pixel = length(Frame.Eye.xyz - position) * Frame.Look.z;
-		float width = stem ? max(0.01, pixel) : max(sizePhase.x * (1.0 - 0.45 * t * t), pixel * (1.0 - t));
+		float width = stem ? max(kind == GrassSpike ? 0.014 : 0.01, pixel) :max(sizePhase.x * (1.0 - 0.45 * t * t), pixel * (1.0 - t));
 		position += widthDir * (side * 0.5 * width);
 		normal = normalize(normal + across * side * 0.55);
 		coords = vec2(t, side);
@@ -128,7 +192,7 @@ void main()
 	outNormal = normal;
 	outWorld = position;
 	outBlade = coords;
-	outTone = unpackUnorm4x8(blade.Shape.z);
+	outTone = tone;
 	outEffects = effects;
 	outKind = kind;
 	gl_Position = Frame.ViewProjection * vec4(position, 1.0);

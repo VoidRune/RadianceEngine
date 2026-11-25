@@ -10,7 +10,10 @@ namespace Game
 {
 	namespace
 	{
-		constexpr std::array<uint32_t, GrassRenderer::Kinds> Capacity = { 280000, 160000, 16384, 65536 };
+		constexpr std::array<uint32_t, GrassRenderer::Kinds> Capacity = { 340000, 160000, 32768, 65536, 16384, 8192 };
+		constexpr uint32_t SpikeFlorets = 12;
+		constexpr uint32_t FernRows = 10;
+		constexpr uint32_t FernFronds = 6;
 		constexpr int32_t MaxCandidatesPerAxis = 1600;
 		constexpr float MaxReach = 70.0f;
 		constexpr float MaxBladeHeight = 0.6f;
@@ -94,6 +97,26 @@ namespace Game
 				indices.insert(indices.end(), { b, b + 1, b + 2, b, b + 2, b + 3, b, b + 3, b + 4, b, b + 4, b + 5 });
 			}
 		}
+
+		void AddSpike(std::vector<uint32_t>& indices)
+		{
+			indices.insert(indices.end(), { 0u, 1u, 2u, 1u, 3u, 2u, 2u, 3u, 4u, 3u, 5u, 4u });
+			for (uint32_t floret = 0; floret < SpikeFlorets; floret++)
+			{
+				const uint32_t b = 6 + floret * 4;
+				indices.insert(indices.end(), { b, b + 1, b + 2, b, b + 2, b + 3 });
+			}
+		}
+
+		void AddFern(std::vector<uint32_t>& indices)
+		{
+			for (uint32_t frond = 0; frond < FernFronds; frond++)
+				for (uint32_t row = 0; row < FernRows; row++)
+				{
+					const uint32_t b = frond * 2 * (FernRows + 1) + row * 2;
+					indices.insert(indices.end(), { b, b + 1, b + 2, b + 1, b + 3, b + 2 });
+				}
+		}
 	}
 
 	GrassRenderer::GrassRenderer(Rdn::Device& device, Rdn::ResourceAllocator& allocator)
@@ -154,10 +177,12 @@ namespace Game
 		};
 		const glm::uvec2 flower = range([&] { AddFlower(indices); });
 		const glm::uvec2 clover = range([&] { AddClover(indices); });
+		const glm::uvec2 spike = range([&] { AddSpike(indices); });
+		const glm::uvec2 fern = range([&] { AddFern(indices); });
 		for (size_t quality = 1; quality < size_t(GrassQuality::Count); quality++)
 		{
 			const GrassLook& look = Looks[quality];
-			m_Ranges[quality] = { range([&] { AddBlade(indices, look.Near); }), range([&] { AddBlade(indices, look.Far); }), flower, clover };
+			m_Ranges[quality] = { range([&] { AddBlade(indices, look.Near); }), range([&] { AddBlade(indices, look.Far); }), flower, clover, spike, fern };
 		}
 		m_Indices = deviceBuffer(indices.size() * sizeof(uint32_t), Rdn::BufferUsage::IndexBuffer);
 		m_Allocator.SetDeviceLocalBufferData(m_Indices.get(), indices.data(), indices.size() * sizeof(uint32_t));
@@ -172,6 +197,8 @@ namespace Game
 		});
 		m_FieldSampler = std::make_unique<Rdn::Sampler>();
 		m_Allocator.CreateSampler(m_FieldSampler.get(), Rdn::SamplerDesc{ .AddressMode = Rdn::SamplerAddressMode::ClampToEdge });
+		m_RepeatSampler = std::make_unique<Rdn::Sampler>();
+		m_Allocator.CreateSampler(m_RepeatSampler.get(), Rdn::SamplerDesc{ .AddressMode = Rdn::SamplerAddressMode::Repeat });
 		m_Ready = true;
 	}
 
@@ -183,11 +210,12 @@ namespace Game
 				m_Allocator.ReleaseResource(buffer);
 		if (m_Frame)
 			m_Allocator.ReleaseResource(m_Frame.get());
-		for (Rdn::GpuImage* image : { m_FieldImage.get(), m_EffectImage.get() })
+		for (Rdn::GpuImage* image : { m_FieldImage.get(), m_EffectImage.get(), m_FloraImage.get(), m_PavingImage.get() })
 			if (image)
 				m_Allocator.ReleaseResource(image);
-		if (m_FieldSampler)
-			m_Allocator.ReleaseResource(m_FieldSampler.get());
+		for (Rdn::Sampler* sampler : { m_FieldSampler.get(), m_RepeatSampler.get() })
+			if (sampler)
+				m_Allocator.ReleaseResource(sampler);
 		for (Rdn::ComputePipeline* pipeline : { m_Generate.get(), m_Reset.get(), m_Finish.get(), m_Effects.get() })
 			if (pipeline)
 				m_Allocator.ReleaseResource(pipeline);
@@ -197,10 +225,10 @@ namespace Game
 			m_Allocator.ReleaseResource(shader.get());
 	}
 
-	void GrassRenderer::SetField(const GrassField& field)
+	void GrassRenderer::SetField(const GrassField& field, const GrassPaving& paving)
 	{
 		m_Device.WaitIdle();
-		for (std::unique_ptr<Rdn::GpuImage>* image : { &m_FieldImage, &m_EffectImage })
+		for (std::unique_ptr<Rdn::GpuImage>* image : { &m_FieldImage, &m_EffectImage, &m_FloraImage, &m_PavingImage })
 			if (*image)
 			{
 				m_Allocator.ReleaseResource(image->get());
@@ -240,6 +268,21 @@ namespace Game
 		m_EffectImage = std::make_unique<Rdn::GpuImage>();
 		m_Allocator.CreateGpuImage(m_EffectImage.get(), Rdn::GpuImageDesc{ .ImageSize = { uint32_t(m_EffectSize.x), uint32_t(m_EffectSize.y), 1 }, .Format = Rdn::Format::R16G16B16A16_Sfloat, .UsageFlags = Rdn::ImageUsage::Storage | Rdn::ImageUsage::Sampled | Rdn::ImageUsage::TransferDst });
 		m_Allocator.SetImageData(m_EffectImage.get(), clear.data(), clear.size() * sizeof(uint16_t), Rdn::ImageLayout::General);
+
+		const bool flora = field.Flora.size() == field.Texels.size();
+		const std::vector<uint32_t> noFlora(1, 0u);
+		m_FloraImage = std::make_unique<Rdn::GpuImage>();
+		m_Allocator.CreateGpuImage(m_FloraImage.get(), Rdn::GpuImageDesc{ .ImageSize = { flora ? uint32_t(field.Columns) : 1u, flora ? uint32_t(field.Rows) : 1u, 1 }, .Format = Rdn::Format::R8G8B8A8_Unorm, .UsageFlags = Rdn::ImageUsage::Sampled | Rdn::ImageUsage::TransferDst });
+		const std::vector<uint32_t>& floraTexels = flora ? field.Flora : noFlora;
+		m_Allocator.SetImageData(m_FloraImage.get(), floraTexels.data(), floraTexels.size() * sizeof(uint32_t), Rdn::ImageLayout::ShaderReadOnlyOptimal);
+
+		const bool paved = paving.Image && paving.Cells && field.Paving.size() == field.Texels.size();
+		const std::vector<uint32_t> bare(1, 0u);
+		m_Paving = paved ? paving : GrassPaving{};
+		m_PavingImage = std::make_unique<Rdn::GpuImage>();
+		m_Allocator.CreateGpuImage(m_PavingImage.get(), Rdn::GpuImageDesc{ .ImageSize = { paved ? uint32_t(field.Columns) : 1u, paved ? uint32_t(field.Rows) : 1u, 1 }, .Format = Rdn::Format::R8G8B8A8_Unorm, .UsageFlags = Rdn::ImageUsage::Sampled | Rdn::ImageUsage::TransferDst });
+		const std::vector<uint32_t>& pavingTexels = paved ? field.Paving : bare;
+		m_Allocator.SetImageData(m_PavingImage.get(), pavingTexels.data(), pavingTexels.size() * sizeof(uint32_t), Rdn::ImageLayout::ShaderReadOnlyOptimal);
 	}
 
 	void GrassRenderer::BeginFrame(float time)
@@ -367,6 +410,7 @@ namespace Game
 		const float pixel = 2.0f / (std::max(std::abs(camera.Projection[1][1]), 1e-3f) * float(std::max(extent.Height, 1u)));
 		frame.Look = glm::vec4(NormalLift, RootOcclusion, pixel * MinPixels, ScreenWiden);
 		frame.Decay = glm::vec4(1.0f / RegrowSeconds, 1.0f / CoolSeconds, 1.0f / ThawSeconds, 1.0f / SpringSeconds);
+		frame.Paving = glm::vec4(m_Paving.Scale, m_Paving.Joint, m_Paving.Image ? 1.0f : 0.0f, 0.0f);
 		for (size_t i = 0; i < m_Pushers.size(); i++)
 			frame.Pushers[i] = m_Pushers[i].PositionRadius;
 		for (size_t i = 0; i < m_Stamps.size(); i++)
@@ -425,7 +469,11 @@ namespace Game
 				cmd.PushDescriptorSets(Rdn::PipelineBindPoint::Compute, m_Generate->GetLayout(), 0, Rdn::DescriptorWrite()
 					.AddWrite(frameWrite()).AddWrite(commandWrite()).AddWrite(bladeWrite())
 					.AddWrite(Rdn::ImageWrite(1, Rdn::DescriptorType::CombinedImageSampler, m_FieldImage->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_FieldSampler->GetHandle()))
-					.AddWrite(Rdn::ImageWrite(4, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(effects), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_FieldSampler->GetHandle())));
+					.AddWrite(Rdn::ImageWrite(4, Rdn::DescriptorType::CombinedImageSampler, context.GetImageView(effects), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_FieldSampler->GetHandle()))
+					.AddWrite(Rdn::ImageWrite(5, Rdn::DescriptorType::CombinedImageSampler, m_FloraImage->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_FieldSampler->GetHandle()))
+					.AddWrite(Rdn::ImageWrite(6, Rdn::DescriptorType::CombinedImageSampler, m_PavingImage->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_FieldSampler->GetHandle()))
+					.AddWrite(Rdn::ImageWrite(7, Rdn::DescriptorType::CombinedImageSampler, (m_Paving.Image ? m_Paving.Image : m_PavingImage.get())->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_RepeatSampler->GetHandle()))
+					.AddWrite(Rdn::ImageWrite(8, Rdn::DescriptorType::CombinedImageSampler, (m_Paving.Cells ? m_Paving.Cells : m_PavingImage.get())->GetImageView(), Rdn::ImageLayout::ShaderReadOnlyOptimal, m_RepeatSampler->GetHandle())));
 				cmd.DispatchThreads(m_Generate.get(), uint32_t(count.x), uint32_t(count.y));
 			});
 		graph.AddPass("Grass finish", Rdn::PassType::Compute,

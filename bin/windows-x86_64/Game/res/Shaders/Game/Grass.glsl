@@ -8,7 +8,14 @@ const uint GrassNear = 0u;
 const uint GrassFar = 1u;
 const uint GrassFlower = 2u;
 const uint GrassClover = 3u;
-const uint GrassKinds = 4u;
+const uint GrassSpike = 4u;
+const uint GrassFern = 5u;
+const uint GrassKinds = 6u;
+const uint SpikeStemVertices = 6u;
+const uint SpikeFlorets = 12u;
+const uint FernRows = 10u;
+const uint FernFronds = 6u;
+const uint FernFrondVertices = 2u * (FernRows + 1u);
 const uint GrassMaxStamps = 96u;
 
 const uint StampBurn = 0u;
@@ -22,7 +29,7 @@ struct GrassFrame
 	mat4 ViewProjection;
 	vec4 Eye;
 	ivec4 Region;
-	uvec4 Draws[4];
+	uvec4 Draws[6];
 	uvec4 Counts;
 	vec4 Grid;
 	vec4 Field;
@@ -36,6 +43,7 @@ struct GrassFrame
 	vec4 Dry;
 	vec4 Look;
 	vec4 Decay;
+	vec4 Paving;
 	vec4 Pushers[32];
 	vec4 Stamps[288];
 };

@@ -21,6 +21,8 @@ const vec3 Ember = vec3(2.4, 0.75, 0.16);
 const vec3 Petals[5] = vec3[](vec3(0.72, 0.72, 0.66), vec3(0.78, 0.55, 0.06), vec3(0.34, 0.15, 0.58), vec3(0.24, 0.38, 0.78), vec3(0.78, 0.3, 0.46));
 const vec3 CloverLeaf = vec3(0.036, 0.08, 0.038);
 const vec3 CloverMark = vec3(0.12, 0.16, 0.1);
+const vec3 SpikePetal[6] = vec3[](vec3(0.8, 0.26, 0.5), vec3(0.52, 0.22, 0.7), vec3(0.3, 0.24, 0.78), vec3(0.86, 0.82, 0.84), vec3(0.6, 0.48, 0.22), vec3(0.2, 0.11, 0.05));
+const vec3 SpikeThroat[6] = vec3[](vec3(0.42, 0.07, 0.24), vec3(0.24, 0.07, 0.36), vec3(0.14, 0.1, 0.42), vec3(0.55, 0.42, 0.52), vec3(0.36, 0.28, 0.12), vec3(0.13, 0.07, 0.035));
 
 void main()
 {
@@ -37,7 +39,32 @@ void main()
 	float occlusion;
 	float roughness = Frame.Tip.w;
 	float translucency = Frame.Root.w;
-	if (inBlade.x >= 3.0)
+	if (inKind == GrassSpike && inBlade.x >= 2.0)
+	{
+		uint species = min(uint(inTone.y * 7.0 + 0.5), 5u);
+		float u = inBlade.x - 2.0;
+		albedo = mix(SpikeThroat[species], SpikePetal[species], smoothstep(-0.9, 0.35, inBlade.y)) * (0.88 + 0.24 * clump);
+		if (species <= 3u)
+			albedo = mix(albedo, vec3(0.2, 0.26, 0.09), 0.6 * smoothstep(0.82, 1.0, u));
+		t = 1.0;
+		occlusion = 1.0;
+		roughness = 0.6;
+		translucency = 0.4;
+	}
+	else if (inKind == GrassFern)
+	{
+		bool broad = inTone.y > 0.07;
+		float rib = 1.0 - smoothstep(0.0, 0.18, abs(inBlade.y));
+		vec3 leaf = broad ? vec3(0.045, 0.095, 0.03) : vec3(0.075, 0.15, 0.032);
+		vec3 tip = broad ? vec3(0.07, 0.13, 0.04) : vec3(0.13, 0.2, 0.045);
+		albedo = mix(leaf, tip, smoothstep(0.2, 1.0, t)) * (0.85 + 0.3 * clump);
+		albedo = mix(albedo, broad ? vec3(0.12, 0.17, 0.07) : vec3(0.05, 0.08, 0.025), 0.5 * rib);
+		albedo *= shade * mix(0.6, 1.0, smoothstep(0.0, 0.35, t));
+		occlusion = mix(0.55, 1.0, smoothstep(0.0, 0.5, t));
+		roughness = broad ? 0.45 : 0.6;
+		translucency = 0.5;
+	}
+	else if (inBlade.x >= 3.0)
 	{
 		float r = inBlade.x - 3.0;
 		float band = smoothstep(0.32, 0.42, r) * (1.0 - smoothstep(0.5, 0.62, r));
@@ -59,7 +86,7 @@ void main()
 	}
 	else
 	{
-		float dry = inKind == GrassFlower ? 0.0 : clamp(inTone.y + 0.4 * (1.0 - inTone.w), 0.0, 1.0);
+		float dry = inKind == GrassFlower || inKind == GrassSpike ? 0.0 :clamp(inTone.y + 0.4 * (1.0 - inTone.w), 0.0, 1.0);
 		vec3 tip = mix(Frame.Tip.rgb, Frame.Dry.rgb, dry) * (0.82 + 0.36 * clump);
 		vec3 root = Frame.Root.rgb * (0.9 + 0.2 * clump);
 		albedo = mix(root, tip, smoothstep(0.0, 1.0, pow(t, 0.75)));

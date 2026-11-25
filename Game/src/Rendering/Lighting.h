@@ -155,6 +155,9 @@ namespace Game
 		LakeLook Lake;
 		ColorGrade Grade;
 		glm::vec4 DepthHole{ 0.0f };
+		glm::vec3 SheenToward{ 0.0f, 1.0f, 0.0f };
+		glm::vec3 SheenColor{ 1.0f };
+		float SheenIntensity = 0.0f;
 	};
 
 	struct EnvironmentView
@@ -209,6 +212,8 @@ namespace Game
 			glm::vec4 LavaTransform;
 			glm::vec4 LavaParams;
 			glm::vec4 DepthHole;
+			glm::vec4 Sheen;
+			glm::vec4 SheenRadiance;
 		};
 
 		struct CullGpu

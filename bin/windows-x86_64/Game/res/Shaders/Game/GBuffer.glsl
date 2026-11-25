@@ -10,6 +10,16 @@ float PackEmissionTag(bool hero, float translucency)
 	return hero ? HeroTag + amount * HeroTagRange : amount * TranslucentRange;
 }
 
+float PackSunShadow(float tag, float visibility)
+{
+	return tag > 0.0 ? tag : -(1.0 - clamp(visibility, 0.0, 1.0));
+}
+
+float UnpackSunVisibility(float tag)
+{
+	return tag < 0.0 ? 1.0 + tag : 1.0;
+}
+
 bool IsHeroTag(float tag)
 {
 	return tag > HeroTag - 0.01 && tag < HeroTag + HeroTagRange + 0.01;

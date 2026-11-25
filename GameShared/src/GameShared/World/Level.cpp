@@ -155,12 +155,9 @@ namespace Game
 			Shapes.push_back(MakeWallShape(wall));
 		if (Kind == MapKind::Hub)
 		{
-			for (const HubBlock& block : HubBlocks)
+			for (const HubBlock& block : HubBlocks())
 				if (block.Solid)
-					Shapes.push_back(block.Mesh == MeshKind::Cylinder ? MakeCircle(EmberCenter + block.Center, block.Half.x, Block::All) : MakeBox(EmberCenter + block.Center, block.Half, block.Yaw, Block::All));
-			for (const Vec2 scaffold : HubScaffoldPosts)
-				for (const Vec2 corner : { Vec2(-1.0f, -1.0f), Vec2(1.0f, -1.0f), Vec2(1.0f, 1.0f), Vec2(-1.0f, 1.0f) })
-					Shapes.push_back(MakeCircle(EmberCenter + scaffold + corner * HubScaffoldHalf, HubScaffoldPost + 0.05f, Block::Movement));
+					Shapes.push_back(block.Mesh == MeshKind::Cylinder || block.Mesh == MeshKind::Cone ? MakeCircle(EmberCenter + block.Center, block.Half.x, Block::All) : MakeBox(EmberCenter + block.Center, block.Half, block.Yaw, block.Kind == HubBlockKind::Fence ? Block::Movement : Block::All));
 		}
 		if (Kind == MapKind::Caldera)
 		{

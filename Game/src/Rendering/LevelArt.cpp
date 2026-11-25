@@ -600,8 +600,9 @@ namespace Game
 			triangles.insert(triangles.end(), { a, b, c });
 		}
 
-		void LayStone(PavingBatch& batch, const Outline& outline, const PavingStyle& style, float top, int32_t row, int32_t column, Vec2 grade = {})
+		void LayStone(PavingBatch& batch, const Outline& outline, const PavingStyle& style, float top, int32_t row, int32_t column, Vec2 grade = {}, float moss = 0.0f)
 		{
+			constexpr glm::vec3 MossTint{ 0.6f, 0.78f, 0.34f };
 			const auto random = [&](uint32_t salt) { return Unit(column, row, style.Salt + salt); };
 			const uint32_t count = uint32_t(outline.size());
 			Vec2 center;
@@ -635,19 +636,19 @@ namespace Game
 			std::vector<glm::vec3> colors;
 			points.push_back({ center.x, surface(center) + dome, center.y });
 			uvs.push_back(mapping(center));
-			colors.push_back(tint);
+			colors.push_back(glm::mix(tint, tint * MossTint, 0.12f * moss));
 			for (const Vec2 point : outline)
 			{
 				const Vec2 inner = Lerp(center, point, shoulder);
 				points.push_back({ inner.x, surface(inner) + dome * (1.0f - shoulder * shoulder), inner.y });
 				uvs.push_back(mapping(inner));
-				colors.push_back(tint);
+				colors.push_back(glm::mix(tint, tint * MossTint, 0.3f * moss));
 			}
 			for (const Vec2 point : outline)
 			{
 				points.push_back({ point.x, surface(point) - style.Rim, point.y });
 				uvs.push_back(mapping(point));
-				colors.push_back(tint * 0.86f);
+				colors.push_back(glm::mix(tint * 0.86f, tint * MossTint * 0.78f, moss));
 			}
 			const float foot = top - style.Bed + sag;
 			for (const Vec2 point : outline)
@@ -733,6 +734,15 @@ namespace Game
 
 		constexpr int32_t TerrainMargin = 12;
 		constexpr int32_t TerrainSteps = 4;
+		constexpr float HubGrassFloor = 0.65f;
+		constexpr float HubTallFloor = 0.4f;
+		constexpr const char* HubPavingMaterial = "stone_tiles_02";
+		constexpr glm::vec3 HubPavingTint{ 1.1f, 0.99f, 0.86f };
+		constexpr float HubPavingJoint = 0.31f;
+		constexpr const char* HubGroundMaterial = "forrest_ground_01";
+		constexpr const char* HubDirtMaterial = "forest_ground_04";
+		constexpr glm::vec3 HubGroundTint{ 0.85f, 0.95f, 0.75f };
+		constexpr glm::vec3 HubDirtTint{ 1.0f, 0.95f, 0.88f };
 		constexpr float PavingBlend = 0.7f;
 		constexpr float SkirtDrop = 0.35f;
 		constexpr float WaterDrop = 0.15f;
@@ -5389,6 +5399,8 @@ namespace Game
 				std::vector<float> Floor;
 				std::vector<float> Paved;
 				std::vector<float> Surface;
+				std::vector<float> Pave;
+				std::vector<float> Band;
 				std::vector<uint8_t> Stone;
 				std::vector<uint32_t> Splat;
 
@@ -5461,15 +5473,115 @@ namespace Game
 
 			void HubBuild()
 			{
+				m_HubPaving = m_Renderer.FindMaterialSlot(HubPavingMaterial);
+				m_HubGround = m_Renderer.FindMaterialSlot(HubGroundMaterial);
+				m_HubDirt = m_Renderer.FindMaterialSlot(HubDirtMaterial);
+				if (m_HubPaving)
+					m_Renderer.SetMaterialLook(*m_HubPaving, HubPavingTint, 1.0f, HubPavingJoint);
+				if (m_HubGround)
+					m_Renderer.SetMaterialLook(*m_HubGround, HubGroundTint, 0.5f, 0.3f);
+				if (m_HubDirt)
+					m_Renderer.SetMaterialLook(*m_HubDirt, HubDirtTint, 0.6f, 0.36f);
 				HubSampleField();
 				HubTerrain();
-				LayHubPaving();
+				HubWater();
 				LayHubStairs();
 				HubRocks();
 				HubDressing();
 				Props();
 				HubBlockouts();
 				HubGrass();
+			}
+
+			void HubWater()
+			{
+				const std::optional<uint32_t> water = m_Renderer.FindMaterialSlot("GroundWater");
+				if (!water)
+					return;
+				const HubTrack& stream = HubStream();
+				const glm::vec3 up(0.0f, 1.0f, 0.0f);
+				const glm::vec3 deep(0.85f, 0.97f, 1.0f);
+				std::vector<ModelVertex> vertices;
+				std::vector<uint32_t> indices;
+				const auto vertex = [&](Vec2 point, float height, const glm::vec3& normal, const glm::vec3& tint, glm::vec2 uv)
+				{
+					ModelVertex v;
+					v.Position = { point.x, height, point.y };
+					v.U = uv.x;
+					v.V = uv.y;
+					v.Normal = normal;
+					v.Weights = 255;
+					v.Tangent = PackTangent(glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f) - normal * normal.x + glm::vec3(0.0f, 0.0f, 1e-4f)), 1.0f);
+					v.Color = PackTint(tint);
+					vertices.push_back(v);
+					return uint32_t(vertices.size() - 1);
+				};
+				constexpr int32_t Across = 4;
+				float lip = stream.Length();
+				for (float s = 0.0f; s < stream.Length(); s += 0.1f)
+					if (HubIslandDistance(stream.At(s)) < 0.25f)
+					{
+						lip = s;
+						break;
+					}
+				float lastLevel = 1e9f;
+				uint32_t previous = 0;
+				bool first = true;
+				for (float s = 0.0f;; s += 0.3f)
+				{
+					s = std::min(s, lip);
+					const Vec2 center = stream.At(s);
+					const Vec2 ahead = stream.At(std::min(s + 0.2f, stream.Length())) - stream.At(std::max(s - 0.2f, 0.0f));
+					const Vec2 side = Perpendicular(Normalize(ahead));
+					const float half = HubStreamHalf(s) + 0.18f;
+					const float level = std::min(HubWaterLevel(center), lastLevel);
+					lastLevel = level;
+					const uint32_t row = uint32_t(vertices.size());
+					for (int32_t a = 0; a <= Across; a++)
+					{
+						const float t = float(a) / float(Across) * 2.0f - 1.0f;
+						const Vec2 point = EmberCenter + center + side * (t * half);
+						vertex(point, level, up, glm::mix(deep, glm::vec3(1.0f), t * t), { point.x, point.y });
+					}
+					if (!first)
+						for (uint32_t a = 0; a < uint32_t(Across); a++)
+							indices.insert(indices.end(), { previous + a, row + a, previous + a + 1, previous + a + 1, row + a, row + a + 1 });
+					previous = row;
+					first = false;
+					if (s >= lip)
+						break;
+				}
+				const Vec2 edge = stream.At(lip);
+				const Vec2 out = Normalize(stream.At(std::min(lip + 0.3f, stream.Length())) - stream.At(std::max(lip - 0.3f, 0.0f)));
+				const Vec2 side = Perpendicular(out);
+				const float half = HubStreamHalf(lip) + 0.18f;
+				const float top = lastLevel;
+				for (int32_t k = 0; k <= 14; k++)
+				{
+					const float drop = float(k) * 1.1f;
+					const float push = 0.35f * std::sqrt(drop);
+					const glm::vec3 normal = glm::normalize(glm::vec3(out.x, 0.25f, out.y));
+					const uint32_t row = uint32_t(vertices.size());
+					for (int32_t a = 0; a <= Across; a++)
+					{
+						const float t = float(a) / float(Across) * 2.0f - 1.0f;
+						const Vec2 point = EmberCenter + edge + out * push + side * (t * half * (1.0f + 0.04f * drop));
+						vertex(point, top - drop, normal, glm::mix(glm::vec3(0.75f, 0.88f, 0.95f), glm::vec3(1.0f), 0.5f * t * t), { point.x + point.y, top - drop });
+					}
+					for (uint32_t a = 0; a < uint32_t(Across); a++)
+						indices.insert(indices.end(), { previous + a, row + a, previous + a + 1, previous + a + 1, row + a, row + a + 1 });
+					previous = row;
+				}
+				glm::vec3 low(1e9f);
+				glm::vec3 high(-1e9f);
+				for (const ModelVertex& v : vertices)
+				{
+					low = glm::min(low, v.Position);
+					high = glm::max(high, v.Position);
+				}
+				std::vector<LevelMeshDesc> meshes = { { .FirstIndex = 0, .IndexCount = uint32_t(indices.size()), .Material = *water, .Layer = *water, .Flags = MeshWater | MeshVertexTint | MeshGround } };
+				const uint32_t base = m_Renderer.AddLevelGeometry(vertices, indices, meshes);
+				Insert(base, m_Renderer.MakeModelInstance(base, glm::mat4(1.0f), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.0f, low.y), low, high, false, low.y);
 			}
 
 			void HubSampleField()
@@ -5482,6 +5594,7 @@ namespace Game
 				grid.Floor.assign(count, 0.0f);
 				grid.Paved.assign(count, -10.0f);
 				grid.Surface.assign(count, -2.0f);
+				grid.Pave.assign(count, 0.0f);
 				grid.Stone.assign(count, uint8_t(TerrainId::Flagstone));
 				grid.Splat.assign(count, 0u);
 				for (int32_t j = 0; j < grid.Rows; j++)
@@ -5498,7 +5611,36 @@ namespace Game
 						grid.Paved[k] = pave.Inside;
 						grid.Stone[k] = uint8_t(pave.Stone);
 						grid.Surface[k] = HubSurfaceFrom(local, grid.Floor[k], edge, pave.Inside);
+						if (pave.Stone == TerrainId::Flagstone || pave.Stone == TerrainId::Cobblestone)
+						{
+							const Vec2 point = HubPoint(i, j);
+							const float ragged = 0.3f * (Fbm(point * 0.45f, 561u, 2) - 0.5f);
+							grid.Pave[k] = Ease((pave.Inside + 0.35f + ragged) / 0.7f) * Ease((edge - 0.2f) / 0.6f);
+						}
 					}
+				constexpr int32_t Reach = 3;
+				grid.Band.assign(count, 0.0f);
+				for (int32_t j = 0; j < grid.Rows; j++)
+					for (int32_t i = 0; i < grid.Columns; i++)
+					{
+						float widest = 0.0f;
+						for (int32_t dj = -Reach; dj <= Reach; dj++)
+							for (int32_t di = -Reach; di <= Reach; di++)
+							{
+								const int32_t a = i + di;
+								const int32_t b = j + dj;
+								if (a >= 0 && b >= 0 && a < grid.Columns && b < grid.Rows)
+									widest = std::max(widest, grid.Pave[grid.Index(a, b)]);
+							}
+						grid.Band[grid.Index(i, j)] = widest > 0.1f ? 1.0f : 0.0f;
+					}
+				if (m_HubPaving)
+				{
+					std::vector<uint8_t> mask(count);
+					for (size_t k = 0; k < count; k++)
+						mask[k] = uint8_t(std::lround(std::clamp(grid.Pave[k], 0.0f, 1.0f) * 255.0f));
+					m_Renderer.SetReliefMask(*m_HubPaving, uint32_t(grid.Columns), uint32_t(grid.Rows), mask, glm::vec2(HubPoint(0, 0).x, HubPoint(0, 0).y), 1.0f / float(TerrainSteps));
+				}
 			}
 
 			uint32_t HubSplat(size_t k, Vec2 point, float slope) const
@@ -5507,15 +5649,16 @@ namespace Game
 				const Vec2 local = point - EmberCenter;
 				const float rock = std::max(Ease((slope - 0.8f) / 0.9f), 0.6f * Ease((grid.Edge[k] - HubSurfaceReach - 0.5f) / -0.5f));
 				float dirt = 0.7f * (1.0f - Ease((grid.Edge[k] - HubSurfaceReach) / 0.9f));
-				dirt = std::max(dirt, 0.92f * Ease((grid.Paved[k] + 0.45f) / 0.4f));
+				const float mud = Ease((grid.Paved[k] + 0.6f) / 0.45f) * (0.45f + 0.5f * Fbm(point * 0.7f, 551u, 2));
+				dirt = std::max(dirt, grid.Stone[k] == uint8_t(TerrainId::Dirt) ? 0.92f * Ease((grid.Paved[k] + 0.45f) / 0.4f) : mud);
 				dirt = std::max(dirt, 0.5f * Ease((Fbm(point * 0.3f, 521u, 3) - 0.68f) / 0.12f));
 				dirt = std::max(dirt, 0.8f * (1.0f - Ease((Length(local) - EmberSurroundRadius) / 0.6f)));
-				const float sand = 0.5f * Ease((-local.x - 21.0f) / 14.0f) * (0.45f + 0.55f * Fbm(point * 0.35f, 531u, 2));
+				dirt = std::max(dirt, 0.6f * (1.0f - Ease((HubStreamClearance(local) - 0.1f) / 0.9f)));
 				std::array<float, 4> weights{};
+				weights[SplatSand] = m_HubPaving ? grid.Band[k] : 0.0f;
 				weights[SplatRock] = rock;
 				weights[SplatDirt] = dirt * (1.0f - rock);
-				weights[SplatSand] = sand * std::max(1.0f - rock - weights[SplatDirt], 0.0f);
-				weights[SplatGrass] = std::max(1.0f - weights[SplatRock] - weights[SplatDirt] - weights[SplatSand], 0.0f);
+				weights[SplatGrass] = std::max(1.0f - weights[SplatRock] - weights[SplatDirt], 0.0f);
 				const float shade = std::clamp(0.84f + 0.36f * (Fbm(point * 0.21f, 541u, 3) - 0.5f) - 0.12f * rock, 0.0f, 1.0f);
 				return PackSplat(weights, shade);
 			}
@@ -5566,8 +5709,8 @@ namespace Game
 					}
 				const uint32_t underColor = PackSplat({ 0.0f, 0.2f, 0.8f, 0.0f }, 0.42f);
 				const uint32_t wallColor = PackSplat({ 0.0f, 0.3f, 0.7f, 0.0f }, 0.28f);
-				const uint32_t material = m_Splat[SplatGrass] | (m_Splat[SplatDirt] << 16);
-				const uint32_t layer = m_Splat[SplatRock] | (m_Splat[SplatSand] << 16);
+				const uint32_t material = m_HubGround.value_or(m_Splat[SplatGrass]) | (m_HubDirt.value_or(m_Splat[SplatDirt]) << 16);
+				const uint32_t layer = m_Splat[SplatRock] | (m_HubPaving.value_or(m_Splat[SplatSand]) << 16);
 				const auto tangentOf = [](const glm::vec3& normal)
 				{
 					glm::vec3 tangent = glm::vec3(1.0f, 0.0f, 0.0f) - normal * normal.x;
@@ -5741,116 +5884,6 @@ namespace Game
 				m_Scene.Ground = { grid.Surface, vw, vh };
 			}
 
-			void LayHubPaving()
-			{
-				const std::optional<uint32_t> stone = m_Renderer.FindMaterialSlot("PavingStone");
-				if (!stone)
-					return;
-				const HubGrid& grid = m_HubGrid;
-				std::vector<PavingBatch> batches(m_Scene.Chunks.size());
-				const auto chunkOf = [&](Vec2 world) { return size_t(std::clamp(int32_t(std::floor(world.y)) / ChunkSize, 0, m_ChunksY - 1)) * size_t(m_ChunksX) + size_t(std::clamp(int32_t(std::floor(world.x)) / ChunkSize, 0, m_ChunksX - 1)); };
-				const Vec2 origin = EmberCenter + Vec2(-52.0f, -32.0f);
-				const Vec2 extent(126.0f, 64.0f);
-				for (size_t index = 0; index < std::size(PavingStyles); index++)
-				{
-					PavingStyle style = PavingStyles[index];
-					const bool cobble = style.Terrain == TerrainId::Cobblestone;
-					const float pitch = cobble ? 0.34f : 0.6f;
-					const float rowPitch = pitch * 0.87f;
-					const int32_t columns = int32_t(extent.x / pitch) + 2;
-					const int32_t rows = int32_t(extent.y / rowPitch) + 2;
-					const uint32_t salt = style.Salt + 0x3D1u;
-					std::vector<Vec2> seeds(size_t(columns) * size_t(rows));
-					std::vector<float> weights(seeds.size(), 0.0f);
-					std::vector<uint8_t> valid(seeds.size(), 0);
-					for (int32_t row = 0; row < rows; row++)
-						for (int32_t column = 0; column < columns; column++)
-						{
-							const size_t s = size_t(row) * size_t(columns) + size_t(column);
-							const float stagger = (row & 1) ? 0.5f : 0.0f;
-							const Vec2 seed = origin + Vec2((float(column) + stagger + 0.8f * (Unit(column, row, salt) - 0.5f)) * pitch, (float(row) + 0.75f * (Unit(column, row, salt + 1) - 0.5f)) * rowPitch);
-							seeds[s] = seed;
-							weights[s] = (Unit(column, row, salt + 2) - 0.5f) * 0.6f * pitch * pitch;
-							if (HubSample(grid.Edge, seed) < 0.3f)
-								continue;
-							const Vec2 local = seed - EmberCenter;
-							const float inside = HubSample(grid.Paved, seed);
-							if (inside < -0.7f || Length(local) < EmberSurroundRadius + 0.05f || HubUnderGate(local, 0.25f) || HubNearestStair(local) < 0.15f)
-								continue;
-							const size_t k = grid.Index(std::clamp(int32_t(std::lround((seed.x + float(TerrainMargin)) * float(TerrainSteps))), 0, grid.Columns - 1), std::clamp(int32_t(std::lround((seed.y + float(TerrainMargin)) * float(TerrainSteps))), 0, grid.Rows - 1));
-							if (grid.Stone[k] != uint8_t(style.Terrain))
-								continue;
-							if (glm::length(glm::vec2(HubGradient(grid.Floor, seed).x, HubGradient(grid.Floor, seed).y)) > 0.45f)
-								continue;
-							float keep = Ease((inside + 0.55f) / 0.85f);
-							if (inside < 0.0f)
-								keep *= 0.5f;
-							if (Unit(column, row, salt + 3) > keep)
-								continue;
-							valid[s] = 1;
-						}
-					for (int32_t row = 0; row < rows; row++)
-						for (int32_t column = 0; column < columns; column++)
-						{
-							const size_t s = size_t(row) * size_t(columns) + size_t(column);
-							if (!valid[s])
-								continue;
-							const Vec2 seed = seeds[s];
-							const float reach = 2.0f * pitch;
-							Outline outline = { seed + Vec2(-reach, -reach), seed + Vec2(reach, -reach), seed + Vec2(reach, reach), seed + Vec2(-reach, reach) };
-							for (int32_t dr = -2; dr <= 2; dr++)
-								for (int32_t dc = -3; dc <= 3; dc++)
-								{
-									const int32_t r = row + dr;
-									const int32_t c = column + dc;
-									if ((dr == 0 && dc == 0) || r < 0 || c < 0 || r >= rows || c >= columns)
-										continue;
-									const size_t o = size_t(r) * size_t(columns) + size_t(c);
-									if (!valid[o])
-										continue;
-									const Vec2 other = seeds[o];
-									KeepBelow(outline, other - seed, 0.5f * (Dot(other, other) - Dot(seed, seed) + weights[s] - weights[o]));
-								}
-							const float limit = 0.8f * pitch * std::sqrt(std::max(1.0f + weights[s] / (pitch * pitch), 0.4f));
-							const float spin = Unit(column, row, salt + 4) * TwoPi;
-							for (int32_t n = 0; n < 7; n++)
-							{
-								const Vec2 normal = FromAngle(spin + float(n) * TwoPi / 7.0f);
-								KeepBelow(outline, normal, Dot(seed, normal) + limit);
-							}
-							const float inside = HubSample(grid.Paved, seed);
-							if (inside < 1.6f * pitch)
-							{
-								const Vec2 gradient = HubGradient(grid.Paved, seed);
-								if (LengthSquared(gradient) > 1e-6f)
-								{
-									const Vec2 out = Normalize(gradient) * -1.0f;
-									KeepBelow(outline, out, Dot(seed, out) + std::max(inside, 0.12f) + 0.04f * (Unit(column, row, salt + 5) - 0.5f));
-								}
-							}
-							const Vec2 away = seed - EmberCenter;
-							if (Length(away) < EmberSurroundRadius + reach)
-							{
-								const Vec2 out = Normalize(away);
-								KeepBelow(outline, out * -1.0f, -(Dot(EmberCenter, out) + EmberSurroundRadius + style.Gap));
-							}
-							if (outline.size() < 3 || SignedArea(outline) < 0.004f)
-								continue;
-							Inset(outline, style.Gap * 0.5f + (inside < 0.15f ? 0.04f + 0.06f * Unit(column, row, salt + 6) : 0.0f));
-							outline = Cleaned(outline);
-							if (outline.size() < 3 || SignedArea(outline) < 0.003f)
-								continue;
-							Vec2 center;
-							for (const Vec2 point : outline)
-								center += point;
-							center = center / float(outline.size());
-							const Vec2 grade = HubGradient(grid.Surface, center);
-							LayStone(batches[chunkOf(center)], Rounded(outline, style.Corner), style, HubSample(grid.Surface, center) + 0.05f, row, column + int32_t(index) * 100000, grade);
-						}
-				}
-				AppendBatches(batches, *stone);
-			}
-
 			void AppendBatches(const std::vector<PavingBatch>& batches, uint32_t material)
 			{
 				std::vector<ModelVertex> vertices;
@@ -5951,7 +5984,8 @@ namespace Game
 							}
 							if (outline.size() < 3)
 								continue;
-							LayStone(batches[chunkOf(middle)], Rounded(outline, 0.05f), style, stair.Bottom + rise * float(k + 1), key, p + 7000, {});
+							const Outline laid = Rounded(outline, 0.05f);
+						LayStone(batches[chunkOf(middle)], laid, style, stair.Bottom + rise * float(k + 1), key, p + 7000, {}, 0.15f * Unit(key, p, 0x57u));
 						}
 					}
 				}
@@ -6050,23 +6084,35 @@ namespace Game
 
 			void HubRocks()
 			{
-				constexpr int32_t Kinds = 4;
+				constexpr int32_t Kinds = 6;
+				constexpr std::string_view KindNames[Kinds] = { "Cliff1", "Cliff2", "Cliff3", "Cliff4", "Steps", "SplitPillar" };
 				std::array<std::optional<uint32_t>, Kinds> near{};
 				std::array<std::optional<uint32_t>, Kinds> far{};
 				for (int32_t kind = 0; kind < Kinds; kind++)
 				{
-					near[size_t(kind)] = m_Models.FindMesh("HubCliffs/Cliff" + std::to_string(kind + 1));
-					far[size_t(kind)] = m_Models.FindMesh("HubCliffs/Cliff" + std::to_string(kind + 1) + "Far");
-					if (!near[size_t(kind)] || !far[size_t(kind)])
+					near[size_t(kind)] = m_Models.FindMesh("HubCliffs/" + std::string(KindNames[kind]));
+					far[size_t(kind)] = m_Models.FindMesh("HubCliffs/" + std::string(KindNames[kind]) + "Far");
+					if ((!near[size_t(kind)] || !far[size_t(kind)]) && kind < 4)
 						return;
 				}
+				const auto has = [&](int32_t kind) { return near[size_t(kind)] && far[size_t(kind)]; };
+				const auto crowded = [&](Vec2 local, float radius)
+				{
+					if (HubNearestStair(local) < radius + 0.1f)
+						return true;
+					for (const PlacedProp& prop : m_Level.Props)
+						if (prop.Id != PropId::CalderaGate && Length(prop.Position - EmberCenter - local) < radius + 0.35f)
+							return true;
+					return false;
+				};
 				const auto farOf = [&](std::string_view name) { return m_Models.FindMesh(std::string("HubCliffs/") + std::string(name) + "Far"); };
 				const std::optional<uint32_t> pillars = farOf("Pillars");
 				const std::optional<uint32_t> ledge = farOf("Ledge");
 				const std::optional<uint32_t> islet = farOf("Islet");
 				const std::optional<uint32_t> stalactite = farOf("Stalactite");
 				const std::optional<uint32_t> spike = farOf("Spike");
-				constexpr glm::vec2 CliffOut[Kinds] = { { 0.0f, 1.0f }, { -0.7071f, 0.7071f }, { 0.0f, 1.0f }, { 0.0f, 1.0f } };
+				const std::optional<uint32_t> rubble = farOf("Rubble");
+				constexpr glm::vec2 CliffOut[Kinds] = { { 0.0f, 1.0f }, { -0.7071f, 0.7071f }, { 0.0f, 1.0f }, { 0.0f, 1.0f }, { 0.0f, 1.0f }, { 0.0f, 1.0f } };
 				struct Ring
 				{
 					float Top;
@@ -6080,10 +6126,10 @@ namespace Game
 					std::array<float, Kinds> Weights;
 				};
 				constexpr Ring Rings[] = {
-					{ -0.24f, 0.08f, 0.95f, 0.78f, 0.14f, 0.56f, true, false, { 0.4f, 0.15f, 0.45f, 0.0f } },
-					{ -1.0f, 0.15f, 0.85f, 0.8f, 0.12f, 0.72f, true, false, { 0.45f, 0.1f, 0.45f, 0.0f } },
-					{ -3.4f, 0.4f, 0.3f, 0.95f, 0.15f, 0.9f, true, false, { 0.35f, 0.0f, 0.4f, 0.25f } },
-					{ -6.4f, 0.6f, -1.6f, 1.0f, 0.15f, 0.75f, true, true, { 1.0f, 0.0f, 0.0f, 0.0f } },
+					{ -0.24f, 0.08f, 0.95f, 0.78f, 0.14f, 0.56f, true, false, { 0.3f, 0.15f, 0.3f, 0.0f, 0.15f, 0.1f } },
+					{ -1.0f, 0.15f, 0.85f, 0.8f, 0.12f, 0.72f, true, false, { 0.35f, 0.1f, 0.3f, 0.0f, 0.15f, 0.1f } },
+					{ -3.4f, 0.4f, 0.3f, 0.95f, 0.15f, 0.9f, true, false, { 0.3f, 0.0f, 0.3f, 0.2f, 0.0f, 0.2f } },
+					{ -6.4f, 0.6f, -1.6f, 1.0f, 0.15f, 0.75f, true, true, { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f } },
 				};
 				for (const std::optional<uint32_t> hanging : { islet, stalactite, spike })
 					if (hanging)
@@ -6106,9 +6152,14 @@ namespace Game
 					for (size_t r = 0; r < std::size(Rings); r++)
 					{
 						const Ring& ring = Rings[r];
+						std::array<float, Kinds> weights = ring.Weights;
 						float total = 0.0f;
-						for (const float weight : ring.Weights)
-							total += weight;
+						for (int32_t kind = 0; kind < Kinds; kind++)
+						{
+							if (!has(kind))
+								weights[size_t(kind)] = 0.0f;
+							total += weights[size_t(kind)];
+						}
 						float s = 3.7f * float(r);
 						const float end = s + length;
 						while (s < end)
@@ -6125,8 +6176,8 @@ namespace Game
 							}
 							float pick = Unit(int32_t(key), 1, 0x61u) * total;
 							int32_t kind = 0;
-							while (kind < Kinds - 1 && pick >= ring.Weights[size_t(kind)])
-								pick -= ring.Weights[size_t(kind++)];
+							while (kind < Kinds - 1 && (pick >= weights[size_t(kind)] || weights[size_t(kind)] <= 0.0f))
+								pick -= weights[size_t(kind++)];
 							if (convex && r < 2 && Unit(int32_t(key), 2, 0x61u) < 0.6f)
 								kind = 1;
 							const bool hanging = ring.Hanging && islet;
@@ -6163,6 +6214,8 @@ namespace Game
 				for (size_t t = 0; t < std::size(HubTerraces); t++)
 				{
 					const HubTerrace& terrace = HubTerraces[t];
+					if (!terrace.Rocks)
+						continue;
 					float s = 0.0f;
 					float next = 0.0f;
 					for (size_t i = 0; i < terrace.Count; i++)
@@ -6187,7 +6240,7 @@ namespace Game
 								continue;
 							const uint32_t key = uint32_t(t) * 100000u + uint32_t(s * 4.0f);
 							const float roll = Unit(int32_t(key), 1, 0x63u);
-							const int32_t kind = roll < 0.6f ? 2 : roll < 0.85f ? -1 : 0;
+							const int32_t kind = has(4) && roll < 0.4f ? 4 : roll < 0.7f ? 2 : roll < 0.87f ? -1 : 0;
 							const uint32_t mesh = kind < 0 && ledge ? *ledge : *far[size_t(std::max(kind, 0))];
 							const glm::vec2 outDir = kind == -1 ? glm::vec2(0.0f, 1.0f) : CliffOut[std::max(kind, 0)];
 							const ModelMesh& source = m_Models.GetMesh(mesh);
@@ -6195,12 +6248,27 @@ namespace Game
 							float halfSide = 0.0f;
 							float middleOut = 0.0f;
 							dims(mesh, outDir, halfOut, halfSide, middleOut);
-							const float scale = (terrace.Rise + 0.45f) / std::max(-source.Min.y, 0.5f) * (0.9f + 0.25f * Unit(int32_t(key), 2, 0x63u));
+							float scale = (terrace.Rise + 0.45f) / std::max(-source.Min.y, 0.5f) * (0.9f + 0.25f * Unit(int32_t(key), 2, 0x63u));
 							const Vec2 out = inward * -1.0f;
-							const Vec2 world = EmberCenter + contour - out * (scale * (middleOut + halfOut) - 0.14f);
+							Vec2 world = EmberCenter + contour - out * (scale * (middleOut + halfOut) - 0.14f);
+							if (crowded(world - EmberCenter, 0.6f * std::max(halfSide, halfOut) * scale))
+							{
+								scale *= 0.55f;
+								world = EmberCenter + contour - out * (scale * (middleOut + halfOut) - 0.14f);
+								if (crowded(world - EmberCenter, 0.6f * std::max(halfSide, halfOut) * scale))
+									continue;
+							}
 							const float upper = HubFloor(contour + inward * 1.2f);
 							const float yaw = AngleOf(out) - std::atan2(outDir.y, outDir.x) + 0.18f * (2.0f * Unit(int32_t(key), 3, 0x63u) - 1.0f);
 							HubRock(mesh, mesh, world, upper + 0.03f + 0.04f * Unit(int32_t(key), 4, 0x63u), yaw, scale);
+							if (rubble && Unit(int32_t(key), 11, 0x63u) < 0.3f)
+							{
+								const ModelMesh& pile = m_Models.GetMesh(*rubble);
+								const float size = 0.11f + 0.06f * Unit(int32_t(key), 12, 0x63u);
+								const Vec2 foot = EmberCenter + contour + out * (0.55f + 0.5f * Unit(int32_t(key), 13, 0x63u)) + Perpendicular(out) * (Unit(int32_t(key), 14, 0x63u) - 0.5f) * 2.0f * halfSide * scale;
+								if (!crowded(foot - EmberCenter, 0.5f * (pile.Max.x - pile.Min.x) * size))
+									HubRock(*rubble, rubble, foot, HubSample(grid.Surface, foot) - 0.35f * pile.Min.y * size, TwoPi * Unit(int32_t(key), 15, 0x63u), size);
+							}
 							if (!m_SmallBushes.empty() && Unit(int32_t(key), 5, 0x63u) < 0.35f)
 							{
 								const WeightedMesh& bush = m_SmallBushes[Hash(int32_t(key), 6, 0x63u) % m_SmallBushes.size()];
@@ -6227,7 +6295,13 @@ namespace Game
 								continue;
 							const uint32_t key = uint32_t(t) * 1000u + uint32_t(i);
 							const Vec2 contour = corner - bisector * 0.35f;
-							HubRock(*pillars, pillars, EmberCenter + contour, HubFloor(corner + bisector * 1.2f) + 0.25f + 0.45f * Unit(int32_t(key), 1, 0x64u), TwoPi * Unit(int32_t(key), 2, 0x64u), 0.24f + 0.08f * Unit(int32_t(key), 3, 0x64u));
+							if (has(5) && i % 2 == 1)
+							{
+								const float size = 0.27f + 0.06f * Unit(int32_t(key), 3, 0x64u);
+								HubRock(*far[5], far[5], EmberCenter + contour - bisector * 0.3f, HubFloor(corner + bisector * 1.2f) + 0.12f + 0.2f * Unit(int32_t(key), 1, 0x64u), TwoPi * Unit(int32_t(key), 2, 0x64u), size);
+							}
+							else
+								HubRock(*pillars, pillars, EmberCenter + contour, HubFloor(corner + bisector * 1.2f) + 0.25f + 0.45f * Unit(int32_t(key), 1, 0x64u), TwoPi * Unit(int32_t(key), 2, 0x64u), 0.24f + 0.08f * Unit(int32_t(key), 3, 0x64u));
 						}
 				}
 
@@ -6235,6 +6309,8 @@ namespace Game
 					for (size_t index = 0; index < std::size(HubStairs); index++)
 					{
 						const HubStair& stair = HubStairs[index];
+						if (stair.Up != Direction::North)
+							continue;
 						const Vec2 low = HubStairMin(stair);
 						const Vec2 high = HubStairMax(stair);
 						Vec2 feet[2];
@@ -6256,7 +6332,7 @@ namespace Game
 				{
 					const ModelMesh& source = m_Models.GetMesh(*islet);
 					const float radius = 0.5f * std::max(source.Max.x - source.Min.x, source.Max.z - source.Min.z);
-					constexpr Vec2 Undersides[] = { { -33.0f, 0.0f }, { -14.0f, -10.0f }, { 24.0f, 15.0f }, { 22.0f, -11.0f }, { -18.0f, 13.0f }, { 64.0f, 14.0f } };
+					constexpr Vec2 Undersides[] = { { -28.0f, 2.0f }, { -14.0f, -9.0f }, { 20.0f, 15.0f }, { 18.0f, -9.0f }, { -18.0f, 14.0f }, { 59.0f, 14.0f } };
 					for (size_t i = 0; i < std::size(Undersides); i++)
 					{
 						const Vec2 world = EmberCenter + Undersides[i];
@@ -6287,7 +6363,7 @@ namespace Game
 						if (HubSample(grid.Edge, world) > -7.0f || Length(local - HubTrainingSpot) < 13.0f)
 							continue;
 						bool clear = true;
-						for (const HubBlock& block : HubBlocks)
+						for (const HubBlock& block : HubBlocks())
 							clear &= Length(local - block.Center) > Length(block.Half) + 6.0f || block.Kind == HubBlockKind::Building || block.Kind == HubBlockKind::Tower;
 						if (!clear)
 							continue;
@@ -6300,24 +6376,33 @@ namespace Game
 			void HubDressing()
 			{
 				const HubGrid& grid = m_HubGrid;
-				std::array<std::optional<uint32_t>, 3> boulders = { m_Models.FindMesh("HubCliffs/LedgeFar"), m_Models.FindMesh("HubCliffs/Cliff1Far"), m_Models.FindMesh("HubCliffs/Cliff3Far") };
+				std::vector<uint32_t> mains;
+				std::vector<uint32_t> smalls;
+				for (const char* name : { "RubbleFar", "SplitPillarFar", "Cliff3Far", "Cliff1Far" })
+					if (const std::optional<uint32_t> mesh = m_Models.FindMesh(std::string("HubCliffs/") + name))
+						mains.push_back(*mesh);
+				for (const char* name : { "LedgeFar", "RubbleFar", "Cliff1Far" })
+					if (const std::optional<uint32_t> mesh = m_Models.FindMesh(std::string("HubCliffs/") + name))
+						smalls.push_back(*mesh);
 				const std::optional<uint32_t> pillars = m_Models.FindMesh("HubCliffs/PillarsFar");
-				const std::optional<uint32_t> ledge = m_Models.FindMesh("HubCliffs/LedgeFar");
-				if (!boulders[0] || !boulders[1] || !boulders[2])
+				const std::optional<uint32_t> spire = m_Models.FindMesh("HubCliffs/SpireFar");
+				const std::optional<uint32_t> slab = m_Models.FindMesh("HubCliffs/SlabFar");
+				const std::optional<uint32_t> ledge = slab ? slab : m_Models.FindMesh("HubCliffs/LedgeFar");
+				if (mains.empty() || smalls.empty())
 					return;
 				const auto clearOf = [&](Vec2 local, float radius)
 				{
 					for (const PlacedProp& prop : m_Level.Props)
 						if (Length(prop.Position - EmberCenter - local) < radius + 1.0f)
 							return false;
-					for (const HubBlock& block : HubBlocks)
-						if (block.Solid && std::abs(local.x - block.Center.x) < block.Half.x + radius + 1.0f && std::abs(local.y - block.Center.y) < block.Half.y + radius + 1.0f)
+					for (const HubBlock& block : HubBlocks())
+						if (block.Kind != HubBlockKind::Envelope && block.Kind != HubBlockKind::Gondola && Length(local - block.Center) < Length(block.Half) + radius + 1.0f)
 							return false;
-					return true;
+					return HubStreamClearance(local) > radius + 1.2f && !HubDeckHeight(local);
 				};
-				const auto boulder = [&](Vec2 local, float size, uint32_t key)
+				const auto boulder = [&](const std::vector<uint32_t>& meshes, Vec2 local, float size, uint32_t key)
 				{
-					const uint32_t mesh = *boulders[Hash(int32_t(key), 1, 0x71u) % boulders.size()];
+					const uint32_t mesh = meshes[Hash(int32_t(key), 1, 0x71u) % meshes.size()];
 					const ModelMesh& source = m_Models.GetMesh(mesh);
 					const float scale = size / std::max(source.Max.x - source.Min.x, 0.1f);
 					const Vec2 world = EmberCenter + local;
@@ -6337,12 +6422,12 @@ namespace Game
 						const Vec2 gradient = HubGradient(grid.Floor, world);
 						if (LengthSquared(gradient) > 0.06f || HubNoise(local * 0.13f + Vec2(5.0f, 9.0f)) < 0.4f)
 							continue;
-						boulder(local, 1.0f + 1.4f * Unit(int32_t(key), 3, 0x72u), key * 8u);
+						boulder(mains, local, 1.0f + 1.4f * Unit(int32_t(key), 3, 0x72u), key * 8u);
 						const int32_t satellites = int32_t(Hash(int32_t(key), 4, 0x72u) % 3u);
 						for (int32_t n = 0; n < satellites; n++)
 						{
 							const Vec2 offset = FromAngle(TwoPi * Unit(int32_t(key), 5 + n, 0x72u)) * (0.9f + 0.8f * Unit(int32_t(key), 8 + n, 0x72u));
-							boulder(local + offset, 0.35f + 0.45f * Unit(int32_t(key), 11 + n, 0x72u), key * 8u + uint32_t(n) + 1u);
+							boulder(smalls, local + offset, 0.35f + 0.45f * Unit(int32_t(key), 11 + n, 0x72u), key * 8u + uint32_t(n) + 1u);
 						}
 						if (!m_SmallBushes.empty() && Unit(int32_t(key), 14, 0x72u) < 0.7f)
 						{
@@ -6354,24 +6439,30 @@ namespace Game
 					}
 				if (pillars)
 				{
-					constexpr Vec2 Outcrops[] = { { -17.5f, -20.0f }, { 35.5f, -1.5f }, { -40.5f, 10.5f }, { 8.0f, 24.5f }, { -7.5f, 23.5f }, { 40.5f, 22.5f }, { 12.5f, -17.5f }, { -27.0f, -12.5f } };
+					constexpr Vec2 Outcrops[] = { { -17.0f, -15.6f }, { 33.0f, -3.0f }, { -36.6f, 11.4f }, { 9.0f, 25.6f }, { -9.6f, 25.4f }, { 37.0f, 21.6f }, { 11.0f, -16.6f }, { -24.4f, -13.4f } };
 					for (size_t i = 0; i < std::size(Outcrops); i++)
 					{
 						const Vec2 world = EmberCenter + Outcrops[i];
 						if (HubSample(grid.Edge, world) < 0.8f)
 							continue;
-						HubRock(*pillars, pillars, world, HubSample(grid.Surface, world) + 0.5f + 0.6f * Unit(int32_t(i), 1, 0x73u), TwoPi * Unit(int32_t(i), 2, 0x73u), 0.24f + 0.1f * Unit(int32_t(i), 3, 0x73u));
+						if (spire && i % 2 == 1)
+						{
+							const float size = 0.3f + 0.1f * Unit(int32_t(i), 3, 0x73u);
+							HubRock(*spire, spire, world, HubSample(grid.Surface, world) - m_Models.GetMesh(*spire).Min.y * size - 0.45f, TwoPi * Unit(int32_t(i), 2, 0x73u), size);
+						}
+						else
+							HubRock(*pillars, pillars, world, HubSample(grid.Surface, world) + 0.5f + 0.6f * Unit(int32_t(i), 1, 0x73u), TwoPi * Unit(int32_t(i), 2, 0x73u), 0.24f + 0.1f * Unit(int32_t(i), 3, 0x73u));
 					}
 				}
 				if (ledge)
 				{
-					constexpr Vec2 Floaters[] = { { 12.0f, 5.8f }, { -19.5f, -5.5f }, { 17.0f, -5.5f }, { -6.5f, 16.5f }, { 30.0f, -5.0f }, { -33.0f, 9.0f } };
+					constexpr Vec2 Floaters[] = { { -9.0f, -6.6f }, { 13.0f, -1.4f }, { -25.0f, 9.4f }, { 30.4f, 0.4f }, { 6.6f, -11.0f }, { -6.4f, 18.6f } };
 					for (size_t i = 0; i < std::size(Floaters); i++)
 					{
 						const Vec2 world = EmberCenter + Floaters[i];
 						if (HubSample(grid.Edge, world) < 1.0f)
 							continue;
-						HubRock(*ledge, std::nullopt, world, HubSample(grid.Surface, world) + 0.55f + 0.3f * Unit(int32_t(i), 1, 0x74u), TwoPi * Unit(int32_t(i), 2, 0x74u), 0.085f + 0.03f * Unit(int32_t(i), 3, 0x74u), 0.07f);
+						HubRock(*ledge, std::nullopt, world, HubSample(grid.Surface, world) + 0.55f + 0.3f * Unit(int32_t(i), 1, 0x74u), TwoPi * Unit(int32_t(i), 2, 0x74u), (slab ? 0.1f : 0.085f) + 0.03f * Unit(int32_t(i), 3, 0x74u), 0.07f);
 					}
 				}
 			}
@@ -6385,17 +6476,23 @@ namespace Game
 				const float steps = float(TerrainSteps);
 				std::vector<float> keep(count, 1.0f);
 				std::vector<float> rockTop(count, -1e9f);
-				const auto carve = [&](Vec2 center, float inner, float outer)
+				std::vector<float> hugBuilt(count, 0.0f);
+				std::vector<float> hugNatural(count, 0.0f);
+				constexpr float HugReach = 1.4f;
+				const auto carve = [&](Vec2 center, float inner, float outer, std::vector<float>& hug)
 				{
-					const int32_t i0 = std::max(int32_t(std::floor((center.x - outer + float(TerrainMargin)) * steps)), 0);
-					const int32_t i1 = std::min(int32_t(std::ceil((center.x + outer + float(TerrainMargin)) * steps)), vw - 1);
-					const int32_t j0 = std::max(int32_t(std::floor((center.y - outer + float(TerrainMargin)) * steps)), 0);
-					const int32_t j1 = std::min(int32_t(std::ceil((center.y + outer + float(TerrainMargin)) * steps)), vh - 1);
+					const float span = outer + HugReach;
+					const int32_t i0 = std::max(int32_t(std::floor((center.x - span + float(TerrainMargin)) * steps)), 0);
+					const int32_t i1 = std::min(int32_t(std::ceil((center.x + span + float(TerrainMargin)) * steps)), vw - 1);
+					const int32_t j0 = std::max(int32_t(std::floor((center.y - span + float(TerrainMargin)) * steps)), 0);
+					const int32_t j1 = std::min(int32_t(std::ceil((center.y + span + float(TerrainMargin)) * steps)), vh - 1);
 					for (int32_t j = j0; j <= j1; j++)
 						for (int32_t i = i0; i <= i1; i++)
 						{
-							float& slot = keep[grid.Index(i, j)];
-							slot = std::min(slot, Ease((Length(HubPoint(i, j) - center) - inner) / (outer - inner)));
+							const size_t k = grid.Index(i, j);
+							const float d = Length(HubPoint(i, j) - center);
+							keep[k] = std::min(keep[k], Ease((d - inner) / (outer - inner)));
+							hug[k] = std::max(hug[k], Ease((d - inner) / 0.3f) * (1.0f - Ease((d - outer) / HugReach)));
 						}
 				};
 				for (const PlacedProp& prop : m_Level.Props)
@@ -6406,12 +6503,12 @@ namespace Game
 					if (prop.Id == PropId::CalderaGate)
 						continue;
 					if (m_PropArt[size_t(prop.Id)].Natural)
-						carve(prop.Position, 0.3f * reach, 0.7f * reach);
+						carve(prop.Position, 0.3f * reach, 0.7f * reach, hugNatural);
 					else
-						carve(prop.Position, reach + 0.05f, reach + 0.4f);
+						carve(prop.Position, reach + 0.05f, reach + 0.4f, hugBuilt);
 				}
-				for (const HubBlock& block : HubBlocks)
-					if (block.Solid)
+				for (const HubBlock& block : HubBlocks())
+					if (block.Solid || block.Kind == HubBlockKind::Deck || block.Kind == HubBlockKind::Footbridge)
 					{
 						const Vec2 axis = FromAngle(block.Yaw);
 						const Vec2 across = Perpendicular(axis);
@@ -6419,7 +6516,7 @@ namespace Game
 						const float length = std::max(block.Half.x, block.Half.y);
 						const bool wide = block.Half.x >= block.Half.y;
 						for (float t = -(length - side); t <= length - side + 1e-3f; t += std::max(side * 0.5f, 0.2f))
-							carve(EmberCenter + block.Center + (wide ? axis : across) * t, side * 1.1f, side * 1.1f + 0.35f);
+							carve(EmberCenter + block.Center + (wide ? axis : across) * t, side * 1.1f, side * 1.1f + 0.35f, hugBuilt);
 					}
 				const ModelLibraryData& data = m_Models.GetData();
 				for (const HubRockTop& rock : m_HubRockTops)
@@ -6458,12 +6555,40 @@ namespace Game
 							}
 					}
 				}
+				std::vector<float> rockGap(count, 1e9f);
+				for (size_t k = 0; k < count; k++)
+					if (rockTop[k] > grid.Surface[k] + 0.03f)
+						rockGap[k] = 0.0f;
+				const float diagonal = std::sqrt(2.0f) / steps;
+				for (int32_t pass = 0; pass < 2; pass++)
+				{
+					const int32_t step = pass == 0 ? 1 : -1;
+					for (int32_t j = pass == 0 ? 0 : vh - 1; j >= 0 && j < vh; j += step)
+						for (int32_t i = pass == 0 ? 0 : vw - 1; i >= 0 && i < vw; i += step)
+						{
+							float& slot = rockGap[grid.Index(i, j)];
+							const auto relax = [&](int32_t a, int32_t b, float cost)
+							{
+								if (a >= 0 && b >= 0 && a < vw && b < vh)
+									slot = std::min(slot, rockGap[grid.Index(a, b)] + cost);
+							};
+							relax(i - step, j, 1.0f / steps);
+							relax(i, j - step, 1.0f / steps);
+							relax(i - step, j - step, diagonal);
+							relax(i + step, j - step, diagonal);
+						}
+				}
 				GrassField& field = m_Scene.Grass;
 				field.Columns = vw;
 				field.Rows = vh;
 				field.Origin = glm::vec2(-float(TerrainMargin));
 				field.Step = 1.0f / steps;
 				field.Texels.assign(count, glm::vec4(0.0f));
+				field.Flora.assign(count, 0u);
+				field.Paving.assign(count, 0);
+				field.PavingMaterial = m_HubPaving;
+				field.PavingJoint = HubPavingJoint;
+				const auto byte = [](float value) { return uint32_t(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f)); };
 				const auto unit = [](uint32_t packed, uint32_t shift) { return float((packed >> shift) & 0xFFu) / 255.0f; };
 				for (int32_t j = 0; j < vh; j++)
 					for (int32_t i = 0; i < vw; i++)
@@ -6479,14 +6604,25 @@ namespace Game
 						const uint32_t packed = grid.Splat[k];
 						const float dirt = unit(packed, 0);
 						const float rock = unit(packed, 8);
-						const float sand = unit(packed, 16);
-						const float cover = std::max(1.0f - dirt - rock - 0.6f * sand, 0.0f);
-						float density = Ease((cover - 0.15f) / 0.55f) * keep[k] * Ease(edge / 0.35f);
-						density *= 1.0f - Ease((grid.Paved[k] + 0.4f) / 0.35f);
-						density *= Ease((Length(local) - EmberSurroundRadius - 0.1f) / 0.35f);
-						density *= Ease((HubNearestStair(local) - 0.05f) / 0.4f);
-						if (HubUnderGate(local, 0.0f))
-							density = 0.0f;
+						const float pave = grid.Pave[k];
+						const float cover = std::max(1.0f - dirt - rock, 0.0f);
+						const float lawn = HubGrassFloor * Ease((0.65f - rock) / 0.45f) * Ease((-grid.Paved[k] + 0.2f) / 0.8f) * Ease((edge - 0.4f) / 1.2f);
+						float density = std::max(Ease((cover - 0.15f) / 0.55f), lawn) * keep[k] * Ease(edge / 0.35f);
+						density *= 1.0f - Ease((pave - 0.75f) / 0.25f);
+						float allowed = Ease((Length(local) - EmberSurroundRadius - 0.1f) / 0.35f);
+						allowed *= Ease((HubNearestStair(local) - 0.05f) / 0.4f);
+						const float clearance = HubStreamClearance(local);
+						allowed *= HubSmooth(-0.3f, 0.02f, clearance);
+						if (HubUnderGate(local, 0.0f) || HubDeckHeight(local))
+							allowed = 0.0f;
+						density *= allowed;
+						if (grid.Band[k] > 0.0f)
+						{
+							const float edgeness = 1.0f - Ease((grid.Paved[k] - 0.15f) / 1.2f);
+							float joints = (0.38f + 0.55f * edgeness) * (0.45f + 1.15f * Fbm(point * 0.4f, 0x4A1u, 2));
+							joints *= (0.3f + 0.7f * Ease((Length(local) - EmberSurroundRadius - 0.5f) / 3.0f)) * allowed * keep[k] * Ease(edge / 0.35f);
+							field.Paving[k] = byte(pave) | (byte(joints) << 8) | (255u << 16);
+						}
 						const float rocky = rockTop[k] - grid.Surface[k];
 						if (rocky > 0.03f)
 						{
@@ -6501,10 +6637,34 @@ namespace Game
 						const float rim = 1.0f - Ease((grid.Edge[k] - 0.6f) / 3.5f);
 						const float meadow = Ease((Fbm(point * 0.07f, 701u, 2) - 0.5f) / 0.2f);
 						const float hollow = Ease((-HubRelief(local) - 0.05f) / 0.2f);
-						const float tall = std::max({ rim, meadow, 0.7f * hollow }) * (1.0f - Ease((grid.Paved[k] + 2.2f) / 1.8f));
-						texel.y = density + tall * Ease((density - 0.75f) / 0.25f);
+						float tall = std::max({ rim, meadow, 0.7f * hollow, HubTallFloor }) * (1.0f - Ease((grid.Paved[k] + 2.2f) / 1.8f));
 						texel.z = std::clamp(unit(packed, 24), 0.0f, 1.0f);
-						texel.w = std::clamp(0.1f + 0.45f * Ease((Fbm(point * 0.11f, 711u, 2) - 0.55f) / 0.3f) + 0.5f * sand + 0.8f * dirt * 0.5f, 0.0f, 1.0f);
+						texel.w = std::clamp(0.1f + 0.45f * Ease((Fbm(point * 0.11f, 711u, 2) - 0.55f) / 0.3f) + 0.4f * dirt, 0.0f, 1.0f);
+						if (density <= 0.0f)
+						{
+							texel.y = density;
+							continue;
+						}
+						const float wet = (1.0f - Ease((clearance - 0.05f) / 1.3f)) * Ease((edge - 0.3f) / 0.8f);
+						const float hugRock = 1.0f - Ease((rockGap[k] - 0.15f) / 1.8f);
+						const float away = Ease((-grid.Paved[k] - 0.9f) / 1.2f);
+						float spikes = 0.75f * Ease((Fbm(point * 0.16f, 811u, 2) - 0.61f) / 0.12f);
+						spikes += 0.9f * std::max(hugBuilt[k], 0.7f * std::max(hugNatural[k], hugRock)) * Ease((Fbm(point * 0.45f, 813u, 1) - 0.3f) / 0.25f);
+						spikes += 0.5f * rim * Ease((Fbm(point * 0.3f, 815u, 1) - 0.45f) / 0.2f);
+						spikes *= away * (1.0f - wet);
+						float ferns = std::max({ 0.95f * hugRock, 0.85f * hugNatural[k], 0.55f * hugBuilt[k], 0.85f * rim }) * Ease((Fbm(point * 0.21f, 821u, 2) - 0.3f) / 0.3f);
+						ferns += 0.75f * Ease((Fbm(point * 0.11f, 823u, 2) - 0.6f) / 0.1f);
+						ferns *= Ease((-grid.Paved[k] - 0.7f) / 0.8f) * (1.0f - 0.7f * wet);
+						float bloom = 0.2f + 0.8f * Ease((Fbm(point * 0.085f, 831u, 2) - 0.48f) / 0.2f) + 0.4f * Ease((-local.y - 6.0f) / 8.0f);
+						bloom *= Ease((-grid.Paved[k] - 0.5f) / 1.0f) * (1.0f - wet);
+						spikes *= Ease((ValueNoise(point * 0.7f, 841u) - 0.32f) / 0.3f);
+						ferns *= Ease((ValueNoise(point * 0.5f, 843u) - 0.25f) / 0.3f);
+						bloom *= Ease((ValueNoise(point * 0.6f, 845u) - 0.3f) / 0.38f);
+						const float crowd = std::clamp(std::max(ferns, 0.7f * spikes), 0.0f, 1.0f);
+						density *= 1.0f - 0.35f * crowd;
+						tall *= 1.0f - 0.85f * crowd;
+						texel.y = density + tall * Ease((density - 0.55f) / 0.3f);
+						field.Flora[k] = byte(spikes) | (byte(ferns) << 8) | (byte(wet) << 16) | (byte(bloom) << 24);
 					}
 			}
 
@@ -6516,26 +6676,28 @@ namespace Game
 					{
 					case HubBlockKind::Building: return ToColor(0xC9BFAE);
 					case HubBlockKind::Tower: return ToColor(0xB4AA98);
-					case HubBlockKind::Roof: return ToColor(0x5A4E6E);
+					case HubBlockKind::Roof: return ToColor(0x4A4361);
 					case HubBlockKind::Door: return ToColor(0x4A3220);
-					case HubBlockKind::Pier: return ToColor(0x7A5634);
+					case HubBlockKind::Deck: return ToColor(0x8A6440);
+					case HubBlockKind::Pier: return ToColor(0x6B4B2E);
 					case HubBlockKind::Envelope: return ToColor(0xD8CCB0);
 					case HubBlockKind::Gondola: return ToColor(0x5C4028);
 					case HubBlockKind::Bridge: return ToColor(0x9A9286);
+					case HubBlockKind::Footbridge: return ToColor(0x8A6440);
+					case HubBlockKind::Wall: return ToColor(0x8C8172);
+					case HubBlockKind::Fence: return ToColor(0x7A5634);
+					case HubBlockKind::Tent: return ToColor(0xD9C7A2);
 					default: return ToColor(0x8A6A44);
 					}
 				};
-				const auto add = [&](MeshKind mesh, Vec2 center, Vec2 half, float height, float lift, float yaw, const glm::vec3& tint, bool solid)
+				const auto add = [&](MeshKind mesh, Vec2 center, Vec2 half, float height, float lift, float yaw, const glm::vec3& tint, bool solid, bool absolute)
 				{
-					const float base = HubFloor(center - EmberCenter);
+					const float base = absolute ? 0.0f : HubFloor(center - EmberCenter);
 					const float top = lift + height;
 					AddBox({ .Mesh = mesh, .Center = { center.x, base + lift + height * 0.5f, center.y }, .Half = { half.x, height * 0.5f, half.y }, .Color = tint, .Yaw = yaw, .Base = base, .Reach = Length(half) + 0.65f * std::max(top, 0.0f), .Cut = solid });
 				};
-				for (const HubBlock& block : HubBlocks)
-					add(block.Mesh, EmberCenter + block.Center, block.Half, block.Height, block.Lift, block.Yaw, color(block.Kind), block.Solid);
-				for (const Vec2 scaffold : HubScaffoldPosts)
-					for (const Vec2 corner : { Vec2(-1.0f, -1.0f), Vec2(1.0f, -1.0f), Vec2(1.0f, 1.0f), Vec2(-1.0f, 1.0f) })
-						add(MeshKind::Box, EmberCenter + scaffold + corner * HubScaffoldHalf, Vec2(HubScaffoldPost, HubScaffoldPost), HubScaffoldHeight + 0.15f, 0.0f, 0.0f, color(HubBlockKind::Scaffold), true);
+				for (const HubBlock& block : HubBlocks())
+					add(block.Mesh, EmberCenter + block.Center, block.Half, block.Height, block.Lift, block.Yaw, color(block.Kind), block.Solid && block.Kind != HubBlockKind::Wall && block.Kind != HubBlockKind::Fence, block.Absolute);
 			}
 
 			void Props()
@@ -7090,6 +7252,9 @@ namespace Game
 			bool m_Hub = false;
 			HubGrid m_HubGrid;
 			std::vector<HubRockTop> m_HubRockTops;
+			std::optional<uint32_t> m_HubPaving;
+			std::optional<uint32_t> m_HubGround;
+			std::optional<uint32_t> m_HubDirt;
 			LakeShore m_LakeLand;
 			bool m_Floating = false;
 			std::array<uint32_t, 4> m_Splat{};

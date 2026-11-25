@@ -14,6 +14,7 @@ namespace Game
 	namespace
 	{
 		constexpr float RockHeight = 1.5f;
+		constexpr const char* WornMeshes[] = { "MainPortal/Floor", "MainPortal/Marble", "MainPortal/Terrace", "MainPortal/Arch" };
 		constexpr float VoidDepth = 3.5f;
 		constexpr float StepHeight = 0.125f;
 		constexpr float WallPiece = 1.0f;
@@ -856,6 +857,9 @@ namespace Game
 		m_Key = key;
 		renderer.ClearLevelGeometry();
 		renderer.SetSkyMask(0, 0, {}, {}, {});
+		for (const char* name : WornMeshes)
+			if (const std::optional<uint32_t> mesh = renderer.GetModels().FindMesh(name))
+				renderer.AddMeshFlags(*mesh, MeshWorn);
 		m_Scene = BuildLevelScene(level, renderer);
 		m_Hall.Clear();
 		if (!m_Scene.Relief.IsEmpty() || !level.Hall.IsEmpty() || level.Kind == MapKind::Caldera)

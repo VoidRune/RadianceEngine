@@ -95,8 +95,7 @@ namespace Game
 		Clear();
 		const ModelLibrary& models = renderer.GetModels();
 		if (const std::optional<uint32_t> floor = models.FindMesh("MainPortal/Floor"))
-			renderer.AddMeshFlags(*floor, MeshGround);
-		m_BannerMeshes.clear();
+			renderer.AddMeshFlags(*floor, MeshGround);		m_BannerMeshes.clear();
 		if (const std::optional<uint32_t> mesh = models.FindMesh("MainPortal/Banner"))
 			m_BannerMeshes.push_back(*mesh);
 		const std::optional<uint32_t> skeleton = models.FindSkeleton("PortalBanner");

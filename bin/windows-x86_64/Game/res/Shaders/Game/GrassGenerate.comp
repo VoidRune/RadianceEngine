@@ -1,5 +1,6 @@
 #version 450
 #include "Grass.glsl"
+#include "Paving.glsl"
 
 layout(std430, set = 0, binding = 0) readonly buffer FrameBuffer { GrassFrame Frame; };
 
@@ -137,6 +138,15 @@ layout(set = 0, binding = 1) uniform sampler2D Field;
 layout(std430, set = 0, binding = 2) writeonly buffer BladeBuffer { GrassBlade Blades[]; };
 layout(std430, set = 0, binding = 3) buffer CommandBuffer { GrassCommand Commands[]; };
 layout(set = 0, binding = 4) uniform sampler2D Effects;
+layout(set = 0, binding = 5) uniform sampler2D Flora;
+layout(set = 0, binding = 6) uniform sampler2D PavingMap;
+layout(set = 0, binding = 7) uniform sampler2D PavingTexture;
+layout(set = 0, binding = 8) uniform sampler2D PavingCells;
+
+const float JointSnap = 0.03;
+const float JointStep = 0.008;
+const float BladeKnee = 0.55;
+const float BladeSoftness = 0.3;
 
 shared uint GroupCount[GrassKinds];
 shared uint GroupBase[GrassKinds];
@@ -154,6 +164,26 @@ bool Visible(vec3 center, float radius)
 	return dot(w, vec4(center, 1.0)) > -radius;
 }
 
+vec2 FieldCoord(vec2 p)
+{
+	return ((p - Frame.Field.xy) * Frame.Field.z + 0.5) * Frame.FieldSize.zw;
+}
+
+float PavingHeight(vec2 p, float lod)
+{
+	return textureLod(PavingTexture, p * Frame.Paving.x, lod).a;
+}
+
+uint SpikeSpecies(vec2 p, uint h, float wet)
+{
+	if (GrassUnit(GrassHash(h ^ 0x2f8a6c1du)) < 0.85 * wet)
+		return 5u;
+	uint cluster = GrassHash2(ivec2(floor(p * 0.32 + vec2(7.0, -3.0))), 29u);
+	uint roll = GrassUnit(GrassHash(h ^ 0x41c64e6du)) < 0.22 ? GrassHash(h ^ 0x6c8e9cf5u) : cluster;
+	float pick = GrassUnit(roll);
+	return pick < 0.34 ? 0u : pick < 0.62 ? 1u : pick < 0.76 ? 2u : pick < 0.84 ? 3u : 4u;
+}
+
 bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 {
 	blade.BaseHeight = vec4(0.0);
@@ -161,14 +191,50 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 	kind = GrassNear;
 	uint h = GrassHash2(cell, 1u);
 	vec2 p = (vec2(cell) + vec2(GrassUnit(h), GrassUnit(GrassHash(h ^ 0x5bd1e995u)))) * Frame.Grid.x;
-	vec2 uv = ((p - Frame.Field.xy) * Frame.Field.z + 0.5) * Frame.FieldSize.zw;
+	vec2 uv = FieldCoord(p);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
 		return false;
+	bool inJoint = false;
+	float crevice = 0.0;
+	float sinkDepth = 0.0;
+	if (Frame.Paving.z > 0.5)
+	{
+		vec4 paving = textureLod(PavingMap, uv, 0.0);
+		if (paving.b > 0.002)
+		{
+			vec4 cell = textureLod(PavingCells, p * Frame.Paving.x, 0.0);
+			vec2 centre = PavingCentre(p, cell.ba, Frame.Paving.x);
+			float pave = textureLod(PavingMap, FieldCoord(centre), 0.0).r;
+			if (pave > PavingThreshold(centre))
+			{
+				float stone = PavingHeight(p, 2.0);
+				if (stone > Frame.Paving.y)
+				{
+					vec2 slope = vec2(PavingHeight(p + vec2(JointStep, 0.0), 3.0) - PavingHeight(p - vec2(JointStep, 0.0), 3.0), PavingHeight(p + vec2(0.0, JointStep), 3.0) - PavingHeight(p - vec2(0.0, JointStep), 3.0)) / (2.0 * JointStep);
+					float steep = length(slope);
+					float reach = (stone - Frame.Paving.y) / max(steep, 1e-3);
+					if (steep < 1.0 || reach > JointSnap)
+						return false;
+					p -= slope / steep * (reach + 0.003 + 0.006 * GrassUnit(GrassHash(h ^ 0x7f4a7c15u)));
+					stone = PavingHeight(p, 2.0);
+					if (stone > Frame.Paving.y + 0.03)
+						return false;
+					uv = FieldCoord(p);
+				}
+				inJoint = true;
+				crevice = paving.g;
+				sinkDepth = 1.0 - PavingLevel(stone, Frame.Paving.y);
+			}
+		}
+	}
 	vec4 field = textureLod(Field, uv, 0.0);
+	vec2 sink = inJoint ? -PavingDrift(Frame.Eye.xyz, vec3(p.x, field.r, p.y)) * sinkDepth : vec2(0.0);
 	float patches = GrassNoise(p * 0.45 + 17.0);
-	if (GrassUnit(GrassHash(h ^ 0x9e3779b9u)) >= field.g * mix(0.7, 1.0, patches))
+	if (GrassUnit(GrassHash(h ^ 0x9e3779b9u)) >= (inJoint ? crevice : field.g) * mix(0.7, 1.0, patches))
 		return false;
-	if (!Visible(vec3(p.x, field.r + 0.6 * Frame.Shape.x, p.y), 2.2 * Frame.Shape.x * (1.0 + 2.0 * clamp(field.g - 1.0, 0.0, 1.0)) + Frame.Shape.z))
+	vec4 flora = textureLod(Flora, uv, 0.0);
+	float floraReach = max(max(flora.r, flora.g), flora.b) > 0.004 ? 1.1 : 0.0;
+	if (!Visible(vec3(p.x, field.r + 0.6 * Frame.Shape.x, p.y), 2.2 * Frame.Shape.x * (1.0 + 2.0 * clamp(field.g - 1.0, 0.0, 1.0)) + Frame.Shape.z + floraReach))
 		return false;
 
 	vec4 fx = textureLod(Effects, ((p - Frame.Effects.xy) * Frame.Effects.z + 0.5) * Frame.EffectSize.zw, 0.0);
@@ -180,18 +246,33 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 
 	float lush = smoothstep(0.0, 0.6, field.g);
 	float tall = clamp(field.g - 1.0, 0.0, 1.0);
+	float wet = flora.b;
 	float meadow = mix(0.8, 1.25, GrassNoise(p * 0.09 + vec2(3.0, 11.0)));
-	float clover = smoothstep(0.62, 0.74, GrassNoise(p * 0.32 + vec2(41.0, 7.0))) * lush;
+	float clover = smoothstep(0.62, 0.74, GrassNoise(p * 0.32 + vec2(41.0, 7.0))) * lush * (1.0 - wet);
 	vec2 flowerCoord = p * 0.21 + vec2(-13.0, 29.0);
 	float flowers = smoothstep(0.64, 0.8, GrassNoise(flowerCoord)) * lush;
+	float bloom = flora.a * lush;
 	float pick = GrassUnit(GrassHash(h ^ 0x3c6ef372u));
-	float flowerChance = 0.02 * Frame.Grid.y * flowers;
+	float reeds = wet > 0.004 ? 0.005 * wet * smoothstep(0.4, 0.7, GrassNoise(p * 0.9 + vec2(-9.0, 61.0))) : 0.0;
+	float spikeChance = Frame.Grid.y * lush * (0.012 * flora.r + reeds);
+	float fernChance = Frame.Grid.y * 0.014 * flora.g * smoothstep(0.0, 0.3, field.g);
+	float flowerChance = Frame.Grid.y * (0.02 * flowers + 0.05 * bloom);
 	float cloverChance = 0.05 * Frame.Grid.y * clover;
-	if (pick < flowerChance)
+	if (inJoint)
+	{
+		lush = max(lush, 0.85);
+		if (pick < 0.01 * Frame.Grid.y * crevice)
+			kind = GrassFlower;
+	}
+	else if (pick < spikeChance)
+		kind = GrassSpike;
+	else if (pick < spikeChance + fernChance)
+		kind = GrassFern;
+	else if (pick < spikeChance + fernChance + flowerChance)
 		kind = GrassFlower;
-	else if (pick < flowerChance + cloverChance)
+	else if (pick < spikeChance + fernChance + flowerChance + cloverChance)
 		kind = GrassClover;
-	else if (GrassUnit(GrassHash(h ^ 0xa54ff53au)) < 0.6 * clover)
+	else if (GrassUnit(GrassHash(h ^ 0xa54ff53au)) < 0.3 * clover)
 		return false;
 	float stagger = GrassUnit(GrassHash(h ^ 0x510e527fu));
 	float burnt = smoothstep(0.1 + 0.35 * stagger, 0.55 + 0.4 * stagger, charred);
@@ -229,7 +310,7 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 	float r1 = GrassUnit(GrassHash(h ^ 0x165667b1u));
 	float r2 = GrassUnit(GrassHash(h ^ 0xd3a2646cu));
 	float r3 = GrassUnit(GrassHash(h ^ 0xfd7046c5u));
-	vec3 base = vec3(p.x, field.r - 0.03, p.y);
+	vec3 base = vec3(p.x + sink.x, field.r - 0.03, p.y + sink.y);
 	float tone = field.a;
 	float height;
 	float bend;
@@ -242,7 +323,36 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 		width = (0.06 + 0.025 * r3) * (1.0 - burnt);
 		uint meadow = GrassHash2(ivec2(floor(flowerCoord)), 13u);
 		uint colour = GrassUnit(GrassHash(h ^ 0x6a09e667u)) < 0.15 ? GrassHash(h ^ 0xbb67ae85u) % 5u : meadow % 5u;
+		if (bloom > 0.0 && GrassUnit(GrassHash(h ^ 0x0d1e2f3au)) < 0.65 * flora.a)
+		{
+			colour = 0u;
+			width *= 0.75;
+		}
+		if (inJoint)
+		{
+			colour = 0u;
+			height = 0.11 + 0.06 * r1;
+			width *= 0.6;
+		}
 		tone = float(colour) / 7.0;
+	}
+	else if (kind == GrassSpike)
+	{
+		uint species = SpikeSpecies(p, h, wet);
+		float scale = species == 5u ? 1.3 + 0.5 * r1 : species == 4u ? 0.6 + 0.3 * r1 : species == 2u ? 0.6 + 0.3 * r1 : 0.8 + 0.45 * r1;
+		height = scale * (1.0 + 0.25 * tall) * (1.0 - burnt);
+		bend = species == 5u ? 0.03 + 0.05 * r2 : 0.05 + 0.1 * r2;
+		width = (species == 5u ? 0.08 : species == 4u ? 0.05 : species == 2u ? 0.085 : 0.12) * (0.85 + 0.3 * r3) * (1.0 - burnt);
+		tone = float(species) / 7.0;
+	}
+	else if (kind == GrassFern)
+	{
+		bool broad = GrassUnit(GrassHash2(ivec2(floor(p * 0.4 + vec2(3.0, 17.0))), 31u)) < 0.35;
+		height = (broad ? 0.3 + 0.14 * r1 : 0.62 + 0.4 * r1) * (1.0 - burnt);
+		bend = broad ? 0.1 + 0.1 * r2 : 0.15 + 0.2 * r2;
+		width = (broad ? 0.18 + 0.05 * r3 : 0.21 + 0.06 * r3) * (1.0 - burnt);
+		tone = broad ? 1.0 / 7.0 : 0.0;
+		dir = vec2(cos(ownAngle), sin(ownAngle));
 	}
 	else if (kind == GrassClover)
 	{
@@ -257,11 +367,25 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 		height *= 1.0 - 0.4 * smoothstep(0.15, 0.9, dist);
 		height *= 0.75 + 0.5 * r1;
 		height *= mix(0.4, 1.0, lush) * mix(0.85, 1.1, patches) * meadow;
-		height *= 1.0 + tall * (0.6 + 1.0 * r1);
-		height *= (1.0 - 0.45 * clover) * mix(1.0, stagger < 0.6 ? 0.22 : 0.03, burnt);
+		float r4 = GrassUnit(GrassHash(h ^ 0x85ebca6bu));
+		height *= 1.0 + tall * (0.55 + 0.6 * r4);
 		bend = Frame.Shape.w * (0.5 + r2) * (0.6 + 0.7 * smoothstep(0.2, 0.9, dist));
 		width = Frame.Shape.z * (0.75 + 0.5 * r3) * (1.0 - 0.18 * tall);
 		bend *= 1.0 + 0.45 * tall;
+		height *= 1.0 + wet * (0.7 + 0.8 * r4);
+		float over = max(height - BladeKnee, 0.0);
+		height -= over - over / (1.0 + over / BladeSoftness);
+		height *= (1.0 - 0.2 * clover) * mix(1.0, stagger < 0.6 ? 0.22 : 0.03, burnt);
+		width *= 1.0 + 0.35 * wet;
+		bend *= 1.0 - 0.4 * wet;
+		tone *= 1.0 - 0.7 * wet;
+		if (inJoint)
+		{
+			height = (0.1 + 0.12 * r1 * (0.5 + crevice)) * mix(1.0, stagger < 0.6 ? 0.22 : 0.03, burnt);
+			bend = 0.2 + 0.25 * r2;
+			width = Frame.Shape.z * (0.7 + 0.4 * r3);
+			tone *= 0.25;
+		}
 		float lod = smoothstep(Frame.Grid.z, Frame.Grid.w, distance(Frame.Eye.xyz, base));
 		if (GrassUnit(GrassHash(h ^ 0x9b05688cu)) < lod)
 		{
@@ -271,7 +395,12 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 			width *= 1.0 + 0.2 * lod;
 		}
 	}
-	if (kind != GrassClover)
+	if (kind == GrassFern)
+	{
+		bend += 0.3 * laidAmount;
+		height *= 1.0 - 0.2 * laidAmount;
+	}
+	else if (kind != GrassClover)
 	{
 		vec2 lean = dir * bend + laid * 2.4;
 		bend = length(lean);

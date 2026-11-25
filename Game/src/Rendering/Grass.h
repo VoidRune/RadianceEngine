@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace Game
@@ -24,9 +25,21 @@ namespace Game
 	inline constexpr float GrassPushRadius = 0.6f;
 	static_assert(std::size(GrassQualityNames) == size_t(GrassQuality::Count));
 
+	struct GrassPaving
+	{
+		const Rdn::GpuImage* Image = nullptr;
+		const Rdn::GpuImage* Cells = nullptr;
+		float Scale = 1.0f;
+		float Joint = 0.33f;
+	};
+
 	struct GrassField
 	{
 		std::vector<glm::vec4> Texels;
+		std::vector<uint32_t> Flora;
+		std::vector<uint32_t> Paving;
+		std::optional<uint32_t> PavingMaterial;
+		float PavingJoint = 0.33f;
 		int32_t Columns = 0;
 		int32_t Rows = 0;
 		glm::vec2 Origin{ 0.0f };
@@ -63,14 +76,14 @@ namespace Game
 	public:
 		static constexpr uint32_t MaxPushers = 32;
 		static constexpr uint32_t MaxStamps = 96;
-		static constexpr uint32_t Kinds = 4;
+		static constexpr uint32_t Kinds = 6;
 
 		GrassRenderer(Rdn::Device& device, Rdn::ResourceAllocator& allocator);
 		~GrassRenderer();
 		GrassRenderer(const GrassRenderer&) = delete;
 		GrassRenderer& operator=(const GrassRenderer&) = delete;
 
-		void SetField(const GrassField& field);
+		void SetField(const GrassField& field, const GrassPaving& paving);
 		void BeginFrame(float time);
 		void Push(const glm::vec3& position, float radius, uint32_t key);
 		void Stamp(const GrassStamp& stamp);
@@ -106,6 +119,7 @@ namespace Game
 			glm::vec4 Dry;
 			glm::vec4 Look;
 			glm::vec4 Decay;
+			glm::vec4 Paving;
 			std::array<glm::vec4, MaxPushers> Pushers;
 			std::array<glm::vec4, MaxStamps * 3> Stamps;
 		};
@@ -126,7 +140,11 @@ namespace Game
 		std::unique_ptr<Rdn::GpuRingBuffer> m_Frame;
 		std::unique_ptr<Rdn::GpuImage> m_FieldImage;
 		std::unique_ptr<Rdn::GpuImage> m_EffectImage;
+		std::unique_ptr<Rdn::GpuImage> m_FloraImage;
+		std::unique_ptr<Rdn::GpuImage> m_PavingImage;
 		std::unique_ptr<Rdn::Sampler> m_FieldSampler;
+		std::unique_ptr<Rdn::Sampler> m_RepeatSampler;
+		GrassPaving m_Paving;
 		glm::vec2 m_FieldMin{ 0.0f };
 		glm::vec2 m_FieldMax{ 0.0f };
 		glm::vec2 m_FieldHeights{ 0.0f };

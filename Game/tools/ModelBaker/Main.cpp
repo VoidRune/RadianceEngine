@@ -17,7 +17,7 @@
 
 namespace
 {
-	constexpr uint32_t BakerVersion = 10;
+	constexpr uint32_t BakerVersion = 11;
 	constexpr int DevCompressionLevel = 3;
 	constexpr int ShipCompressionLevel = 19;
 	constexpr float ShipEntropyLambda = 0.5f;
@@ -50,6 +50,7 @@ namespace
 			hash = Hash(hash, &source.TextureSize, sizeof(source.TextureSize));
 			hash = Hash(hash, &source.Size, sizeof(source.Size));
 			hash = Hash(hash, &source.SplitNodes, sizeof(source.SplitNodes));
+			hash = Hash(hash, &source.Joint, sizeof(source.Joint));
 			const std::string_view path = source.Path;
 			folders.insert(std::string(path.substr(0, path.find('/'))));
 		}

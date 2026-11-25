@@ -26,6 +26,7 @@ namespace Game
 		const RgbaImage* Normal = nullptr;
 		const RgbaImage* Surface = nullptr;
 		const RgbaImage* Emission = nullptr;
+		const RgbaImage* Cells = nullptr;
 		uint32_t MaxSize = 1024;
 		float AlphaCutoff = 0.0f;
 		bool HeightInAlpha = false;

@@ -133,6 +133,8 @@ namespace Game
 		constexpr float SpellLightGain = 14.0f;
 		constexpr float ArcChest = 0.9f;
 		constexpr float MeteorGlowRadius = 2.4f;
+		constexpr glm::vec3 WorldUp{ 0.0f, 1.0f, 0.0f };
+		constexpr glm::vec3 CometDrop{ 2.4f, 12.5f, 5.0f };
 		constexpr float ArcCasterReach = 1.5f;
 		constexpr float ArcAnchorReach = 1.3f;
 		constexpr float WandTipFresh = 0.15f;
@@ -298,15 +300,19 @@ namespace Game
 			lighting.Grade = { .MidSaturation = 0.1f, .Shadows = { 0.97f, 0.99f, 1.04f }, .Highlights = { 1.02f, 1.0f, 0.97f } };
 			if (map == MapKind::Hub)
 			{
-				lighting.SunDirection = { 0.4f, -1.0f, 0.45f };
+				lighting.SunDirection = { 0.83f, -0.7f, 0.56f };
 				lighting.SunColor = { 1.0f, 0.87f, 0.7f };
-				lighting.SunIntensity = 2.9f;
+				lighting.SunIntensity = 3.7f;
 				lighting.SkyColor = { 0.34f, 0.33f, 0.58f };
 				lighting.GroundColor = { 0.26f, 0.15f, 0.09f };
 				lighting.EmissionGi = 3.5f;
 				lighting.Floating = true;
 				lighting.Haze = { 0.07f, 0.055f, 0.13f };
 				lighting.DepthHole = { EmberCenter.x, EmberCenter.y, EmberCavernRadii[4] + 1.6f, -0.35f };
+				lighting.SheenToward = { 0.12f, 0.78f, 0.62f };
+				lighting.SheenColor = { 1.0f, 0.9f, 0.8f };
+				lighting.SheenIntensity = 3.0f;
+				lighting.ContactShadow = 0.45f;
 				lighting.Grade = { .Saturation = 1.15f, .MidSaturation = 0.3f, .Shadows = { 0.92f, 0.96f, 1.1f }, .Highlights = { 1.06f, 1.01f, 0.92f } };
 			}
 			else if (map == MapKind::Caldera)
@@ -368,6 +374,9 @@ namespace Game
 		m_Cosmetics = std::make_unique<CosmeticVisuals>(app.GetWorldRenderer().GetModels());
 		m_Crawlers = std::make_unique<CrawlerSystem>(app.GetWorldRenderer().GetModels());
 		m_MeteorMesh = app.GetWorldRenderer().GetModels().FindMesh("Rock_3_F_Color1");
+		constexpr const char* ChunkMeshes[] = { "Rock_3_A_Color1", "Rock_3_B_Color1", "Rock_3_C_Color1", "Rock_3_D_Color1" };
+		for (size_t i = 0; i < m_ChunkMeshes.size(); i++)
+			m_ChunkMeshes[i] = app.GetWorldRenderer().GetModels().FindMesh(ChunkMeshes[i]);
 		m_ObeliskMesh = app.GetWorldRenderer().GetModels().FindMesh("PeakCrystalAmethyst0");
 		m_SpellMeshes = RegisterSpellMeshes(app.GetWorldRenderer());
 		constexpr const char* CritterMeshes[] = { "Critters/Cat_Body", "Critters/Cat_Head", "Critters/Cat_Tail", "Critters/Duck", "Critters/Balloon", "Critters/Dummy_Post", "Critters/Dummy_Body" };
@@ -483,6 +492,7 @@ namespace Game
 		m_NovaFields.clear();
 		m_VoidWells.clear();
 		m_FireballBursts.clear();
+		m_CometChunks.clear();
 		m_Arcs.clear();
 		m_ArcFades.clear();
 		m_Shields.clear();
@@ -1077,7 +1087,7 @@ namespace Game
 		m_CameraPlaced = true;
 
 		if (m_App.GetSettings().FireStage != 0)
-			m_ZoomTarget = m_Zoom = m_App.GetSettings().FireStage == 2 ? 1.0f : CameraZoomMin;
+			m_ZoomTarget = m_Zoom = m_App.GetSettings().FireStage >= 2 ? 1.0f : CameraZoomMin;
 		m_Zoom += (m_ZoomTarget - m_Zoom) * std::min(1.0f, dt * CameraZoomRate);
 		const float aspect = float(std::max(m_Extent.Width, 1u)) / float(std::max(m_Extent.Height, 1u));
 		glm::vec3 focus = m_CameraTarget - glm::vec3(0.0f, 0.0f, CameraFocusOffset * m_Zoom);
@@ -1563,27 +1573,113 @@ namespace Game
 	glm::vec3 SessionState::MeteorPoint(const EntityState& entity, float progress) const
 	{
 		const float fall = 1.0f - progress * progress;
-		return Ground(entity.Position, 0.45f) + glm::vec3(2.4f, 12.5f, 5.0f) * fall;
+		return Ground(entity.Position, 0.45f) + CometDrop * fall;
 	}
 
 	void SessionState::DrawMeteor(WorldRenderer& renderer, const EntityState& entity, float progress) const
 	{
 		const glm::vec3 target = Ground(entity.Position);
-		const glm::vec3 position = MeteorPoint(entity, progress);
-		const glm::vec3 direction = glm::normalize(target - MeteorPoint(entity, 0.0f));
+		DrawCometFall(renderer, target, MeteorPoint(entity, progress), glm::normalize(target - MeteorPoint(entity, 0.0f)), entity.GetScale(), progress, entity.NetId);
+	}
+
+	void SessionState::DrawCometFall(WorldRenderer& renderer, const glm::vec3& target, const glm::vec3& position, const glm::vec3& direction, float scale, float progress, uint32_t seed) const
+	{
+		const float grow = std::sqrt(std::max(scale, 0.2f));
 		if (m_MeteorMesh)
 		{
 			const glm::mat4 transform = glm::translate(glm::mat4(1.0f), position)
-				* glm::rotate(glm::mat4(1.0f), m_Time * 3.0f + float(entity.NetId % 31u), glm::normalize(glm::vec3(0.6f, 0.3f, 0.75f)))
-				* glm::scale(glm::mat4(1.0f), glm::vec3(0.75f));
-			renderer.DrawModel(*m_MeteorMesh, transform, NoPalette, glm::vec4(1.9f, 0.75f, 0.42f, 0.0f), 0.5f, target.y);
+				* glm::rotate(glm::mat4(1.0f), m_Time * 3.0f + float(seed % 31u), glm::normalize(glm::vec3(0.6f, 0.3f, 0.75f)))
+				* glm::scale(glm::mat4(1.0f), glm::vec3(CometRockSize * grow));
+			renderer.DrawModel(*m_MeteorMesh, transform, NoPalette, glm::vec4(1.6f, 0.66f, 0.38f, 0.0f), 0.55f, target.y);
 		}
 		else
-			renderer.Draw(MeshKind::Sphere, position, glm::vec3(0.4f), { 0.45f, 0.22f, 0.12f }, m_Time * 3.0f, 0.5f, target.y);
-		DrawGlow(renderer, position, 1.4f, { 1.7f, 0.55f, 0.12f });
-		DrawStreak(renderer, position - direction * 2.4f, position, 0.42f, { 2.8f, 1.1f, 0.25f });
-		DrawGlow(renderer, position, 0.5f, { 3.0f, 1.6f, 0.5f });
-		DrawGroundGlow(renderer, target, MeteorGlowRadius * entity.GetScale() * (0.3f + 0.35f * progress), { 1.5f, 0.45f, 0.1f }, 0.1f + 0.55f * progress * progress);
+			renderer.Draw(MeshKind::Sphere, position, glm::vec3(0.4f * grow), { 0.45f, 0.22f, 0.12f }, m_Time * 3.0f, 0.5f, target.y);
+		DrawComet(renderer, { .Center = position, .Direction = direction, .Scale = grow, .Progress = progress }, m_Time, seed);
+		renderer.DrawTrail(uint64_t(seed) | (25ull << 40), position, ProjectileTrail(AbilityId::Comet, 0.0f, grow));
+		renderer.DrawLight({ .Position = position, .Radius = 4.5f * grow, .Color = CometLight * (SpellLightGain * 0.8f) });
+		DrawGroundGlow(renderer, target, MeteorGlowRadius * scale * (0.3f + 0.35f * progress), { 1.5f, 0.45f, 0.1f }, 0.1f + 0.55f * progress * progress);
+	}
+
+	void SessionState::CometLanded(const glm::vec3& ground, float radius, float scale, uint32_t seed)
+	{
+		m_Effects->CometCrater(ground, radius);
+		m_FireballBursts.push_back({ .Ground = ground, .Radius = radius, .Seed = seed, .Comet = true });
+		const auto unit = [seed](uint32_t index)
+		{
+			uint32_t x = seed * 0x9E3779B1u + index * 0x85EBCA77u + 0x27D4EB2Fu;
+			x ^= x >> 15;
+			x *= 0x2C1B3C6Du;
+			x ^= x >> 12;
+			x *= 0x297A2D39u;
+			x ^= x >> 15;
+			return float(x & 0xFFFFu) / 65535.0f;
+		};
+		const float grow = std::sqrt(std::max(scale, 0.2f));
+		const auto axis = [&](uint32_t index)
+		{
+			return glm::normalize(glm::vec3(unit(index) * 2.0f - 1.0f, 0.6f, unit(index + 1u) * 2.0f - 1.0f));
+		};
+		constexpr int Chunks = 12;
+		constexpr int Boulders = 4;
+		for (int i = 0; i < Chunks; i++)
+		{
+			const uint32_t k = uint32_t(i) * 16u;
+			const bool boulder = i < Boulders;
+			const float angle = 6.2832f * (float(i) + 0.6f * unit(k)) / float(Chunks);
+			const glm::vec3 out(std::cos(angle), 0.0f, std::sin(angle));
+			CometChunk chunk;
+			chunk.Position = ground + out * (0.3f * radius * unit(k + 1u)) + WorldUp * 0.3f;
+			chunk.Velocity = out * ((boulder ? 1.6f + 1.4f * unit(k + 2u) : 2.2f + 3.0f * unit(k + 2u)) * grow) + WorldUp * (boulder ? 3.0f + 2.0f * unit(k + 3u) : 4.0f + 3.5f * unit(k + 3u));
+			chunk.Axis = axis(k + 4u);
+			chunk.Angle = 6.2832f * unit(k + 6u);
+			chunk.Spin = (6.0f + 8.0f * unit(k + 7u)) * (unit(k + 8u) < 0.5f ? -1.0f : 1.0f);
+			chunk.Size = (boulder ? 0.5f + 0.2f * unit(k + 9u) : 0.2f + 0.15f * unit(k + 9u)) * grow;
+			chunk.Life = 3.0f + 0.8f * unit(k + 10u);
+			chunk.Key = uint64_t(m_CometChunkKeys++) | (27ull << 40);
+			chunk.Mesh = uint8_t(i % int(m_ChunkMeshes.size()));
+			m_CometChunks.push_back(chunk);
+		}
+	}
+
+	void SessionState::UpdateCometChunks(float dt)
+	{
+		constexpr float Gravity = 16.0f;
+		for (CometChunk& chunk : m_CometChunks)
+		{
+			chunk.Age += dt;
+			chunk.Velocity.y -= Gravity * dt;
+			chunk.Position += chunk.Velocity * dt;
+			chunk.Angle += chunk.Spin * dt;
+			const float floor = GroundHeight(Vec2(chunk.Position.x, chunk.Position.z)) + 0.4f * chunk.Size;
+			if (chunk.Position.y < floor)
+			{
+				chunk.Position.y = floor;
+				chunk.Velocity.y = chunk.Velocity.y < -2.0f ? -0.3f * chunk.Velocity.y : 0.0f;
+				chunk.Velocity.x *= 0.45f;
+				chunk.Velocity.z *= 0.45f;
+				chunk.Spin *= 0.5f;
+			}
+			else if (chunk.Age < 0.9f)
+				m_Effects->Trail(Fx::CometDebris, chunk.Key, chunk.Position, dt, chunk.Size / 0.15f);
+		}
+		std::erase_if(m_CometChunks, [](const CometChunk& chunk) { return chunk.Age >= chunk.Life; });
+	}
+
+	void SessionState::DrawCometChunks(WorldRenderer& renderer) const
+	{
+		for (const CometChunk& chunk : m_CometChunks)
+		{
+			const std::optional<uint32_t> mesh = m_ChunkMeshes[chunk.Mesh] ? m_ChunkMeshes[chunk.Mesh] : m_MeteorMesh;
+			if (!mesh)
+				continue;
+			const float heat = std::exp(-chunk.Age * 0.8f);
+			const float sink = glm::smoothstep(chunk.Life - 0.6f, chunk.Life, chunk.Age);
+			const glm::mat4 transform = glm::translate(glm::mat4(1.0f), chunk.Position - WorldUp * (sink * chunk.Size * 0.6f))
+				* glm::rotate(glm::mat4(1.0f), chunk.Angle, chunk.Axis)
+				* glm::scale(glm::mat4(1.0f), glm::vec3(chunk.Size * (1.0f - 0.4f * sink)));
+			const glm::vec3 tint = glm::mix(glm::vec3(0.5f, 0.46f, 0.43f), glm::vec3(1.9f, 0.75f, 0.42f), heat);
+			renderer.DrawModel(*mesh, transform, NoPalette, glm::vec4(tint, 0.0f), 0.55f * heat, chunk.Position.y - chunk.Size);
+		}
 	}
 
 	const EntityState* SessionState::FindBody(uint32_t owner) const
@@ -1845,6 +1941,11 @@ namespace Game
 			m_FireballBursts.push_back({ .Ground = Ground(entity.Position), .Radius = def.ImpactRadius * scale, .Power = blast, .Seed = entity.NetId });
 			return;
 		}
+		if (ability == AbilityId::Comet)
+		{
+			CometLanded(Ground(entity.Position), def.ImpactRadius * scale, scale, entity.NetId);
+			return;
+		}
 		const glm::vec3 forward = Heading(entity.Facing);
 		switch (def.Shape)
 		{
@@ -1892,7 +1993,8 @@ namespace Game
 		std::erase_if(m_Flames, [](const Flame& flame) { return flame.Life <= 0.0f; });
 		for (FireballBurst& burst : m_FireballBursts)
 			burst.Age += dt;
-		std::erase_if(m_FireballBursts, [](const FireballBurst& burst) { return burst.Age >= FireballBlastLife(burst.Power); });
+		std::erase_if(m_FireballBursts, [](const FireballBurst& burst) { return burst.Age >= (burst.Comet ? CometBlastSmoke : FireballBlastLife(burst.Power)); });
+		UpdateCometChunks(dt);
 		if (const Level* level = m_Client.GetLevel(); level && level->Kind == MapKind::FrozenLake)
 			m_Effects->Trail(Fx::Snowfall, 7ull << 40, m_CameraTarget + glm::vec3(0.0f, 4.5f, 1.5f), dt, 1.0f);
 		if (const Level* level = m_Client.GetLevel(); level && level->Kind == MapKind::FrozenLake && m_Client.GetSession().Mode == GameMode::Brawl)
@@ -1980,14 +2082,27 @@ namespace Game
 			const Fx fx = fire.Kind == FireKind::Campfire ? Fx::Campfire : fire.Kind == FireKind::Candle ? Fx::CandleFlame : fire.Kind == FireKind::Torch ? Fx::TorchFlame : Fx::LanternFlame;
 			m_Effects->Trail(fx, (2ull << 40) | uint64_t(i), fire.Position, dt, fire.Scale);
 		}
-		for (int i = 0; i < 1 && m_App.GetSettings().FireStage; i++)
+		if (m_App.GetSettings().FireStage == 3)
+		{
+			glm::vec3 ground;
+			const float t = StageComet(ground);
+			const AbilityDef& comet = GetAbility(AbilityId::Comet);
+			if (t < comet.ImpactDelay)
+				m_Effects->Trail(Fx::MeteorTrail, 42ull << 40, ground + glm::vec3(0.0f, 0.45f, 0.0f) + CometDrop * (1.0f - (t / comet.ImpactDelay) * (t / comet.ImpactDelay)), dt);
+			else if (t - comet.ImpactDelay < dt)
+			{
+				m_Effects->Impact(AbilityId::Comet, ground, 0.0f, 1.0f, SkillColor(AbilityId::Comet), 960u, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+				CometLanded(ground, comet.ImpactRadius, 1.0f, 960u + uint32_t(m_Time));
+			}
+		}
+		for (int i = 0; i < 1 && m_App.GetSettings().FireStage && m_App.GetSettings().FireStage != 3; i++)
 		{
 			glm::vec3 center;
 			float facing = 0.0f;
 			if (StageBolt(i, center, facing))
 				m_Effects->Trail(Fx::EmberTrail, (40ull << 40) | uint64_t(i), center, dt);
 		}
-		if (m_App.GetSettings().FireStage)
+		if (m_App.GetSettings().FireStage && m_App.GetSettings().FireStage != 3)
 		{
 			for (int i = 0; i < StageBlastCount(); i++)
 			{
@@ -2612,7 +2727,13 @@ namespace Game
 		if (m_App.GetSettings().FireStage)
 			DrawFireStage(renderer);
 		for (const FireballBurst& burst : m_FireballBursts)
-			DrawFireballBlast(renderer, { .Center = burst.Ground + glm::vec3(0.0f, FireballBlastHeight, 0.0f), .Ground = burst.Ground, .Radius = burst.Radius, .Power = burst.Power, .Age = burst.Age }, burst.Seed);
+		{
+			if (burst.Comet)
+				DrawCometBlast(renderer, { .Ground = burst.Ground, .Radius = burst.Radius, .Age = burst.Age }, burst.Seed);
+			else
+				DrawFireballBlast(renderer, { .Center = burst.Ground + glm::vec3(0.0f, FireballBlastHeight, 0.0f), .Ground = burst.Ground, .Radius = burst.Radius, .Power = burst.Power, .Age = burst.Age }, burst.Seed);
+		}
+		DrawCometChunks(renderer);
 		const PlayerState& state = m_Client.GetPredictedState();
 		const EntityState* self = m_Client.FindEntity(m_Client.GetPlayerNetId());
 		if (m_AimPoint && self && !m_Paused && !m_Overview && m_HoveredPortal < 0)
@@ -6039,8 +6160,38 @@ namespace Game
 		return look;
 	}
 
+	float SessionState::StageComet(glm::vec3& ground) const
+	{
+		constexpr float Period = 4.5f;
+		ground = StageSpot(2.6f, -1.0f);
+		if (m_App.GetSettings().StageTime >= 0.0f)
+			return m_App.GetSettings().StageTime;
+		return std::fmod(m_Time, Period);
+	}
+
 	void SessionState::DrawFireStage(WorldRenderer& renderer) const
 	{
+		if (m_App.GetSettings().FireStage == 3)
+		{
+			glm::vec3 ground;
+			const float t = StageComet(ground);
+			const AbilityDef& comet = GetAbility(AbilityId::Comet);
+			if (t < comet.ImpactDelay)
+			{
+				const float progress = t / comet.ImpactDelay;
+				DrawSpellMarkFor(renderer, AbilityId::Comet, ground, comet.ImpactRadius, progress, 0.0f, 960u, 1.0f);
+				DrawCometFall(renderer, ground, ground + glm::vec3(0.0f, 0.45f, 0.0f) + CometDrop * (1.0f - progress * progress), glm::normalize(-CometDrop), 1.0f, progress, 960u);
+			}
+			else if (m_App.GetSettings().StageTime >= 0.0f)
+			{
+				const float age = t - comet.ImpactDelay;
+				DrawCometBlast(renderer, { .Ground = ground, .Radius = comet.ImpactRadius, .Age = age }, 960u);
+				GroundDecal crater = CraterDecal(ground, comet.ImpactRadius * 1.2f, CometCraterGlow, 960u);
+				crater.Params.x *= std::exp(-age * CometCraterCooling);
+				renderer.DrawDecal(crater);
+			}
+			return;
+		}
 		glm::vec3 center;
 		float facing = 0.0f;
 		if (StageBolt(0, center, facing))
@@ -6073,6 +6224,12 @@ namespace Game
 			const float age = StageBlast(i, ground, power);
 			const float radius = GetAbility(AbilityId::PurpleFireball).ImpactRadius + (FireballFullBlast - GetAbility(AbilityId::PurpleFireball).ImpactRadius) * power;
 			DrawFireballBlast(renderer, { .Center = ground + glm::vec3(0.0f, FireballBlastHeight, 0.0f), .Ground = ground, .Radius = radius, .Power = power, .Age = age }, 903u + uint32_t(i));
+			if (m_App.GetSettings().StageTime >= 0.0f && age >= 0.0f)
+			{
+				GroundDecal crater = FireballCraterDecal(ground, radius, power, 903u + uint32_t(i));
+				crater.Params.x *= std::exp(-age * FireballCraterCooling(power));
+				renderer.DrawDecal(crater);
+			}
 		}
 	}
 }

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <iterator>
 #include <map>
@@ -421,6 +422,156 @@ namespace Game
 				if (material.Key == key)
 					return material;
 			return SwatchMaterials[0];
+		}
+
+		constexpr float CellRange = 0.25f;
+		constexpr float CellValley = -0.03f;
+
+		std::vector<float> WrapBlur(const std::vector<float>& values, int32_t w, int32_t h, int32_t radius)
+		{
+			const int32_t sw = w + 2 * radius + 1;
+			const int32_t sh = h + 2 * radius + 1;
+			std::vector<double> sums(size_t(sw) * size_t(sh), 0.0);
+			for (int32_t y = 1; y < sh; y++)
+				for (int32_t x = 1; x < sw; x++)
+				{
+					const int32_t sx = ((x - 1 - radius) % w + w) % w;
+					const int32_t sy = ((y - 1 - radius) % h + h) % h;
+					sums[size_t(y) * size_t(sw) + size_t(x)] = values[size_t(sy) * size_t(w) + size_t(sx)] + sums[size_t(y - 1) * size_t(sw) + size_t(x)] + sums[size_t(y) * size_t(sw) + size_t(x - 1)] - sums[size_t(y - 1) * size_t(sw) + size_t(x - 1)];
+				}
+			const int32_t k = 2 * radius + 1;
+			const double area = double(k) * double(k);
+			std::vector<float> result(values.size());
+			for (int32_t y = 0; y < h; y++)
+				for (int32_t x = 0; x < w; x++)
+				{
+					const auto sum = [&](int32_t a, int32_t b) { return sums[size_t(b) * size_t(sw) + size_t(a)]; };
+					result[size_t(y) * size_t(w) + size_t(x)] = float((sum(x + k, y + k) - sum(x, y + k) - sum(x + k, y) + sum(x, y)) / area);
+				}
+			return result;
+		}
+
+		RgbaImage StoneCells(const RgbaImage& heights, std::string_view name)
+		{
+			const int32_t w = int32_t(heights.Width);
+			const int32_t h = int32_t(heights.Height);
+			const size_t count = size_t(w) * size_t(h);
+			const auto wrapX = [w](int32_t x) { return (x % w + w) % w; };
+			const auto wrapY = [h](int32_t y) { return (y % h + h) % h; };
+			const auto at = [w](int32_t x, int32_t y) { return size_t(y) * size_t(w) + size_t(x); };
+			std::vector<float> raw(count);
+			for (size_t i = 0; i < count; i++)
+				raw[i] = float(heights.Pixels[i * 4]) / 255.0f;
+			std::vector<float> smooth = WrapBlur(raw, w, h, std::max(w / 1024, 1));
+			const std::vector<float> wide = WrapBlur(raw, w, h, std::max(w / 64, 2));
+			for (size_t i = 0; i < count; i++)
+				smooth[i] -= wide[i];
+			const float joint = CellValley;
+			std::vector<int32_t> label(count, -1);
+			std::vector<int32_t> stack;
+			struct Cell
+			{
+				size_t Size = 0;
+				double CosX = 0.0;
+				double SinX = 0.0;
+				double CosY = 0.0;
+				double SinY = 0.0;
+				float X = 0.0f;
+				float Y = 0.0f;
+			};
+			std::vector<Cell> cells;
+			const double twoPi = 6.283185307179586;
+			for (int32_t start = 0; start < int32_t(count); start++)
+			{
+				if (label[size_t(start)] >= 0 || smooth[size_t(start)] <= joint)
+					continue;
+				const int32_t id = int32_t(cells.size());
+				cells.push_back({});
+				Cell& cell = cells.back();
+				label[size_t(start)] = id;
+				stack.assign(1, start);
+				while (!stack.empty())
+				{
+					const int32_t index = stack.back();
+					stack.pop_back();
+					const int32_t x = index % w;
+					const int32_t y = index / w;
+					cell.Size++;
+					cell.CosX += std::cos(twoPi * (x + 0.5) / w);
+					cell.SinX += std::sin(twoPi * (x + 0.5) / w);
+					cell.CosY += std::cos(twoPi * (y + 0.5) / h);
+					cell.SinY += std::sin(twoPi * (y + 0.5) / h);
+					const int32_t neighbours[4] = { int32_t(at(wrapX(x + 1), y)), int32_t(at(wrapX(x - 1), y)), int32_t(at(x, wrapY(y + 1))), int32_t(at(x, wrapY(y - 1))) };
+					for (const int32_t next : neighbours)
+						if (label[size_t(next)] < 0 && smooth[size_t(next)] > joint)
+						{
+							label[size_t(next)] = id;
+							stack.push_back(next);
+						}
+				}
+			}
+			const size_t minimum = std::max<size_t>(count / 2500, 16);
+			size_t kept = 0;
+			std::vector<size_t> sizes;
+			for (Cell& cell : cells)
+			{
+				const auto angle = [twoPi](double c, double s) { const double a = std::atan2(s, c) / twoPi; return float(a < 0.0 ? a + 1.0 : a); };
+				cell.X = angle(cell.CosX, cell.SinX) * float(w) - 0.5f;
+				cell.Y = angle(cell.CosY, cell.SinY) * float(h) - 0.5f;
+				if (cell.Size >= minimum)
+				{
+					kept++;
+					sizes.push_back(cell.Size);
+				}
+			}
+			std::vector<int32_t> queue;
+			queue.reserve(count);
+			for (size_t i = 0; i < count; i++)
+			{
+				if (label[i] >= 0 && cells[size_t(label[i])].Size < minimum)
+					label[i] = -1;
+				if (label[i] >= 0)
+					queue.push_back(int32_t(i));
+			}
+			for (size_t head = 0; head < queue.size(); head++)
+			{
+				const int32_t index = queue[head];
+				const int32_t x = index % w;
+				const int32_t y = index / w;
+				for (int32_t dy = -1; dy <= 1; dy++)
+					for (int32_t dx = -1; dx <= 1; dx++)
+					{
+						const size_t next = at(wrapX(x + dx), wrapY(y + dy));
+						if (label[next] < 0)
+						{
+							label[next] = label[size_t(index)];
+							queue.push_back(int32_t(next));
+						}
+					}
+			}
+			RgbaImage result{ heights.Width, heights.Height, std::vector<uint8_t>(count * 4, 255) };
+			const auto encode = [](float offset) { return uint8_t(std::lround(std::clamp(0.5f + offset / (2.0f * CellRange), 0.0f, 1.0f) * 255.0f)); };
+			for (int32_t y = 0; y < h; y++)
+				for (int32_t x = 0; x < w; x++)
+				{
+					const size_t i = at(x, y);
+					float dx = 0.0f;
+					float dy = 0.0f;
+					if (label[i] >= 0)
+					{
+						const Cell& cell = cells[size_t(label[i])];
+						dx = cell.X - float(x);
+						dy = cell.Y - float(y);
+						dx -= float(w) * std::round(dx / float(w));
+						dy -= float(h) * std::round(dy / float(h));
+					}
+					result.Pixels[i * 4 + 0] = encode(dx / float(w));
+					result.Pixels[i * 4 + 1] = encode(dy / float(h));
+					result.Pixels[i * 4 + 2] = 0;
+				}
+			std::sort(sizes.begin(), sizes.end());
+			std::printf("ModelBaker: %.*s has %zu stones (median %.3f of the tile wide)\n", int(name.size()), name.data(), kept, sizes.empty() ? 0.0 : std::sqrt(double(sizes[sizes.size() / 2]) / double(count)));
+			return result;
 		}
 	}
 
@@ -1233,12 +1384,16 @@ namespace Game
 			return false;
 		}
 		const std::string name = folder.filename().string();
+		std::optional<RgbaImage> cells;
+		if (source.Joint > 0.0f && height)
+			cells = StoneCells(*height, name);
 		const PbrBakeInput input{
 			.Name = name,
 			.Albedo = &*albedo,
 			.Alpha = height ? &*height : nullptr,
 			.Normal = normal ? &*normal : nullptr,
 			.Surface = surface ? &*surface : nullptr,
+			.Cells = cells ? &*cells : nullptr,
 			.MaxSize = source.TextureSize ? source.TextureSize : 1024,
 			.HeightInAlpha = true,
 			.Repeat = true,
