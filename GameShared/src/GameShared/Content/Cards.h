@@ -205,7 +205,7 @@ namespace Game
 		{ CardId::Bulwark, CardKind::Upgrade, CardRarity::Rare, AbilityId::EarthSpike, "Bulwark", "Earth Spike stands for 1.6 seconds as a wall that blocks movement and every projectile, yours included.", nullptr, TagGuard },
 		{ CardId::SpikeShrapnel, CardKind::Upgrade, CardRarity::Common, AbilityId::EarthSpike, "Shrapnel", "When Earth Spike shatters, its rock bursts outward and shoves everyone nearby at half strength.", "When Earth Spike shatters, its rock bursts outward and hits everyone nearby for half damage.", TagGuard },
 		{ CardId::StoneBarrage, CardKind::Upgrade, CardRarity::Legendary, AbilityId::EarthSpike, "Stone Barrage", "For 1.4 s after Earth Spike, press it again to burst up to three more spikes at your cursor, each smaller than the last. Earth Spike recharges 30% slower.", nullptr, TagGuard },
-		{ CardId::Riposte, CardKind::Upgrade, CardRarity::Rare, AbilityId::CrystalSword, "Riposte", "While your Crystal Sword winds up and strikes, it shatters rival projectiles that fly into its arc in front of you.", nullptr, TagGuard },
+		{ CardId::Riposte, CardKind::Upgrade, CardRarity::Rare, AbilityId::CrystalSword, "Riposte", "In the last moment before each Crystal Sword strike lands, the blade shatters rival projectiles that fly into its arc in front of you.", nullptr, TagGuard },
 		{ CardId::HurledEdge, CardKind::Upgrade, CardRarity::Rare, AbilityId::CrystalSword, "Hurled Edge", "Your third strike hurls the Crystal Sword instead: it spins through every rival in a long line and shatters where it stops.", nullptr, TagBlood },
 	};
 	static_assert(std::size(Cards) == size_t(CardId::Count));
@@ -348,7 +348,8 @@ namespace Game
 	inline constexpr float EchoPushScale = 0.5f;
 	inline constexpr float ColossusArea = 1.35f;
 	inline constexpr float ColossusPace = 1.15f;
-	inline constexpr float RiposteReach = 1.9f;
+	inline constexpr float RiposteReach = 1.7f;
+	inline constexpr float RiposteWindow = 0.2f;
 	inline constexpr float RiposteArc = 1.35f;
 	inline constexpr float ShatterTip = 0.92f;
 	inline constexpr float ShatterDelay = 0.05f;

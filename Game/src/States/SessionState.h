@@ -143,6 +143,7 @@ namespace Game
 			CrystalSwordLook SwordFrom;
 			CrystalSwordLook SwordNow;
 			CrystalSwordLook SwordDrawn;
+			Vec2 SwordMove;
 			Vec2 SwordStrikePoint;
 			float SwordStrikeFacing = 0.0f;
 			float SwordStrikeReach = 0.0f;
@@ -807,6 +808,7 @@ namespace Game
 		Emote m_EmoteChoice = Emote::None;
 		float m_EmoteStageClock = 0.0f;
 		float m_SwordStageClock = 0.0f;
+		Vec2 m_LastMove;
 		bool m_ActMapOpen = false;
 		bool m_MerchantOpen = false;
 		bool m_GrimoireOpen = false;

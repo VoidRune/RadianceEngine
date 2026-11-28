@@ -1041,7 +1041,7 @@ namespace Game
 		{
 			const Transform* place = entities.TryGet<Transform>(player);
 			const PlayerState& state = controller.State;
-			if (!place || !state.Alive || state.CastSlot < 0 || controller.Traits.Skills[size_t(state.CastSlot)].Ability != AbilityId::CrystalSword || !HasCard(world.GetCards(controller.PlayerId), CardId::Riposte))
+			if (!place || !state.Alive || state.CastSlot < 0 || state.CastTimer > RiposteWindow || controller.Traits.Skills[size_t(state.CastSlot)].Ability != AbilityId::CrystalSword || !HasCard(world.GetCards(controller.PlayerId), CardId::Riposte))
 				return;
 			parries.push_back({ place->Position, place->Facing, RiposteReach * controller.Traits.Skills[size_t(state.CastSlot)].AreaScale, controller.PlayerId });
 		});

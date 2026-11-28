@@ -57,7 +57,7 @@ namespace Game
 		const AbilityDef& ability = GetAbility(id);
 		const bool brawlDamage = world.UsesBrawlDamage() && context.Side == Team::Players;
 		const int32_t damage = ScaleDamage(context.BaseDamage >= 0 ? context.BaseDamage : brawlDamage ? ability.BrawlDamage : ability.Damage, context.DamageScale);
-		if (HasCard(context.Cards, CardId::ResonantGround) && ability.Spell && IsAreaSpell(id) && ability.Kind != AbilityKind::Projectile && id != AbilityId::GlacialNova)
+		if (HasCard(context.Cards, CardId::ResonantGround) && ability.Spell && IsAreaSpell(id) && ability.Kind != AbilityKind::Projectile && id != AbilityId::GlacialNova && id != AbilityId::CrystalSword)
 			Resonate(world, ability, damage, context);
 		if (id == AbilityId::GlacialEruption && HasCard(context.Cards, CardId::ResonantGround))
 			Resonate(world, ability, damage, context);

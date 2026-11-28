@@ -220,7 +220,7 @@ namespace Game
 		{ .Id = AbilityId::LensSweep, .Name = "Focused Beam", .Kind = AbilityKind::Melee, .Damages = Element::Lightning, .Damage = 12, .Reach = 13.0f, .EffectDuration = 0.35f, .Shape = StrikeShape::Line, .Width = 0.9f, .Push = 6.0f },
 		{ .Id = AbilityId::RuneZone, .Name = "Lingering Zone", .Kind = AbilityKind::Ground, .EffectDuration = 0.45f, .ImpactRadius = 1.0f },
 		{ .Id = AbilityId::RuneBlast, .Name = "Combustion", .Kind = AbilityKind::Nova, .Damages = Element::Fire, .Reach = 2.4f, .EffectDuration = 0.35f, .ImpactRadius = 2.4f },
-		{ .Id = AbilityId::SwordThrow, .Name = "Crystal Sword", .ProjectileSpeed = 15.0f, .ProjectileRadius = 0.32f, .ProjectileRange = 7.0f, .Pierce = 3, .SpawnOffset = 0.8f, .EffectDuration = 0.3f, .Push = 10.0f, .Parent = AbilityId::CrystalSword, .BrawlDamage = 7 },
+		{ .Id = AbilityId::SwordThrow, .Name = "Crystal Sword", .ProjectileSpeed = 15.0f, .ProjectileRadius = 0.38f, .ProjectileRange = 7.0f, .Pierce = 3, .SpawnOffset = 0.8f, .EffectDuration = 0.3f, .Push = 11.0f, .Parent = AbilityId::CrystalSword, .BrawlDamage = 12 },
 	};
 
 	constexpr bool AbilitiesMatchIds()

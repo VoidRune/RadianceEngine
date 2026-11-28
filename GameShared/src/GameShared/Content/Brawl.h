@@ -860,10 +860,16 @@ namespace Game
 		return (kind == AbilityKind::Projectile || kind == AbilityKind::Ground);
 	}
 
+	inline float SwordAreaFromCards(CardMask cards)
+	{
+		const float sigils = 1.0f + (HasCard(cards, CardId::WideSigils) ? WideSigilsArea : 0.0f) + (HasCard(cards, CardId::Epicenter) ? EpicenterArea : 0.0f);
+		return (HasCard(cards, CardId::ColossusBlade) ? ColossusArea : 1.0f) * sigils;
+	}
+
 	inline bool IsAreaSpell(AbilityId id)
 	{
 		const AbilityDef& def = GetAbility(id);
-		return def.Kind == AbilityKind::Ground || def.Kind == AbilityKind::Nova || def.ImpactRadius > 0.0f;
+		return CreditOf(id) == AbilityId::CrystalSword || def.Kind == AbilityKind::Ground || def.Kind == AbilityKind::Nova || def.ImpactRadius > 0.0f;
 	}
 
 	inline void ApplyApex(PlayerTraits& traits, CardMask cards)

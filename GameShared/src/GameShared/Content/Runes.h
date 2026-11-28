@@ -68,7 +68,7 @@ namespace Game
 		{ RuneId::Multicast, RuneKind::Modifier, CardRarity::Common, FormShots, "Multicast", "Fires 1 more projectile in a fan. Obsidian Blades throws 2 more. Each one deals 20% less.", "Projectile spells" },
 		{ RuneId::Pierce, RuneKind::Modifier, CardRarity::Common, FormBolt, "Pierce", "Projectiles pass through 2 more enemies.", "Bolt spells" },
 		{ RuneId::Bounce, RuneKind::Modifier, CardRarity::Common, FormShots, "Bounce", "Projectiles bounce off walls and rocks twice, and can hit the same enemy again after each bounce.", "Projectile spells" },
-		{ RuneId::Enlarge, RuneKind::Modifier, CardRarity::Common, FormStrike | FormNova | FormBlast, "Enlarge", "The spell's area is 40% bigger.", "Area spells" },
+		{ RuneId::Enlarge, RuneKind::Modifier, CardRarity::Common, FormStrike | FormNova | FormBlast | FormBlade, "Enlarge", "The spell's area is 40% bigger.", "Area spells" },
 		{ RuneId::Linger, RuneKind::Modifier, CardRarity::Common, FormStrike | FormBlast, "Linger", "The impact leaves a zone for 2 seconds. It hits everything inside for 15% of the spell's damage every half second.", "Area spells" },
 		{ RuneId::Quickcast, RuneKind::Modifier, CardRarity::Common, FormAttacks | FormUtility, "Quickcast", "The spell's windup and charge time are 40% shorter.", "Spells with a windup" },
 		{ RuneId::Split, RuneKind::Modifier, CardRarity::Rare, FormBolt, "Split", "On impact, each projectile bursts into 3 shards that fly on and deal 40% of its damage.", "Bolt spells" },

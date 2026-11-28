@@ -105,6 +105,9 @@ namespace Game
 		constexpr float SwordTrailHold = 0.1f;
 		constexpr float SwordTellSelf = 0.1f;
 		constexpr float SwordTellRival = 0.28f;
+		constexpr float SwordTellMoving = 0.4f;
+		constexpr float SwordTellMaxSpeed = 10.0f;
+		constexpr float SwordTellSmoothing = 12.0f;
 		constexpr float SwordCleaveKick = 1.4f;
 		constexpr float SwordCleaveTrauma = 0.18f;
 		constexpr float SwordShatterKick = 1.0f;
@@ -973,7 +976,10 @@ namespace Game
 		input.Aim = m_Aim;
 		input.AimDistance = m_AimDistance;
 		if (m_Paused || m_App.UiWantsKeyboard())
+		{
+			m_LastMove = {};
 			return input;
+		}
 
 		Vec2 move;
 		if (Rdn::Input::IsKeyDown(Rdn::KeyCode::W))
@@ -1002,6 +1008,7 @@ namespace Game
 			input.Buttons |= uint8_t(InputButton::Skill4);
 		if (Rdn::Input::IsKeyDown(Rdn::KeyCode::Space))
 			input.Buttons |= uint8_t(InputButton::Dodge);
+		m_LastMove = input.Move;
 		input.Buttons |= std::exchange(m_LatchedButtons, uint8_t(0));
 		if (m_App.GetSettings().SwordStage && std::fmod(m_SwordStageClock, SwordStageCycle) < SwordStageHold)
 			input.Buttons |= uint8_t(InputButton::Skill1);
@@ -2187,16 +2194,29 @@ namespace Game
 		const float progress = std::clamp(fx.SwordClock / std::max(fx.SwordWindup, 1e-3f), 0.0f, 1.0f);
 		const float tell = (own ? SwordTellSelf : SwordTellRival) * (0.5f + 0.5f * progress);
 		const glm::vec3 base = Ground(entity.Position);
+		const Vec2 move = own ? m_LastMove : fx.SwordMove;
+		const float pace = Length(move);
+		const float moving = own ? SwordLungeInput : SwordTellMoving;
+		const float toward = pace > moving ? std::clamp((Dot(move / pace, FromAngle(entity.Facing)) - SwordLungeCone) / (1.0f - SwordLungeCone), 0.0f, 1.0f) : 0.0f;
+		const float lunge = toward * (own ? SwordLungeDistance(fx.SwordSwing, m_AimDistance) : def.Lunge);
+		const float reach = def.Reach * area + lunge;
 		if (fx.SwordSwing == AbilityId::SwordCleave)
-			DrawLaneTelegraph(renderer, base, entity.Facing, (def.Reach + def.Lunge) * area, def.Width * area, SwordCrystal, tell, progress);
+			DrawLaneTelegraph(renderer, base, entity.Facing, reach, def.Width * area, SwordCrystal, tell, progress);
 		else
-			DrawSectorTelegraph(renderer, base, entity.Facing, (def.Reach + def.Lunge) * area, def.HalfArc, SwordCrystal, tell, progress);
+			DrawSectorTelegraph(renderer, base, entity.Facing, reach, def.HalfArc, SwordCrystal, tell, progress);
 	}
 
 	float SessionState::SwordAreaOf(const EntityState& entity) const
 	{
+		if (entity.Owner == m_Client.GetPlayerId())
+		{
+			const PlayerTraits& traits = m_Client.GetTraits();
+			for (const SkillTraits& skill : traits.Skills)
+				if (skill.Ability == AbilityId::CrystalSword)
+					return traits.AreaScale * skill.AreaScale;
+		}
 		const PlayerInfo* info = m_Client.FindPlayer(entity.Owner);
-		return info && HasCard(info->Cards, CardId::ColossusBlade) ? ColossusArea : 1.0f;
+		return info ? SwordAreaFromCards(info->Cards) : 1.0f;
 	}
 
 	void SessionState::SwordMoments(EntityFx& fx, const EntityState& entity, float dt)
@@ -2214,6 +2234,11 @@ namespace Game
 		const SwordFrame frame = FrameOf(BodyBase(entity), fx.SwordFacing, SwordScale * area);
 		bool snap = phase == SwordPhase::Hidden;
 		fx.SwordClock += dt;
+		if (dt > 0.0f)
+		{
+			const Vec2 velocity = ClampLength((entity.Position - fx.Last.Position) / dt, SwordTellMaxSpeed);
+			fx.SwordMove += (velocity - fx.SwordMove) * std::min(1.0f, dt * SwordTellSmoothing);
+		}
 		fx.SwordIdle = swinging ? 0.0f : fx.SwordIdle + dt;
 		const auto enter = [&](SwordPhase next)
 		{
@@ -2235,7 +2260,7 @@ namespace Game
 			fx.SwordSwing = variant;
 			fx.SwordConfirmed = false;
 			const int8_t slot = self.CastSlot;
-			fx.SwordWindup = local && slot >= 0 ? SwingWindup(m_Client.GetTraits().Skills[size_t(slot)], variant) : GetAbility(variant).CastTime * (area > 1.0f ? ColossusPace : 1.0f);
+			fx.SwordWindup = local && slot >= 0 ? SwingWindup(m_Client.GetTraits().Skills[size_t(slot)], variant) : GetAbility(variant).CastTime * (m_Client.FindPlayer(entity.Owner) && HasCard(m_Client.FindPlayer(entity.Owner)->Cards, CardId::ColossusBlade) ? ColossusPace : 1.0f);
 		}
 		else if (!swinging && phase == SwordPhase::Windup)
 		{
