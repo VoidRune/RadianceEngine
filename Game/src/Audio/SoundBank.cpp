@@ -1,4 +1,5 @@
 #include "SoundBank.h"
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@ namespace Game
 			uint8_t Priority = 128;
 			bool Loop = false;
 			bool Compressed = false;
+			bool Optional = false;
 		};
 
 		using enum CueBus;
@@ -134,6 +136,12 @@ namespace Game
 			{ Cue::GatewayHum, "Ambience/Gateway", 0, World, Medium, 0.5f, 0.0f, 0.0f, 3, 0.4f, 100, true },
 			{ Cue::Campfire, "Ambience/Campfire", 0, World, Close, 0.55f, 0.0f, 0.0f, 8, 0.2f, 90, true, true },
 			{ Cue::Heartbeat, "Ambience/Heartbeat", 0, Interface, Flat, 0.45f, 0.0f, 0.0f, 1, 0.0f, 220, true },
+			{ Cue::Stream, "Ambience/Stream", 0, World, Close, 0.5f, 0.0f, 0.0f, 8, 0.15f, 90, true, true, true },
+			{ Cue::Waterfall, "Ambience/Waterfall", 0, World, Medium, 0.7f, 0.0f, 0.0f, 2, 0.2f, 95, true, true, true },
+			{ Cue::EarthCrack, "Sfx/Spell/EarthCrack", 3, World, Wide, 0.95f, 0.8f, 0.05f, 4, 0.5f, 175 },
+			{ Cue::EarthRise, "Sfx/Spell/EarthRise", 0, World, Medium, 0.75f, 0.6f, 0.05f, 4, 0.35f, 150 },
+			{ Cue::EarthCrumble, "Sfx/Spell/EarthCrumble", 2, World, Medium, 0.75f, 1.0f, 0.08f, 4, 0.45f, 145 },
+			{ Cue::EarthSkewer, "Sfx/Spell/EarthSkewer", 3, World, Medium, 0.85f, 1.0f, 0.08f, 4, 0.35f, 170 },
 		};
 
 		constexpr bool CueDefsMatchIds()
@@ -180,6 +188,8 @@ namespace Game
 
 			std::vector<Timbre::Sound> sounds;
 			const std::string base = std::string(AudioRoot) + def.Path;
+			if (def.Optional && !std::filesystem::exists(base + ".ogg"))
+				continue;
 			if (def.Variants == 0)
 				sounds.push_back(engine.LoadSound(base + ".ogg", desc));
 			for (uint8_t i = 1; i <= def.Variants; i++)

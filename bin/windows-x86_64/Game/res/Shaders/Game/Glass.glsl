@@ -14,6 +14,11 @@ struct GlassFrame
 	vec4 Environment;
 	vec4 Translucent;
 	vec4 Lights[32];
+	vec4 Sheen;
+	vec4 SheenRadiance;
+	vec4 Fish[12];
+	vec4 Ripples[8];
+	vec4 WaterCounts;
 };
 
 struct GlassInstance

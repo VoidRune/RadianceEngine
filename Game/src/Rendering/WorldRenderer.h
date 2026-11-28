@@ -68,6 +68,9 @@ namespace Game
 		uint32_t Material = 0;
 		uint32_t Layer = 0;
 		uint32_t Flags = 0;
+		bool River = false;
+		glm::vec4 Absorb{ 0.0f };
+		glm::vec4 Look{ 0.0f };
 	};
 
 	struct BoxSurface
@@ -195,6 +198,8 @@ namespace Game
 		void DrawFacet(const GlassFacet& facet) { m_Glass->Draw(facet); }
 		uint32_t AddShield(const EnergyShield& shield) { return m_Glass->AddShield(shield); }
 		void DrawCell(const EnergyCell& cell) { m_Glass->DrawCell(cell); }
+		void DrawFish(const glm::vec4& fish) { m_Glass->DrawFish(fish); }
+		void DrawRipple(const glm::vec4& ripple) { m_Glass->DrawRipple(ripple); }
 		void DrawDistortion(const Distorter& distorter) { m_Distortion->Draw(distorter); }
 		void DrawTrail(uint64_t key, const glm::vec3& position, const TrailStyle& style, float strength = 1.0f) { m_Trails->Emit(key, position, style, strength); }
 		TrailRenderer& GetTrails() { return *m_Trails; }
@@ -242,6 +247,7 @@ namespace Game
 			glm::vec3 Min{ 0.0f };
 			glm::vec3 Max{ 0.0f };
 			bool Water = false;
+			bool River = false;
 		};
 
 		struct MaterialGpu
@@ -388,6 +394,7 @@ namespace Game
 		std::vector<std::vector<ModelInstance>> m_ModelGlassDraws;
 		std::vector<std::vector<ModelInstance>> m_ModelUnderDraws;
 		std::vector<GlassSurface> m_GlassSurfaces;
+		size_t m_LibraryGlassSurfaces = 0;
 		std::vector<ModelInstance> m_PackedModels;
 		std::vector<glm::mat4> m_Palettes;
 		WorldCamera m_Camera;

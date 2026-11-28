@@ -499,6 +499,18 @@ namespace Game
 		PlayAt(Cue::FireImpact, position, 0.2f, 0.55f + 0.15f * m_Random.Float(), 0.05f);
 	}
 
+	void GameAudio::PlaySwordShatter(Vec2 position, bool own)
+	{
+		const float loud = own ? 1.0f : 0.8f;
+		PlayAt(Cue::Glass, position, 1.0f * loud, 0.82f);
+		PlayAt(Cue::HeavyHit, position, 0.6f * loud, 0.7f);
+		PlayAt(Cue::Explosion, position, 0.3f * loud, 1.55f);
+		PlayAt(Cue::Rumble, position, 0.5f * loud, 0.9f);
+		PlayAt(Cue::Bell, position, 0.2f * loud, 1.25f, 0.03f);
+		for (int i = 0; i < 6; i++)
+			PlayAt(Cue::GlassLight, position, (0.4f - 0.05f * float(i)) * loud, 1.1f + 0.14f * float(i), 0.04f + 0.05f * float(i));
+	}
+
 	void GameAudio::PlayEruption(Vec2 position, float distance, bool geyser)
 	{
 		if (geyser)
@@ -766,10 +778,11 @@ namespace Game
 				PlayAt(Cue::Explosion, at, 0.35f * power * loud, 0.6f);
 			break;
 		}
-		case AbilityId::ChainHook:
-			PlayAt(Cue::WhooshLight, at, 0.6f * loud, 0.85f);
-			PlayAt(Cue::Coins, at, 0.35f * loud, 1.55f, 0.02f);
-			PlayAt(Cue::Latch, at, 0.4f * loud, 1.2f);
+		case AbilityId::SwordThrow:
+			PlayAt(Cue::HeavySwing, at, 0.8f * loud, 0.9f);
+			PlayAt(Cue::WhooshHeavy, at, 0.6f * loud, 0.8f, 0.02f);
+			PlayAt(Cue::WhooshHeavy, at, 0.4f * loud, 1.1f, 0.12f);
+			PlayAt(Cue::GlassLight, at, 0.3f * loud, 1.5f, 0.01f);
 			break;
 		case AbilityId::ObsidianBlades:
 			PlayAt(Cue::DaggerSwing, at, 0.75f * loud, 0.95f);
@@ -808,8 +821,6 @@ namespace Game
 			}
 			break;
 		}
-		case AbilityId::ChainHook:
-			break;
 		case AbilityId::Spit:
 			PlayAt(Cue::Soft, at, 0.45f, 1.5f);
 			break;
@@ -926,25 +937,51 @@ namespace Game
 			PlayAt(Cue::ShockHit, at, 0.65f, 1.3f);
 			break;
 		case AbilityId::EarthSpike:
-			PlayAt(Cue::Rock, at, 1.0f, 0.62f);
-			PlayAt(Cue::HeavyHit, at, 0.75f, 0.55f, 0.01f);
-			PlayAt(Cue::WhooshHeavy, at, 0.5f, 0.55f);
-			PlayAt(Cue::Rumble, at, 0.55f, 0.85f);
-			PlayAt(Cue::Rock, at, 0.55f, 0.85f, def.EffectDuration);
-			PlayAt(Cue::Collapse, at, 0.4f, 1.1f, def.EffectDuration + 0.05f);
+		{
+			const float standing = (entity.Charge & SpikeWallFlag) != 0 ? BulwarkSeconds : def.EffectDuration;
+			const float small = std::clamp(1.0f - scale, 0.0f, 0.5f);
+			PlayAt(Cue::EarthCrack, at, 1.0f - 0.5f * small, (0.97f + 0.06f * m_Random.Float()) * (1.0f + 0.6f * small));
+			PlayAt(Cue::WhooshHeavy, at + forward * (def.Reach * scale * 0.5f), 0.3f, 0.9f, 0.01f);
+			PlayAt(Cue::Rumble, at, 0.35f, 0.95f);
+			alongLine(Cue::Rock, 2, 0.32f, 1.25f, 0.025f);
+			PlayAt(Cue::EarthCrumble, at, 0.8f, 0.95f + 0.1f * m_Random.Float(), standing);
+			if ((entity.Charge & SpikeShrapnelFlag) != 0)
+			{
+				PlayAt(Cue::EarthCrack, at + forward * (def.Reach * scale * SpikeShrapnelCenter), 0.75f, 1.2f + 0.1f * m_Random.Float(), standing);
+				PlayAt(Cue::WhooshHeavy, at, 0.35f, 1.3f, standing + 0.02f);
+			}
 			break;
-		case AbilityId::HookAnchor:
-			PlayAt(Cue::MetalHit, at, 0.45f, 0.8f);
-			PlayAt(Cue::Rock, at, 0.3f, 1.4f);
+		}
+		case AbilityId::CrystalSword:
+		case AbilityId::SwordSweep:
+		{
+			const float pitch = (ability == AbilityId::SwordSweep ? 1.08f : 0.98f) + 0.06f * m_Random.Float();
+			PlayAt(Cue::SwordSwing, at, 0.85f, pitch);
+			PlayAt(Cue::WhooshHeavy, at + forward * 1.2f, 0.45f, 1.35f * pitch, 0.01f);
+			PlayAt(Cue::GlassLight, at + forward * 1.5f, 0.32f, 1.5f * pitch, 0.03f);
 			break;
-		case AbilityId::HookPull:
-			PlayAt(Cue::Latch, at, 0.6f, 0.9f);
-			PlayAt(Cue::Coins, at, 0.4f, 1.2f, 0.03f);
-			PlayAt(Cue::WhooshHeavy, at, 0.5f, 1.2f, 0.05f);
+		}
+		case AbilityId::SwordCleave:
+			PlayAt(Cue::HeavySwing, at, 0.85f, 1.05f + 0.05f * m_Random.Float());
+			PlayAt(Cue::HeavyHit, at + forward * (def.Reach * scale * 0.9f), 0.55f, 0.6f, 0.02f);
+			PlayAt(Cue::Rumble, at, 0.3f, 1.2f, 0.02f);
+			PlayAt(Cue::WhooshHeavy, at + forward * 1.5f, 0.6f, 0.95f);
+			PlayAt(Cue::Glass, at + forward * (def.Reach * scale * 0.9f), 0.4f, 1.35f, 0.04f);
+			alongLine(Cue::GlassLight, 3, 0.25f, 1.45f, 0.02f);
+			PlayAt(Cue::Bell, at, 0.12f, 2.4f, 0.05f);
 			break;
-		case AbilityId::HookYank:
-			PlayAt(Cue::WhooshHeavy, at, 0.7f, 0.9f);
-			PlayAt(Cue::Coins, at, 0.35f, 1.0f, 0.02f);
+		case AbilityId::SwordShatter:
+			if (scale < 0.5f)
+			{
+				PlayAt(Cue::MetalHit, at, 0.75f, 1.45f);
+				PlayAt(Cue::GlassLight, at, 0.5f, 1.7f, 0.01f);
+				PlayAt(Cue::ShockHit, at, 0.2f, 1.9f);
+				break;
+			}
+			PlayAt(Cue::Glass, at, 0.8f, 1.1f);
+			for (int i = 0; i < 4; i++)
+				PlayAt(Cue::GlassLight, at, 0.3f - 0.05f * float(i), 1.3f + 0.15f * float(i), 0.03f + 0.04f * float(i));
+			PlayAt(Cue::WhooshHeavy, at, 0.45f, 1.2f);
 			break;
 		case AbilityId::Firestrike:
 			PlayAt(Cue::FireImpact, at, 0.85f, 1.05f);
@@ -1056,6 +1093,9 @@ namespace Game
 		case AbilityId::Comet:
 			PlayAt(Cue::FireLaunch, at, 1.0f, 0.6f, lead);
 			break;
+		case AbilityId::EarthSpike:
+			PlayAt(Cue::EarthRise, at, 0.5f, 1.2f + 0.1f * m_Random.Float());
+			break;
 		case AbilityId::GravityWell:
 			PlayAt(Cue::Rumble, at, 0.75f, 0.55f);
 			PlayAt(Cue::ManaStart, at, 0.45f, 0.5f);
@@ -1162,11 +1202,29 @@ namespace Game
 		case AbilityId::GravityWell:
 			tracked.Loop = PlayAt(Cue::ManaStart, at, 0.8f * loud, 0.75f);
 			break;
+		case AbilityId::CrystalSword:
+			if (m_Time - m_LastSwing[entity.Owner] > 1.0f)
+			{
+				PlayAt(Cue::GlassLight, at, 0.4f * loud, 1.7f);
+				PlayAt(Cue::Bell, at, 0.14f * loud, 2.6f, 0.12f);
+			}
+			PlayAt(Cue::WhooshLight, at, 0.3f * loud, 0.7f, 0.04f);
+			m_LastSwing[entity.Owner] = m_Time;
+			break;
+		case AbilityId::SwordSweep:
+			PlayAt(Cue::WhooshLight, at, 0.3f * loud, 0.75f);
+			m_LastSwing[entity.Owner] = m_Time;
+			break;
+		case AbilityId::SwordCleave:
+			PlayAt(Cue::WhooshLight, at, 0.35f * loud, 0.6f);
+			PlayAt(Cue::Bell, at, 0.1f * loud, 1.9f, 0.08f);
+			m_LastSwing[entity.Owner] = m_Time;
+			break;
 		case AbilityId::EarthSpike:
 		{
 			const Vec2 point = entity.AimsFromPoint() ? entity.CastPoint : at;
-			PlayAt(Cue::Rumble, point, 0.55f * loud, 0.75f);
-			PlayAt(Cue::Rock, point, 0.35f * loud, 0.55f, 0.04f);
+			PlayAt(Cue::EarthRise, point, 0.85f * loud);
+			PlayAt(Cue::Rumble, point, 0.3f * loud, 0.85f);
 			break;
 		}
 		default:
@@ -1579,6 +1637,17 @@ namespace Game
 			const auto it = m_Tracked.find(hit.Target);
 			const EntityKind kind = it != m_Tracked.end() ? it->second.Last.Kind : hit.OnPlayer ? EntityKind::Player : EntityKind::Chaser;
 			const Vec2 at = hit.Position;
+			if (hit.Ability == uint8_t(AbilityId::EarthSpike))
+				PlayAt(Cue::EarthSkewer, at, hit.Target == m_Self ? 1.0f : 0.75f);
+			if (hit.Ability < uint8_t(AbilityId::Count) && CreditOf(AbilityId(hit.Ability)) == AbilityId::CrystalSword)
+			{
+				const bool heavy = hit.Ability == uint8_t(AbilityId::SwordCleave);
+				const float loud = hit.Target == m_Self ? 1.0f : 0.75f;
+				PlayAt(Cue::DaggerHit, at, 0.7f * loud, (heavy ? 0.85f : 1.05f) + 0.08f * m_Random.Float());
+				PlayAt(Cue::GlassLight, at, 0.4f * loud, 1.4f + 0.2f * m_Random.Float(), 0.01f);
+				if (heavy)
+					PlayAt(Cue::HeavyHit, at, 0.45f * loud, 1.1f);
+			}
 			if ((hit.OnPlayer || kind == EntityKind::Player) && m_Status.Mode == GameMode::Brawl)
 			{
 				if (hit.Damage == 0)

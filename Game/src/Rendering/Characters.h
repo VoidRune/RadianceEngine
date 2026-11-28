@@ -29,6 +29,9 @@ namespace Game
 		IdleStretch,
 		IdleRub,
 		IdleNod,
+		IdleThink,
+		IdleAround,
+		IdleAlert,
 		Walk,
 		Jog,
 		Run,
@@ -61,19 +64,30 @@ namespace Game
 		CastFlick,
 		CastSlash,
 		CastBackhand,
-		CastLunge,
-		CastHurl,
-		CastSurge,
-		CastLash,
+		CastFan,
+		CastPoint,
+		CastJavelin,
+		CastCup,
+		CastSwordA,
+		CastSwordB,
+		CastSwordC,
 		CastGrasp,
 		CastLob,
 		CastSmite,
+		CastHeave,
 		CastSummon,
-		CastCall,
+		CastNova,
+		CastErupt,
 		CastPush,
 		CastWard,
-		CastNova,
+		CastEncase,
 		CastBlink,
+		EmoteWave,
+		EmoteSalute,
+		EmoteLaugh,
+		EmoteShrug,
+		EmoteVictory,
+		EmoteSit,
 		BowDraw,
 		BowRelease,
 		BowDrawUp,
@@ -84,7 +98,14 @@ namespace Game
 		Count,
 	};
 
-	inline constexpr std::array<Anim, 7> IdleFidgets = { Anim::IdleLook, Anim::IdleLookRight, Anim::IdleScan, Anim::IdleWand, Anim::IdleStretch, Anim::IdleRub, Anim::IdleNod };
+	inline constexpr std::array<Anim, 9> IdleFidgets = { Anim::IdleLook, Anim::IdleLookRight, Anim::IdleScan, Anim::IdleWand, Anim::IdleStretch, Anim::IdleRub, Anim::IdleNod, Anim::IdleThink, Anim::IdleAround };
+	inline constexpr std::array<Anim, 3> AlertFidgets = { Anim::IdleLook, Anim::IdleLookRight, Anim::IdleScan };
+	static_assert(size_t(Anim::EmoteSit) - size_t(Anim::EmoteWave) + 2 == size_t(Emote::Count));
+
+	inline constexpr Anim EmoteAnim(Emote emote)
+	{
+		return emote == Emote::None || emote >= Emote::Count ? Anim::Count : Anim(size_t(Anim::EmoteWave) + size_t(emote) - 1);
+	}
 
 	enum class Stance : uint8_t
 	{
@@ -132,7 +153,10 @@ namespace Game
 		Stance Pose = Stance::Light;
 		std::optional<glm::vec3> Tip;
 		uint32_t TipJoint = 0;
+		std::optional<glm::vec3> Grip;
+		glm::vec3 GripAxis{ 0.0f, 1.0f, 0.0f };
 		bool Undead = false;
+		bool FreeHand = false;
 	};
 
 	struct LegJoints
@@ -187,6 +211,9 @@ namespace Game
 		bool HasLegs = false;
 		std::array<uint32_t, 3> RightArm{};
 		bool HasRightArm = false;
+		std::optional<uint32_t> Palm;
+		glm::vec3 PalmNormal{ 0.0f, -1.0f, 0.0f };
+		glm::vec3 ChestRest{ 0.0f };
 		float HipHeight = 1.0f;
 		float AnkleHeight = 0.0f;
 		std::vector<SpringJoint> Springs;
@@ -240,6 +267,6 @@ namespace Game
 	AttackAnim EnemyAttackAnim(EntityKind kind);
 	AttackAnim FighterAttackAnim(AbilityId ability);
 
-	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f), const glm::vec4& flash = glm::vec4(0.0f), const ModelDissolve& dissolve = {}, uint32_t extraFlags = 0);
+	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent = glm::vec4(0.0f), const glm::vec4& flash = glm::vec4(0.0f), const ModelDissolve& dissolve = {}, uint32_t extraFlags = 0, bool props = true);
 	glm::mat4 ModelTransform(const glm::vec3& base, float facing, float scale);
 }

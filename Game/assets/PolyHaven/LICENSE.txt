@@ -7,3 +7,6 @@ Textures:
   monastery_stone_floor  https://polyhaven.com/a/monastery_stone_floor
   forest_ground_04  https://polyhaven.com/a/forest_ground_04
   forrest_ground_01  https://polyhaven.com/a/forrest_ground_01
+  ganges_river_pebbles  https://polyhaven.com/a/ganges_river_pebbles
+  brown_mud_rocks_01  https://polyhaven.com/a/brown_mud_rocks_01
+  worn_planks  https://polyhaven.com/a/worn_planks

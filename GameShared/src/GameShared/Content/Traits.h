@@ -24,6 +24,7 @@ namespace Game
 		float PvpScale = 1.0f;
 		float RangeScale = 1.0f;
 		float Durability = 0.0f;
+		uint8_t Recasts = 0;
 
 		bool IsEmpty() const { return Ability == AbilityId::Count; }
 		bool operator==(const SkillTraits&) const = default;

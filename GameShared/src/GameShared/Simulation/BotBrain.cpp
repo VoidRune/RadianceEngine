@@ -36,6 +36,8 @@ namespace Game
 		constexpr float RefugeFooting = 0.9f;
 		constexpr float ComboOffset = 1.0f;
 		constexpr float ComboLate = 0.3f;
+		constexpr float SwordComboWorth = 1.8f;
+		constexpr float SwordFooting = 0.6f;
 		constexpr float HarmScale = 30.0f;
 		constexpr float FinishBonus = 0.35f;
 		constexpr float ManaPrice = 0.2f;
@@ -105,11 +107,11 @@ namespace Game
 		constexpr BrawlSpells BruiserSets[] = {
 			{ AbilityId::ObsidianBlades, AbilityId::GlacialNova, AbilityId::Warp },
 			{ AbilityId::EarthSpike, AbilityId::GlacialNova, AbilityId::DiamondWard },
-			{ AbilityId::ChainHook, AbilityId::ObsidianBlades, AbilityId::Warp },
-			{ AbilityId::ChainHook, AbilityId::EarthSpike, AbilityId::GlacialNova },
-			{ AbilityId::ChainHook, AbilityId::Firebomb, AbilityId::Warp },
+			{ AbilityId::CrystalSword, AbilityId::ObsidianBlades, AbilityId::Warp },
+			{ AbilityId::CrystalSword, AbilityId::EarthSpike, AbilityId::GlacialNova },
+			{ AbilityId::CrystalSword, AbilityId::Firebomb, AbilityId::Warp },
 			{ AbilityId::EarthSpike, AbilityId::GlacialNova, AbilityId::Warp },
-			{ AbilityId::PurpleFireball, AbilityId::ChainHook, AbilityId::GlacialNova },
+			{ AbilityId::PurpleFireball, AbilityId::CrystalSword, AbilityId::GlacialNova },
 			{ AbilityId::HexShield, AbilityId::ObsidianBlades, AbilityId::GlacialNova },
 		};
 		constexpr BrawlSpells SniperSets[] = {
@@ -122,10 +124,10 @@ namespace Game
 			{ AbilityId::HexShield, AbilityId::ArcLightning, AbilityId::Comet },
 		};
 		constexpr BrawlSpells TricksterSets[] = {
-			{ AbilityId::ChainHook, AbilityId::GravityWell, AbilityId::Warp },
+			{ AbilityId::CrystalSword, AbilityId::GravityWell, AbilityId::Warp },
 			{ AbilityId::GravityWell, AbilityId::Comet, AbilityId::DiamondWard },
-			{ AbilityId::ChainHook, AbilityId::FrostSpear, AbilityId::GravityWell },
-			{ AbilityId::ChainHook, AbilityId::Firebomb, AbilityId::Warp },
+			{ AbilityId::GravityWell, AbilityId::FrostSpear, AbilityId::Firebomb },
+			{ AbilityId::FrostSpear, AbilityId::Firebomb, AbilityId::Warp },
 			{ AbilityId::ObsidianBlades, AbilityId::GravityWell, AbilityId::Firebomb },
 		};
 
@@ -150,8 +152,8 @@ namespace Game
 				return 0.13f;
 			case AbilityId::GravityWell:
 				return 0.22f;
-			case AbilityId::ChainHook:
-				return 0.18f;
+			case AbilityId::CrystalSword:
+				return 0.1f;
 			case AbilityId::Firebomb:
 				return 0.14f;
 			case AbilityId::ObsidianBlades:
@@ -171,11 +173,11 @@ namespace Game
 			switch (style)
 			{
 			case BotStyle::Bruiser:
-				return spell == AbilityId::GlacialNova || spell == AbilityId::ChainHook || spell == AbilityId::ObsidianBlades ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
+				return spell == AbilityId::GlacialNova || spell == AbilityId::CrystalSword || spell == AbilityId::ObsidianBlades ? 1.35f : spell == AbilityId::EmberBolt ? 0.9f : 1.0f;
 			case BotStyle::Sniper:
 				return spell == AbilityId::FrostSpear || spell == AbilityId::ArcLightning || spell == AbilityId::Comet || spell == AbilityId::StormStrike ? 1.2f : spell == AbilityId::EmberBolt ? 1.1f : 1.0f;
 			case BotStyle::Trickster:
-				return spell == AbilityId::GravityWell || spell == AbilityId::ChainHook ? 1.4f : spell == AbilityId::Firebomb ? 1.15f : 1.0f;
+				return spell == AbilityId::GravityWell ? 1.4f : spell == AbilityId::Firebomb ? 1.15f : 1.0f;
 			default:
 				return 1.0f;
 			}
@@ -914,15 +916,6 @@ namespace Game
 				m_CastTarget = NoPlayer;
 				return true;
 			}
-		for (uint32_t slot = 1; slot < AbilitySlots && lava && act && !m_Yanking && m_State->CastSlot < 0; slot++)
-			if (SpellIn(slot) == AbilityId::ChainHook && Ready(slot) && distance > 1.6f && arena.Footing(safe) >= RefugeFooting)
-			{
-				Cast(input, slot, AngleOf(offset), distance);
-				m_CastTarget = NoPlayer;
-				m_Yanking = true;
-				m_YankTarget = safe + heading * overshoot;
-				return true;
-			}
 		if ((lava || collapse < 0.5f) && distance > 1.0f && act)
 			PressDodge(arena, input, input.Move, false);
 		return true;
@@ -1004,7 +997,7 @@ namespace Game
 			const Vec2 side = left >= right ? across : -across;
 			const Vec2 hitLanding = m_Position + Normalize(missile.Velocity) * (11.5f * m_SelfFling * LandingDrag * arena.Slide(m_Position) / PushFriction);
 			const bool hurts = m_DamageMode && (missile.Damage >= DodgeDamage || missile.Damage >= m_Life);
-			const bool dangerous = missile.Ability == AbilityId::ChainHook || arena.Clearance(hitLanding) < 0.5f || hurts;
+			const bool dangerous = arena.Clearance(hitLanding) < 0.5f || hurts;
 			if (Brace(input, relative, time + BraceLinger, m_DamageMode ? float(missile.Damage) : BraceShove))
 			{
 				input.Move = side;
@@ -1150,22 +1143,31 @@ namespace Game
 		return true;
 	}
 
-	bool BotBrain::Yank(PlayerInput& input)
+	bool BotBrain::Slash(const BotArena& arena, PlayerInput& input)
 	{
-		if (!m_Yanking)
-			return false;
 		const int32_t slot = m_State->RecastSlot;
-		if (slot < 0 || AbilityId(m_State->RecastAbility) != AbilityId::ChainHook)
-		{
-			if (m_State->CastSlot < 0)
-				m_Yanking = false;
+		if (slot < 0 || !AwaitsSwing(*m_State, uint32_t(slot)) || m_State->CastSlot >= 0 || m_State->RecastAge < m_State->RecastReach + ParamsOf(m_Profile.Skill).Reaction * 0.25f)
 			return false;
-		}
-		const float flown = m_State->RecastAge * GetAbility(AbilityId::ChainHook).ProjectileSpeed;
-		if (flown < std::min(Length(m_YankTarget - m_State->RecastOrigin), m_State->RecastReach) - 0.2f)
+		const AbilityId swing = SwingOf(*m_State, *m_Traits, uint32_t(slot));
+		const AbilityDef& def = GetAbility(swing);
+		const SkillTraits& skill = m_Traits->Skills[size_t(slot)];
+		const float windup = SwingWindup(skill, swing);
+		const float reach = def.Lunge + def.Reach * m_Traits->AreaScale * skill.AreaScale + PlayerRadius;
+		const Rival* best = nullptr;
+		float nearest = reach * reach;
+		for (const Rival& rival : m_Rivals)
+			if (const float gap = LengthSquared(rival.Position + rival.Velocity * windup - m_Position); !rival.Warded && gap < nearest)
+			{
+				nearest = gap;
+				best = &rival;
+			}
+		if (!best)
 			return false;
-		input.Buttons |= uint8_t(SlotButton(uint32_t(slot)));
-		m_Yanking = false;
+		const Vec2 aim = best->Position + best->Velocity * windup - m_Position;
+		if (LengthSquared(aim) > 1e-4f && arena.Clearance(m_Position + Normalize(aim) * SwordLungeDistance(swing, Length(aim))) < SwordFooting)
+			return false;
+		Cast(input, uint32_t(slot), AngleOf(aim), Length(aim));
+		m_CastTarget = best->PlayerId;
 		return true;
 	}
 
@@ -1180,6 +1182,27 @@ namespace Game
 			return false;
 		if (m_State->RecastTimer > NovaLastCall && NovaValue(arena, m_State->RecastOrigin, AbilityId::GlacialEruption, NovaEruptLead, NovaEruptionPush(age + NovaEruptLead), NovaEruptionScale(age + NovaEruptLead)) > now)
 			return false;
+		input.Buttons |= uint8_t(SlotButton(uint32_t(slot)));
+		return true;
+	}
+
+	bool BotBrain::Barrage(PlayerInput& input)
+	{
+		const int32_t slot = m_State->RecastSlot;
+		if (slot < 0 || AbilityId(m_State->RecastAbility) != AbilityId::EarthSpike || m_State->RecastAge < m_State->RecastReach + 0.1f)
+			return false;
+		const float range = GetAbility(AbilityId::EarthSpike).Range + 0.5f;
+		const Rival* target = FindRival(m_Target);
+		for (const Rival& rival : m_Rivals)
+			if (!target || LengthSquared(rival.Position - m_Position) < LengthSquared(target->Position - m_Position))
+				target = &rival;
+		if (!target || target->Warded)
+			return false;
+		const Vec2 aim = target->Position + target->Velocity * 0.3f - m_Position;
+		if (LengthSquared(aim) > range * range)
+			return false;
+		input.Aim = AngleOf(aim);
+		input.AimDistance = Length(aim);
 		input.Buttons |= uint8_t(SlotButton(uint32_t(slot)));
 		return true;
 	}
@@ -1327,25 +1350,6 @@ namespace Game
 				}
 				break;
 			}
-			if (spell == AbilityId::ChainHook)
-			{
-				const float pull = (HasCard(m_Loadout.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) * (m_DamageMode ? DamagePullScale : 1.0f) * m_Knockback;
-				const float reach = def.ProjectileRange * skill.RangeScale + def.SpawnOffset - 0.2f;
-				for (const Rival& rival : m_Rivals)
-				{
-					if (rival.Warded || rival.Shielded)
-						continue;
-					const Vec2 point = Lead(rival, skill.CastTime, def.ProjectileSpeed);
-					const Vec2 offset = point - m_Position;
-					const float distance = Length(offset);
-					if (distance < 1.2f || distance > reach || !HasLineOfFire(level, m_Position, point))
-						continue;
-					const float value = LandingValue(arena, point, -offset * (PushFriction * pull)) + Harm(damage, rival);
-					const float travel = skill.CastTime + distance / def.ProjectileSpeed;
-					consider(HitChance(travel, distance, rival) * value * weight - threshold, AngleOf(offset), distance, rival.PlayerId, point);
-				}
-				break;
-			}
 			for (const Rival& rival : m_Rivals)
 			{
 				if (rival.Warded)
@@ -1382,6 +1386,39 @@ namespace Game
 			}
 			break;
 		case AbilityKind::Melee:
+			if (spell == AbilityId::CrystalSword)
+			{
+				const float area = m_Traits->AreaScale * skill.AreaScale;
+				for (const Rival& aimed : m_Rivals)
+				{
+					if (aimed.Warded)
+						continue;
+					const Vec2 point = aimed.Position + aimed.Velocity * skill.CastTime;
+					const Vec2 offset = point - m_Position;
+					const float distance = Length(offset);
+					const float lunge = SwordLungeDistance(spell, distance);
+					if (distance < 1e-3f || distance > lunge + def.Reach * area + PlayerRadius * 0.5f || !HasLineOfFire(level, m_Position, point))
+						continue;
+					const Vec2 axis = offset / distance;
+					const Vec2 from = m_Position + axis * lunge;
+					if (arena.Clearance(from) < SwordFooting)
+						continue;
+					const float aim = AngleOf(offset);
+					float value = 0.0f;
+					for (const Rival& rival : m_Rivals)
+					{
+						const Vec2 position = rival.Position + rival.Velocity * skill.CastTime;
+						const Vec2 reach = position - from;
+						const float range = Length(reach);
+						if (rival.Warded || rival.Shielded || range > def.Reach * area || (range > PlayerRadius && std::abs(AngleBetween(aim, AngleOf(reach))) > def.HalfArc))
+							continue;
+						const Vec2 radial = range > 1e-3f ? reach / range : axis;
+						value += (range < def.Reach * area - 0.5f ? 0.9f : 0.6f) * (LandingValue(arena, position, radial * (def.Push * rival.Fling)) + Harm(damage, rival));
+					}
+					consider(value * SwordComboWorth * weight - threshold, aim, distance, aimed.PlayerId, point);
+				}
+				break;
+			}
 			for (const Rival& aimed : m_Rivals)
 			{
 				const Vec2 point = aimed.Position + aimed.Velocity * skill.CastTime;
@@ -1735,7 +1772,6 @@ namespace Game
 			m_Seen.clear();
 			m_FollowSlot = -1;
 			m_ComboArmed = m_Random.Float() < ParamsOf(m_Profile.Skill).Combo;
-			m_Yanking = false;
 		}
 		m_PhaseTime += dt;
 		Perceive(world, self);
@@ -1756,9 +1792,11 @@ namespace Game
 		{
 			if (m_State->CastSlot < 0 && m_Casting >= 0 && m_PhaseTime > 0.0f)
 				m_Casting = -1;
-			Yank(input);
 			Erupt(arena, input);
+			Barrage(input);
 			const bool urgent = Escape(world, arena, input) || Recover(arena, input) || Evade(world, arena, input);
+			if (!urgent)
+				Slash(arena, input);
 			const bool holding = !urgent && FollowUp(arena, input, tally);
 			m_Think -= dt;
 			if (m_Think <= 0.0f || !m_HasGoal)

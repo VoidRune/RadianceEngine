@@ -12,6 +12,9 @@ namespace Game
 	{
 		constexpr glm::vec3 Up{ 0.0f, 1.0f, 0.0f };
 		constexpr glm::vec3 SpikeEmber{ 0.9f, 0.26f, 0.06f };
+		constexpr glm::vec3 SpikeDust{ 0.05f, 0.04f, 0.03f };
+		constexpr glm::vec4 SpikeModelTint{ 1.0f, 1.0f, 1.0f, 0.0f };
+		constexpr glm::vec4 SpikeModelRim{ 0.16f, 0.12f, 0.08f, 0.3f };
 		constexpr glm::vec3 MeltEdge{ 0.9f, 2.4f, 4.2f };
 		constexpr glm::vec3 WardBurn{ 2.6f, 2.2f, 1.4f };
 		constexpr glm::vec3 SpellIceAbsorption{ 1.4f, 0.5f, 0.16f };
@@ -692,6 +695,183 @@ namespace Game
 			AppendTube(vertices, indices, pommel, PommelRadii, 4, 0.8f, seed + 37u, BladeEdge, BladeTip);
 		}
 
+		void AppendCrystalFacet(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec3& inside, const glm::vec3& color)
+		{
+			glm::vec3 normal = glm::cross(b - a, c - a);
+			const float area = glm::length(normal);
+			if (area < 1e-10f)
+				return;
+			normal /= area;
+			if (glm::dot(normal, (a + b + c) / 3.0f - inside) < 0.0f)
+			{
+				std::swap(b, c);
+				normal = -normal;
+			}
+			const uint32_t base = uint32_t(vertices.size());
+			for (const glm::vec3& corner : { a, b, c })
+			{
+				ModelVertex vertex;
+				vertex.Position = corner;
+				vertex.Normal = normal;
+				vertex.Color = PackColor(color);
+				vertices.push_back(vertex);
+			}
+			indices.insert(indices.end(), { base, base + 1, base + 2 });
+		}
+
+		void AppendGem(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, const glm::vec3& base, const glm::vec3& axis, float length, float radius, float back, const glm::vec3& color, float twist)
+		{
+			const glm::vec3 along = glm::normalize(axis);
+			const glm::vec3 helper = std::abs(along.y) < 0.9f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+			const glm::vec3 u = glm::normalize(glm::cross(along, helper));
+			const glm::vec3 v = glm::cross(along, u);
+			const glm::vec3 tip = base + along * length;
+			const glm::vec3 tail = base - along * (length * back);
+			const glm::vec3 waist = base + along * (length * 0.22f);
+			std::array<glm::vec3, 4> ring;
+			for (uint32_t k = 0; k < 4; k++)
+			{
+				const float angle = twist + float(k) * 1.5708f;
+				ring[k] = waist + (u * std::cos(angle) + v * std::sin(angle) * 0.6f) * radius;
+			}
+			for (uint32_t k = 0; k < 4; k++)
+			{
+				const glm::vec3& a = ring[k];
+				const glm::vec3& b = ring[(k + 1) % 4];
+				const float shade = k % 2 == 0 ? 1.0f : 0.82f;
+				AppendCrystalFacet(vertices, indices, a, b, tip, waist, color * shade);
+				AppendCrystalFacet(vertices, indices, b, a, tail, waist, color * (shade * 0.85f));
+			}
+		}
+
+		void AppendQuartz(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, const glm::vec3& base, const glm::vec3& axis, float length, float radius, uint32_t seed, const glm::vec3& root, const glm::vec3& tip)
+		{
+			const glm::vec3 along = glm::normalize(axis);
+			const glm::vec3 helper = std::abs(along.y) < 0.9f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
+			const glm::vec3 u = glm::normalize(glm::cross(along, helper));
+			const glm::vec3 v = glm::cross(along, u);
+			const float twist = Unit(Mix(seed, 3u)) * 1.0472f;
+			const float shoulder = 0.68f + 0.12f * Unit(Mix(seed, 5u));
+			std::array<glm::vec3, 6> low;
+			std::array<glm::vec3, 6> high;
+			for (uint32_t k = 0; k < 6; k++)
+			{
+				const float angle = twist + float(k) * 1.0472f;
+				const float jitter = 0.88f + 0.24f * Unit(Mix(seed, 10u + k));
+				const glm::vec3 ring = (u * std::cos(angle) + v * std::sin(angle)) * (radius * jitter);
+				low[k] = base - along * (0.08f * length) + ring;
+				high[k] = base + along * (shoulder * length) + ring * 0.94f;
+			}
+			const glm::vec3 apex = base + along * length + (u * (Unit(Mix(seed, 20u)) - 0.5f) + v * (Unit(Mix(seed, 21u)) - 0.5f)) * (radius * 0.3f);
+			const glm::vec3 body = base + along * (0.4f * length);
+			const glm::vec3 crown = base + along * (shoulder * length * 0.98f);
+			for (uint32_t k = 0; k < 6; k++)
+			{
+				const uint32_t next = (k + 1) % 6;
+				const float shade = 0.78f + 0.3f * Unit(Mix(seed, 30u + k));
+				AppendCrystalFacet(vertices, indices, low[k], low[next], high[next], body, root * shade);
+				AppendCrystalFacet(vertices, indices, low[k], high[next], high[k], body, glm::mix(root, tip, 0.35f) * shade);
+				AppendCrystalFacet(vertices, indices, high[k], high[next], apex, crown, tip * (shade + 0.1f));
+			}
+		}
+
+		void BuildQuartzCluster(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices, uint32_t seed)
+		{
+			const glm::vec3 root{ 0.16f, 0.5f, 0.48f };
+			const glm::vec3 tip{ 0.62f, 1.0f, 0.92f };
+			AppendQuartz(vertices, indices, glm::vec3(0.0f), glm::vec3(1.0f, 0.04f, 0.03f), 1.0f, 0.12f, seed, root, tip);
+			const uint32_t count = 4u + seed % 3u;
+			for (uint32_t i = 0; i < count; i++)
+			{
+				const uint32_t key = Mix(seed, 100u + i);
+				const float around = (float(i) + 0.35f * Unit(key)) / float(count) * 6.2832f;
+				const float lean = 0.35f + 0.5f * Unit(Mix(key, 1u));
+				const glm::vec3 out(0.0f, std::cos(around), std::sin(around));
+				const glm::vec3 base = out * (0.05f + 0.07f * Unit(Mix(key, 2u)));
+				const glm::vec3 axis = glm::vec3(std::cos(lean), 0.0f, 0.0f) + out * std::sin(lean);
+				AppendQuartz(vertices, indices, base, axis, 0.32f + 0.42f * Unit(Mix(key, 3u)), 0.05f + 0.05f * Unit(Mix(key, 4u)), key, root, tip);
+			}
+		}
+
+		void BuildCrystalSword(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices)
+		{
+			struct Ring
+			{
+				float X;
+				float Width;
+				float Thick;
+			};
+			constexpr Ring Blade[] = {
+				{ SwordGuard, 0.07f, 0.028f },
+				{ SwordGuard + 0.07f, 0.094f, 0.034f },
+				{ SwordGuard + 0.48f, 0.086f, 0.031f },
+				{ SwordGuard + 0.88f, 0.072f, 0.027f },
+				{ SwordGuard + 1.1f, 0.046f, 0.018f },
+				{ SwordGuard + SwordBlade, 0.0f, 0.0f },
+			};
+			constexpr glm::vec2 Section[] = { { 0.0f, 1.0f }, { 0.55f, 0.5f }, { 1.0f, 0.0f }, { 0.55f, -0.5f }, { 0.0f, -1.0f }, { -0.55f, -0.5f }, { -1.0f, 0.0f }, { -0.55f, 0.5f } };
+			constexpr size_t Sides = std::size(Section);
+			const glm::vec3 deep{ 0.16f, 0.5f, 0.5f };
+			const glm::vec3 pale{ 0.72f, 1.0f, 0.94f };
+			const auto point = [&](const Ring& ring, size_t k)
+			{
+				return glm::vec3(ring.X, Section[k].x * ring.Thick, Section[k].y * ring.Width);
+			};
+			for (size_t i = 0; i + 1 < std::size(Blade); i++)
+			{
+				const Ring& a = Blade[i];
+				const Ring& b = Blade[i + 1];
+				const float along = ((a.X + b.X) * 0.5f - SwordGuard) / SwordBlade;
+				const glm::vec3 inside((a.X + b.X) * 0.5f, 0.0f, 0.0f);
+				for (size_t k = 0; k < Sides; k++)
+				{
+					const size_t next = (k + 1) % Sides;
+					const bool edge = k == 7 || k == 0 || k == 3 || k == 4;
+					const glm::vec3 color = glm::mix(deep, pale, std::pow(along, 0.8f)) * (edge ? 1.15f : 0.9f + 0.1f * float(k % 2));
+					AppendCrystalFacet(vertices, indices, point(a, k), point(a, next), point(b, next), inside, color);
+					if (b.Width > 0.0f)
+						AppendCrystalFacet(vertices, indices, point(a, k), point(b, next), point(b, k), inside, color);
+				}
+			}
+			const glm::vec3 heel(SwordGuard - 0.01f, 0.0f, 0.0f);
+			for (size_t k = 0; k < Sides; k++)
+				AppendCrystalFacet(vertices, indices, point(Blade[0], k), point(Blade[0], (k + 1) % Sides), heel, glm::vec3(SwordGuard + 0.2f, 0.0f, 0.0f), deep * 0.8f);
+
+			const glm::vec3 guard{ 0.14f, 0.44f, 0.46f };
+			for (const float side : { 1.0f, -1.0f })
+			{
+				AppendGem(vertices, indices, { SwordGuard - 0.005f, 0.0f, side * 0.05f }, { 0.42f, 0.0f, side }, 0.2f, 0.03f, 0.25f, guard * 1.25f, 0.4f);
+				AppendGem(vertices, indices, { SwordGuard - 0.015f, 0.0f, side * 0.04f }, { -0.35f, 0.0f, side }, 0.11f, 0.022f, 0.3f, guard, 0.9f);
+				AppendGem(vertices, indices, { SwordGuard + 0.02f, 0.0f, side * 0.07f }, { 1.0f, 0.0f, side * 0.55f }, 0.13f, 0.018f, 0.2f, guard * 1.4f, 0.2f);
+			}
+			AppendGem(vertices, indices, { SwordGuard - 0.01f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 0.05f, 0.04f, 1.0f, pale * 1.1f, 0.785f);
+
+			constexpr float GripStart = -0.15f;
+			constexpr float GripEnd = SwordGuard - 0.03f;
+			constexpr uint32_t GripSides = 6;
+			const glm::vec3 grip{ 0.07f, 0.2f, 0.22f };
+			for (uint32_t k = 0; k < GripSides; k++)
+			{
+				const float a0 = float(k) / float(GripSides) * 6.2832f;
+				const float a1 = float(k + 1) / float(GripSides) * 6.2832f;
+				for (uint32_t band = 0; band < 3; band++)
+				{
+					const float x0 = GripStart + (GripEnd - GripStart) * float(band) / 3.0f;
+					const float x1 = GripStart + (GripEnd - GripStart) * float(band + 1) / 3.0f;
+					const float r0 = 0.021f + (band % 2 == 0 ? 0.0f : 0.003f);
+					const float r1 = 0.021f + (band % 2 == 0 ? 0.003f : 0.0f);
+					const glm::vec3 p00(x0, std::sin(a0) * r0, std::cos(a0) * r0);
+					const glm::vec3 p01(x0, std::sin(a1) * r0, std::cos(a1) * r0);
+					const glm::vec3 p10(x1, std::sin(a0) * r1, std::cos(a0) * r1);
+					const glm::vec3 p11(x1, std::sin(a1) * r1, std::cos(a1) * r1);
+					const glm::vec3 inside((x0 + x1) * 0.5f, 0.0f, 0.0f);
+					AppendCrystalFacet(vertices, indices, p00, p01, p11, inside, grip * (0.85f + 0.15f * float(k % 2)));
+					AppendCrystalFacet(vertices, indices, p00, p11, p10, inside, grip * (0.85f + 0.15f * float(k % 2)));
+				}
+			}
+			AppendGem(vertices, indices, { GripStart, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }, 0.085f, 0.034f, 0.35f, guard * 1.3f, 0.3f);
+		}
+
 		glm::mat4 Frame(const glm::vec3& origin, const glm::vec3& forward, const glm::vec3& up, float scale)
 		{
 			const glm::vec3 side = glm::normalize(glm::cross(forward, up));
@@ -737,6 +917,29 @@ namespace Game
 		indices.clear();
 		BuildSpikeCollar(vertices, indices, 41u);
 		meshes.SpikeCollar = cliff ? renderer.AddEffectMesh("EarthSpikeCollar", vertices, indices, *cliff, MeshVertexTint) : renderer.AddEffectMesh("EarthSpikeCollar", vertices, indices, granite, MeshVertexTint);
+		const ModelLibrary& models = renderer.GetModels();
+		meshes.SpikeModel = true;
+		for (size_t variant = 0; variant < SpikeVariants; variant++)
+			for (size_t piece = 0; piece < SpikePieces; piece++)
+			{
+				const std::optional<uint32_t> part = models.FindMesh("EarthSpike/Spike" + std::string(1, char('A' + variant)) + std::to_string(piece));
+				meshes.SpikeModel = meshes.SpikeModel && part.has_value();
+				if (!part)
+					continue;
+				const ModelMesh& mesh = models.GetMesh(*part);
+				meshes.SpikeParts[variant][piece] = *part;
+				meshes.SpikePivots[variant][piece] = 0.5f * (mesh.Min + mesh.Max);
+				const glm::vec3 extent = 0.5f * (mesh.Max - mesh.Min);
+				meshes.SpikeRadii[variant][piece] = std::min({ extent.x, extent.y, extent.z });
+			}
+		if (const std::optional<uint32_t> collar = models.FindMesh("EarthSpike/Collar"); collar && meshes.SpikeModel)
+		{
+			meshes.SpikeCollar = *collar;
+			meshes.CollarDepth = SpikeModelCollarDepth;
+		}
+		for (size_t i = 0; i < meshes.SpikeFrags.size(); i++)
+			if (const std::optional<uint32_t> frag = models.FindMesh("EarthSpike/Frag" + std::to_string(i)))
+				meshes.SpikeFrags[i] = *frag;
 		const EffectMaterial clear{ .Color = { 0.9f, 0.96f, 1.0f }, .Roughness = 0.1f, .Metallic = 0.0f, .Translucency = 0.8f, .Transmission = 1.0f, .Ior = 1.31f, .Absorption = SpellIceAbsorption };
 		for (uint32_t variant = 0; variant < meshes.Ice.size(); variant++)
 		{
@@ -760,6 +963,27 @@ namespace Game
 			BuildObsidianBlade(vertices, indices, variant);
 			meshes.Obsidian[variant] = renderer.AddEffectMesh("ObsidianBlade" + std::to_string(variant), vertices, indices, glass, MeshVertexTint);
 		}
+		vertices.clear();
+		indices.clear();
+		BuildCrystalSword(vertices, indices);
+		const EffectMaterial crystal{ .Color = { 0.92f, 1.0f, 0.98f }, .Roughness = 0.06f, .Metallic = 0.0f, .Translucency = 0.75f, .Transmission = 1.0f, .Ior = 1.45f, .Absorption = { 1.3f, 0.22f, 0.38f } };
+		meshes.Sword = renderer.AddEffectMesh("CrystalSword", vertices, indices, crystal, MeshVertexTint);
+		constexpr float ShardShapes[][4] = { { 0.3f, 0.06f, 0.5f, 0.3f }, { 0.22f, 0.07f, 0.8f, 1.1f }, { 0.36f, 0.045f, 0.35f, 0.7f }, { 0.18f, 0.06f, 1.0f, 0.2f } };
+		for (size_t variant = 0; variant < meshes.SwordShards.size(); variant++)
+		{
+			vertices.clear();
+			indices.clear();
+			const float* shape = ShardShapes[variant];
+			AppendGem(vertices, indices, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f), shape[0], shape[1], shape[2], glm::vec3(0.45f, 0.95f, 0.88f), shape[3]);
+			meshes.SwordShards[variant] = renderer.AddEffectMesh("CrystalShard" + std::to_string(variant), vertices, indices, crystal, MeshVertexTint);
+		}
+		for (size_t variant = 0; variant < meshes.SwordClusters.size(); variant++)
+		{
+			vertices.clear();
+			indices.clear();
+			BuildQuartzCluster(vertices, indices, 71u + uint32_t(variant) * 977u);
+			meshes.SwordClusters[variant] = renderer.AddEffectMesh("QuartzCluster" + std::to_string(variant), vertices, indices, crystal, MeshVertexTint);
+		}
 		return meshes;
 	}
 
@@ -772,23 +996,54 @@ namespace Game
 		return 1.0f - std::exp(-Damping * Omega * t) * (std::cos(damped * t) + Damping * Omega / damped * std::sin(damped * t));
 	}
 
+	glm::mat4 EarthSpikeFrame(const EarthSpikeLook& look)
+	{
+		const glm::vec3 heading = Heading(look.Facing);
+		const glm::vec3 side = Heading(look.Facing + HalfPi);
+		const glm::vec3 axis = glm::normalize(Up * std::cos(look.Tilt) + heading * std::sin(look.Tilt) + side * std::sin(look.Sway));
+		const glm::vec3 forward = glm::normalize(heading - axis * glm::dot(heading, axis));
+		return Frame(look.Base + axis * ((look.Extend - 1.0f) * (SpikeLength + 0.2f) * look.Scale), forward, axis, look.Scale);
+	}
+
+	void DrawSpikeShard(WorldRenderer& renderer, uint32_t mesh, const glm::mat4& transform, float dissolve, float ground, uint32_t seed)
+	{
+		const ModelDissolve crumble{ .Amount = dissolve, .Edge = SpikeDust, .Width = 0.03f, .Scale = 3.2f, .Sweep = -1.0f, .Seed = float(seed % 211u) };
+		renderer.DrawModel(mesh, transform, NoPalette, SpikeModelTint, 0.0f, ground, SpikeModelRim, 0u, glm::vec4(0.0f), crumble);
+	}
+
 	void DrawEarthSpike(WorldRenderer& renderer, const SpellMeshes& meshes, const EarthSpikeLook& look)
 	{
 		const glm::vec3 heading = Heading(look.Facing);
 		const glm::vec3 side = Heading(look.Facing + HalfPi);
-		const glm::vec4 tint(1.55f, 1.45f, 1.35f, 0.0f);
-		const glm::vec4 rim(0.3f, 0.2f, 0.11f, 0.35f);
-		const uint32_t spike = meshes.Spike[look.Seed % meshes.Spike.size()];
-		const ModelDissolve crumble{ .Amount = look.Dissolve, .Edge = SpikeEmber, .Width = 0.04f, .Scale = 3.2f, .Sweep = -SpikeLength, .Seed = float(look.Seed % 211u) };
-		if (spike != UINT32_MAX && look.Extend > 0.01f)
+		const glm::vec4 tint = meshes.SpikeModel ? SpikeModelTint : glm::vec4(1.55f, 1.45f, 1.35f, 0.0f);
+		const glm::vec4 rim = meshes.SpikeModel ? SpikeModelRim : glm::vec4(0.3f, 0.2f, 0.11f, 0.35f);
+		const ModelDissolve crumble{ .Amount = look.Dissolve, .Edge = meshes.SpikeModel ? SpikeDust : SpikeEmber, .Width = 0.04f, .Scale = 3.2f, .Sweep = -SpikeLength, .Seed = float(look.Seed % 211u) };
+		const auto drawSpike = [&](uint32_t variant, const glm::mat4& transform, float ground)
 		{
-			const glm::vec3 axis = glm::normalize(Up * std::cos(look.Tilt) + heading * std::sin(look.Tilt) + side * std::sin(look.Sway));
-			const glm::vec3 forward = glm::normalize(heading - axis * glm::dot(heading, axis));
-			const glm::vec3 origin = look.Base + axis * ((look.Extend - 1.0f) * (SpikeLength + 0.2f) * look.Scale);
-			renderer.DrawModel(spike, Frame(origin, forward, axis, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim, 0u, glm::vec4(0.0f), crumble);
+			if (meshes.SpikeModel)
+			{
+				for (const uint32_t part : meshes.SpikeParts[variant % SpikeVariants])
+					renderer.DrawModel(part, transform, NoPalette, tint, 0.0f, ground, rim, 0u, glm::vec4(0.0f), crumble);
+				return;
+			}
+			if (const uint32_t mesh = meshes.Spike[variant % meshes.Spike.size()]; mesh != UINT32_MAX)
+				renderer.DrawModel(mesh, transform, NoPalette, tint, 0.0f, ground, rim, 0u, glm::vec4(0.0f), crumble);
+		};
+		if (look.Extend > 0.01f)
+			drawSpike(look.Seed, EarthSpikeFrame(look), look.Base.y);
+		for (size_t i = 0; i < std::size(SpikeSatellites) && look.Satellite > 0.01f; i++)
+		{
+			const SpikeSatellite& satellite = SpikeSatellites[i];
+			const float mirror = look.Seed % 2u == 0u ? 1.0f : -1.0f;
+			const float size = satellite.Size * look.Scale;
+			const glm::vec3 lean = Heading(look.Facing + satellite.Yaw * mirror);
+			const glm::vec3 axis = glm::normalize(Up * std::cos(look.Tilt + satellite.Lean) + lean * std::sin(look.Tilt + satellite.Lean) + side * (0.7f * std::sin(look.Sway)));
+			const glm::vec3 forward = glm::normalize(lean - axis * glm::dot(lean, axis));
+			const glm::vec3 origin = look.SatelliteBase[i] + axis * ((look.Satellite - 1.0f) * (SpikeLength + 0.2f) * size);
+			drawSpike(look.Seed + 1u + uint32_t(i), Frame(origin, forward, axis, size), look.SatelliteBase[i].y);
 		}
 		if (meshes.SpikeCollar != UINT32_MAX && look.Collar > 0.01f)
-			renderer.DrawModel(meshes.SpikeCollar, Frame(look.Base + Up * ((look.Collar - 1.0f) * SpikeCollarDepth * look.Scale), heading, Up, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim, 0u, glm::vec4(0.0f), crumble);
+			renderer.DrawModel(meshes.SpikeCollar, Frame(look.Base + Up * ((look.Collar - 1.0f) * meshes.CollarDepth * look.Scale), heading, Up, look.Scale), NoPalette, tint, 0.0f, look.Base.y, rim, 0u, glm::vec4(0.0f), crumble);
 	}
 
 	void DrawIceCluster(WorldRenderer& renderer, const SpellMeshes& meshes, const IceClusterLook& look)
@@ -897,6 +1152,125 @@ namespace Game
 		ParticleSprite core = Stretched(ParticleShape::Beam, from, to, (0.016f + 0.01f * slash.Kill) * slash.Size * (0.5f + 0.5f * fade), glm::vec3(0.95f, 0.8f, 1.2f) * (1.3f * fade));
 		core.Emission = 0.8f;
 		renderer.DrawSprite(core);
+	}
+
+	glm::vec3 SwordTip(const CrystalSwordLook& look)
+	{
+		return look.Grip + glm::normalize(look.Forward) * ((SwordGuard + SwordBlade) * look.Scale);
+	}
+
+	void DrawCrystalSword(WorldRenderer& renderer, const SpellMeshes& meshes, const CrystalSwordLook& look, float time, uint32_t seed)
+	{
+		if (meshes.Sword == UINT32_MAX || look.Form <= 0.0f || look.Fade >= 1.0f)
+			return;
+		const glm::vec3 forward = glm::normalize(look.Forward);
+		const float shown = std::clamp(look.Form, 0.0f, 1.0f) * (1.0f - std::clamp(look.Fade, 0.0f, 1.0f));
+		const float glow = std::clamp(look.Glow, 0.0f, 1.0f);
+		const float shimmer = 0.5f + 0.5f * std::sin(time * 7.0f + float(seed % 41u));
+		const ModelDissolve form{ .Amount = std::max(1.0f - look.Form, look.Fade), .Edge = SwordCrystal * 2.4f, .Width = 0.12f, .Scale = 7.0f, .Seed = float(seed % 89u) };
+		const glm::vec4 rim(SwordCrystal * (0.3f + 0.45f * glow + 0.1f * shimmer), 1.0f);
+		renderer.DrawModel(meshes.Sword, Frame(look.Grip, forward, look.Flat, look.Scale), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.1f * glow), 0.08f + 0.16f * glow, look.Ground, rim, 0u, glm::vec4(0.0f), form);
+		const glm::vec3 heel = look.Grip + forward * ((SwordGuard + 0.06f) * look.Scale);
+		const glm::vec3 tip = SwordTip(look);
+		ParticleSprite core = Stretched(ParticleShape::Beam, heel, tip - forward * (0.12f * look.Scale), 0.03f * look.Scale, SwordCrystal * ((0.1f + 0.28f * glow) * shown));
+		core.Emission = 0.7f;
+		renderer.DrawSprite(core);
+		DrawGlow(renderer, glm::mix(heel, tip, 0.45f), 0.55f * look.Scale, SwordCrystal * ((0.025f + 0.08f * glow) * shown), 0.5f);
+		if (glow > 0.2f)
+			DrawStar(renderer, tip, 0.12f * look.Scale * glow, SwordCore * (0.45f * glow * shown), time * 3.0f + float(seed % 13u));
+		for (uint32_t k = 0; k < SwordGlints; k++)
+		{
+			const float wave = std::sin(time * (5.0f + 1.3f * float(k)) + float(k) * 2.3f + float(seed % 31u));
+			const float glint = std::pow(std::max(wave, 0.0f), 12.0f) * shown;
+			if (glint > 0.02f)
+				DrawStar(renderer, glm::mix(heel, tip, 0.2f + 0.22f * float(k)), 0.09f * look.Scale * glint, SwordCore * (0.6f * glint), time * 2.0f + float(k));
+		}
+		renderer.DrawLight({ .Position = glm::mix(heel, tip, 0.5f), .Radius = 2.4f * look.Scale, .Color = SwordCrystal * ((0.35f + 0.9f * glow) * shown) });
+	}
+
+	void DrawCrystalShard(WorldRenderer& renderer, const SpellMeshes& meshes, const CrystalShardLook& look, uint32_t seed)
+	{
+		const uint32_t mesh = look.Cluster ? meshes.SwordClusters[look.Variant % meshes.SwordClusters.size()] : meshes.SwordShards[look.Variant % meshes.SwordShards.size()];
+		if (mesh == UINT32_MAX || look.Size <= 0.001f || look.Fade >= 1.0f)
+			return;
+		const ModelDissolve fade{ .Amount = look.Fade, .Edge = SwordCrystal * 2.2f, .Width = 0.14f, .Scale = 9.0f, .Seed = float(seed % 97u) };
+		const glm::vec4 rim(SwordCrystal * (0.35f + 0.8f * look.Glow), 1.0f);
+		renderer.DrawModel(mesh, Frame(look.Center, glm::normalize(look.Axis), look.Up, look.Size), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.15f * look.Glow), 0.12f + 0.4f * look.Glow, look.Ground, rim, 0u, glm::vec4(0.0f), fade);
+	}
+
+	void DrawSwordSlash(WorldRenderer& renderer, const SwordSlashLook& look)
+	{
+		if (look.Age < 0.0f || look.Age > look.Life)
+			return;
+		const float sweep = 1.0f - std::pow(1.0f - std::clamp(look.Age / SwordSweepSeconds, 0.0f, 1.0f), 3.0f);
+		const float fade = 1.0f - glm::smoothstep(SwordSweepSeconds * 0.7f, look.Life, look.Age);
+		const float side = look.Backhand ? -1.0f : 1.0f;
+		const float after = std::clamp((look.Age - SwordSweepSeconds) / std::max(look.Life - SwordSweepSeconds, 1e-3f), 0.0f, 1.0f);
+		const float spread = 1.0f + SwordSlashSpread * (1.0f - (1.0f - after) * (1.0f - after) * (1.0f - after));
+		const auto crescent = [&](float size, float lift, float thickness, float span, float lag, const glm::vec3& color, float emission)
+		{
+			size *= spread;
+			const float head = SwordSweepLead + (1.0f - SwordSweepLead) * (1.0f - std::pow(1.0f - std::clamp((look.Age - lag) / SwordSweepSeconds, 0.0f, 1.0f), 3.0f));
+			ParticleSprite sprite = Sprite(ParticleShape::Crescent, look.Center + Up * lift, size, color * fade);
+			sprite.Align = ParticleAlign::Ground;
+			sprite.Rotation = look.Facing;
+			sprite.Params = glm::vec4(look.HalfArc, head, thickness, side * span);
+			sprite.Softness = 0.02f;
+			sprite.Emission = emission;
+			sprite.Seed = look.Seed;
+			renderer.DrawSprite(sprite);
+		};
+		crescent(look.Reach, 0.0f, 0.3f, 1.8f, 0.0f, SwordCrystal * 0.42f, 0.45f);
+		crescent(look.Reach, 0.0f, 0.08f, 1.4f, 0.0f, SwordCore * 0.75f, 0.6f);
+		crescent(look.Reach * 0.8f, -0.18f, 0.2f, 1.2f, 0.02f, SwordCrystal * 0.2f, 0.4f);
+		crescent(look.Reach * 1.06f, 0.12f, 0.16f, 1.6f, 0.035f, SwordCrystal * (0.18f * (spread - 1.0f) / SwordSlashSpread), 0.4f);
+		const float angle = look.Facing + side * look.HalfArc * (2.0f * sweep - 1.0f);
+		const glm::vec3 front = look.Center + Heading(angle) * (look.Reach * 0.96f);
+		DrawStar(renderer, front, 0.26f * (1.0f - sweep * 0.6f) * fade, SwordCore * (0.55f * fade), angle);
+		renderer.DrawLight({ .Position = look.Center + Heading(look.Facing) * (look.Reach * 0.5f), .Radius = look.Reach * 1.4f, .Color = SwordCrystal * (1.3f * fade) });
+	}
+
+	void DrawSwordCleave(WorldRenderer& renderer, const SwordCleaveLook& look)
+	{
+		if (look.Age < 0.0f || look.Age > look.Life)
+			return;
+		const float reveal = 1.0f - std::pow(1.0f - std::clamp(look.Age / 0.06f, 0.0f, 1.0f), 3.0f);
+		const float fade = 1.0f - glm::smoothstep(0.05f, look.Life, look.Age);
+		const glm::vec3 forward = Heading(look.Facing);
+		const glm::vec3 start = look.Ground + Up * 0.14f + forward * 0.35f;
+		const glm::vec3 end = look.Ground + Up * 0.14f + forward * look.Reach;
+		const glm::vec3 head = glm::mix(start, end, reveal);
+		ParticleSprite glow = Stretched(ParticleShape::Beam, start, head, 0.45f * look.Width, SwordCrystal * (0.35f * fade));
+		glow.Emission = 0.5f;
+		renderer.DrawSprite(glow);
+		ParticleSprite core = Stretched(ParticleShape::Beam, start, head, 0.06f * look.Width, SwordCore * (1.1f * fade));
+		core.Emission = 0.8f;
+		renderer.DrawSprite(core);
+		const float rise = std::exp(-look.Age * 9.0f);
+		ParticleSprite wall = Stretched(ParticleShape::Beam, head, head + Up * (1.6f * rise), 0.14f, SwordCore * (0.6f * fade * rise));
+		wall.Emission = 0.8f;
+		renderer.DrawSprite(wall);
+		DrawStar(renderer, head + Up * 0.1f, 0.38f * fade, SwordCore * (0.7f * fade), look.Facing);
+		renderer.DrawLight({ .Position = glm::mix(start, end, 0.6f) + Up * 0.4f, .Radius = look.Reach * 1.3f, .Color = SwordCrystal * (1.8f * fade) });
+	}
+
+	TrailStyle SwordTrail()
+	{
+		TrailStyle style;
+		style.Look = TrailLook::Swipe;
+		style.Head = SwordCore * 1.2f;
+		style.Tail = SwordCrystal * 0.55f;
+		style.Core = glm::vec4(SwordCore * 1.5f, 1.0f);
+		style.Width = 0.3f;
+		style.WidthCurve = { 1.0f, 0.8f, 0.45f, 0.1f };
+		style.AlphaCurve = { 1.0f, 0.7f, 0.35f, 0.0f };
+		style.Life = 0.12f;
+		style.Emission = 0.6f;
+		style.Tiling = 1.0f;
+		style.Scroll = 0.0f;
+		style.Taper = 0.04f;
+		style.Spacing = 0.03f;
+		return style;
 	}
 
 	float FireballViolet(float power)
@@ -2081,26 +2455,6 @@ namespace Game
 			renderer.DrawSprite(RingSprite(center, 0.255f, 0.036f, { 0.6f, 0.22f, 0.95f }));
 			break;
 		}
-		case AbilityId::ChainHook:
-		{
-			DrawGlow(renderer, center, 0.5f, { 0.32f, 0.18f, 0.07f });
-			ParticleSprite tip = Stretched(ParticleShape::Shard, center + forward * 0.36f, center - forward * 0.14f, 0.12f, { 1.7f, 1.25f, 0.8f });
-			tip.Additive = 0.25f;
-			tip.Emission = 0.45f;
-			tip.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-			renderer.DrawSprite(tip);
-			for (const float side : { -1.0f, 1.0f })
-			{
-				const glm::vec3 across = Heading(facing + 1.5708f * side);
-				ParticleSprite barb = Stretched(ParticleShape::Shard, center - forward * 0.06f + across * 0.18f, center + forward * 0.12f, 0.06f, { 1.5f, 1.05f, 0.65f });
-				barb.Additive = 0.25f;
-				barb.Emission = 0.45f;
-				barb.Params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-				renderer.DrawSprite(barb);
-			}
-			DrawStar(renderer, center + forward * 0.38f, 0.15f, marked ? heart : glm::vec3(2.3f, 2.0f, 1.5f), time * 4.0f);
-			break;
-		}
 		default:
 		{
 			DrawGlow(renderer, center, 0.45f, color * 0.6f);
@@ -2195,19 +2549,6 @@ namespace Game
 			style.Scroll = 0.0f;
 			style.Taper = 0.1f;
 			break;
-		case AbilityId::ChainHook:
-			style.Look = TrailLook::Chain;
-			style.Head = { 0.9f, 0.62f, 0.3f };
-			style.Tail = { 0.45f, 0.25f, 0.1f };
-			style.Core = { 1.4f, 1.05f, 0.6f, 1.0f };
-			style.Width = 0.12f;
-			style.Life = 0.22f;
-			style.Emission = 0.35f;
-			style.Additive = 0.9f;
-			style.Tiling = 3.5f;
-			style.Scroll = 0.0f;
-			style.Taper = 0.15f;
-			break;
 		default:
 			style.Life = 0.0f;
 			break;
@@ -2268,28 +2609,6 @@ namespace Game
 		style.Taper = 0.06f;
 		style.Spacing = 0.04f;
 		return style;
-	}
-
-	void DrawChain(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float sag, float glow)
-	{
-		constexpr float LinkSpacing = 0.2f;
-		const float length = glm::length(to - from);
-		const uint32_t links = std::max(2u, uint32_t(length / LinkSpacing));
-		const auto at = [&](float t) { return glm::mix(from, to, t) - Up * (sag * 4.0f * t * (1.0f - t)); };
-		for (uint32_t i = 0; i < links; i++)
-		{
-			const float t0 = float(i) / float(links);
-			const float t1 = float(i + 1) / float(links);
-			const glm::vec3 a = at(t0);
-			const glm::vec3 b = at(t1);
-			ParticleSprite link = (i % 2 == 0) ? RingSprite((a + b) * 0.5f, 0.065f, 0.024f, { 0.36f, 0.27f, 0.17f }) : Stretched(ParticleShape::Beam, a, b, 0.045f, { 0.3f, 0.22f, 0.14f });
-			link.Additive = 0.0f;
-			link.Emission = 0.12f + 0.3f * glow;
-			link.Softness = 0.05f;
-			renderer.DrawSprite(link);
-			if (i % 4 == 1)
-				DrawGlow(renderer, (a + b) * 0.5f + Up * 0.02f, 0.07f, glm::vec3(0.9f, 0.7f, 0.45f) * (0.35f + 1.2f * glow), 0.1f);
-		}
 	}
 
 	namespace

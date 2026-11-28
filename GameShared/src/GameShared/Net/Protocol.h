@@ -1,6 +1,7 @@
 #pragma once
 #include "GameShared/Content/Achievements.h"
 #include "GameShared/Content/Cosmetics.h"
+#include "GameShared/Content/Emotes.h"
 #include "GameShared/Content/Brawl.h"
 #include "GameShared/Content/GameMode.h"
 #include "GameShared/Content/Traits.h"
@@ -22,9 +23,10 @@
 
 namespace Game
 {
-	constexpr uint32_t ProtocolVersion = 109;
+	constexpr uint32_t ProtocolVersion = 116;
 	constexpr uint16_t DefaultPort = 27020;
 	constexpr uint32_t InputRedundancy = 4;
+	static_assert(uint8_t(AbilityId::Count) < EmoteFlag);
 
 	enum class MessageType : uint8_t
 	{
@@ -103,6 +105,7 @@ namespace Game
 		RunSocket,
 		RunUnsocket,
 		Rematch,
+		Emote,
 		Count,
 	};
 

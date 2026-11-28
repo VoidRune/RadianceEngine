@@ -38,6 +38,7 @@ namespace Game
 			writer.Write(skill.ExtraChain);
 			writer.Write(skill.RangeScale);
 			writer.Write(skill.Durability);
+			writer.Write(skill.Recasts);
 		}
 
 		bool ReadSkill(ByteReader& reader, SkillTraits& skill)
@@ -58,6 +59,7 @@ namespace Game
 			skill.ExtraChain = reader.Read<uint8_t>();
 			skill.RangeScale = reader.Read<float>();
 			skill.Durability = reader.Read<float>();
+			skill.Recasts = reader.Read<uint8_t>();
 			return skill.Ability <= AbilityId::Count;
 		}
 
@@ -352,6 +354,7 @@ namespace Game
 			writer.Write(state.Static);
 			writer.Write(state.Overload);
 			writer.Write(state.RecastAbility);
+			writer.Write(state.RecastCharges);
 			writer.Write(state.ManaStall);
 			writer.Write(state.Weave);
 			writer.Write(state.WeaveSpell);
@@ -362,7 +365,7 @@ namespace Game
 			writer.Write(state.Surge);
 			writer.Write(state.GuardLost);
 			writer.Write(state.GuardIdle);
-			writer.Write(uint8_t((state.Alive ? 1 : 0) | (state.Airborne ? 2 : 0) | (state.GuardUp ? 4 : 0)));
+			writer.Write(uint8_t((state.Alive ? 1 : 0) | (state.Airborne ? 2 : 0) | (state.GuardUp ? 4 : 0) | (state.SwingQueued ? 8 : 0)));
 		}
 
 		bool ReadState(ByteReader& reader, PlayerState& state)
@@ -402,6 +405,7 @@ namespace Game
 			state.Static = reader.Read<float>();
 			state.Overload = reader.Read<uint8_t>();
 			state.RecastAbility = reader.Read<uint8_t>();
+			state.RecastCharges = reader.Read<uint8_t>();
 			state.ManaStall = reader.Read<float>();
 			state.Weave = reader.Read<uint8_t>();
 			state.WeaveSpell = reader.Read<uint8_t>();
@@ -416,6 +420,7 @@ namespace Game
 			state.Alive = (life & 1u) != 0;
 			state.Airborne = (life & 2u) != 0;
 			state.GuardUp = (life & 4u) != 0;
+			state.SwingQueued = (life & 8u) != 0;
 			return !reader.Failed() && state.CastSlot >= -1 && state.CastSlot < int8_t(AbilitySlots) && state.RecastSlot >= -1 && state.RecastSlot < int8_t(AbilitySlots) && (state.RecastAbility == UINT8_MAX || state.RecastAbility < uint8_t(AbilityId::Count));
 		}
 	}

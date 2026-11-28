@@ -113,6 +113,12 @@ namespace Game
 		GatewayHum,
 		Campfire,
 		Heartbeat,
+		Stream,
+		Waterfall,
+		EarthCrack,
+		EarthRise,
+		EarthCrumble,
+		EarthSkewer,
 		Count,
 	};
 
@@ -149,6 +155,7 @@ namespace Game
 		SoundBank(Timbre::AudioEngine& engine, const AudioBuses& buses);
 
 		Timbre::Voice Play(Cue cue, const Timbre::PlayParams& params = {}) const;
+		bool Has(Cue cue) const { return m_Cues[size_t(cue)].IsValid(); }
 
 		static Timbre::SpatialSettings MakeSpatial(Reach reach);
 		static const char* GetPath(Cue cue);

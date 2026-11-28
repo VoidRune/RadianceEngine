@@ -3,6 +3,7 @@
 #include "GameShared/Content/Pvp.h"
 #include "GameShared/Simulation/Combat.h"
 #include "GameShared/Simulation/EnemyAI.h"
+#include "GameShared/Simulation/PlayerSimulation.h"
 #include "GameShared/World/Collision.h"
 #include <algorithm>
 #include <cmath>
@@ -110,6 +111,7 @@ namespace Game
 		m_Entities.Each<Projectile>([&](Entity, Projectile& projectile) { m_LiveShots += projectile.Side == Team::Players ? 1u : 0u; });
 		MarkTargetsMoved();
 		UpdateEchoes(dt);
+		UpdateBlooms(dt);
 		UpdateProjectiles(*this, dt);
 		UpdateStrikes(*this, dt);
 		UpdateEffects(*this, dt);
@@ -174,8 +176,17 @@ namespace Game
 			return {};
 		const PlayerTraits& traits = controller->Traits;
 		CollectBodies(transform->Position, m_Bodies);
+		if (InSwordCombo(controller->State, traits))
+			m_Entities.Each<PlayerController>([&](Entity other, PlayerController& rival)
+			{
+				const Transform* place = m_Entities.TryGet<Transform>(other);
+				if (other != player && place && rival.State.Alive && !rival.State.IsFalling() && AreRivals(controller->PlayerId, rival.PlayerId))
+					m_Bodies.push_back({ place->Position, PlayerRadius });
+			});
 		const Vec2 origin = transform->Position;
 		const PlayerActions actions = SimulatePlayer(m_Level, *transform, controller->State, traits, input, GetTickSeconds(), m_Bodies, GetArena());
+		if (controller->PlayerId < MaxPlayers)
+			m_Cursors[controller->PlayerId] = transform->Position + FromAngle(input.Aim) * input.AimDistance;
 		MarkTargetsMoved();
 		if (actions.Teleported())
 			Emit({ WorldEventType::Teleported, controller->PlayerId, uint8_t(actions.Portal) });
@@ -190,13 +201,6 @@ namespace Game
 		}
 		else if (actions.Dodged)
 			m_Match.ArmEcho(controller->PlayerId);
-		for (uint32_t slot = 0; slot < AbilitySlots && actions.Recast != 0; slot++)
-		{
-			if (!actions.HasRecast(slot))
-				continue;
-			if (actions.RecastAbility == AbilityId::ChainHook)
-				ReelIn(*this, player, controller->PlayerId, actions.RecastPoint);
-		}
 		Health* life = m_Entities.TryGet<Health>(player);
 		if (actions.BloodCost > 0.0f && life && life->Current > 1)
 		{
@@ -208,7 +212,9 @@ namespace Game
 		if (actions.Raised)
 			m_Match.NoteCast(controller->PlayerId);
 		const bool erupts = actions.Recast != 0 && actions.RecastAbility == AbilityId::GlacialNova;
-		if (actions.Released == 0 && !erupts)
+		const bool barrage = actions.Recast != 0 && actions.RecastAbility == AbilityId::EarthSpike;
+		const bool swung = actions.Recast != 0 && actions.RecastAbility == AbilityId::CrystalSword;
+		if (actions.Released == 0 && !erupts && !barrage && !swung)
 			return actions;
 		if (actions.Released != 0)
 			m_Match.NoteCast(controller->PlayerId);
@@ -248,6 +254,37 @@ namespace Game
 				eruption.Runes = SlotRunes(m_Run.GetLoadout(controller->PlayerId), slot);
 			EruptFrostNova(*this, actions.RecastPoint, eruption);
 		}
+		for (uint32_t slot = 0; slot < AbilitySlots && barrage; slot++)
+		{
+			if (!actions.HasRecast(slot))
+				continue;
+			const SkillTraits& skill = traits.Skills[slot];
+			const size_t index = std::min<size_t>(size_t(std::max(int32_t(skill.Recasts) - int32_t(actions.RecastCharges), 0)), std::size(BarrageShares) - 1);
+			AbilityContext burst = context;
+			burst.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, float(controller->State.Weave)) * BarrageShares[index];
+			burst.PushScale = skill.PushScale * BarrageShares[index];
+			burst.AreaScale = traits.AreaScale * skill.AreaScale * BarrageAreas[index];
+			burst.PvpScale = skill.PvpScale;
+			burst.Cards = FollowUpCards(context.Cards);
+			burst.Target = actions.RecastPoint;
+			burst.Direction = actions.Direction;
+			ExecuteAbility(*this, AbilityId::EarthSpike, burst);
+		}
+		for (uint32_t slot = 0; slot < AbilitySlots && swung; slot++)
+		{
+			if (!actions.HasRecast(slot))
+				continue;
+			const SkillTraits& skill = traits.Skills[slot];
+			AbilityContext strike = context;
+			strike.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, controller->State.Mana, traits.MaxMana, false, float(controller->State.Weave));
+			strike.PushScale = skill.PushScale;
+			strike.AreaScale = traits.AreaScale * skill.AreaScale;
+			strike.PvpScale = skill.PvpScale;
+			if (IsShardfall())
+				strike.Runes = SlotRunes(m_Run.GetLoadout(controller->PlayerId), slot);
+			const AbilityId swing = FollowUpSwing(actions.RecastCharges);
+			ExecuteAbility(*this, swing == AbilityId::SwordCleave && HasCard(strike.Cards, CardId::HurledEdge) ? AbilityId::SwordThrow : swing, strike);
+		}
 		const bool damage = UsesBrawlDamage();
 		const bool refraction = damage && HasCard(context.Cards, CardId::Refraction);
 		const bool arcana = damage && HasCard(context.Cards, CardId::UnstableArcana);
@@ -258,8 +295,6 @@ namespace Game
 			const SkillTraits& skill = traits.Skills[slot];
 			const AbilityDef& ability = GetAbility(skill.Ability);
 			context.DamageScale = skill.DamageScale * CastScale(controller->PlayerId, healthFraction, actions.ManaBefore, traits.MaxMana, (actions.Overloaded & (1u << slot)) != 0, float(actions.Weave));
-			if (skill.Ability == AbilityId::ChainHook && damage)
-				context.DamageScale *= (HasCard(context.Cards, CardId::Whiplash) ? WhiplashDamage : 1.0f) * (HasCard(context.Cards, CardId::LongChain) ? LongChainDamage : 1.0f);
 			context.AreaScale = traits.AreaScale * skill.AreaScale;
 			context.PushScale = skill.PushScale;
 			context.ExtraProjectiles = uint8_t(traits.ExtraProjectiles + skill.ExtraProjectiles);
@@ -398,6 +433,57 @@ namespace Game
 		}
 	}
 
+	void World::SpawnBloom(const AbilityContext& context, float facing)
+	{
+		AbilityContext flank = context;
+		flank.Cards = FollowUpCards(context.Cards);
+		flank.DamageScale *= BloomScale;
+		flank.PushScale *= BloomScale;
+		flank.AreaScale *= BloomArea;
+		flank.Runes = 0;
+		const ArenaState arena = GetArena();
+		for (uint32_t side = 0; side < 2; side++)
+		{
+			const Vec2 position = BloomBase(context.Target, facing, context.AreaScale, side);
+			if (!IsSpellGround(m_Level, arena, position))
+				continue;
+			const Entity seed = m_Entities.Create();
+			m_Entities.Add<Transform>(seed, position, facing);
+			m_Entities.Add<Replicated>(seed, Replicated{ .NetId = AllocateNetId(), .Kind = EntityKind::Effect, .Owner = context.Owner, .Tag = context.Tag, .Variant = uint8_t(AbilityId::EarthSpike), .Scale = ScaleByte(flank.AreaScale) });
+			m_Entities.Add<SpikeSeed>(seed, SpikeSeed{ BloomDelay });
+			m_Blooms.push_back({ seed, context.Source, flank, position, facing, BloomDelay });
+		}
+	}
+
+	void World::UpdateBlooms(float dt)
+	{
+		for (size_t i = 0; i < m_Blooms.size();)
+		{
+			BloomSeed& bloom = m_Blooms[i];
+			const PlayerController* controller = m_Entities.TryGet<PlayerController>(bloom.Caster);
+			const bool alive = controller && controller->State.Alive;
+			if (alive && controller->PlayerId < MaxPlayers)
+				bloom.Facing = AngleOf(SteerSpike(bloom.Position, FromAngle(bloom.Facing), m_Cursors[controller->PlayerId]));
+			if (Transform* transform = m_Entities.TryGet<Transform>(bloom.Seed))
+				transform->Facing = bloom.Facing;
+			bloom.Remaining -= dt;
+			if (alive && bloom.Remaining > 0.0f)
+			{
+				i++;
+				continue;
+			}
+			const BloomSeed done = bloom;
+			m_Blooms.erase(m_Blooms.begin() + ptrdiff_t(i));
+			DestroyEntity(done.Seed);
+			if (!alive)
+				continue;
+			AbilityContext flank = done.Context;
+			flank.Target = done.Position;
+			flank.Direction = FromAngle(done.Facing);
+			ExecuteAbility(*this, AbilityId::EarthSpike, flank);
+		}
+	}
+
 	void World::CollectBodies(Vec2 around, std::vector<BodyCircle>& bodies)
 	{
 		bodies.clear();
@@ -411,6 +497,24 @@ namespace Game
 				return;
 			if (LengthSquared(transform->Position - around) < BodyCollectRange * BodyCollectRange)
 				bodies.push_back({ SnapToNetGrid(transform->Position), collider->Radius });
+		});
+		std::vector<BodyCircle> walls;
+		CollectWalls(walls);
+		for (const BodyCircle& wall : walls)
+			if (LengthSquared(NearestOnBody(wall, around) - around) < BodyCollectRange * BodyCollectRange)
+				bodies.push_back(wall);
+	}
+
+	void World::CollectWalls(std::vector<BodyCircle>& walls)
+	{
+		walls.clear();
+		const float reach = GetAbility(AbilityId::EarthSpike).Reach;
+		m_Entities.Each<Effect>([&](Entity entity, Effect&)
+		{
+			const Replicated* replicated = m_Entities.TryGet<Replicated>(entity);
+			const Transform* transform = m_Entities.TryGet<Transform>(entity);
+			if (replicated && transform && replicated->Variant == uint8_t(AbilityId::EarthSpike) && (replicated->Charge & SpikeWallFlag) != 0)
+				walls.push_back(SpikeWall(transform->Position, transform->Facing, float(replicated->Scale) / 16.0f, reach));
 		});
 	}
 
@@ -1024,11 +1128,12 @@ namespace Game
 			perks |= PerkSlick;
 		if (ability.Id == AbilityId::FrostSpear && context.Charge >= 0.999f)
 			perks |= PerkBurst;
+		if (ability.Id == AbilityId::SwordThrow && HasCard(context.Cards, CardId::ShatteringFinale))
+			perks |= PerkShatter;
 		const bool seeking = ability.Id == AbilityId::ObsidianBlades && HasCard(context.Cards, CardId::SeekerBlades);
 		if (seeking)
 			perks |= PerkSeek;
-		const bool loose = ability.Id != AbilityId::ChainHook;
-		if (loose && HasRune(context.Runes, RuneId::Homing))
+		if (HasRune(context.Runes, RuneId::Homing))
 			perks |= PerkSeek;
 		if (context.Side == Team::Players && IsShardfall() && m_LiveShots >= RunProjectileCap)
 			return {};
@@ -1040,7 +1145,7 @@ namespace Game
 		const float boost = overcharged ? OverchargeScale : razor ? RazorGlassScale : 1.0f;
 		const bool charged = IsChargedShot(ability.Id);
 		const ChargedShot shot = ChargedShotOf(ability, context.Charge);
-		const float push = (ability.Id == AbilityId::ChainHook ? (HasCard(context.Cards, CardId::Whiplash) ? WhiplashPull : HookPull) : shot.Push) * boost;
+		const float push = shot.Push * boost;
 		if (boost != 1.0f && UsesBrawlDamage())
 			damage = ScaleDamage(damage, boost);
 		const float lifetime = (pattern.Speed > 0.0f ? ChargedRange(ability, context.Charge) / pattern.Speed : 0.0f) * context.RangeScale;
@@ -1073,7 +1178,7 @@ namespace Game
 			.Perks = perks,
 			.Runes = context.Runes,
 			.Depth = context.Depth,
-			.Bounces = uint8_t(loose && HasRune(context.Runes, RuneId::Bounce) ? RuneBounces : 0),
+			.Bounces = uint8_t(HasRune(context.Runes, RuneId::Bounce) ? RuneBounces : 0),
 			.Charge = power,
 		});
 		if (context.Side == Team::Players)
@@ -1635,6 +1740,7 @@ namespace Game
 		m_NavigationTimer = 0.0f;
 		m_WideNavigationTimer = 0.0f;
 		m_Echoes.clear();
+		m_Blooms.clear();
 		m_Casts.clear();
 		m_Entities.Each<Replicated>([&](Entity entity, Replicated&)
 		{

@@ -231,6 +231,8 @@ namespace Game
 		m_Settings.DistortionStage = options.DistortionStage;
 		m_Settings.GrassStage = options.GrassStage;
 		m_Settings.FireStage = options.FireStage;
+		m_Settings.EmoteStage = options.EmoteStage;
+		m_Settings.SwordStage = options.SwordStage;
 		m_Settings.StageTime = options.StageTime;
 		m_Settings.StartMode = options.StartMode;
 		m_Settings.Rules = options.Rules;

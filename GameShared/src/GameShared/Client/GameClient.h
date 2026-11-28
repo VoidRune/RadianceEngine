@@ -59,6 +59,8 @@ namespace Game
 		void ChooseCard(uint32_t choice);
 		void SetBrawlReady(bool ready);
 		void VoteRematch(bool rematch);
+		void PlayEmote(Emote emote);
+		Emote CurrentEmote() const { return UnpackEmote(m_Emote); }
 		void PickRunCard(uint32_t choice);
 		void RerollRunCards();
 		void BanishRunCard(uint32_t choice);
@@ -114,6 +116,7 @@ namespace Game
 		double GetRenderTick() const { return m_RenderTick; }
 		double GetPresentTick() const { return m_PresentTick; }
 		float GetArenaClock(double tick) const;
+		ArenaState GetPredictedArena() const { return ArenaFor(0); }
 		double GetInterpolationDelay() const { return m_InterpolationDelay; }
 		uint32_t GetLatestTick() const { return m_Snapshots.empty() ? 0 : m_Snapshots.back().Tick; }
 		float GetSnapshotAge() const { return m_SnapshotAge; }
@@ -141,7 +144,6 @@ namespace Game
 			uint8_t Blast = 16;
 			uint8_t Charge = 0;
 			bool Explodes = false;
-			bool Caught = false;
 			bool Reflected = false;
 			uint32_t LastHit = 0;
 			float Floor = NoFloor;
@@ -177,6 +179,8 @@ namespace Game
 		void Reconcile(const ServerSnapshot& snapshot);
 		void PredictTick(PlayerInput input);
 		void CollectBodies(uint32_t ticksAhead, std::vector<BodyCircle>& bodies) const;
+		void AddRivalBodies(const PlayerState& state, std::vector<BodyCircle>& bodies) const;
+		void CollectWalls(std::vector<BodyCircle>& walls) const;
 		ArenaState ArenaFor(uint32_t ticksAhead) const;
 		void PredictAbility(const SkillTraits& skill, uint16_t tag, const PlayerActions& actions, const PlayerTraits& traits);
 		void PredictRecast(AbilityId ability, const PlayerActions& actions, uint16_t recastTag, uint32_t slot);
@@ -253,6 +257,11 @@ namespace Game
 		std::vector<BodyCircle> m_Bodies;
 		float m_ViewAim = 0.0f;
 		bool m_HasViewAim = false;
+		uint8_t m_Emote = 0;
+		uint8_t m_EmoteSequence = 0;
+		Vec2 m_EmoteOrigin;
+		float m_EmoteFacing = 0.0f;
+		float m_EmoteAge = 0.0f;
 		std::vector<PredictedProjectile> m_PredictedProjectiles;
 		std::vector<PredictedEffect> m_PredictedEffects;
 		std::array<uint16_t, 64> m_PredictedTags{};

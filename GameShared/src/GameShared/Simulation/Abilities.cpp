@@ -1,5 +1,6 @@
 #include "Abilities.h"
 #include "GameShared/Simulation/Combat.h"
+#include "GameShared/Simulation/PlayerSimulation.h"
 #include "GameShared/Simulation/World.h"
 #include "GameShared/World/Collision.h"
 #include <algorithm>
@@ -86,6 +87,13 @@ namespace Game
 				shards.DamageScale /= std::max(context.PushScale, 1e-3f);
 				world.SpawnCardStrike(AbilityId::GlacialEruption, context.Origin, AngleOf(axis), ShrapnelDelay, ability.Reach * ShrapnelReach * context.AreaScale, ability.Push * ShrapnelScale * context.PushScale, 0, false, shards);
 			}
+			if (id == AbilityId::SwordCleave && HasCard(context.Cards, CardId::ShatteringFinale))
+			{
+				const AbilityDef& burst = GetAbility(AbilityId::SwordShatter);
+				AbilityContext shards = context;
+				shards.DamageScale /= std::max(context.PushScale, 1e-3f);
+				world.SpawnCardStrike(AbilityId::SwordShatter, context.Origin + axis * (ability.Reach * ShatterTip * context.AreaScale), AngleOf(axis), ShatterDelay, burst.ImpactRadius * context.AreaScale, burst.Push * context.PushScale, 0, false, shards);
+			}
 			break;
 		}
 		case AbilityKind::Ground:
@@ -94,8 +102,21 @@ namespace Game
 				AbilityContext thrust = context;
 				thrust.Origin = context.Target;
 				StrikeArea(world, ability, damage, thrust);
-				world.SpawnEffect(ability, thrust, context.Target, context.Tag);
+				const float facing = AngleOf(context.Direction);
+				const float seconds = SpikeSeconds(context.Cards, ability.EffectDuration);
+				const Entity spike = world.SpawnEffect(id, context.Target, facing, context.Owner, context.Tag, context.AreaScale, SpikeFlags(context.Cards));
+				if (Effect* effect = world.GetEntities().TryGet<Effect>(spike))
+					effect->Remaining = seconds;
+				if (HasCard(context.Cards, CardId::SpikeShrapnel))
+				{
+					AbilityContext shards = context;
+					shards.DamageScale /= std::max(context.PushScale, 1e-3f);
+					const Vec2 center = context.Target + FromAngle(facing) * (ability.Reach * context.AreaScale * SpikeShrapnelCenter);
+					world.SpawnCardStrike(AbilityId::EarthSpike, center, facing, seconds, SpikeShrapnelRadius * context.AreaScale, ability.Push * SpikeShrapnelScale * context.PushScale, 0, false, shards);
+				}
 				RuneStrike(world, id, ability, damage, context);
+				if (HasCard(context.Cards, CardId::SpikeBloom))
+					world.SpawnBloom(context, facing);
 				break;
 			}
 			world.SpawnPendingStrike(ability, context.Target, damage, context);

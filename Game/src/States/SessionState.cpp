@@ -13,6 +13,7 @@
 #include <GameShared/Content/Definitions.h>
 #include <GameShared/Content/EmberIsland.h>
 #include <GameShared/Content/Fighters.h>
+#include <GameShared/Content/HubLayout.h>
 #include <GameShared/World/Collision.h>
 #include <RadianceEngine/Core/Log.h>
 #include <RadianceEngine/Window/Input.h>
@@ -63,6 +64,56 @@ namespace Game
 		constexpr float HeavyHitPush = 16.0f;
 		constexpr float HitStopMin = 0.04f;
 		constexpr float HitStopMax = 0.06f;
+		constexpr float SwordSwingStop = 0.035f;
+		constexpr float SwordStageCycle = 4.0f;
+		constexpr float SwordStageHold = 1.5f;
+		constexpr float SwordCleaveStop = 0.065f;
+		constexpr float SwordFinishLinger = 0.3f;
+		constexpr float SwordSweepSide = 1.0f;
+		constexpr float SwordScale = 1.3f;
+		constexpr float SwordRightSign = 1.0f;
+		constexpr float SwordSweepBack = 2.2f;
+		constexpr float SwordSweepCreep = 0.22f;
+		constexpr float SwordSweepEnd = 1.85f;
+		constexpr float SwordSweepOvershoot = 0.22f;
+		constexpr float SwordCleaveBack = -0.8f;
+		constexpr float SwordCleaveCreep = 0.18f;
+		constexpr float SwordCleaveLand = 1.62f;
+		constexpr float SwordSweepRoll = 0.6f;
+		constexpr float SwordOvershootSeconds = 0.16f;
+		constexpr float SwordTwirl = 6.2832f;
+		constexpr float SwordTwirlLift = 0.3f;
+		constexpr float SwordSpringFast = 38.0f;
+		constexpr float SwordSpringSlow = 16.0f;
+		constexpr float SwordSmearSpeed = 8.0f;
+		constexpr uint32_t SwordSmearSteps = 28;
+		constexpr float SwordSmearOverlap = 0.6f;
+		constexpr float SwordSmearGlow = 0.07f;
+		constexpr uint32_t SwordPieceCount = 16;
+		constexpr uint32_t SwordSpireCount = 8;
+		constexpr float SwordClusterSize = 0.62f;
+		constexpr float SwordSpireStagger = 0.12f;
+		constexpr float SwordPieceStagger = 0.12f;
+		constexpr uint32_t SwordHistorySize = 6;
+		constexpr float SwordPieceGravity = 16.0f;
+		constexpr float SwordPieceFade = 0.3f;
+		constexpr float SwordSpirePop = 28.0f;
+		constexpr float SwordSpireGrowth = 0.22f;
+		constexpr float SwordOrbit = 0.95f;
+		constexpr float SwordRecoverSeconds = 0.42f;
+		constexpr float SwordConfirmWait = 0.14f;
+		constexpr float SwordTrailHold = 0.1f;
+		constexpr float SwordTellSelf = 0.1f;
+		constexpr float SwordTellRival = 0.28f;
+		constexpr float SwordCleaveKick = 1.4f;
+		constexpr float SwordCleaveTrauma = 0.18f;
+		constexpr float SwordShatterKick = 1.0f;
+		constexpr float SwordShatterTrauma = 0.3f;
+		constexpr float SwordLandStop = 0.06f;
+		constexpr float SwordShatterRumble = 0.5f;
+		constexpr float SwordScarLife = 2.2f;
+		constexpr float SwordThrowSpin = 24.0f;
+		constexpr glm::vec3 SwordShardTint{ 0.39f, 1.0f, 0.68f };
 		constexpr float DangerHealth = 0.3f;
 		constexpr float DangerFloor = 0.08f;
 		constexpr float DangerVignette = 0.8f;
@@ -112,6 +163,12 @@ namespace Game
 		constexpr float SpearLaneStep = 0.55f;
 		constexpr float SpikeRiftSeconds = 3.5f;
 		constexpr float SpikeRuinSeconds = 0.7f;
+		constexpr float SpikeKick = 3.2f;
+		constexpr float SpikeKickReach = 12.0f;
+		constexpr float SkewerPop = 4.6f;
+		constexpr float SkewerStop = 0.07f;
+		constexpr float SpikeStagePeriod = 3.4f;
+		constexpr float SpikeHeave = 0.45f;
 		constexpr glm::vec3 NovaIce{ 0.28f, 0.55f, 1.0f };
 		constexpr float NovaSpreadSeconds = 0.3f;
 		constexpr float NovaThawSeconds = 0.45f;
@@ -164,8 +221,7 @@ namespace Game
 		constexpr int PackPayload = 1;
 		constexpr int GearPayload = 2;
 		constexpr int GemPayload = 3;
-		constexpr float VictoryPoseSeconds = 1.4f;
-		constexpr float VictoryPoseWindup = 0.28f;
+		constexpr float VictoryPoseSeconds = 1.9f;
 		constexpr float PlayerRim = 1.0f;
 		constexpr float ContactRadius = 0.7f;
 		constexpr float ContactStrength = 0.85f;
@@ -195,7 +251,7 @@ namespace Game
 			case AbilityId::PurpleFireball:
 				return 0.2f + 0.5f * blast;
 			case AbilityId::EarthSpike:
-				return 0.35f;
+				return 0.42f;
 			case AbilityId::StormStrike:
 				return 0.3f;
 			default:
@@ -257,7 +313,7 @@ namespace Game
 
 		float FlightLift(AbilityId ability)
 		{
-			return ability == AbilityId::FrostSpear ? SpearHoldHeight : ability == AbilityId::PurpleFireball ? FireballHoldHeight : ability == AbilityId::ObsidianBlades ? ObsidianHoldHeight : ProjectileHeight;
+			return ability == AbilityId::FrostSpear ? SpearHoldHeight : ability == AbilityId::PurpleFireball ? FireballHoldHeight : ability == AbilityId::ObsidianBlades ? ObsidianHoldHeight : ability == AbilityId::EmberBolt ? EmberFlightHeight : ProjectileHeight;
 		}
 
 		float BladeFanAngle(float facing, uint32_t slot)
@@ -489,6 +545,7 @@ namespace Game
 		m_ProjectileHeights.clear();
 		m_BodyHeights.clear();
 		m_SpikeRuins.clear();
+		m_SpikeShards.clear();
 		m_NovaFields.clear();
 		m_VoidWells.clear();
 		m_FireballBursts.clear();
@@ -863,6 +920,7 @@ namespace Game
 			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::MouseRight))
 				m_Client.Spectate(-1);
 		}
+		UpdateEmoteWheel();
 		if (m_Paused || m_App.UiWantsKeyboard())
 			return;
 		if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::I) && sessionMode == GameMode::Brawl)
@@ -898,6 +956,13 @@ namespace Game
 				m_Aim = AngleOf(offset);
 				m_AimDistance = Length(offset);
 			}
+		if (m_App.GetSettings().EmoteStage != 0)
+			m_Aim = AngleOf(Vec2(0.4f, -1.0f));
+		if (m_App.GetSettings().SwordStage)
+		{
+			m_Aim = AngleOf(Vec2(-1.0f, 0.12f));
+			m_AimDistance = 3.0f;
+		}
 		m_Client.SetViewAim(m_Aim);
 	}
 
@@ -922,7 +987,7 @@ namespace Game
 		input.Move = Normalize(move);
 		if (!Rdn::Input::IsKeyDown(Rdn::KeyCode::MouseLeft))
 			m_SuppressPrimary = false;
-		if (mouseFree)
+		if (mouseFree && !m_EmoteWheel)
 		{
 			if (Rdn::Input::IsKeyDown(Rdn::KeyCode::MouseLeft) && !m_SuppressPrimary)
 				input.Buttons |= uint8_t(InputButton::Primary);
@@ -938,6 +1003,8 @@ namespace Game
 		if (Rdn::Input::IsKeyDown(Rdn::KeyCode::Space))
 			input.Buttons |= uint8_t(InputButton::Dodge);
 		input.Buttons |= std::exchange(m_LatchedButtons, uint8_t(0));
+		if (m_App.GetSettings().SwordStage && std::fmod(m_SwordStageClock, SwordStageCycle) < SwordStageHold)
+			input.Buttons |= uint8_t(InputButton::Skill1);
 		input.Interact = std::exchange(m_PendingInteract, uint8_t(0));
 		return input;
 	}
@@ -970,7 +1037,7 @@ namespace Game
 			m_LatchedButtons = 0;
 			return;
 		}
-		if (!m_App.UiWantsMouse())
+		if (!m_App.UiWantsMouse() && !m_EmoteWheel)
 		{
 			if (Rdn::Input::IsKeyPressed(Rdn::KeyCode::MouseLeft))
 			{
@@ -1088,6 +1155,20 @@ namespace Game
 
 		if (m_App.GetSettings().FireStage != 0)
 			m_ZoomTarget = m_Zoom = m_App.GetSettings().FireStage >= 2 ? 1.0f : CameraZoomMin;
+		if (m_App.GetSettings().SwordStage)
+		{
+			m_ZoomTarget = m_Zoom = CameraZoomMin;
+			m_SwordStageClock += dt;
+			if (m_Client.GetTraits().Skills[1].Ability != AbilityId::CrystalSword && std::fmod(m_SwordStageClock, 1.0f) < dt)
+				m_Client.PickBrawlSpell(0, AbilityId::CrystalSword);
+		}
+		if (const uint8_t stage = m_App.GetSettings().EmoteStage; stage != 0)
+		{
+			m_ZoomTarget = m_Zoom = CameraZoomMin;
+			m_EmoteStageClock += dt;
+			if (std::fmod(m_EmoteStageClock, 4.0f) < std::fmod(m_EmoteStageClock - dt, 4.0f))
+				m_Client.PlayEmote(Emote(stage));
+		}
 		m_Zoom += (m_ZoomTarget - m_Zoom) * std::min(1.0f, dt * CameraZoomRate);
 		const float aspect = float(std::max(m_Extent.Width, 1u)) / float(std::max(m_Extent.Height, 1u));
 		glm::vec3 focus = m_CameraTarget - glm::vec3(0.0f, 0.0f, CameraFocusOffset * m_Zoom);
@@ -1201,6 +1282,7 @@ namespace Game
 			m_Effects->Impact(AbilityId::CrystalRain, spot(3.4f, 1.2f), 0.0f, 1.0f, SkillColor(AbilityId::CrystalRain), 12u, height);
 			m_Effects->Impact(AbilityId::Firebomb, spot(0.0f, -3.2f), 0.0f, 1.0f, SkillColor(AbilityId::Firebomb), 13u, height);
 		}
+		UpdateSpikeShards(dt);
 		for (SpikeRuin& ruin : m_SpikeRuins)
 			ruin.Age += dt;
 		std::erase_if(m_SpikeRuins, [](const SpikeRuin& ruin) { return ruin.Age >= SpikeRuinSeconds; });
@@ -1237,6 +1319,7 @@ namespace Game
 				SpikeMoments(fx, entity, clocked);
 				FireballMoments(fx, entity, clocked);
 				ObsidianMoments(fx, entity, clocked);
+				SwordMoments(fx, entity, clocked);
 			}
 			if (IsFighterKind(entity.Kind))
 				ShieldMoments(entity, dt);
@@ -1340,6 +1423,9 @@ namespace Game
 				continue;
 			}
 			FeelHit(hit);
+			const bool sword = hit.Ability < uint8_t(AbilityId::Count) && CreditOf(AbilityId(hit.Ability)) == AbilityId::CrystalSword;
+			if (hit.Ability == uint8_t(AbilityId::EarthSpike))
+				SkewerHit(hit);
 			const auto it = m_Fx.find(hit.Target);
 			if (it != m_Fx.end())
 			{
@@ -1360,6 +1446,8 @@ namespace Game
 			const glm::vec3 point = Ground(hit.Position, it != m_Fx.end() ? BarHeight(it->second.Last) * 0.5f : 0.8f);
 			if (hit.Ability == uint8_t(AbilityId::ObsidianBlades))
 				StrikeBlade(hit);
+			else if (sword)
+				SwordHit(hit);
 			else
 				m_Effects->Burst(HitFor(hit.Damages), point, glm::vec3(0.0f, 1.0f, 0.0f), hit.Critical ? 1.4f : 1.0f);
 			if (hit.Critical)
@@ -1456,6 +1544,7 @@ namespace Game
 		}
 		std::erase_if(m_ProjectileHeights, [](const auto& item) { return !item.second.Seen; });
 		std::erase_if(m_SpearPaths, [this](const auto& item) { return !m_Fx.contains(item.first); });
+		std::erase_if(m_ChestShift, [this](const auto& item) { return !m_Fx.contains(item.first); });
 		std::erase_if(m_Arcs, [this](const auto& item) { return !m_Fx.contains(item.first); });
 		for (ArcFade& fade : m_ArcFades)
 			fade.Age += dt;
@@ -1471,6 +1560,7 @@ namespace Game
 				m_Effects->Burst(Fx::ObsidianCrumble, fade.Position, Heading(fade.Facing), 0.55f);
 		}
 		std::erase_if(m_BladeFades, [](const BladeFade& fade) { return fade.Age >= (fade.Stuck ? ObsidianStickSeconds : ObsidianFadeSeconds); });
+		UpdateSwordDebris(dt);
 		std::erase_if(m_ArcFades, [](const ArcFade& fade) { return fade.Age >= std::max(ArcFadeSeconds, ArcSparkSeconds); });
 		for (auto& [netId, body] : m_BodyHeights)
 			body.Seen = false;
@@ -1659,7 +1749,7 @@ namespace Game
 				chunk.Velocity.z *= 0.45f;
 				chunk.Spin *= 0.5f;
 			}
-			else if (chunk.Age < 0.9f)
+			else if (chunk.Age < 0.9f && !chunk.Cold)
 				m_Effects->Trail(Fx::CometDebris, chunk.Key, chunk.Position, dt, chunk.Size / 0.15f);
 		}
 		std::erase_if(m_CometChunks, [](const CometChunk& chunk) { return chunk.Age >= chunk.Life; });
@@ -1669,15 +1759,15 @@ namespace Game
 	{
 		for (const CometChunk& chunk : m_CometChunks)
 		{
-			const std::optional<uint32_t> mesh = m_ChunkMeshes[chunk.Mesh] ? m_ChunkMeshes[chunk.Mesh] : m_MeteorMesh;
+			const std::optional<uint32_t> mesh = chunk.Model != UINT32_MAX ? std::optional<uint32_t>(chunk.Model) : m_ChunkMeshes[chunk.Mesh] ? m_ChunkMeshes[chunk.Mesh] : m_MeteorMesh;
 			if (!mesh)
 				continue;
-			const float heat = std::exp(-chunk.Age * 0.8f);
+			const float heat = chunk.Cold ? 0.0f : std::exp(-chunk.Age * 0.8f);
 			const float sink = glm::smoothstep(chunk.Life - 0.6f, chunk.Life, chunk.Age);
 			const glm::mat4 transform = glm::translate(glm::mat4(1.0f), chunk.Position - WorldUp * (sink * chunk.Size * 0.6f))
 				* glm::rotate(glm::mat4(1.0f), chunk.Angle, chunk.Axis)
 				* glm::scale(glm::mat4(1.0f), glm::vec3(chunk.Size * (1.0f - 0.4f * sink)));
-			const glm::vec3 tint = glm::mix(glm::vec3(0.5f, 0.46f, 0.43f), glm::vec3(1.9f, 0.75f, 0.42f), heat);
+			const glm::vec3 tint = chunk.Model != UINT32_MAX ? glm::vec3(1.0f) : glm::mix(glm::vec3(0.5f, 0.46f, 0.43f), glm::vec3(1.9f, 0.75f, 0.42f), heat);
 			renderer.DrawModel(*mesh, transform, NoPalette, glm::vec4(tint, 0.0f), 0.55f * heat, chunk.Position.y - chunk.Size);
 		}
 	}
@@ -1873,35 +1963,660 @@ namespace Game
 		}
 	}
 
-	void SessionState::DrawHook(WorldRenderer& renderer, const EntityState& entity, float age) const
+	void SessionState::DrawSwordStrike(WorldRenderer& renderer, const EntityState& entity, float age) const
 	{
 		const AbilityId ability = AbilityOf(entity);
-		const float t = std::clamp(age / std::max(GetAbility(ability).EffectDuration, 0.05f), 0.0f, 1.0f);
-		const EntityState* body = FindBody(entity.Owner);
-		if (ability == AbilityId::HookAnchor)
+		const AbilityDef& def = GetAbility(ability);
+		const float scale = entity.GetScale();
+		if (ability == AbilityId::SwordCleave)
 		{
-			const glm::vec3 point = Ground(entity.Position, 0.22f);
-			const float pulse = 0.5f + 0.5f * std::sin(m_Time * 11.0f);
-			DrawProjectileVisual(renderer, AbilityId::ChainHook, point, entity.Facing, SkillColor(AbilityId::ChainHook), m_Time, entity.NetId);
-			if (body)
-				DrawChain(renderer, HandOf(*body), point, 0.3f, 0.35f * pulse);
-			DrawGroundGlow(renderer, Ground(entity.Position), 0.55f, { 1.0f, 0.65f, 0.3f }, 0.25f + 0.35f * pulse);
+			DrawSwordCleave(renderer, { .Ground = Ground(entity.Position), .Facing = entity.Facing, .Reach = def.Reach * scale, .Width = def.Width * scale, .Age = age, .Life = def.EffectDuration, .Seed = entity.NetId });
 			return;
 		}
-		if (!body)
+		if (ability != AbilityId::CrystalSword && ability != AbilityId::SwordSweep)
 			return;
-		const glm::vec3 hand = HandOf(*body);
-		const glm::vec3 point = Ground(entity.Position, 0.8f);
-		if (ability == AbilityId::HookPull)
+		DrawSwordSlash(renderer, { .Center = Ground(entity.Position, SwordSlashHeight), .Facing = entity.Facing, .Reach = def.Reach * scale, .HalfArc = def.HalfArc, .Age = age, .Life = def.EffectDuration, .Backhand = ability == AbilityId::SwordSweep, .Seed = entity.NetId });
+	}
+
+	namespace
+	{
+		struct SwordFrame
 		{
-			const glm::vec3 end = glm::mix(point, hand, t * t);
-			DrawChain(renderer, hand, end, 0.05f, 0.5f * (1.0f - t));
-			DrawProjectileVisual(renderer, AbilityId::ChainHook, end, entity.Facing, SkillColor(AbilityId::ChainHook), m_Time, entity.NetId);
-			renderer.DrawTrail(uint64_t(entity.NetId) | (24ull << 40), end, ProjectileTrail(AbilityId::ChainHook));
+			glm::vec3 Base{ 0.0f };
+			glm::vec3 Forward{ 1.0f, 0.0f, 0.0f };
+			glm::vec3 Right{ 0.0f, 0.0f, 1.0f };
+			float Scale = 1.0f;
+		};
+
+		SwordFrame FrameOf(const glm::vec3& base, float facing, float scale)
+		{
+			return { base, Heading(facing), Heading(facing - HalfPi) * SwordRightSign, scale };
+		}
+
+		glm::vec3 Local(const SwordFrame& frame, const glm::vec3& v)
+		{
+			return frame.Right * v.x + glm::vec3(0.0f, v.y, 0.0f) + frame.Forward * v.z;
+		}
+
+		glm::vec3 Turn(const glm::vec3& v, const glm::vec3& axis, float angle)
+		{
+			const float c = std::cos(angle);
+			const float s = std::sin(angle);
+			return v * c + glm::cross(axis, v) * s + axis * (glm::dot(axis, v) * (1.0f - c));
+		}
+
+		CrystalSwordLook Posed(const SwordFrame& frame, const glm::vec3& grip, const glm::vec3& direction, const glm::vec3& flat)
+		{
+			CrystalSwordLook look;
+			look.Grip = frame.Base + Local(frame, grip);
+			look.Forward = glm::normalize(Local(frame, direction));
+			const glm::vec3 side = Local(frame, flat);
+			look.Flat = glm::normalize(side - look.Forward * glm::dot(side, look.Forward) + glm::vec3(1e-4f, 0.0f, 0.0f));
+			look.Scale = frame.Scale;
+			return look;
+		}
+
+		float Ease(float t)
+		{
+			t = std::clamp(t, 0.0f, 1.0f);
+			return t * t * (3.0f - 2.0f * t);
+		}
+
+		float EaseOut(float t)
+		{
+			t = std::clamp(t, 0.0f, 1.0f);
+			return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+		}
+
+		CrystalSwordLook Blend(const CrystalSwordLook& a, const CrystalSwordLook& b, float t, float arc = 0.0f)
+		{
+			CrystalSwordLook look = b;
+			look.Grip = glm::mix(a.Grip, b.Grip, t) + glm::vec3(0.0f, arc * std::sin(Pi * std::clamp(t, 0.0f, 1.0f)), 0.0f);
+			look.Forward = glm::normalize(glm::mix(a.Forward, b.Forward, t) + glm::vec3(0.0f, 1e-4f, 0.0f));
+			const glm::vec3 flat = glm::mix(a.Flat, b.Flat, t);
+			look.Flat = glm::normalize(flat - look.Forward * glm::dot(flat, look.Forward) + glm::vec3(1e-4f, 0.0f, 0.0f));
+			look.Scale = glm::mix(a.Scale, b.Scale, t);
+			return look;
+		}
+
+		CrystalSwordLook HoverPose(const SwordFrame& frame, float time, uint32_t seed)
+		{
+			const float phase = float(seed % 61u) * 0.37f;
+			const float bob = 0.06f * std::sin(time * 1.9f + phase);
+			const float sway = 0.07f * std::sin(time * 1.3f + phase * 1.7f);
+			CrystalSwordLook look = Posed(frame, glm::vec3(0.8f + sway * 0.5f, 1.3f + bob, -0.45f), glm::vec3(0.3f + sway, 1.0f, -0.3f), glm::vec3(1.0f, 0.0f, 0.0f));
+			look.Flat = Turn(look.Flat, look.Forward, 0.25f * std::sin(time * 0.9f + phase));
+			return look;
+		}
+
+		CrystalSwordLook SweepPose(const SwordFrame& frame, float theta, float lift, float tilt, float roll)
+		{
+			const glm::vec3 around(std::sin(theta), 0.0f, std::cos(theta));
+			const glm::vec3 pivot(0.0f, 1.1f + lift, 0.1f);
+			CrystalSwordLook look = Posed(frame, pivot + around * SwordOrbit, around + glm::vec3(0.0f, tilt, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+			look.Flat = Turn(look.Flat, look.Forward, roll);
+			return look;
+		}
+
+		CrystalSwordLook CleavePose(const SwordFrame& frame, float phi, float land, float lift, const glm::vec3& flat = glm::vec3(1.0f, 0.0f, 0.0f))
+		{
+			const glm::vec3 out(0.0f, std::cos(phi), std::sin(phi));
+			const glm::vec3 pivot = glm::mix(glm::vec3(0.3f, 1.6f + lift, -0.05f), glm::vec3(0.12f, 0.16f, 0.5f), land * land);
+			return Posed(frame, pivot + out * 0.5f, out, flat);
+		}
+
+		float SweepSide(AbilityId swing)
+		{
+			return swing == AbilityId::SwordSweep ? -1.0f : 1.0f;
+		}
+
+		struct SweepPath
+		{
+			float LiftFrom;
+			float LiftTo;
+			float TiltFrom;
+			float TiltTo;
+		};
+
+		SweepPath PathOf(AbilityId swing)
+		{
+			return swing == AbilityId::SwordSweep ? SweepPath{ -0.1f, 0.34f, -0.2f, 0.3f } : SweepPath{ 0.34f, -0.18f, 0.3f, -0.26f };
+		}
+
+		CrystalSwordLook WindupPose(const SwordFrame& frame, AbilityId swing, float clock, float windup, const CrystalSwordLook& from, float& glow)
+		{
+			const float strike = std::min(SwordStrike, windup * 0.6f);
+			const float draw = std::max(windup - strike, 1e-3f);
+			const float u = std::clamp(clock / draw, 0.0f, 1.0f);
+			const float v = std::clamp((clock - draw) / strike, 0.0f, 1.0f);
+			glow = clock < draw ? 0.25f + 0.45f * u : 1.0f;
+			if (swing == AbilityId::SwordCleave)
+			{
+				const float back = SwordCleaveBack - SwordCleaveCreep * Ease((u - 0.45f) / 0.55f);
+				const float lift = 0.28f * EaseOut(u / 0.7f);
+				if (clock < draw)
+					return Blend(from, CleavePose(frame, back, 0.0f, lift), EaseOut(u / 0.6f), 0.35f);
+				const float slam = v * v;
+				return CleavePose(frame, glm::mix(back, SwordCleaveLand, slam), slam, lift * (1.0f - slam));
+			}
+			const float side = SweepSide(swing);
+			const SweepPath path = PathOf(swing);
+			const float back = side * (SwordSweepBack + SwordSweepCreep * Ease((u - 0.45f) / 0.55f));
+			if (clock < draw)
+				return Blend(from, SweepPose(frame, back, path.LiftFrom, path.TiltFrom, 0.0f), EaseOut(u / 0.6f), 0.25f);
+			const float s = v * v * (3.0f - 2.0f * v);
+			return SweepPose(frame, glm::mix(back, -side * SwordSweepEnd, s), glm::mix(path.LiftFrom, path.LiftTo, s), glm::mix(path.TiltFrom, path.TiltTo, s), side * SwordSweepRoll * s);
+		}
+
+		CrystalSwordLook FollowPose(const SwordFrame& frame, AbilityId swing, float clock, float time, uint32_t seed)
+		{
+			if (swing == AbilityId::SwordCleave)
+				return CleavePose(frame, SwordCleaveLand, 1.0f, 0.0f);
+			const float side = SweepSide(swing);
+			const SweepPath path = PathOf(swing);
+			const float carry = std::sin(std::min(clock / SwordOvershootSeconds, 1.0f) * HalfPi);
+			const CrystalSwordLook strike = SweepPose(frame, -side * (SwordSweepEnd + SwordSweepOvershoot * carry), path.LiftTo, path.TiltTo, side * SwordSweepRoll);
+			const float home = Ease((clock - SwordOvershootSeconds * 0.6f) / SwordRecoverSeconds);
+			CrystalSwordLook look = Blend(strike, HoverPose(frame, time, seed), home, SwordTwirlLift);
+			look.Forward = Turn(look.Forward, look.Flat, side * SwordTwirl * home);
+			return look;
+		}
+
+		uint32_t SwordHash(uint32_t a, uint32_t b)
+		{
+			uint32_t x = a * 0x9E3779B1u ^ (b * 0x85EBCA77u + 0x7F4A7C15u);
+			x ^= x >> 16;
+			x *= 0x7FEB352Du;
+			x ^= x >> 15;
+			x *= 0x846CA68Bu;
+			x ^= x >> 16;
+			return x;
+		}
+
+		void Spring(glm::vec3& value, glm::vec3& velocity, const glm::vec3& target, float omega, float dt)
+		{
+			const uint32_t steps = std::max(1u, uint32_t(std::ceil(omega * dt / 0.35f)));
+			const float h = dt / float(steps);
+			for (uint32_t i = 0; i < steps; i++)
+			{
+				velocity += ((target - value) * (omega * omega) - velocity * (2.0f * omega)) * h;
+				value += velocity * h;
+			}
+		}
+	}
+
+	void SessionState::DrawFloatingSword(WorldRenderer& renderer, const EntityState& entity, const EntityFx& fx) const
+	{
+		if (fx.SwordShow <= 0.0f || SwordPhase(fx.SwordPhase) == SwordPhase::Hidden)
+			return;
+		CrystalSwordLook sword = fx.SwordDrawn;
+		sword.Form = fx.SwordHeld ? fx.SwordShow : 1.0f;
+		sword.Fade = fx.SwordHeld ? 0.0f : 1.0f - fx.SwordShow;
+		sword.Glow = fx.SwordGlow;
+		sword.Ground = BodyBase(entity).y;
+		if (!fx.SwordHeld)
+			sword.Grip += glm::vec3(0.0f, 0.35f * (1.0f - fx.SwordShow), 0.0f);
+		DrawCrystalSword(renderer, m_SpellMeshes, sword, m_Time, entity.NetId);
+		for (uint32_t k = 0; k + 1 < fx.SwordHistoryCount; k++)
+		{
+			const auto& [gripA, tipA] = fx.SwordHistory[k];
+			const auto& [gripB, tipB] = fx.SwordHistory[k + 1];
+			const float speed = glm::length(tipA - tipB) / std::max(fx.SwordHistoryStep, 1e-3f);
+			const float fast = std::clamp((speed - SwordSmearSpeed) / SwordSmearSpeed, 0.0f, 1.0f);
+			if (fast <= 0.0f)
+				continue;
+			const float width = 0.1f * sword.Scale;
+			const float chord = glm::length(tipA - tipB);
+			const uint32_t steps = std::clamp(uint32_t(std::ceil(chord / (width * SwordSmearOverlap))), 1u, SwordSmearSteps);
+			const float share = std::min(1.0f, width * SwordSmearOverlap * float(steps) / std::max(chord, 1e-3f)) / float(steps);
+			for (uint32_t step = 0; step < steps; step++)
+			{
+				const float t = (float(step) + 0.5f) / float(steps);
+				const float age = (float(k) + t) / float(SwordHistorySize);
+				const glm::vec3 tip = glm::mix(tipA, tipB, t);
+				const glm::vec3 grip = glm::mix(gripA, gripB, t);
+				DrawStreak(renderer, glm::mix(grip, tip, 0.3f), tip, width, SwordCrystal * (SwordSmearGlow * fast * (1.0f - age) * share * float(steps) * SwordSmearOverlap));
+			}
+		}
+		const SwordPhase phase = SwordPhase(fx.SwordPhase);
+		if (phase != SwordPhase::Windup || fx.SwordClock >= fx.SwordWindup)
+			return;
+		const bool own = entity.NetId == m_Client.GetPlayerNetId();
+		const AbilityDef& def = GetAbility(fx.SwordSwing);
+		const float area = sword.Scale / SwordScale;
+		const float progress = std::clamp(fx.SwordClock / std::max(fx.SwordWindup, 1e-3f), 0.0f, 1.0f);
+		const float tell = (own ? SwordTellSelf : SwordTellRival) * (0.5f + 0.5f * progress);
+		const glm::vec3 base = Ground(entity.Position);
+		if (fx.SwordSwing == AbilityId::SwordCleave)
+			DrawLaneTelegraph(renderer, base, entity.Facing, (def.Reach + def.Lunge) * area, def.Width * area, SwordCrystal, tell, progress);
+		else
+			DrawSectorTelegraph(renderer, base, entity.Facing, (def.Reach + def.Lunge) * area, def.HalfArc, SwordCrystal, tell, progress);
+	}
+
+	float SessionState::SwordAreaOf(const EntityState& entity) const
+	{
+		const PlayerInfo* info = m_Client.FindPlayer(entity.Owner);
+		return info && HasCard(info->Cards, CardId::ColossusBlade) ? ColossusArea : 1.0f;
+	}
+
+	void SessionState::SwordMoments(EntityFx& fx, const EntityState& entity, float dt)
+	{
+		const AbilityId variant = entity.Has(EntityFlags::Attacking) && entity.Variant < uint8_t(AbilityId::Count) ? AbilityId(entity.Variant) : AbilityId::Count;
+		const bool swinging = variant != AbilityId::Count && CreditOf(variant) == AbilityId::CrystalSword;
+		const bool local = entity.NetId == m_Client.GetPlayerNetId();
+		const PlayerState& self = m_Client.GetPredictedState();
+		const bool combo = local && self.RecastSlot >= 0 && self.RecastTimer > 0.0f && AbilityId(self.RecastAbility) == AbilityId::CrystalSword;
+		const bool down = entity.Has(EntityFlags::Dead) || entity.Has(EntityFlags::Falling) || entity.Has(EntityFlags::Lifted) || entity.Has(EntityFlags::Stunned);
+		const float area = SwordAreaOf(entity);
+		SwordPhase phase = SwordPhase(fx.SwordPhase);
+		if (!((phase == SwordPhase::Windup && fx.SwordClock >= fx.SwordWindup - SwordStrike) || phase == SwordPhase::Release))
+			fx.SwordFacing = entity.Facing;
+		const SwordFrame frame = FrameOf(BodyBase(entity), fx.SwordFacing, SwordScale * area);
+		bool snap = phase == SwordPhase::Hidden;
+		fx.SwordClock += dt;
+		fx.SwordIdle = swinging ? 0.0f : fx.SwordIdle + dt;
+		const auto enter = [&](SwordPhase next)
+		{
+			fx.SwordFrom = fx.SwordDrawn;
+			fx.SwordClock = 0.0f;
+			phase = next;
+		};
+		if (swinging && (phase != SwordPhase::Windup || variant != fx.SwordSwing))
+		{
+			if (phase == SwordPhase::Hidden || fx.SwordShow <= 0.0f || !fx.SwordHeld)
+			{
+				fx.SwordDrawn = HoverPose(frame, m_Time, entity.NetId);
+				fx.SwordShow = 0.0f;
+				fx.SwordForming = true;
+				fx.SwordHistoryCount = 0;
+				snap = true;
+			}
+			enter(SwordPhase::Windup);
+			fx.SwordSwing = variant;
+			fx.SwordConfirmed = false;
+			const int8_t slot = self.CastSlot;
+			fx.SwordWindup = local && slot >= 0 ? SwingWindup(m_Client.GetTraits().Skills[size_t(slot)], variant) : GetAbility(variant).CastTime * (area > 1.0f ? ColossusPace : 1.0f);
+		}
+		else if (!swinging && phase == SwordPhase::Windup)
+		{
+			const bool broken = entity.Has(EntityFlags::Dashing) || down;
+			const PlayerInfo* info = m_Client.FindPlayer(entity.Owner);
+			if (!broken && fx.SwordSwing == AbilityId::SwordCleave && info && HasCard(info->Cards, CardId::HurledEdge))
+			{
+				fx.SwordShow = 0.0f;
+				fx.SwordHeld = false;
+				fx.SwordClock = 0.0f;
+				phase = SwordPhase::Hidden;
+			}
+			else
+				enter(broken ? SwordPhase::Recover : SwordPhase::Release);
+		}
+		if (phase == SwordPhase::Release && !fx.SwordConfirmed && fx.SwordClock > SwordConfirmWait)
+			enter(SwordPhase::Recover);
+		const bool live = swinging || combo || (phase == SwordPhase::Release && fx.SwordClock < SwordFinishLinger) || (!local && fx.SwordIdle < SwordLinger);
+		if (phase == SwordPhase::Recover && fx.SwordClock > SwordRecoverSeconds)
+			phase = SwordPhase::Hover;
+		if (phase == SwordPhase::Release && fx.SwordSwing != AbilityId::SwordCleave && fx.SwordClock > SwordOvershootSeconds * 0.6f + SwordRecoverSeconds)
+			phase = SwordPhase::Hover;
+		if (phase != SwordPhase::Hidden)
+		{
+			float glow = 0.0f;
+			bool striking = false;
+			CrystalSwordLook target;
+			switch (phase)
+			{
+			case SwordPhase::Windup:
+				target = WindupPose(frame, fx.SwordSwing, fx.SwordClock, fx.SwordWindup, fx.SwordFrom, glow);
+				striking = fx.SwordClock > fx.SwordWindup - SwordStrike * 1.3f;
+				break;
+			case SwordPhase::Release:
+				target = FollowPose(frame, fx.SwordSwing, fx.SwordClock, m_Time, entity.NetId);
+				striking = fx.SwordClock < SwordOvershootSeconds;
+				break;
+			case SwordPhase::Recover:
+				target = Blend(fx.SwordFrom, HoverPose(frame, m_Time, entity.NetId), Ease(fx.SwordClock / SwordRecoverSeconds), 0.2f);
+				break;
+			default:
+				target = HoverPose(frame, m_Time, entity.NetId);
+				break;
+			}
+			fx.SwordNow = target;
+			if (snap)
+			{
+				fx.SwordDrawn = target;
+				fx.SwordGripSpeed = {};
+				fx.SwordAimSpeed = {};
+				fx.SwordFlatSpeed = {};
+			}
+			else
+			{
+				const float omega = striking ? SwordSpringFast : SwordSpringSlow;
+				Spring(fx.SwordDrawn.Grip, fx.SwordGripSpeed, target.Grip, omega, dt);
+				Spring(fx.SwordDrawn.Forward, fx.SwordAimSpeed, target.Forward, omega, dt);
+				Spring(fx.SwordDrawn.Flat, fx.SwordFlatSpeed, target.Flat, omega, dt);
+				fx.SwordDrawn.Forward = glm::normalize(fx.SwordDrawn.Forward + glm::vec3(0.0f, 1e-5f, 0.0f));
+				const glm::vec3 flat = fx.SwordDrawn.Flat - fx.SwordDrawn.Forward * glm::dot(fx.SwordDrawn.Flat, fx.SwordDrawn.Forward);
+				fx.SwordDrawn.Flat = glm::normalize(flat + glm::vec3(1e-5f, 0.0f, 0.0f));
+				fx.SwordDrawn.Scale = target.Scale;
+			}
+			const glm::vec3 tip = SwordTip(fx.SwordDrawn);
+			for (uint32_t k = std::min(fx.SwordHistoryCount, SwordHistorySize - 1); k > 0; k--)
+				fx.SwordHistory[k] = fx.SwordHistory[k - 1];
+			fx.SwordHistory[0] = { fx.SwordDrawn.Grip, tip };
+			fx.SwordHistoryCount = std::min(fx.SwordHistoryCount + 1, SwordHistorySize);
+			fx.SwordHistoryStep = std::max(dt, 1e-3f);
+			if (phase == SwordPhase::Release && fx.SwordConfirmed && fx.SwordSwing == AbilityId::SwordCleave)
+			{
+				fx.SwordDrawn = target;
+				ShatterSword(fx, entity, area);
+				fx.SwordPhase = uint8_t(SwordPhase::Hidden);
+				return;
+			}
+			fx.SwordGlow = std::max(glow, fx.SwordGlow - dt * 4.0f);
+			const float before = fx.SwordShow;
+			if ((live || fx.SwordForming) && !down)
+			{
+				fx.SwordHeld = true;
+				fx.SwordShow = std::min(fx.SwordShow + dt / SwordFormSeconds, 1.0f);
+				const uint64_t key = uint64_t(entity.NetId) << 4;
+				m_Effects->Trail(Fx::SwordAura, key | 1u, tip, dt, area);
+				m_Effects->Trail(Fx::SwordAura, key | 2u, glm::mix(fx.SwordDrawn.Grip, tip, 0.55f), dt, 0.6f * area);
+				if (fx.SwordForming)
+				{
+					const glm::vec3 center = glm::mix(fx.SwordDrawn.Grip, tip, 0.45f);
+					m_Effects->Converge(uint64_t(entity.NetId) | (26ull << 40), center, 1.1f * area, 160.0f, 0.12f, dt, 0.035f, ParticleKind::DiamondShard, SwordShardTint, 1.5f, 0.1f);
+					if (fx.SwordShow >= 1.0f)
+					{
+						fx.SwordForming = false;
+						fx.SwordGlow = 1.0f;
+						m_Effects->Burst(Fx::SwordConjure, center, glm::vec3(0.0f, 1.0f, 0.0f), area);
+					}
+				}
+			}
+			else
+			{
+				if (fx.SwordHeld && before > 0.0f)
+					for (uint32_t k = 0; k < 3; k++)
+						m_Effects->Burst(Fx::SwordFade, glm::mix(fx.SwordDrawn.Grip, tip, 0.25f + 0.33f * float(k)), glm::vec3(0.0f, 1.0f, 0.0f), down ? 1.4f : 1.0f);
+				fx.SwordHeld = false;
+				fx.SwordShow = std::max(fx.SwordShow - dt / SwordFadeSeconds, 0.0f);
+				if (fx.SwordShow <= 0.0f)
+					phase = SwordPhase::Hidden;
+			}
+		}
+		fx.SwordPhase = uint8_t(phase);
+	}
+
+	void SessionState::ShatterSword(EntityFx& fx, const EntityState& entity, float area)
+	{
+		const glm::vec3 grip = fx.SwordDrawn.Grip;
+		const glm::vec3 tip = SwordTip(fx.SwordDrawn);
+		const glm::vec3 center = glm::mix(grip, tip, 0.5f);
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		const float facing = fx.SwordStrikeReach > 0.0f ? fx.SwordStrikeFacing : entity.Facing;
+		const glm::vec3 forward = Heading(facing);
+		const glm::vec3 across = glm::normalize(glm::cross(forward, up));
+		const Vec2 origin = fx.SwordStrikeReach > 0.0f ? fx.SwordStrikePoint : entity.Position;
+		const float reach = fx.SwordStrikeReach > 0.0f ? fx.SwordStrikeReach : GetAbility(AbilityId::SwordCleave).Reach * area;
+		const uint32_t base = SwordHash(entity.NetId, uint32_t(m_Time * 240.0f));
+		const auto random = [&](uint32_t index) { return float(SwordHash(base, index) & 0xFFFFu) / 65535.0f; };
+		const auto lane = [&](float t) { return origin + FromAngle(facing) * (reach * t); };
+		for (uint32_t k = 0; k < 5; k++)
+			m_Effects->Burst(Fx::SwordShatter, glm::mix(grip, tip, 0.1f + 0.2f * float(k)), up, (k == 2 ? 0.9f : 0.6f) * area);
+		m_Effects->Burst(Fx::SwordCleave, center, up, 1.3f * area);
+		m_Effects->Shockwave(Ground(lane(0.5f)), reach * 0.65f, 0.5f, 0.16f, 0.32f);
+		m_Effects->AirShockwave(center + up * 0.3f, 2.2f * area, 0.38f, 0.1f, 0.26f);
+		GroundDecal scar;
+		scar.Center = Ground(lane(0.55f));
+		scar.Yaw = facing;
+		scar.Extent = glm::vec2(reach * 0.47f, 0.4f * area);
+		scar.Depth = 0.9f;
+		scar.Shape = DecalShape::Fissure;
+		scar.Color = glm::vec4(SwordCrystal * 0.55f, 1.0f);
+		scar.Tint = glm::vec4(0.04f, 0.07f, 0.07f, 0.65f);
+		scar.Roughness = 0.5f;
+		scar.Params = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+		scar.Seed = entity.NetId;
+		m_Effects->Mark(scar, SwordScarLife, 0.02f, 0.85f, 1.0f, 0.06f, 1.6f);
+		for (uint32_t k = 0; k < SwordPieceCount; k++)
+		{
+			const uint32_t key = k * 16u;
+			const float along = random(key);
+			const float azimuth = random(key + 1u) * 6.2832f;
+			const float spread = 0.25f * area * std::sqrt(random(key + 2u));
+			const float speed = 1.0f + 3.8f * random(key + 3u);
+			SwordPiece piece;
+			piece.Position = glm::mix(grip, tip, along) + Heading(azimuth) * spread + up * (0.05f + 0.25f * random(key + 4u));
+			piece.Velocity = Heading(azimuth) * speed + forward * (0.4f + 1.2f * random(key + 5u)) + up * (1.2f + 5.5f * random(key + 6u) * random(key + 7u) * 1.6f);
+			piece.Axis = glm::normalize(glm::vec3(random(key + 8u) - 0.5f, random(key + 9u) - 0.5f, random(key + 10u) - 0.5f) + glm::vec3(0.0f, 1e-3f, 0.0f));
+			piece.Spin = (6.0f + 16.0f * random(key + 11u)) * (random(key + 12u) < 0.5f ? -1.0f : 1.0f);
+			piece.Heading = glm::normalize(fx.SwordDrawn.Forward + glm::vec3(random(key + 13u) - 0.5f, 0.0f, random(key + 14u) - 0.5f));
+			piece.Size = (0.5f + 1.1f * random(key + 15u) * random(key + 3u)) * area;
+			piece.Life = 0.7f + 0.8f * random(key + 7u);
+			piece.Age = -SwordPieceStagger * random(key + 2u) * random(key + 9u);
+			piece.Variant = k;
+			piece.Seed = base + k;
+			m_SwordPieces.push_back(piece);
+		}
+		const float first = 0.35f / reach;
+		for (uint32_t k = 0; k < SwordSpireCount; k++)
+		{
+			const uint32_t key = 4096u + k * 32u;
+			const float t = first + (1.0f - first) * (float(k) + 0.5f * random(key)) / float(SwordSpireCount - 1);
+			const Vec2 spot = lane(std::min(t, 1.0f)) + FromAngle(facing + HalfPi) * ((random(key + 1u) - 0.5f) * 0.5f * area);
+			const float scale = (k == SwordSpireCount - 1 ? 1.2f : 1.0f) * (0.75f + 0.45f * random(key + 2u));
+			SwordSpire spire;
+			spire.Base = Ground(spot);
+			spire.Axis = glm::normalize(up + forward * (0.1f + 0.25f * random(key + 3u)) + across * ((random(key + 4u) - 0.5f) * 0.4f));
+			spire.Yaw = random(key + 5u) * 6.2832f;
+			spire.Size = SwordClusterSize * scale * area;
+			spire.Delay = SwordSpireStagger * t + 0.03f * random(key + 6u);
+			spire.Life = 0.85f + 0.35f * random(key + 7u);
+			spire.Variant = uint32_t(random(key + 8u) * 3.0f);
+			spire.Cluster = true;
+			spire.Seed = base + 97u * k;
+			m_SwordSpires.push_back(spire);
+			for (uint32_t c = 0; c < 2; c++)
+			{
+				const float yaw = random(key + 10u + c) * 6.2832f;
+				SwordSpire shard;
+				shard.Base = Ground(spot + FromAngle(yaw) * (0.25f + 0.2f * random(key + 12u + c)) * area);
+				shard.Axis = glm::normalize(up + Heading(yaw) * (0.5f + 0.4f * random(key + 14u + c)));
+				shard.Yaw = yaw;
+				shard.Size = (1.4f + 1.0f * random(key + 16u + c)) * area;
+				shard.Delay = spire.Delay + 0.02f + 0.04f * random(key + 18u + c);
+				shard.Life = spire.Life * (0.7f + 0.2f * random(key + 20u + c));
+				shard.Variant = k * 2u + c;
+				shard.Seed = spire.Seed + 1u + c;
+				m_SwordSpires.push_back(shard);
+			}
+			m_Effects->Burst(Fx::SwordDust, Ground(spot, 0.15f), up, area);
+		}
+		const bool local = entity.NetId == m_Client.GetPlayerNetId();
+		Rumble(Ground(lane(0.5f)), SwordShatterRumble, entity.Owner);
+		if (local)
+		{
+			m_KickSpeed += glm::vec2(forward.x, forward.z) * SwordShatterKick;
+			AddTrauma(SwordShatterTrauma);
+		}
+		m_App.GetGameAudio().PlaySwordShatter(lane(0.5f), local);
+		fx.SwordShow = 0.0f;
+		fx.SwordHeld = false;
+		fx.SwordStrikeReach = 0.0f;
+	}
+
+	void SessionState::UpdateSwordDebris(float dt)
+	{
+		for (SwordPiece& piece : m_SwordPieces)
+		{
+			if (piece.Age < 0.0f)
+			{
+				piece.Age += dt;
+				continue;
+			}
+			piece.Age += dt;
+			piece.Velocity.y -= SwordPieceGravity * dt;
+			piece.Position += piece.Velocity * dt;
+			piece.Angle += piece.Spin * dt;
+			const float floor = GroundHeight(Vec2(piece.Position.x, piece.Position.z)) + 0.04f * piece.Size;
+			if (piece.Position.y < floor)
+			{
+				piece.Position.y = floor;
+				if (piece.Velocity.y < -0.6f)
+				{
+					piece.Velocity.y *= -0.35f;
+					piece.Velocity.x *= 0.6f;
+					piece.Velocity.z *= 0.6f;
+					piece.Spin *= 0.6f;
+				}
+				else
+				{
+					piece.Velocity = glm::vec3(piece.Velocity.x * 0.85f, 0.0f, piece.Velocity.z * 0.85f);
+					piece.Spin *= 0.85f;
+				}
+			}
+			if (piece.Age >= piece.Life && !piece.Burst)
+			{
+				piece.Burst = true;
+				m_Effects->Burst(Fx::SwordFade, piece.Position, glm::vec3(0.0f, 1.0f, 0.0f), 0.6f);
+			}
+		}
+		std::erase_if(m_SwordPieces, [](const SwordPiece& piece) { return piece.Age >= piece.Life + SwordPieceFade; });
+		for (SwordSpire& spire : m_SwordSpires)
+		{
+			const float before = spire.Age - spire.Delay;
+			spire.Age += dt;
+			if (before < 0.0f && spire.Age - spire.Delay >= 0.0f)
+				m_Effects->Burst(Fx::SwordSpark, spire.Base + spire.Axis * (0.1f * spire.Size), spire.Axis, 0.5f);
+		}
+		std::erase_if(m_SwordSpires, [](const SwordSpire& spire) { return spire.Age >= spire.Delay + spire.Life; });
+	}
+
+	void SessionState::DrawSwordDebris(WorldRenderer& renderer) const
+	{
+		for (const SwordPiece& piece : m_SwordPieces)
+		{
+			if (piece.Age < 0.0f)
+				continue;
+			const glm::vec3 axis = Turn(piece.Heading, piece.Axis, piece.Angle);
+			const glm::vec3 helper = std::abs(axis.y) < 0.9f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+			const float fade = std::clamp((piece.Age - piece.Life) / SwordPieceFade, 0.0f, 1.0f);
+			CrystalShardLook look;
+			look.Center = piece.Position;
+			look.Axis = axis;
+			look.Up = glm::normalize(glm::cross(axis, helper));
+			look.Size = piece.Size;
+			look.Glow = std::exp(-piece.Age * 3.0f);
+			look.Fade = fade;
+			look.Ground = GroundHeight(Vec2(piece.Position.x, piece.Position.z));
+			look.Variant = piece.Variant;
+			DrawCrystalShard(renderer, m_SpellMeshes, look, piece.Seed);
+		}
+		for (const SwordSpire& spire : m_SwordSpires)
+		{
+			const float age = spire.Age - spire.Delay;
+			if (age <= 0.0f)
+				continue;
+			const float pop = 1.0f - std::exp(-age * SwordSpirePop);
+			const float growth = 1.0f + SwordSpireGrowth * age / spire.Life;
+			const glm::vec3 helper = std::abs(spire.Axis.y) < 0.9f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+			CrystalShardLook look;
+			look.Center = spire.Base - spire.Axis * (0.05f * spire.Size);
+			look.Axis = spire.Axis;
+			look.Up = Turn(glm::normalize(glm::cross(spire.Axis, helper)), spire.Axis, spire.Yaw);
+			look.Cluster = spire.Cluster;
+			look.Size = spire.Size * pop * growth;
+			look.Glow = 0.25f + 0.75f * std::exp(-age * 5.0f);
+			look.Fade = glm::smoothstep(0.45f, 1.0f, age / spire.Life);
+			look.Ground = spire.Base.y;
+			look.Variant = spire.Variant;
+			DrawCrystalShard(renderer, m_SpellMeshes, look, spire.Seed);
+		}
+	}
+
+	void SessionState::SwordStruck(const EntityState& strike)
+	{
+		const AbilityId ability = AbilityOf(strike);
+		const AbilityDef& def = GetAbility(ability);
+		const float scale = strike.GetScale();
+		EntityFx* owner = nullptr;
+		if (const EntityState* body = FindBody(strike.Owner))
+			if (const auto it = m_Fx.find(body->NetId); it != m_Fx.end())
+				owner = &it->second;
+		if (owner)
+		{
+			owner->SwordGlow = 1.0f;
+			if (ability == AbilityId::SwordShatter)
+				owner->SwordGlow = 1.0f;
+			else if (owner->SwordSwing == ability || ability == AbilityId::SwordThrow)
+				owner->SwordConfirmed = true;
+			if (ability == AbilityId::SwordCleave)
+			{
+				owner->SwordStrikePoint = strike.Position;
+				owner->SwordStrikeFacing = strike.Facing;
+				owner->SwordStrikeReach = def.Reach * scale;
+			}
+			if (ability != AbilityId::SwordShatter)
+				owner->SwordFacing = strike.Facing;
+			if (ability == AbilityId::SwordCleave)
+				owner->Stop = std::max(owner->Stop, SwordLandStop);
+		}
+		const glm::vec3 forward = Heading(strike.Facing);
+		if (ability == AbilityId::SwordCleave)
+		{
+			m_Effects->Burst(Fx::SwordCleave, Ground(strike.Position + FromAngle(strike.Facing) * (def.Reach * scale * 0.92f), 0.1f), glm::vec3(0.0f, 1.0f, 0.0f), scale);
+			m_Effects->Burst(Fx::SwordSpark, Ground(strike.Position + FromAngle(strike.Facing) * (def.Reach * scale * 0.5f), 0.2f), forward, 1.0f);
+			if (strike.Owner == m_Client.GetPlayerId())
+			{
+				m_KickSpeed += glm::vec2(forward.x, forward.z) * SwordCleaveKick;
+				AddTrauma(SwordCleaveTrauma);
+			}
 			return;
 		}
-		DrawChain(renderer, hand, point, 0.0f, 0.7f * (1.0f - t));
-		DrawGlow(renderer, point, 0.55f * (1.0f - t) + 0.1f, { 1.7f, 1.15f, 0.6f });
+		if (ability != AbilityId::CrystalSword && ability != AbilityId::SwordSweep)
+			return;
+		const float side = (ability == AbilityId::SwordSweep ? -1.0f : 1.0f) * SwordSweepSide;
+		for (uint32_t k = 0; k < 3; k++)
+		{
+			const float angle = strike.Facing + side * def.HalfArc * (float(k) - 0.5f) * 0.8f;
+			const glm::vec3 point = Ground(strike.Position + FromAngle(angle) * (def.Reach * scale * 0.92f), SwordSlashHeight);
+			m_Effects->Burst(Fx::SwordSpark, point, Heading(angle + side * HalfPi), k == 2 ? 1.0f : 0.6f);
+		}
+	}
+
+	void SessionState::DrawThrownSword(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& center) const
+	{
+		const float spin = entity.Facing + AgeOf(entity.NetId) * SwordThrowSpin;
+		CrystalSwordLook sword;
+		sword.Scale = SwordScale * SwordAreaOf(entity);
+		sword.Forward = Heading(spin);
+		sword.Flat = glm::vec3(0.0f, 1.0f, 0.0f);
+		sword.Grip = center + glm::vec3(0.0f, 0.35f, 0.0f) - sword.Forward * ((SwordGuard + SwordBlade) * sword.Scale * 0.45f);
+		sword.Glow = 0.7f;
+		sword.Ground = GroundHeight(entity.Position);
+		DrawCrystalSword(renderer, m_SpellMeshes, sword, m_Time, entity.NetId);
+		renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), SwordTip(sword), SwordTrail(), 0.8f);
+		renderer.DrawLight({ .Position = center + glm::vec3(0.0f, 0.35f, 0.0f), .Radius = 3.0f, .Color = SwordCrystal * 1.2f });
+	}
+
+	void SessionState::SwordHit(const HitEvent& hit)
+	{
+		const auto victim = m_Fx.find(hit.Target);
+		const bool cleave = hit.Ability == uint8_t(AbilityId::SwordCleave) || hit.Ability == uint8_t(AbilityId::SwordShatter);
+		const float stop = cleave ? SwordCleaveStop : SwordSwingStop;
+		const EntityState* attacker = FindBody(hit.Attacker);
+		if (victim != m_Fx.end())
+		{
+			victim->second.Stop = std::max(victim->second.Stop, stop);
+			victim->second.FlashColor = glm::mix(SwordCrystal, glm::vec3(1.0f), 0.55f);
+		}
+		if (attacker && attacker->NetId != hit.Target)
+			if (const auto it = m_Fx.find(attacker->NetId); it != m_Fx.end())
+				it->second.Stop = std::max(it->second.Stop, stop);
+		const glm::vec3 point = Ground(hit.Position, victim != m_Fx.end() ? BarHeight(victim->second.Last) * 0.5f : 0.8f);
+		Vec2 away = attacker ? hit.Position - attacker->Position : Vec2(1.0f, 0.0f);
+		away = LengthSquared(away) > 1e-4f ? Normalize(away) : Vec2(1.0f, 0.0f);
+		m_Effects->Burst(Fx::SwordHit, point, glm::vec3(away.x, 0.25f, away.y), cleave ? 1.35f : 1.0f);
 	}
 
 	void SessionState::OnEntityAppeared(const EntityState& entity)
@@ -1928,9 +2643,11 @@ namespace Game
 		const float scale = ability == AbilityId::StormJump ? 0.7f : entity.GetScale();
 		const bool fireball = ability == AbilityId::PurpleFireball;
 		const float blast = fireball ? entity.GetChargePower() : 0.0f;
-		const glm::vec3 tint = fireball ? FireballColor(blast) : CreditOf(ability) == AbilityId::StormStrike ? StormTelegraph : EffectColor(entity);
+		const glm::vec3 tint = fireball ? FireballColor(blast) : CreditOf(ability) == AbilityId::StormStrike ? StormTelegraph : CreditOf(ability) == AbilityId::CrystalSword ? SwordCrystal : EffectColor(entity);
 		m_Effects->Impact(ability, Ground(entity.Position), entity.Facing, scale, tint, entity.NetId,[this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); }, blast);
 		Rumble(Ground(entity.Position), ImpactRumble(ability, blast), entity.Owner);
+		if (CreditOf(ability) == AbilityId::CrystalSword)
+			SwordStruck(entity);
 		const std::optional<Fx> fx = EffectBurstFor(ability);
 		if (!fx)
 			return;
@@ -2072,6 +2789,15 @@ namespace Game
 			emit(forge.GetSmokeSpots(), Fx::ForgeSmoke, 13ull);
 			emit(forge.GetFallSpots(), Fx::FallSpray, 14ull);
 		}
+		const std::vector<LevelSpray>& sprays = m_LevelRenderer.GetSprays();
+		for (size_t i = 0; i < sprays.size(); i++)
+		{
+			const LevelSpray& spray = sprays[i];
+			if (LengthSquared(Vec2(spray.Position.x, spray.Position.z) - Vec2(m_CameraTarget.x, m_CameraTarget.z)) > 28.0f * 28.0f)
+				continue;
+			const Fx fx = spray.Kind == SprayKind::Lip ? Fx::WaterSpray : spray.Kind == SprayKind::Splash ? Fx::WaterSplash : Fx::WaterMist;
+			m_Effects->Trail(fx, (15ull << 40) | uint64_t(i), spray.Position, dt, spray.Scale);
+		}
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
 		const std::vector<LevelFire> staged = StageFires();
 		for (size_t i = 0; i < fires.size() + staged.size(); i++)
@@ -2082,6 +2808,7 @@ namespace Game
 			const Fx fx = fire.Kind == FireKind::Campfire ? Fx::Campfire : fire.Kind == FireKind::Candle ? Fx::CandleFlame : fire.Kind == FireKind::Torch ? Fx::TorchFlame : Fx::LanternFlame;
 			m_Effects->Trail(fx, (2ull << 40) | uint64_t(i), fire.Position, dt, fire.Scale);
 		}
+		UpdateSpikeStage(dt);
 		if (m_App.GetSettings().FireStage == 3)
 		{
 			glm::vec3 ground;
@@ -2095,14 +2822,14 @@ namespace Game
 				CometLanded(ground, comet.ImpactRadius, 1.0f, 960u + uint32_t(m_Time));
 			}
 		}
-		for (int i = 0; i < 1 && m_App.GetSettings().FireStage && m_App.GetSettings().FireStage != 3; i++)
+		for (int i = 0; i < 1 && (m_App.GetSettings().FireStage == 1 || m_App.GetSettings().FireStage == 2); i++)
 		{
 			glm::vec3 center;
 			float facing = 0.0f;
 			if (StageBolt(i, center, facing))
 				m_Effects->Trail(Fx::EmberTrail, (40ull << 40) | uint64_t(i), center, dt);
 		}
-		if (m_App.GetSettings().FireStage && m_App.GetSettings().FireStage != 3)
+		if (m_App.GetSettings().FireStage == 1 || m_App.GetSettings().FireStage == 2)
 		{
 			for (int i = 0; i < StageBlastCount(); i++)
 			{
@@ -2382,6 +3109,7 @@ namespace Game
 			input.Scale = look.Scale;
 			input.Skeleton = look.Skeleton;
 			input.Pose = look.Pose;
+			input.FreeHand = look.FreeHand;
 			if (input.Attacking && entity.Variant < uint8_t(AbilityId::Count))
 			{
 				const AbilityId ability = AbilityId(entity.Variant);
@@ -2389,22 +3117,21 @@ namespace Game
 				input.Windup = GetAbility(ability).CastTime;
 				const int8_t slot = m_Client.GetPredictedState().CastSlot;
 				if (entity.NetId == m_Client.GetPlayerNetId() && slot >= 0)
-					input.Windup = m_Client.GetTraits().Skills[size_t(slot)].CastTime;
+					input.Windup = SwingWindup(m_Client.GetTraits().Skills[size_t(slot)], ability);
 			}
 			const bool stomping = std::any_of(m_NovaFields.begin(), m_NovaFields.end(), [&](const NovaField& field) { return field.Owner == entity.Owner && field.Erupt >= 0.0f && field.Erupt < NovaStompSeconds; });
 			if (!input.Attacking && !input.Dead && stomping)
 			{
 				input.Attacking = true;
-				input.Attack = { .Windup = Anim::CastSmite };
+				input.Attack = { .Windup = Anim::CastErupt };
 				input.Windup = NovaStompSeconds;
 			}
 			const GameStatus& status = m_Client.GetStatus();
+			input.Alert = status.Mode != GameMode::Hub;
+			if (!input.Attacking && (entity.Variant & EmoteFlag) != 0)
+				input.Emote = entity.Variant;
 			if (!input.Attacking && !input.Dead && status.Mode == GameMode::Brawl && status.Brawl.Phase == BrawlPhase::Over && WonBrawlRound(entity.Owner) && status.Brawl.Timer > BrawlOverSeconds - VictoryPoseSeconds)
-			{
-				input.Attacking = true;
-				input.Attack = { .Windup = Anim::CastCall };
-				input.Windup = VictoryPoseWindup;
-			}
+				input.Emote = PackEmote(Emote::Victory, 0);
 			return input;
 		}
 		const CharacterLook* look = m_Characters->ForEnemy(entity.Kind);
@@ -2607,6 +3334,15 @@ namespace Game
 		renderer.SetGroundRelief(m_LevelRenderer.GetRelief());
 		renderer.SetSight(m_CameraTarget, !m_Overview);
 		m_LevelRenderer.Draw(renderer, *level, ComputeView());
+		if (level->Kind == MapKind::Hub)
+			for (const EntityState& entity : m_Client.GetEntities())
+			{
+				if (entity.Kind != EntityKind::Player || entity.Has(EntityFlags::Dead))
+					continue;
+				const float depth = HubRiverDepth(entity.Position - EmberCenter);
+				if (depth > 0.02f)
+					renderer.DrawRipple({ entity.Position.x, entity.Position.y, std::min(depth * 5.0f, 1.0f), float(entity.NetId % 97u) });
+			}
 		const std::vector<LevelFire>& fires = m_LevelRenderer.GetFires();
 		const std::vector<LevelFire> staged = StageFires();
 		for (size_t i = 0; i < fires.size() + staged.size(); i++)
@@ -2642,6 +3378,7 @@ namespace Game
 		DrawArcFades(renderer);
 		for (const BladeSlash& slash : m_BladeSlashes)
 			DrawBladeSlash(renderer, slash);
+		DrawSwordDebris(renderer);
 		for (const BladeFade& fade : m_BladeFades)
 		{
 			const float t = fade.Age / (fade.Stuck ? ObsidianStickSeconds : ObsidianFadeSeconds);
@@ -2657,6 +3394,7 @@ namespace Game
 			DrawObsidianBlade(renderer, m_SpellMeshes, look, m_Time, fade.Seed);
 		}
 		DrawSpikeRuins(renderer);
+		DrawSpikeShards(renderer);
 		DrawNovaFields(renderer);
 		DrawVoidWells(renderer);
 		DrawShields(renderer);
@@ -2878,12 +3616,16 @@ namespace Game
 		const auto lifted = m_BodyHeights.find(entity.NetId);
 		m_Cosmetics->Forget(m_Time);
 		m_Cosmetics->Draw(renderer, *m_Effects, { .Key = entity.NetId, .Style = LookOf(entity).Style, .Base = base, .Facing = entity.Facing, .Scale = look.Scale, .Grounded = lifted == m_BodyHeights.end() || !lifted->second.Aloft, .Pose = &pose, .Rig = &m_Characters->GetRig(look.Skeleton) }, m_Time);
+		if (const auto sworded = m_Fx.find(entity.NetId); sworded != m_Fx.end())
+			DrawFloatingSword(renderer, entity, sworded->second);
 		if (entity.Has(EntityFlags::Dashing))
 			renderer.DrawTrail(uint64_t(entity.NetId) | (22ull << 40), base + glm::vec3(0.0f, 0.95f * look.Scale, 0.0f), DashTrail(color));
 		if (look.Tip)
 		{
 			const glm::vec3 tip = pose.JointPoint(look.TipJoint, *look.Tip);
 			m_WandTips[entity.Owner] = { tip, m_Time };
+			if (const CharacterRig& rig = m_Characters->GetRig(look.Skeleton); rig.Chest)
+				m_ChestShift[entity.NetId] = pose.JointPosition(*rig.Chest) - glm::vec3(pose.Model * glm::vec4(rig.ChestRest, 1.0f));
 			if (const float strike = animator->StrikeWeight(*m_Characters); strike > 0.02f)
 			{
 				const auto fx = m_Fx.find(entity.NetId);
@@ -2904,6 +3646,8 @@ namespace Game
 			DrawGroundRing(renderer, base, 0.56f, { 1.0f, 0.25f, 0.18f }, 1.6f, 0.03f, 12.0f, 0.15f);
 		if (entity.Has(EntityFlags::Stunned))
 			DrawStunStars(renderer, pose.JointPosition(m_Characters->GetRig(look.Skeleton).Head) + glm::vec3(0.0f, 0.75f * look.Scale, 0.0f));
+		if (entity.NetId == m_Client.GetPlayerNetId())
+			DrawBarrageReticle(renderer, entity);
 		if (!entity.Has(EntityFlags::Attacking) || entity.Variant >= uint8_t(AbilityId::Count))
 			return;
 		const AbilityId casting = AbilityId(entity.Variant);
@@ -3038,6 +3782,8 @@ namespace Game
 		look.Grow = 1.0f - std::pow(1.0f - std::clamp(age / 0.25f, 0.0f, 1.0f), 3.0f);
 		look.Forward = Heading(caster.Facing);
 		look.Center = BodyBase(caster) + glm::vec3(0.0f, FireballHoldHeight + 0.04f * std::sin(m_Time * 2.7f + phase), 0.0f) + look.Forward * (FireballHoldReach + 0.6f * FireballBallRadius * look.Size * look.Grow);
+		if (const auto shift = m_ChestShift.find(caster.NetId); shift != m_ChestShift.end())
+			look.Center += shift->second;
 		look.Power = power;
 		look.Flash = fx && fx->FireballReady >= 0.0f ? std::exp(-fx->FireballReady * 7.0f) : 0.0f;
 		return look;
@@ -3333,6 +4079,17 @@ namespace Game
 		const glm::vec3 thrust = glm::normalize(Heading(spike.Facing) * std::sin(SpikeTilt) + glm::vec3(0.0f, std::cos(SpikeTilt), 0.0f));
 		m_Effects->Burst(Fx::SpikeEruption, base + glm::vec3(0.0f, 0.1f, 0.0f), thrust);
 		m_Effects->Shockwave(base, 1.9f, 0.38f, 0.15f, 0.24f);
+		EarthSpikeLook placed;
+		placed.Facing = spike.Facing;
+		placed.Scale = spike.GetScale();
+		placed.Seed = spike.NetId;
+		PlaceSatellites(placed, spike.Position);
+		for (size_t i = 0; i < std::size(SpikeSatellites); i++)
+			m_Effects->Burst(Fx::SpikeEruption, placed.SatelliteBase[i] + glm::vec3(0.0f, 0.05f, 0.0f), thrust, SpikeSatellites[i].Size);
+		SpikeChunks(base, spike.Facing, spike.NetId, false);
+		const Vec2 heading = FromAngle(spike.Facing);
+		if (const float near = 1.0f - Length(Vec2(m_CameraTarget.x, m_CameraTarget.z) - spike.Position) / SpikeKickReach; near > 0.0f)
+			m_KickSpeed += glm::vec2(heading.x, heading.y) * (SpikeKick * near * (spike.Owner != NoPlayer && spike.Owner == m_Client.GetPlayerId() ? OwnRumble : 1.0f));
 		GroundDecal soil;
 		soil.Center = base;
 		soil.Yaw = spike.Facing;
@@ -3349,18 +4106,34 @@ namespace Game
 		cracks.Shape = DecalShape::Cracks;
 		cracks.Color = glm::vec4(SkillColor(AbilityId::EarthSpike) * 1.1f, 1.0f);
 		cracks.Tint = glm::vec4(0.04f, 0.035f, 0.03f, 0.85f);
-		cracks.Params = glm::vec4(0.3f, 0.0f, 0.0f, 0.0f);
+		cracks.Params = glm::vec4(0.12f, 0.0f, 0.0f, 0.0f);
 		m_Effects->Mark(cracks, SpikeRiftSeconds, 0.02f, 0.45f, 1.0f, 0.1f, 3.0f);
 		m_Effects->Mark(SpikeRift(spike, 0.25f), SpikeRiftSeconds, 0.02f, 0.3f, 1.0f, 0.08f, 2.5f);
 	}
 
-	void SessionState::EndSpike(const EntityState& spike)
+	void SessionState::EndSpike(const EntityState& spike, float age)
 	{
+		if (age < 0.0f)
+			age = AgeOf(spike.NetId);
 		const glm::vec3 base = Ground(spike.Position);
 		const glm::vec3 axis = glm::normalize(Heading(spike.Facing) * std::sin(SpikeTilt) + glm::vec3(0.0f, std::cos(SpikeTilt), 0.0f));
 		m_Effects->Burst(Fx::SpikeCrumble, base + glm::vec3(0.0f, 0.2f, 0.0f));
 		m_Effects->Burst(Fx::SpikeCrumble, base + axis * (SpikeLength * 0.55f), glm::vec3(0.0f, 1.0f, 0.0f), 0.7f);
-		m_SpikeRuins.push_back({ spike.Position, spike.Facing, 0.0f, spike.NetId, SpikeThrust(AgeOf(spike.NetId)) });
+		const bool shatter = m_SpellMeshes.SpikeModel;
+		m_SpikeRuins.push_back({ spike.Position, spike.Facing, 0.0f, spike.NetId, SpikeThrust(age), shatter });
+		const bool burst = (spike.Charge & SpikeShrapnelFlag) != 0;
+		if (shatter)
+			ShatterSpike(SpikeLook(spike, age), burst);
+		if (burst)
+		{
+			const glm::vec3 center = Ground(spike.Position + FromAngle(spike.Facing) * (GetAbility(AbilityId::EarthSpike).Reach * spike.GetScale() * SpikeShrapnelCenter));
+			m_Effects->Burst(Fx::SpikeEruption, center + glm::vec3(0.0f, 0.3f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.2f);
+			m_Effects->Shockwave(center, SpikeShrapnelRadius * spike.GetScale(), 0.32f, 0.12f, 0.2f);
+			SpikeChunks(center, spike.Facing + 1.7f, spike.NetId * 5u + 2u, false);
+			Rumble(center, 0.3f, spike.Owner);
+		}
+		else
+			SpikeChunks(base, spike.Facing, spike.NetId * 3u + 1u, true);
 		GroundDecal cracks;
 		cracks.Center = base;
 		cracks.Yaw = spike.Facing;
@@ -3370,25 +4143,190 @@ namespace Game
 		cracks.Color = glm::vec4(SkillColor(AbilityId::EarthSpike), 1.0f);
 		cracks.Tint = glm::vec4(0.04f, 0.035f, 0.03f, 0.8f);
 		cracks.Roughness = 0.95f;
-		cracks.Params = glm::vec4(0.25f, 0.0f, 0.0f, 0.0f);
+		cracks.Params = glm::vec4(0.08f, 0.0f, 0.0f, 0.0f);
 		cracks.Seed = spike.NetId * 7u + 3u;
 		m_Effects->Mark(cracks, SpikeRiftSeconds * 0.8f, 0.02f, 0.5f, 1.0f, 0.1f, 3.0f);
 	}
 
-	EarthSpikeLook SessionState::SpikeLook(const EntityState& spike) const
+	void SessionState::ShatterSpike(const EarthSpikeLook& look, bool burst)
 	{
-		const float age = AgeOf(spike.NetId);
+		const auto unit = [seed = look.Seed](uint32_t index)
+		{
+			uint32_t x = seed * 0x9E3779B1u + index * 0x85EBCA77u + 0x5BD1E995u;
+			x ^= x >> 15;
+			x *= 0x2C1B3C6Du;
+			x ^= x >> 12;
+			x *= 0x297A2D39u;
+			x ^= x >> 15;
+			return float(x & 0xFFFFu) / 65535.0f;
+		};
+		const glm::mat4 frame = EarthSpikeFrame(look);
+		glm::mat4 basis = frame;
+		basis[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+		const size_t variant = look.Seed % SpikeVariants;
+		for (size_t piece = 0; piece < SpikePieces; piece++)
+		{
+			const uint32_t k = uint32_t(piece) * 8u;
+			SpikeShard shard;
+			shard.Mesh = m_SpellMeshes.SpikeParts[variant][piece];
+			shard.Basis = basis;
+			shard.Pivot = m_SpellMeshes.SpikePivots[variant][piece];
+			shard.Center = glm::vec3(frame * glm::vec4(shard.Pivot, 1.0f));
+			shard.Radius = m_SpellMeshes.SpikeRadii[variant][piece] * look.Scale;
+			shard.Seed = look.Seed * 7u + uint32_t(piece);
+			const float ground = GroundHeight(Vec2(shard.Center.x, shard.Center.z));
+			shard.Buried = shard.Center.y < ground + 0.15f;
+			if (shard.Buried)
+			{
+				shard.Velocity = glm::vec3(0.0f, -1.4f, 0.0f);
+				shard.Life = 0.6f;
+			}
+			else
+			{
+				glm::vec3 out(shard.Center.x - look.Base.x, 0.0f, shard.Center.z - look.Base.z);
+				out = glm::length(out) > 0.05f ? glm::normalize(out) : Heading(look.Facing);
+				const glm::vec3 side(-out.z, 0.0f, out.x);
+				out = glm::normalize(out + side * (unit(k) - 0.5f));
+				shard.Velocity = burst ? out * (3.0f + 2.5f * unit(k + 1u)) + WorldUp * (2.0f + 1.6f * unit(k + 2u)) : out * (0.5f + 1.3f * unit(k + 1u)) + WorldUp * (0.4f + 1.4f * unit(k + 2u));
+				shard.Axis = glm::normalize(glm::cross(WorldUp, out) + glm::vec3(unit(k + 3u) - 0.5f, unit(k + 4u) - 0.5f, unit(k + 5u) - 0.5f) * 0.8f);
+				shard.Spin = (burst ? 2.0f : 1.0f) * (2.0f + 3.5f * unit(k + 6u));
+				shard.Life = 1.5f + 0.4f * unit(k + 7u);
+			}
+			m_SpikeShards.push_back(shard);
+		}
+	}
+
+	void SessionState::UpdateSpikeShards(float dt)
+	{
+		constexpr float Gravity = 16.0f;
+		for (SpikeShard& shard : m_SpikeShards)
+		{
+			shard.Age += dt;
+			if (!shard.Buried)
+				shard.Velocity.y -= Gravity * dt;
+			shard.Center += shard.Velocity * dt;
+			shard.Angle += shard.Spin * dt;
+			if (shard.Buried)
+				continue;
+			const float floor = GroundHeight(Vec2(shard.Center.x, shard.Center.z)) + shard.Radius;
+			if (shard.Center.y < floor)
+			{
+				shard.Center.y = floor;
+				shard.Velocity.y = shard.Velocity.y < -2.0f ? -0.25f * shard.Velocity.y : 0.0f;
+				shard.Velocity.x *= 0.5f;
+				shard.Velocity.z *= 0.5f;
+				shard.Spin *= 0.45f;
+			}
+		}
+		std::erase_if(m_SpikeShards, [](const SpikeShard& shard) { return shard.Age >= shard.Life; });
+	}
+
+	void SessionState::DrawSpikeShards(WorldRenderer& renderer) const
+	{
+		for (const SpikeShard& shard : m_SpikeShards)
+		{
+			const float fade = glm::smoothstep(shard.Life - 0.55f, shard.Life, shard.Age);
+			const glm::vec3 sink = WorldUp * (fade * shard.Radius * 1.2f);
+			const glm::mat4 transform = glm::translate(glm::mat4(1.0f), shard.Center - sink)
+				* glm::rotate(glm::mat4(1.0f), shard.Angle, shard.Axis)
+				* shard.Basis
+				* glm::translate(glm::mat4(1.0f), -shard.Pivot);
+			DrawSpikeShard(renderer, shard.Mesh, transform, fade, GroundHeight(Vec2(shard.Center.x, shard.Center.z)), shard.Seed);
+		}
+	}
+
+	EarthSpikeLook SessionState::SpikeLook(const EntityState& spike, float age) const
+	{
+		if (age < 0.0f)
+			age = AgeOf(spike.NetId);
 		const float phase = float(spike.NetId % 97u);
 		EarthSpikeLook look;
 		look.Base = Ground(spike.Position);
 		look.Facing = spike.Facing;
 		look.Extend = SpikeThrust(age);
-		look.Collar = SpikeThrust(age * 1.4f);
+		look.Collar = SpikeHeave + (1.0f - SpikeHeave) * SpikeThrust(age * 1.4f);
+		look.Satellite = SpikeThrust(age - SpikeSatelliteLag);
 		look.Tilt = SpikeTilt + 0.05f * std::exp(-age * 9.0f) * std::sin(age * 50.0f);
 		look.Sway = 0.05f * std::exp(-age * 8.0f) * std::sin(age * 61.0f + phase);
 		look.Scale = spike.GetScale();
 		look.Seed = spike.NetId;
+		PlaceSatellites(look, spike.Position);
 		return look;
+	}
+
+	void SessionState::PlaceSatellites(EarthSpikeLook& look, Vec2 position) const
+	{
+		const Vec2 heading = FromAngle(look.Facing);
+		const Vec2 side(-heading.y, heading.x);
+		const float mirror = look.Seed % 2u == 0u ? 1.0f : -1.0f;
+		for (size_t i = 0; i < std::size(SpikeSatellites); i++)
+			look.SatelliteBase[i] = Ground(position + (heading * SpikeSatellites[i].Along + side * (SpikeSatellites[i].Side * mirror)) * look.Scale);
+	}
+
+	void SessionState::SpikeChunks(const glm::vec3& base, float facing, uint32_t seed, bool crumble)
+	{
+		const auto unit = [seed](uint32_t index)
+		{
+			uint32_t x = seed * 0x9E3779B1u + index * 0x85EBCA77u + 0x165667B1u;
+			x ^= x >> 15;
+			x *= 0x2C1B3C6Du;
+			x ^= x >> 12;
+			x *= 0x297A2D39u;
+			x ^= x >> 15;
+			return float(x & 0xFFFFu) / 65535.0f;
+		};
+		const glm::vec3 heading = Heading(facing);
+		const glm::vec3 axis = glm::normalize(heading * std::sin(SpikeTilt) + WorldUp * std::cos(SpikeTilt));
+		const int count = crumble ? 4 : 7;
+		for (int i = 0; i < count; i++)
+		{
+			const uint32_t k = uint32_t(i) * 16u;
+			const float angle = 6.2832f * (float(i) + 0.7f * unit(k)) / float(count);
+			const glm::vec3 out(std::cos(angle), 0.0f, std::sin(angle));
+			CometChunk chunk;
+			if (crumble)
+			{
+				chunk.Position = base + axis * (SpikeLength * (0.25f + 0.5f * unit(k + 1u))) + out * 0.2f;
+				chunk.Velocity = out * (0.6f + 1.2f * unit(k + 2u)) + WorldUp * (0.5f + 1.5f * unit(k + 3u));
+				chunk.Size = 0.3f + 0.14f * unit(k + 9u);
+				chunk.Life = 1.6f + 0.6f * unit(k + 10u);
+			}
+			else
+			{
+				const bool big = i < 2;
+				chunk.Position = base + out * (0.35f + 0.25f * unit(k + 1u)) + WorldUp * 0.25f;
+				chunk.Velocity = out * (big ? 1.2f + 1.0f * unit(k + 2u) : 1.8f + 2.0f * unit(k + 2u)) + axis * (big ? 2.5f + 1.5f * unit(k + 3u) : 4.0f + 3.0f * unit(k + 3u)) + WorldUp * (1.5f + 1.5f * unit(k + 5u));
+				chunk.Size = big ? 0.42f + 0.12f * unit(k + 9u) : 0.3f + 0.08f * unit(k + 9u);
+				chunk.Life = 2.2f + 0.6f * unit(k + 10u);
+			}
+			chunk.Axis = glm::normalize(glm::vec3(unit(k + 4u) * 2.0f - 1.0f, 0.6f, unit(k + 5u) * 2.0f - 1.0f));
+			chunk.Angle = 6.2832f * unit(k + 6u);
+			chunk.Spin = (5.0f + 7.0f * unit(k + 7u)) * (unit(k + 8u) < 0.5f ? -1.0f : 1.0f);
+			chunk.Key = uint64_t(m_CometChunkKeys++) | (27ull << 40);
+			chunk.Mesh = uint8_t((seed + uint32_t(i)) % uint32_t(m_ChunkMeshes.size()));
+			chunk.Cold = true;
+			chunk.Model = m_SpellMeshes.SpikeFrags[(seed + uint32_t(i)) % m_SpellMeshes.SpikeFrags.size()];
+			m_CometChunks.push_back(chunk);
+		}
+	}
+
+	void SessionState::SkewerHit(const HitEvent& hit)
+	{
+		const auto victim = m_Fx.find(hit.Target);
+		if (victim == m_Fx.end())
+			return;
+		victim->second.Stop = std::max(victim->second.Stop, SkewerStop);
+		if (const EntityState* attacker = FindBody(hit.Attacker); attacker && attacker->NetId != hit.Target)
+			if (const auto it = m_Fx.find(attacker->NetId); it != m_Fx.end())
+				it->second.Stop = std::max(it->second.Stop, SkewerStop);
+		const EntityState& struck = victim->second.Last;
+		if (struck.Kind == EntityKind::Player && !struck.Has(EntityFlags::Falling) && !struck.Has(EntityFlags::Lifted) && !struck.Has(EntityFlags::Dead))
+			if (const auto body = m_BodyHeights.find(hit.Target); body != m_BodyHeights.end())
+			{
+				body->second.Speed = std::min(body->second.Speed, -SkewerPop);
+				body->second.Aloft = true;
+			}
+		m_Effects->Burst(Fx::SpikeCrumble, Ground(hit.Position, 0.5f), glm::vec3(0.0f, 1.0f, 0.0f), 0.55f);
 	}
 
 	GroundDecal SessionState::SpikeRift(const EntityState& spike, float glow) const
@@ -3415,10 +4353,40 @@ namespace Game
 		const auto fx = m_Fx.find(caster.NetId);
 		const float progress = std::clamp((fx != m_Fx.end() ? std::max(fx->second.SpikeAge, 0.0f) : 0.0f) / def.CastTime, 0.0f, 1.0f);
 		const float facing = AngleOf(SpikeAimOf(caster));
-		const glm::vec3 origin = Ground(caster.CastPoint);
+		DrawSpikeTelegraph(renderer, Ground(caster.CastPoint), facing, progress, LocalArea(caster, AbilityId::EarthSpike), caster.NetId);
+	}
+
+	void SessionState::DrawBarrageReticle(WorldRenderer& renderer, const EntityState& self) const
+	{
+		const PlayerState& state = m_Client.GetPredictedState();
+		if (state.RecastSlot < 0 || state.RecastTimer <= 0.0f || AbilityId(state.RecastAbility) != AbilityId::EarthSpike || m_Paused)
+			return;
+		const SkillTraits& skill = m_Client.GetTraits().Skills[size_t(state.RecastSlot)];
+		const Level* level = m_Client.GetLevel();
+		if (!level)
+			return;
+		const Vec2 point = BarragePoint(*level, m_Client.GetPredictedArena(), state.RecastOrigin, self.Position, FromAngle(m_Aim), m_AimDistance, GetAbility(AbilityId::EarthSpike).Range * skill.RangeScale);
+		const glm::vec3 color = SkillColor(AbilityId::EarthSpike);
+		const float pulse = 0.5f + 0.5f * std::sin(m_Time * 9.0f);
+		DrawGroundRing(renderer, Ground(point), 0.42f + 0.05f * pulse, color, 0.55f + 0.3f * pulse, 0.025f, 10.0f, 0.5f);
+		DrawGroundRing(renderer, Ground(state.RecastOrigin), BarrageSpacing, color, 0.18f, 0.015f, 24.0f, 0.4f);
+	}
+
+	void SessionState::DrawSpikeTelegraph(WorldRenderer& renderer, const glm::vec3& origin, float facing, float progress, float area, uint32_t seed) const
+	{
+		const AbilityDef& def = GetAbility(AbilityId::EarthSpike);
 		const glm::vec3 color = SkillColor(AbilityId::EarthSpike);
 		const float pulse = 0.5f + 0.5f * std::sin(m_Time * 22.0f);
-		const float area = LocalArea(caster, AbilityId::EarthSpike);
+		const Vec2 point(origin.x, origin.z);
+		EarthSpikeLook heave;
+		heave.Base = origin + glm::vec3(0.025f * std::sin(m_Time * 71.0f), 0.0f, 0.025f * std::sin(m_Time * 83.0f + 1.3f)) * progress;
+		heave.Facing = facing;
+		heave.Extend = 0.0f;
+		heave.Satellite = 0.0f;
+		heave.Collar = SpikeHeave * progress * progress;
+		heave.Scale = area;
+		heave.Seed = seed;
+		DrawEarthSpike(renderer, m_SpellMeshes, heave);
 		GroundDecal soil;
 		soil.Center = origin;
 		soil.Extent = glm::vec2(0.7f + 0.35f * progress);
@@ -3427,18 +4395,18 @@ namespace Game
 		soil.Color = glm::vec4(0.0f);
 		soil.Tint = glm::vec4(0.11f, 0.085f, 0.065f, 0.3f + 0.25f * progress);
 		soil.Roughness = 0.95f;
-		soil.Seed = caster.NetId;
+		soil.Seed = seed;
 		renderer.DrawDecal(soil);
 		GroundDecal cracks = soil;
 		cracks.Extent = glm::vec2(0.55f + 0.75f * progress);
 		cracks.Shape = DecalShape::Cracks;
 		cracks.Color = glm::vec4(color * (0.7f + 0.3f * progress), 1.0f);
 		cracks.Tint = glm::vec4(0.04f, 0.035f, 0.03f, 0.8f);
-		cracks.Params = glm::vec4(0.15f + 0.25f * progress + 0.05f * pulse, 0.0f, 0.0f, 0.0f);
+		cracks.Params = glm::vec4(0.06f + 0.12f * progress + 0.03f * pulse, 0.0f, 0.0f, 0.0f);
 		renderer.DrawDecal(cracks);
 		DrawGroundRing(renderer, origin, def.Width * 0.5f + 0.15f, color, 0.3f + 0.35f * progress, 0.02f, 10.0f, 0.6f);
 		GroundDecal lane;
-		lane.Center = Ground(caster.CastPoint + FromAngle(facing) * (def.Reach * area * 0.5f));
+		lane.Center = Ground(point + FromAngle(facing) * (def.Reach * area * 0.5f));
 		lane.Yaw = facing;
 		lane.Extent = glm::vec2(def.Reach * area * 0.5f, def.Width * area * 0.5f);
 		lane.Depth = 1.4f;
@@ -3447,7 +4415,7 @@ namespace Game
 		lane.Tint = glm::vec4(0.06f, 0.05f, 0.04f, 0.75f);
 		lane.Roughness = 0.95f;
 		lane.Params = glm::vec4(1.0f, 0.3f + 0.7f * progress, 0.0f, 0.0f);
-		lane.Seed = caster.NetId;
+		lane.Seed = seed;
 		renderer.DrawDecal(lane);
 	}
 
@@ -3461,13 +4429,15 @@ namespace Game
 			EarthSpikeLook look;
 			look.Base = Ground(ruin.Position);
 			look.Facing = ruin.Facing;
-			look.Extend = ruin.Extend * (1.0f - 0.4f * sink * sink);
+			look.Extend = ruin.Shattered ? 0.0f : ruin.Extend * (1.0f - 0.4f * sink * sink);
 			look.Dissolve = std::pow(t, 1.3f);
 			look.Collar = 1.0f - sink;
 			look.Tilt = SpikeTilt + 0.12f * sink;
 			look.Sway = 0.06f * (1.0f - t) * std::sin(m_Time * 53.0f + phase);
 			look.Scale = 1.0f - 0.1f * sink;
 			look.Seed = ruin.Seed;
+			look.Satellite = ruin.Extend * std::max(1.0f - 1.5f * sink, 0.0f);
+			PlaceSatellites(look, ruin.Position);
 			DrawEarthSpike(renderer, m_SpellMeshes, look);
 		}
 	}
@@ -4467,15 +5437,17 @@ namespace Game
 			DrawBlade(renderer, entity, center, base);
 			return;
 		}
+		if (ability == AbilityId::SwordThrow)
+		{
+			DrawThrownSword(renderer, entity, center);
+			return;
+		}
 		const glm::vec3 color = entity.Owner == NoPlayer ? SkillColor(ability) : glm::mix(ColorOf(entity.Owner), SkillColor(ability), 0.6f);
 		const glm::vec3 owner = entity.Owner == NoPlayer ? glm::vec3(0.0f) : glm::pow(ColorOf(entity.Owner), glm::vec3(2.2f));
 		DrawProjectileVisual(renderer, ability, center, entity.Facing, color, m_Time, entity.NetId, owner);
 		if (GetAbility(ability).Damages != Element::Physical)
 			renderer.DrawLight({ .Position = center, .Radius = 2.8f, .Color = glm::pow(color, glm::vec3(2.2f)) * (SpellLightGain * 0.7f) });
 		renderer.DrawTrail(uint64_t(entity.NetId) | (20ull << 40), center, ProjectileTrail(ability));
-		if (ability == AbilityId::ChainHook)
-			if (const EntityState* body = FindBody(entity.Owner))
-				DrawChain(renderer, HandOf(*body), center - Heading(entity.Facing) * 0.12f, 0.12f, 0.0f);
 	}
 
 	void SessionState::DrawEffect(WorldRenderer& renderer, const EntityState& entity) const
@@ -4490,6 +5462,11 @@ namespace Game
 		const float scale = entity.GetScale();
 		if (ability == AbilityId::GravityWell)
 			return;
+		if (entity.Has(EntityFlags::Pending) && ability == AbilityId::EarthSpike)
+		{
+			DrawSpikeTelegraph(renderer, base, entity.Facing, std::clamp(age / BloomDelay, 0.0f, 1.0f), scale, entity.NetId);
+			return;
+		}
 		if (entity.Has(EntityFlags::Pending))
 		{
 			const float pending = PendingAge(entity);
@@ -4520,9 +5497,9 @@ namespace Game
 			return;
 		if (ability == AbilityId::PurpleFireball)
 			return;
-		if (ability == AbilityId::HookAnchor || ability == AbilityId::HookPull || ability == AbilityId::HookYank)
+		if (CreditOf(ability) == AbilityId::CrystalSword)
 		{
-			DrawHook(renderer, entity, age);
+			DrawSwordStrike(renderer, entity, age);
 			return;
 		}
 		const float t = std::clamp(age / std::max(def.EffectDuration, 0.05f), 0.0f, 1.0f);
@@ -4666,7 +5643,67 @@ namespace Game
 		}
 		if (m_Fade > 0.0f)
 			draw.Rect(ui.GetScreen(), { .Fill = Rgba(0.0f, 0.0f, 0.0f, 0.9f * m_Fade) });
+		DrawEmoteWheel();
 		DrawCursor();
+	}
+
+	void SessionState::UpdateEmoteWheel()
+	{
+		const bool able = !m_Paused && !m_App.UiWantsKeyboard() && m_Client.GetState() == ClientState::InGame && m_Client.GetPredictedState().Alive;
+		const bool held = able && Rdn::Input::IsKeyDown(Rdn::KeyCode::T);
+		if (held && !m_EmoteWheel)
+		{
+			m_EmoteWheel = true;
+			m_EmoteCenter = m_App.GetUi().GetMouse();
+			m_EmoteChoice = Emote::None;
+		}
+		else if (!held && m_EmoteWheel)
+		{
+			m_EmoteWheel = false;
+			if (able && m_EmoteChoice != Emote::None)
+				m_Client.PlayEmote(m_EmoteChoice);
+		}
+	}
+
+	void SessionState::DrawEmoteWheel()
+	{
+		if (!m_EmoteWheel)
+			return;
+		Ui& ui = m_App.GetUi();
+		UiDrawList& draw = ui.Draw();
+		constexpr float Ring = 132.0f;
+		constexpr float Slot = 38.0f;
+		constexpr float Dead = 30.0f;
+		constexpr uint32_t Count = uint32_t(Emote::Count) - 1;
+		const glm::vec2 margin(Ring + Slot + 16.0f);
+		const glm::vec2 center = glm::clamp(m_EmoteCenter, margin, glm::max(ui.GetSize() - margin, margin));
+		const glm::vec2 pointer = ui.GetMouse() - center;
+		const float step = 2.0f * Pi / float(Count);
+		m_EmoteChoice = Emote::None;
+		if (glm::length(pointer) > Dead)
+		{
+			const float angle = std::atan2(pointer.y, pointer.x) + 0.5f * Pi;
+			const int32_t index = int32_t(std::lround(angle / step)) % int32_t(Count);
+			m_EmoteChoice = Emote(uint32_t(index < 0 ? index + int32_t(Count) : index) + 1);
+		}
+		draw.Circle(center, Ring + Slot + 10.0f, Rgba(0.02f, 0.02f, 0.05f, 0.55f), WithAlpha(Theme::Edge, 0.5f), 1.2f);
+		for (uint32_t i = 0; i < Count; i++)
+		{
+			const Emote emote = Emote(i + 1);
+			const bool chosen = emote == m_EmoteChoice;
+			const float angle = float(i) * step - 0.5f * Pi;
+			const glm::vec2 spot = center + Ring * glm::vec2(std::cos(angle), std::sin(angle));
+			const float radius = chosen ? Slot + 4.0f : Slot;
+			draw.Circle(spot, radius, chosen ? Rgba(0.2f, 0.16f, 0.09f, 0.95f) : Rgba(0.06f, 0.06f, 0.1f, 0.9f), chosen ? Theme::Gold : WithAlpha(Theme::Edge, 0.8f), chosen ? 2.0f : 1.2f);
+			draw.TextAligned(UiRect::Centered(spot, { 2.0f * radius, 20.0f }), GetEmote(emote).Name, Theme::Bold(13.5f, chosen ? Theme::GoldLight : Theme::Text), { 0.5f, 0.5f });
+		}
+		draw.Circle(center, Dead + 14.0f, Rgba(0.05f, 0.045f, 0.09f, 0.92f), WithAlpha(Theme::Edge, 0.8f), 1.2f);
+		if (m_EmoteChoice != Emote::None)
+		{
+			const float angle = std::atan2(pointer.y, pointer.x);
+			draw.Triangle(center + (Dead + 22.0f) * glm::vec2(std::cos(angle), std::sin(angle)), { 12.0f, 10.0f }, angle, Theme::Gold);
+		}
+		draw.TextAligned(UiRect::Centered(center, { 2.0f * Dead + 20.0f, 20.0f }), "Emote", Theme::Caps(11.0f, Theme::Muted), { 0.5f, 0.5f });
 	}
 
 	void SessionState::DrawCursor()
@@ -5801,7 +6838,9 @@ namespace Game
 			const bool shattered = guard && IsGuardBroken(state, traits);
 			const float span = shattered ? GuardBreakCooldown(skill) : skill.Cooldown;
 			const bool recasting = !dodge && AwaitsNovaRecast(state, slot);
-			const float ready = span > 0.0f && !recasting ? 1.0f - std::clamp(cooldown / span, 0.0f, 1.0f) : 1.0f;
+			const bool rearmed = !dodge && state.RecastSlot == int8_t(slot) && state.RecastTimer > 0.0f;
+			const bool barrage = rearmed && AbilityId(state.RecastAbility) == AbilityId::EarthSpike;
+			const float ready = span > 0.0f && !rearmed ? 1.0f - std::clamp(cooldown / span, 0.0f, 1.0f) : 1.0f;
 			const bool covered = state.Mana + 1e-3f >= skill.ManaCost;
 			const bool overloaded = !dodge && IsOverloaded(state, traits, slot);
 			const bool affordable = covered || overloaded || traits.BloodRate > 0.0f;
@@ -5845,6 +6884,39 @@ namespace Game
 				draw.Rect(rect.Expand(2.5f + 3.0f * snap), { .Border = WithAlpha(Lighten(color, 0.5f), 0.9f * glint), .BorderWidth = brittle ? 2.2f : 1.4f, .Glow = WithAlpha(color, (brittle ? 0.5f : 0.2f) * glint + 0.5f * snap), .GlowSize = 10.0f + 8.0f * snap, .Chamfer = 11.0f });
 				draw.Rect(bar, { .Fill = Rgba(0.02f, 0.02f, 0.05f, 0.85f), .Chamfer = 1.5f });
 				draw.Rect({ bar.X, bar.Y, bar.W * left, bar.H }, { .Fill = fill, .Glow = WithAlpha(color, brittle ? 0.55f : 0.2f), .GlowSize = 5.0f, .Chamfer = 1.5f });
+			}
+			if (rearmed)
+			{
+				const float pulse = 0.5f + 0.5f * std::sin(m_Time * 3.4f);
+				const UiRect ring = rect.Expand(3.0f);
+				draw.Rect(ring, { .Border = WithAlpha(Lighten(color, 0.55f), 0.3f + 0.5f * pulse), .BorderWidth = 1.6f, .Glow = WithAlpha(color, 0.15f + 0.3f * pulse), .GlowSize = 12.0f, .Chamfer = 11.0f });
+				const auto perimeter = [&](float t)
+				{
+					const float p = (t - std::floor(t)) * 4.0f;
+					const float f = p - std::floor(p);
+					switch (int(p))
+					{
+					case 0: return glm::vec2(ring.X + ring.W * f, ring.Y);
+					case 1: return glm::vec2(ring.Right(), ring.Y + ring.H * f);
+					case 2: return glm::vec2(ring.Right() - ring.W * f, ring.Bottom());
+					default: return glm::vec2(ring.X, ring.Bottom() - ring.H * f);
+					}
+				};
+				const UiColor spark = Lighten(color, 0.75f);
+				for (const float head : { 0.0f, 0.5f })
+					for (int k = 0; k < 9; k++)
+					{
+						const float fade = 1.0f - float(k) / 9.0f;
+						draw.Circle(perimeter(m_Time * 0.42f + head - float(k) * 0.011f), 3.4f * (0.45f + 0.55f * fade), WithAlpha(spark, fade * (0.55f + 0.45f * pulse)));
+					}
+			}
+			if (barrage)
+			{
+				const UiRect bar{ rect.X + 7.0f, rect.Y + 5.0f, rect.W - 14.0f, 4.0f };
+				draw.Rect(bar, { .Fill = Rgba(0.02f, 0.02f, 0.05f, 0.85f), .Chamfer = 1.5f });
+				draw.Rect({ bar.X, bar.Y, bar.W * std::clamp(state.RecastTimer / BarrageWindow, 0.0f, 1.0f), bar.H }, { .Fill = Lighten(color, 0.3f), .Glow = WithAlpha(color, 0.4f), .GlowSize = 5.0f, .Chamfer = 1.5f });
+				for (uint32_t pip = 0; pip < skill.Recasts; pip++)
+					draw.Diamond({ rect.Center().x + (float(pip) - 0.5f * float(skill.Recasts - 1)) * 14.0f, rect.Y - 7.0f }, 10.0f, pip < state.RecastCharges ? Lighten(color, 0.5f) : Rgba(0.04f, 0.035f, 0.07f, 0.85f), WithAlpha(Theme::Edge, 0.85f), 0.8f);
 			}
 			if (guard && !shattered)
 			{
@@ -6169,8 +7241,72 @@ namespace Game
 		return std::fmod(m_Time, Period);
 	}
 
+	float SessionState::StageSpike() const
+	{
+		if (m_App.GetSettings().StageTime >= 0.0f)
+			return m_App.GetSettings().StageTime;
+		return std::fmod(m_Time, SpikeStagePeriod);
+	}
+
+	EntityState SessionState::StageSpikeEntity() const
+	{
+		const glm::vec3 right = glm::normalize(glm::vec3(m_Camera.View[0][0], 0.0f, m_Camera.View[2][0]));
+		const glm::vec3 at = StageSpot(1.6f, -1.2f);
+		EntityState spike;
+		spike.Kind = EntityKind::Effect;
+		spike.Variant = uint8_t(AbilityId::EarthSpike);
+		spike.NetId = 0x7F000000u + uint32_t(std::floor(m_Time / SpikeStagePeriod)) % 4096u;
+		spike.Position = Vec2(at.x, at.z);
+		spike.Facing = std::atan2(right.z, right.x);
+		if (uint32_t(std::floor(m_Time / SpikeStagePeriod)) % 2u == 1u)
+			spike.Charge = SpikeWallFlag | SpikeShrapnelFlag;
+		return spike;
+	}
+
+	void SessionState::UpdateSpikeStage(float dt)
+	{
+		if (m_App.GetSettings().FireStage != 4 || m_App.GetSettings().StageTime >= 0.0f)
+			return;
+		const AbilityDef& def = GetAbility(AbilityId::EarthSpike);
+		const float t = StageSpike();
+		const float before = t - dt;
+		const EntityState spike = StageSpikeEntity();
+		const glm::vec3 base = Ground(spike.Position, 0.05f);
+		const float standing = (spike.Charge & SpikeWallFlag) != 0 ? BulwarkSeconds : def.EffectDuration;
+		if (before < 0.0f)
+			m_Effects->Burst(Fx::SpikeTremor, base, glm::vec3(0.0f, 1.0f, 0.0f), 1.5f);
+		if (t < def.CastTime)
+			m_Effects->Trail(Fx::SpikeTremor, 44ull << 40, base, dt, 0.7f + 0.6f * t / def.CastTime);
+		if (before < def.CastTime && t >= def.CastTime)
+		{
+			EruptSpike(spike);
+			m_Effects->Impact(AbilityId::EarthSpike, Ground(spike.Position), spike.Facing, 1.0f, EffectColor(spike), spike.NetId, [this](const glm::vec2& point) { return GroundHeight(Vec2(point.x, point.y)); });
+			Rumble(Ground(spike.Position), ImpactRumble(AbilityId::EarthSpike, 0.0f), NoPlayer);
+		}
+		if (before < def.CastTime + standing && t >= def.CastTime + standing)
+		{
+			EndSpike(spike, standing);
+		}
+	}
+
+	void SessionState::DrawSpikeStage(WorldRenderer& renderer) const
+	{
+		const AbilityDef& def = GetAbility(AbilityId::EarthSpike);
+		const float t = StageSpike();
+		const EntityState spike = StageSpikeEntity();
+		if (t < def.CastTime)
+			DrawSpikeTelegraph(renderer, Ground(spike.Position), spike.Facing, t / def.CastTime, 1.0f, spike.NetId);
+		else if (t < def.CastTime + ((spike.Charge & SpikeWallFlag) != 0 ? BulwarkSeconds : def.EffectDuration) || m_App.GetSettings().StageTime >= 0.0f)
+			DrawEarthSpike(renderer, m_SpellMeshes, SpikeLook(spike, t - def.CastTime));
+	}
+
 	void SessionState::DrawFireStage(WorldRenderer& renderer) const
 	{
+		if (m_App.GetSettings().FireStage == 4)
+		{
+			DrawSpikeStage(renderer);
+			return;
+		}
 		if (m_App.GetSettings().FireStage == 3)
 		{
 			glm::vec3 ground;

@@ -91,7 +91,7 @@ namespace Game
 		void AfterDamage(World& world, Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt);
 		void NoteDeath(uint32_t victim);
 		void NoteCast(uint32_t playerId);
-		void NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, bool pull, uint32_t returned);
+		void NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, uint32_t returned);
 		void NoteFling(World& world, uint32_t victim, uint32_t attacker, uint8_t ability);
 		void NoteKnockout(World& world, uint32_t victim, uint32_t killer, bool hazard);
 		uint16_t GetPoints(uint32_t playerId) const { return playerId < MaxPlayers ? m_Brawlers[playerId].Points : uint16_t(0); }
@@ -154,7 +154,7 @@ namespace Game
 			uint32_t RoundCasts = 0;
 			uint16_t EnteredRounds = 0;
 			uint16_t WonRounds = 0;
-			FeatMark Hooked;
+			FeatMark Cleaved;
 			FeatMark Returned;
 		};
 

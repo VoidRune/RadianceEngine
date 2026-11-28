@@ -847,6 +847,29 @@ namespace Game
 		DrawProps(renderer, level, view);
 		DrawScene(renderer, view);
 		DrawPortals(renderer, level, view);
+		DrawFish(renderer, level, view);
+	}
+
+	void LevelRenderer::DrawFish(WorldRenderer& renderer, const Level& level, const LevelView& view) const
+	{
+		if (level.Kind != MapKind::Hub)
+			return;
+		constexpr float Homes[] = { 9.0f, 15.5f, 19.0f, 20.6f, 26.4f, 29.8f, 31.2f, 32.6f, 36.8f, 3.0f };
+		const float lip = HubRiverLevels().LipArc - 2.0f;
+		for (size_t i = 0; i < std::size(Homes); i++)
+		{
+			const float seed = float(i) * 1.618f;
+			const float t = view.Time;
+			const float arc = std::clamp(Homes[i] + 0.9f * std::sin(t * (0.09f + 0.02f * float(i % 3)) + seed * 2.1f) + 0.35f * std::sin(t * 0.6f + seed) * std::max(std::sin(t * 0.21f + seed * 3.0f), 0.0f), 0.5f, lip);
+			const HubRiverSample sample = HubRiverSampleAt(arc);
+			const float lane = sample.Half * (0.42f * std::sin(seed * 5.3f) + 0.22f * std::sin(t * 0.15f + seed * 1.3f));
+			const Vec2 local = sample.Point + Perpendicular(sample.Tangent) * lane;
+			if (HubRiverDepth(local) < 0.28f)
+				continue;
+			const Vec2 world = EmberCenter + local;
+			const float heading = std::atan2(-sample.Tangent.y, -sample.Tangent.x) + 0.28f * std::sin(t * 0.8f + seed * 4.0f);
+			renderer.DrawFish({ world.x, world.y, heading, 0.85f + 0.4f * (0.5f + 0.5f * std::sin(seed * 7.7f)) });
+		}
 	}
 
 	void LevelRenderer::Prepare(WorldRenderer& renderer, const Level& level)

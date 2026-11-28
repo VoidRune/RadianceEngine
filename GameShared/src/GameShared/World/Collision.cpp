@@ -29,15 +29,16 @@ namespace Game
 		Vec2 KeepOut(Vec2 from, Vec2 to, float radius, const BodyCircle& body)
 		{
 			const float contact = radius + body.Radius;
-			const Vec2 offset = to - body.Position;
+			const Vec2 center = NearestOnBody(body, to);
+			const Vec2 offset = to - center;
 			const float distanceSquared = Dot(offset, offset);
 			if (distanceSquared >= contact * contact)
 				return to;
-			const float allowed = std::min(contact, Length(from - body.Position));
+			const float allowed = std::min(contact, Length(from - NearestOnBody(body, from)));
 			const float distance = std::sqrt(distanceSquared);
 			if (distance >= allowed)
 				return to;
-			return distance > 1e-5f ? body.Position + offset * (allowed / distance) : from;
+			return distance > 1e-5f ? center + offset * (allowed / distance) : from;
 		}
 	}
 
@@ -320,5 +321,30 @@ namespace Game
 	bool IsFree(const Level& level, Vec2 position, float radius)
 	{
 		return level.Map.IsWalkableAt(position) && GetClearance(level, position, radius + 0.01f) >= radius;
+	}
+
+	float CastBodies(Vec2 from, Vec2 to, float radius, std::span<const BodyCircle> bodies)
+	{
+		float first = 1.0f;
+		for (const BodyCircle& body : bodies)
+		{
+			const float contact = radius + body.Radius;
+			if (LengthSquared(from - NearestOnBody(body, from)) <= contact * contact)
+				continue;
+			constexpr int32_t Samples = 8;
+			for (int32_t i = 1; i <= Samples; i++)
+			{
+				const float t = float(i) / float(Samples);
+				if (t >= first)
+					break;
+				const Vec2 point = Lerp(from, to, t);
+				if (LengthSquared(point - NearestOnBody(body, point)) <= contact * contact)
+				{
+					first = float(i - 1) / float(Samples);
+					break;
+				}
+			}
+		}
+		return first;
 	}
 }

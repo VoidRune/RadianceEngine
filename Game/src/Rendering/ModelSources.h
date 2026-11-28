@@ -107,6 +107,8 @@ namespace Game
 		{ .Path = "Original/EmberIsland", .Kind = ModelSourceKind::Scan, .TextureSize = 4096, .SplitNodes = true, .KeepOrigin = true },
 		{ .Path = "Original/EmberHeart", .Kind = ModelSourceKind::Scan, .TextureSize = 2048, .SplitNodes = true, .KeepOrigin = true },
 		{ .Path = "Original/HubCliffs", .Kind = ModelSourceKind::Scan, .TextureSize = 2048, .SplitNodes = true, .KeepOrigin = true },
+		{ .Path = "Original/HubDecor", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true, .KeepOrigin = true },
+		{ .Path = "Original/EarthSpike", .Kind = ModelSourceKind::Scan, .TextureSize = 1024, .SplitNodes = true, .KeepOrigin = true },
 		{ .Path = "Original/Materials/PavingStone", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
 		{ .Path = "Original/Materials/PavingBed", .Kind = ModelSourceKind::Material, .TextureSize = 512, .Size = 1.0f },
 		{ .Path = "Original/Materials/GroundGrass", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
@@ -134,6 +136,9 @@ namespace Game
 		{ .Path = "PolyHaven/Textures/monastery_stone_floor", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 1.8f },
 		{ .Path = "PolyHaven/Textures/forest_ground_04", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 3.0f },
 		{ .Path = "PolyHaven/Textures/forrest_ground_01", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 3.0f },
+		{ .Path = "PolyHaven/Textures/ganges_river_pebbles", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 2.2f },
+		{ .Path = "PolyHaven/Textures/brown_mud_rocks_01", .Kind = ModelSourceKind::Material, .TextureSize = 2048, .Size = 2.6f },
+		{ .Path = "PolyHaven/Textures/worn_planks", .Kind = ModelSourceKind::Material, .TextureSize = 1024, .Size = 2.0f },
 	};
 
 	inline constexpr ModelPack ModelPacks[] = {

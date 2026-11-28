@@ -20,8 +20,25 @@ namespace Game
 	inline constexpr float SpikeLength = 3.5f;
 	inline constexpr float SpikeTilt = 0.75f;
 	inline constexpr float SpikeCollarDepth = 1.0f;
+	inline constexpr float SpikeSatelliteLag = 0.045f;
+	inline constexpr size_t SpikePieces = 5;
+	inline constexpr size_t SpikeVariants = 3;
+	inline constexpr float SpikeModelCollarDepth = 0.35f;
+	struct SpikeSatellite
+	{
+		float Along;
+		float Side;
+		float Size;
+		float Lean;
+		float Yaw;
+	};
+	inline constexpr SpikeSatellite SpikeSatellites[] = {
+		{ 0.95f, 0.4f, 0.44f, -0.22f, 0.35f },
+		{ 1.75f, -0.3f, 0.33f, -0.12f, -0.3f },
+	};
 	inline constexpr float NovaDecalBox = 1.35f;
 	inline constexpr float FireballHoldHeight = 1.2f;
+	inline constexpr float EmberFlightHeight = 0.9f;
 	inline constexpr float FireballHoldReach = 0.45f;
 	inline constexpr float FireballBallRadius = 0.2f;
 	inline constexpr float FireballBlastHeight = 0.75f;
@@ -82,15 +99,36 @@ namespace Game
 	inline constexpr glm::vec3 DiamondViolet{ 0.78f, 0.62f, 1.0f };
 	inline constexpr size_t DiamondImpactSlots = 6;
 	inline constexpr size_t DiamondScarSlots = 8;
+	inline constexpr float SwordBlade = 1.25f;
+	inline constexpr float SwordGuard = 0.1f;
+	inline constexpr float SwordFormSeconds = 0.08f;
+	inline constexpr float SwordFadeSeconds = 0.26f;
+	inline constexpr float SwordLinger = 0.45f;
+	inline constexpr float SwordSlashHeight = 0.95f;
+	inline constexpr float SwordSweepSeconds = 0.09f;
+	inline constexpr float SwordSweepLead = 0.5f;
+	inline constexpr float SwordSlashSpread = 0.1f;
+	inline constexpr uint32_t SwordGlints = 4;
+	inline constexpr glm::vec3 SwordCrystal{ 0.42f, 1.0f, 0.86f };
+	inline constexpr glm::vec3 SwordCore{ 0.86f, 1.0f, 0.97f };
 
 	struct SpellMeshes
 	{
 		uint32_t Spear = UINT32_MAX;
 		std::array<uint32_t, 2> Spike{ UINT32_MAX, UINT32_MAX };
 		uint32_t SpikeCollar = UINT32_MAX;
+		std::array<std::array<uint32_t, SpikePieces>, SpikeVariants> SpikeParts{};
+		std::array<std::array<glm::vec3, SpikePieces>, SpikeVariants> SpikePivots{};
+		std::array<std::array<float, SpikePieces>, SpikeVariants> SpikeRadii{};
+		std::array<uint32_t, 4> SpikeFrags{ UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
+		float CollarDepth = SpikeCollarDepth;
+		bool SpikeModel = false;
 		std::array<uint32_t, 6> Ice{ UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
 		std::array<uint32_t, 4> Obsidian{ UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
 		std::array<uint32_t, 3> Fang{ UINT32_MAX, UINT32_MAX, UINT32_MAX };
+		uint32_t Sword = UINT32_MAX;
+		std::array<uint32_t, 4> SwordShards{ UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
+		std::array<uint32_t, 3> SwordClusters{ UINT32_MAX, UINT32_MAX, UINT32_MAX };
 	};
 
 	struct EarthSpikeLook
@@ -103,6 +141,8 @@ namespace Game
 		float Sway = 0.0f;
 		float Scale = 1.0f;
 		float Dissolve = 0.0f;
+		float Satellite = 1.0f;
+		std::array<glm::vec3, std::size(SpikeSatellites)> SatelliteBase{};
 		uint32_t Seed = 0;
 	};
 
@@ -132,6 +172,54 @@ namespace Game
 		float Flash = 0.0f;
 		float Ground = 0.0f;
 		bool Flying = false;
+	};
+
+	struct CrystalSwordLook
+	{
+		glm::vec3 Grip{ 0.0f };
+		glm::vec3 Forward{ 1.0f, 0.0f, 0.0f };
+		glm::vec3 Flat{ 0.0f, 1.0f, 0.0f };
+		float Scale = 1.0f;
+		float Form = 1.0f;
+		float Fade = 0.0f;
+		float Glow = 0.0f;
+		float Ground = 0.0f;
+	};
+
+	struct CrystalShardLook
+	{
+		glm::vec3 Center{ 0.0f };
+		glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+		glm::vec3 Up{ 1.0f, 0.0f, 0.0f };
+		float Size = 1.0f;
+		float Glow = 0.0f;
+		float Fade = 0.0f;
+		float Ground = 0.0f;
+		uint32_t Variant = 0;
+		bool Cluster = false;
+	};
+
+	struct SwordSlashLook
+	{
+		glm::vec3 Center{ 0.0f };
+		float Facing = 0.0f;
+		float Reach = 2.5f;
+		float HalfArc = 1.2f;
+		float Age = 0.0f;
+		float Life = 0.26f;
+		bool Backhand = false;
+		uint32_t Seed = 0;
+	};
+
+	struct SwordCleaveLook
+	{
+		glm::vec3 Ground{ 0.0f };
+		float Facing = 0.0f;
+		float Reach = 3.3f;
+		float Width = 0.9f;
+		float Age = 0.0f;
+		float Life = 0.32f;
+		uint32_t Seed = 0;
 	};
 
 	struct ObsidianLook
@@ -362,11 +450,19 @@ namespace Game
 	void DrawIceSpear(WorldRenderer& renderer, const SpellMeshes& meshes, const IceSpearLook& look, float time, uint32_t seed);
 	float SpikeThrust(float age);
 	void DrawEarthSpike(WorldRenderer& renderer, const SpellMeshes& meshes, const EarthSpikeLook& look);
+	glm::mat4 EarthSpikeFrame(const EarthSpikeLook& look);
+	void DrawSpikeShard(WorldRenderer& renderer, uint32_t mesh, const glm::mat4& transform, float dissolve, float ground, uint32_t seed);
 	void DrawIceCluster(WorldRenderer& renderer, const SpellMeshes& meshes, const IceClusterLook& look);
 	uint32_t NovaArmCount(uint32_t seed);
 	float NovaArmAngle(uint32_t seed, uint32_t arm);
 	void DrawObsidianBlade(WorldRenderer& renderer, const SpellMeshes& meshes, const ObsidianLook& look, float time, uint32_t seed);
 	void DrawBladeSlash(WorldRenderer& renderer, const BladeSlash& slash);
+	glm::vec3 SwordTip(const CrystalSwordLook& look);
+	void DrawCrystalSword(WorldRenderer& renderer, const SpellMeshes& meshes, const CrystalSwordLook& look, float time, uint32_t seed);
+	void DrawCrystalShard(WorldRenderer& renderer, const SpellMeshes& meshes, const CrystalShardLook& look, uint32_t seed);
+	void DrawSwordSlash(WorldRenderer& renderer, const SwordSlashLook& look);
+	void DrawSwordCleave(WorldRenderer& renderer, const SwordCleaveLook& look);
+	TrailStyle SwordTrail();
 	float FireballViolet(float power);
 	glm::vec3 FireballColor(float power);
 	glm::vec3 FireballFlameHue(float power);
@@ -423,7 +519,6 @@ namespace Game
 	TrailStyle LobTrail();
 	TrailStyle DashTrail(const glm::vec3& color);
 	TrailStyle WandTrail(const glm::vec3& color);
-	void DrawChain(WorldRenderer& renderer, const glm::vec3& from, const glm::vec3& to, float sag, float glow);
 
 	void DrawShockwave(WorldRenderer& renderer, const glm::vec3& ground, float radius, float width, float strength, float facing = 0.0f, float halfArc = 3.1416f);
 	void DrawAirShockwave(WorldRenderer& renderer, const glm::vec3& center, float radius, float width, float strength);

@@ -106,7 +106,7 @@ vec3 Through(vec3 n, vec3 view, float eta, vec3 backNormal, bool exits, float tr
 	return Refracted(inWorld + entered * travel, direction, beyond, screen, frontZ, level);
 }
 
-#ifdef WATER
+#if defined(WATER) || defined(RIVER)
 vec2 WaterSlope(vec2 p, float time, vec2 origin)
 {
 	const vec4 waves[4] = vec4[](vec4(0.8, 0.6, 7.0, 1.3), vec4(-0.55, 0.83, 11.0, 1.9), vec4(0.28, -0.96, 17.0, 2.4), vec4(-0.9, -0.42, 23.0, 3.1));
@@ -124,6 +124,143 @@ float Caustic(vec2 p, float time)
 	float a = 1.0 - abs(2.0 * DissolveNoise(vec3(p * 3.1, time * 0.35)) - 1.0);
 	float b = 1.0 - abs(2.0 * DissolveNoise(vec3(p * 4.3 + 7.3, time * 0.43 + 3.1)) - 1.0);
 	return pow(a, 9.0) + pow(b, 9.0) * 0.7;
+}
+#endif
+
+#ifdef RIVER
+layout(set = 0, binding = 8) uniform sampler2D SceneCopy;
+
+const float RiverIor = 1.333;
+const float RiverSpeed = 1.5;
+const float RiverPhaseRate = 0.7;
+const float RiverRoughness = 0.06;
+const float RiverRefract = 0.6;
+const float RiverRefractLimit = 0.05;
+const float RiverReflect = 3.0;
+const vec3 RiverScatterTint = vec3(0.24, 0.52, 0.46);
+const float RiverAmbientLevel = 2.0;
+const float RiverFoamEdge = 0.1;
+const vec3 RiverFoamAlbedo = vec3(0.82, 0.86, 0.84);
+const float RiverSheenRoughness = 0.13;
+const float RiverGlintLimit = 3.0;
+const float RiverCaustics = 0.55;
+const float RiverCausticScale = 2.2;
+const vec3 Luma = vec3(0.2126, 0.7152, 0.0722);
+
+const float RiverPatternSpeed = 1.0;
+const float RiverFallSpeed = 3.5;
+const vec2 RiverWind = vec2(0.31, 0.18);
+const float RiverLeafCell = 1.7;
+const float RiverLeafDensity = 0.16;
+const mat2 RiverTurn = mat2(1.62, 1.18, -1.18, 1.62);
+
+vec2 RiverGradient(ivec2 c)
+{
+	uint h = uint(c.x) * 0x8da6b343u ^ uint(c.y) * 0xd8163841u;
+	h ^= h >> 15;
+	h *= 0x2c1b3c6du;
+	h ^= h >> 12;
+	h *= 0x297a2d39u;
+	h ^= h >> 15;
+	float angle = float(h) * (6.2831853 / 4294967296.0);
+	return vec2(cos(angle), sin(angle));
+}
+
+float RiverHash(ivec2 c, uint salt)
+{
+	uint h = uint(c.x) * 0x9e3779b1u ^ uint(c.y) * 0x85ebca77u ^ salt * 0xc2b2ae3du;
+	h ^= h >> 16;
+	h *= 0x7feb352du;
+	h ^= h >> 15;
+	h *= 0x846ca68bu;
+	h ^= h >> 16;
+	return float(h & 0xFFFFFFu) / 16777215.0;
+}
+
+vec3 RiverNoise(vec2 p)
+{
+	ivec2 i = ivec2(floor(p));
+	vec2 f = p - floor(p);
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+	vec2 ga = RiverGradient(i);
+	vec2 gb = RiverGradient(i + ivec2(1, 0));
+	vec2 gc = RiverGradient(i + ivec2(0, 1));
+	vec2 gd = RiverGradient(i + ivec2(1, 1));
+	float va = dot(ga, f);
+	float vb = dot(gb, f - vec2(1.0, 0.0));
+	float vc = dot(gc, f - vec2(0.0, 1.0));
+	float vd = dot(gd, f - vec2(1.0, 1.0));
+	float k = va - vb - vc + vd;
+	return vec3(va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * k,
+		ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd) + du * (u.yx * k + vec2(vb, vc) - va));
+}
+
+vec2 RiverFbm(vec2 p, int octaves)
+{
+	vec2 slope = vec2(0.0);
+	mat2 chain = mat2(1.0);
+	float amplitude = 1.0;
+	for (int i = 0; i < octaves; i++)
+	{
+		slope += amplitude * (transpose(chain) * RiverNoise(p).yz);
+		p = RiverTurn * p + vec2(17.3, -9.1);
+		chain = RiverTurn * chain;
+		amplitude *= 0.42;
+	}
+	return slope;
+}
+
+vec3 RiverLeaf(vec2 q, float pace, float time, out float mask)
+{
+	mask = 0.0;
+	ivec2 c = ivec2(floor(q / RiverLeafCell));
+	if (RiverHash(c, 1u) > RiverLeafDensity)
+		return vec3(0.0);
+	vec2 center = (vec2(c) + 0.25 + 0.5 * vec2(RiverHash(c, 2u), RiverHash(c, 3u))) * RiverLeafCell;
+	vec2 d = q - center;
+	d.y *= (0.45 + 0.55 * clamp(pace, 0.0, 1.0)) / RiverPatternSpeed;
+	float angle = 6.2831853 * RiverHash(c, 4u) + time * 0.25 * (RiverHash(c, 5u) - 0.5);
+	vec2 local = vec2(cos(angle) * d.x + sin(angle) * d.y, -sin(angle) * d.x + cos(angle) * d.y);
+	float size = 0.06 + 0.06 * RiverHash(c, 6u);
+	float x = local.x / size;
+	float width = 0.48 * sqrt(max(1.0 - x * x, 0.0)) * (1.0 + 0.25 * cos(x * 7.0));
+	float edge = abs(local.y) / size - width;
+	float aa = fwidth(edge) + 1e-4;
+	mask = (1.0 - smoothstep(-aa, aa, edge)) * step(abs(x), 1.0);
+	float hue = RiverHash(c, 7u);
+	vec3 color = hue < 0.35 ? vec3(0.72, 0.24, 0.05) : hue < 0.6 ? vec3(0.8, 0.5, 0.09) : hue < 0.85 ? vec3(0.52, 0.11, 0.04) : vec3(0.42, 0.33, 0.14);
+	return color * (0.8 + 0.4 * RiverHash(c, 8u)) * (1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.05, abs(local.y) / size)));
+}
+
+float RiverCaustic(vec2 p, float time)
+{
+	vec2 q = p * RiverCausticScale;
+	vec2 i = q;
+	float c = 1.0;
+	for (int n = 0; n < 4; n++)
+	{
+		float t = time * 0.6 * (1.0 - 3.5 / float(n + 1));
+		i = q + vec2(cos(t - i.x) + sin(t + i.y), sin(t - i.y) + cos(t + i.x));
+		c += 1.0 / length(vec2(q.x / (sin(i.x + t) * 200.0), q.y / (cos(i.y + t) * 200.0)));
+	}
+	c = 1.17 - pow(c * 0.25, 1.4);
+	return pow(abs(c), 8.0);
+}
+
+vec3 RiverSky(vec3 r)
+{
+	vec3 horizon = Frame.SkyRadiance.rgb * 0.55 + Frame.SunRadiance.rgb * 0.1;
+	vec3 zenith = Frame.SkyRadiance.rgb * vec3(0.85, 0.97, 1.15);
+	return mix(horizon, zenith, smoothstep(0.15, 0.95, r.y));
+}
+
+float RiverFoamNoise(vec2 p)
+{
+	float a = DissolveNoise(vec3(p * 3.1, 0.0));
+	float b = DissolveNoise(vec3(p * 7.3 + 4.1, 1.7));
+	float c = 1.0 - abs(2.0 * DissolveNoise(vec3(p * 1.6 + 9.3, 3.1)) - 1.0);
+	return 0.45 * a + 0.3 * b + 0.25 * c;
 }
 #endif
 
@@ -153,7 +290,128 @@ void main()
 	float cosRay = max(dot(-view, forward), 0.2);
 	vec3 geometric = normalize(inNormal);
 
-#ifdef WATER
+#if defined(RIVER)
+	vec3 along = inTangent.xyz - geometric * dot(geometric, inTangent.xyz);
+	along = dot(along, along) > 1e-8 ? normalize(along) : vec3(0.0, 0.0, 1.0);
+	vec3 across = cross(geometric, along);
+	float pace = inColor.r;
+	float rapid = inColor.g;
+	bool fall = inColor.a < 0.5;
+	float speed = fall ? RiverFallSpeed : RiverPatternSpeed;
+	vec2 q = vec2(-inUv.x, (inUv.y - time) * speed);
+	vec2 world = inWorld.xz;
+	float calm = smoothstep(0.25, 0.75, 0.5 + 0.9 * RiverNoise(world * 0.09 + vec2(time * 0.012, -3.7)).x);
+	float strength = (0.55 + 0.45 * pace + 1.1 * rapid) * mix(0.4, 1.25, calm);
+	vec2 slope = (RiverFbm(q * vec2(1.05, 0.62), 3) * vec2(1.05, 0.62) * 0.11 + RiverFbm(q * 2.7 + vec2(4.1, time * 0.45), 2) * 0.07) * strength;
+	vec2 drift = vec2(0.0);
+	float wake = 0.0;
+	if (!fall)
+	{
+		drift = RiverFbm(world * 3.4 + RiverWind * time * 3.4 + vec2(-31.0, 12.0), 2) * 3.4 * 0.011 * mix(1.4, 0.6, calm);
+		for (uint i = 0u; i < uint(Frame.WaterCounts.y); i++)
+		{
+			vec4 source = Frame.Ripples[i];
+			vec2 d = world - source.xy;
+			float r = length(d);
+			if (r > 3.0)
+				continue;
+			drift += d / max(r, 1e-3) * (cos(r * 15.0 - time * 7.0 + source.w) * 0.2 * source.z * exp(-r * 1.6) * smoothstep(0.05, 0.3, r));
+			wake = max(wake, source.z * (1.0 - smoothstep(0.2, 0.45, r)));
+		}
+	}
+	float boil = fall ? 0.0 : inColor.b;
+	if (boil > 0.0)
+	{
+		vec2 radial = world - pc.Look.zw;
+		float r = max(length(radial), 1e-3);
+		drift += radial / r * (cos(r * 11.0 - time * 4.0) * 0.22 * boil * exp(-r * 0.7));
+	}
+	vec3 n = normalize(geometric - across * slope.x - along * slope.y - vec3(drift.x, 0.0, drift.y));
+	float cosV = clamp(dot(n, view), 1e-3, 1.0);
+	float ambient = dot(SamplePyramid(screen, 2.5), Luma);
+	float shade = clamp((ambient - 0.04) / 0.22, 0.12, 1.0);
+	vec3 litWhite = (Frame.SunRadiance.rgb * (max(l.y, 0.0) * shade) + Frame.SkyRadiance.rgb) * InvPi;
+	vec3 foamLit = RiverFoamAlbedo * litWhite;
+	vec3 glints = min(EvaluateBrdf(vec3(0.0), 0.0, RiverRoughness, n, view, l) * Frame.SunRadiance.rgb * max(dot(n, l), 0.0)
+		+ EvaluateBrdf(vec3(0.0), 0.0, RiverSheenRoughness, n, view, Frame.Sheen.xyz) * Frame.SheenRadiance.rgb * max(dot(n, Frame.Sheen.xyz), 0.0), vec3(RiverGlintLimit)) * (shade * mix(0.5, 1.0, calm));
+	vec3 radiance;
+	float coverage = buried;
+	if (fall)
+	{
+		float drop = inColor.b;
+		float streak = 0.6 * (0.5 + 0.7 * RiverNoise(vec2(q.x * 6.0, q.y * 0.6)).x) + 0.4 * (0.5 + 0.7 * RiverNoise(vec2(q.x * 17.0, q.y * 1.3 + 7.0)).x);
+		float white = clamp(smoothstep(0.5, 0.78, streak) * (0.7 + 0.3 * rapid) + 0.3 * smoothstep(0.1, 0.5, drop) * smoothstep(0.35, 0.65, streak), 0.0, 1.0);
+		vec3 body = RiverScatterTint * ambient * RiverAmbientLevel * 0.6 + RiverSky(reflect(-view, n)) * FresnelDielectric(cosV, RiverIor) * RiverReflect;
+		radiance = mix(body, foamLit * 1.15, white) + glints;
+		float breakup = 0.5 + 0.7 * RiverNoise(vec2(q.x * 3.5, q.y * 0.8 + 3.0)).x;
+		coverage *= (1.0 - smoothstep(0.45, 1.0, drop + 0.5 * breakup * drop)) * (0.6 + 0.4 * white) * smoothstep(0.0, 0.25, inColor.g) * smoothstep(0.0, 0.06, inUv.y);
+	}
+	else
+	{
+		float path = max(sceneZ - frontZ, 0.0) / cosRay;
+		float vertical = path * clamp(view.y, 0.05, 1.0);
+		vec3 entered = refract(-view, n, 1.0 / RiverIor);
+		vec3 bed = inWorld + entered * (vertical / max(-entered.y, 0.3));
+		vec2 offset = (ToScreen(bed) - ToScreen(inWorld - view * path)) * RiverRefract;
+		float reach = length(offset * vec2(Frame.Screen.x / Frame.Screen.y, 1.0));
+		offset *= min(1.0, RiverRefractLimit / max(reach, 1e-5));
+		vec2 bent = screen + offset;
+		if (LinearDepth(textureLod(SceneDepth, bent, 0.0).r) < frontZ + 0.02)
+			bent = screen;
+		vec3 seen = textureLod(SceneCopy, bent, 0.0).rgb;
+		float sunlit = clamp(dot(seen, Luma) * 4.0, 0.0, 1.0);
+		seen *= 1.0 + min(RiverCaustic(bed.xz, time), 2.5) * RiverCaustics * sunlit * smoothstep(0.02, 0.15, vertical) * exp(-vertical * 1.6);
+		float body = 0.0;
+		float shadow = 0.0;
+		vec2 castOffset = l.xz / max(l.y, 0.3) * 0.2;
+		for (uint i = 0u; i < uint(Frame.WaterCounts.x); i++)
+		{
+			vec4 fish = Frame.Fish[i];
+			vec2 d = bed.xz - fish.xy;
+			if (dot(d, d) > 1.2)
+				continue;
+			vec2 heading = vec2(cos(fish.z), sin(fish.z));
+			for (int pass = 0; pass < 2; pass++)
+			{
+				vec2 e = pass == 0 ? d : d - castOffset;
+				vec2 local = vec2(dot(e, heading), dot(e, vec2(-heading.y, heading.x)));
+				float len = 0.18 * fish.w;
+				float tail = smoothstep(0.1 * len, -len, local.x);
+				local.y += sin(local.x * 13.0 / fish.w - time * 8.0 + float(i) * 1.7) * 0.03 * fish.w * tail;
+				float width = 0.055 * fish.w * (1.0 - 0.65 * tail);
+				float shape = length(vec2(local.x / len, local.y / width));
+				float fin = step(-1.35 * len, local.x) * step(local.x, -0.8 * len) * step(abs(local.y), (-0.8 * len - local.x) * 0.9);
+				float soft = pass == 0 ? 0.15 : 0.45;
+				float mask = max(1.0 - smoothstep(1.0 - soft, 1.0, shape), fin * (pass == 0 ? 0.8 : 0.5));
+				if (pass == 0)
+					body = max(body, mask);
+				else
+					shadow = max(shadow, mask);
+			}
+		}
+		float deepEnough = smoothstep(0.12, 0.25, vertical);
+		seen *= 1.0 - 0.4 * shadow * deepEnough;
+		vec3 transmit = exp(-pc.Absorb.rgb * path);
+		float murk = 1.0 - exp(-pc.Look.x * path);
+		vec3 under = seen * transmit * (1.0 - murk) + RiverScatterTint * (ambient * RiverAmbientLevel) * murk;
+		under = mix(under, under * vec3(0.3, 0.33, 0.28), body * deepEnough * 0.8);
+		float fresnel = FresnelDielectric(cosV, RiverIor);
+		radiance = under * (1.0 - fresnel) + RiverSky(reflect(-view, n)) * (fresnel * RiverReflect) + glints;
+		float edge = 1.0 - smoothstep(0.0, RiverFoamEdge, vertical);
+		float amount = clamp(0.5 * edge + 0.85 * rapid + 0.45 * boil + 0.7 * wake, 0.0, 1.0);
+		float pattern = RiverFoamNoise(q * vec2(1.0, 0.75));
+		float foam = smoothstep(1.0 - amount, 1.12 - amount, pattern) * amount;
+		radiance = mix(radiance, foamLit, foam * 0.85);
+		coverage *= smoothstep(0.0, 0.012, vertical) * (1.0 - smoothstep(2.5, 4.0, vertical));
+		float leaf = 0.0;
+		vec3 leafColor = RiverLeaf(q, pace, time, leaf);
+		leaf *= smoothstep(0.02, 0.06, vertical) * (1.0 - smoothstep(2.5, 4.0, vertical));
+		radiance = mix(radiance, leafColor * litWhite * 1.1, leaf);
+		coverage = max(coverage, leaf * buried);
+		glints *= 1.0 - leaf;
+	}
+	vec3 glow = glints * 0.25;
+#elif defined(WATER)
 	vec2 slope = WaterSlope(inWorld.xz, time, inOrigin.xz);
 	vec3 n = normalize(geometric + vec3(-slope.x, 0.0, -slope.y));
 	float roughness = WaterRoughness;
@@ -268,6 +526,9 @@ void main()
 	float lining = ior > GemIor ? GemSurfaceGlow : 1.0;
 	vec3 glow = material.Extra.rgb * inTint.rgb * (surface.a * lining) + albedo * clamp(inGlow, 0.0, 1.0) + inAccent.rgb * (pow(1.0 - cosV, 3.5) * inAccent.a);
 	radiance += glow;
+#endif
+#ifdef RIVER
+	buried = coverage;
 #endif
 	vec3 burnLight = inBurn.rgb * (burn * burn);
 	radiance += burnLight;

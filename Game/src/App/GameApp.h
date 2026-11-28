@@ -67,6 +67,8 @@ namespace Game
 		uint8_t DistortionStage = 0;
 		bool GrassStage = false;
 		uint8_t FireStage = 0;
+		uint8_t EmoteStage = 0;
+		bool SwordStage = false;
 		float StageTime = -1.0f;
 		NetworkSimulation Simulation;
 	};

@@ -35,3 +35,5 @@ set "ASSETS=%~dp0..\..\assets\Original"
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0emberisland.py" -- --out "%ASSETS%\EmberIsland" || exit /b 1
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0emberheart.py" -- --out "%ASSETS%\EmberHeart" || exit /b 1
 "%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0hubcliffs.py" -- --out "%ASSETS%\HubCliffs" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0hubdecor.py" -- --out "%ASSETS%\HubDecor" || exit /b 1
+"%BLENDER%" --background --factory-startup --python-exit-code 1 --python "%~dp0earthspike.py" -- --out "%ASSETS%\EarthSpike" || exit /b 1

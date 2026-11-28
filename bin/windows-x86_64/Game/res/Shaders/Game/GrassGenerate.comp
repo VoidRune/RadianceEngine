@@ -176,6 +176,8 @@ float PavingHeight(vec2 p, float lod)
 
 uint SpikeSpecies(vec2 p, uint h, float wet)
 {
+	if (wet > 0.95)
+		return 5u;
 	if (GrassUnit(GrassHash(h ^ 0x2f8a6c1du)) < 0.85 * wet)
 		return 5u;
 	uint cluster = GrassHash2(ivec2(floor(p * 0.32 + vec2(7.0, -3.0))), 29u);
@@ -258,7 +260,13 @@ bool Build(ivec2 cell, out GrassBlade blade, out uint kind)
 	float fernChance = Frame.Grid.y * 0.014 * flora.g * smoothstep(0.0, 0.3, field.g);
 	float flowerChance = Frame.Grid.y * (0.02 * flowers + 0.05 * bloom);
 	float cloverChance = 0.05 * Frame.Grid.y * clover;
-	if (inJoint)
+	if (wet > 0.95)
+	{
+		if (pick >= Frame.Grid.y * 0.1 * lush)
+			return false;
+		kind = GrassSpike;
+	}
+	else if (inJoint)
 	{
 		lush = max(lush, 0.85);
 		if (pick < 0.01 * Frame.Grid.y * crevice)

@@ -117,6 +117,7 @@ namespace Game
 		float GroundHeight(const Level& level, const BrawlStatus* brawl, Vec2 position, float clock) const;
 		bool IsOverSky(const BrawlStatus* brawl, Vec2 position, float clock) const;
 		const std::vector<LevelFire>& GetFires() const { return m_Scene.Fires; }
+		const std::vector<LevelSpray>& GetSprays() const { return m_Scene.Sprays; }
 		const PeakRelief* GetRelief() const { return m_Scene.Relief.IsEmpty() ? nullptr : &m_Scene.Relief; }
 		const LakeArt& GetLake() const { return m_Lake; }
 		const ForgeArt& GetForge() const { return m_Forge; }
@@ -141,6 +142,7 @@ namespace Game
 		void DrawScene(WorldRenderer& renderer, const LevelView& view) const;
 		void DrawLoose(WorldRenderer& renderer, const LevelView& view) const;
 		void DrawPortals(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
+		void DrawFish(WorldRenderer& renderer, const Level& level, const LevelView& view) const;
 
 		SceneKey m_Key;
 		LevelScene m_Scene;

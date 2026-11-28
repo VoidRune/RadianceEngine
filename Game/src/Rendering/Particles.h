@@ -46,6 +46,7 @@ namespace Game
 		Fire,
 		FlameSheet,
 		FlameWall,
+		Crescent,
 	};
 
 	enum class DecalShape : uint8_t

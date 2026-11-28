@@ -2287,7 +2287,7 @@ namespace Game
 				enemy->Stun = std::max(enemy->Stun, 1.0f);
 			enemy->Chill = std::max(enemy->Chill, 2.5f);
 		}
-		if (source == AbilityId::ChainHook && ready(DuoId::AbyssalHook))
+		if (AbilityId(ability) == AbilityId::SwordCleave && ready(DuoId::AbyssalEdge))
 			CastFor(world, attacker, AbilityId::GravityWell, at, at, DuoShare, 0.05f);
 		if (source == AbilityId::Firebomb && ready(DuoId::StormSkip))
 			if (const std::optional<Entity> next = NearestEnemy(world, at, 7.0f, target))

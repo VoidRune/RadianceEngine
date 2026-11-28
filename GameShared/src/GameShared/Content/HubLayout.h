@@ -80,11 +80,38 @@ namespace Game
 	};
 	inline constexpr float HubStepRise = 0.14f;
 
-	inline constexpr Vec2 HubStreamPoints[] = { { -5.0f, 22.5f }, { -7.0f, 20.0f }, { -9.0f, 16.5f }, { -10.5f, 13.0f }, { -12.5f, 10.0f }, { -14.5f, 6.0f }, { -16.5f, 0.5f }, { -18.5f, -4.0f }, { -22.0f, -8.0f }, { -27.0f, -11.0f }, { -31.8f, -12.9f }, { -34.0f, -13.8f } };
-	inline constexpr float HubStreamWidth[] = { 0.55f, 1.05f };
-	inline constexpr float HubStreamBank = 1.4f;
-	inline constexpr float HubStreamDepth = 0.28f;
-	inline constexpr float HubWaterAboveBed = 0.16f;
+	struct HubRiverPoint
+	{
+		Vec2 Point;
+		float Half = 1.0f;
+		float Depth = 0.4f;
+	};
+
+	inline constexpr HubRiverPoint HubRiverPoints[] = {
+		{ { -13.4f, 23.2f }, 2.0f, 0.7f },
+		{ { -13.0f, 21.6f }, 1.05f, 0.36f },
+		{ { -13.3f, 18.3f }, 1.05f, 0.36f },
+		{ { -12.6f, 15.0f }, 1.35f, 0.46f },
+		{ { -12.2f, 12.6f }, 1.4f, 0.48f },
+		{ { -13.1f, 10.3f }, 1.15f, 0.38f },
+		{ { -14.3f, 6.4f }, 1.85f, 0.6f },
+		{ { -15.9f, 2.7f }, 1.5f, 0.48f },
+		{ { -16.8f, 0.5f }, 1.2f, 0.4f },
+		{ { -17.6f, -2.4f }, 1.9f, 0.58f },
+		{ { -19.6f, -5.4f }, 2.8f, 0.85f },
+		{ { -22.8f, -8.4f }, 1.75f, 0.52f },
+		{ { -26.6f, -10.0f }, 1.35f, 0.44f },
+		{ { -30.4f, -10.6f }, 1.05f, 0.32f },
+		{ { -34.2f, -11.4f }, 1.0f, 0.3f },
+		{ { -37.4f, -12.2f }, 1.0f, 0.3f },
+	};
+	inline constexpr Vec2 HubBridgeCrossings[] = { { -13.3f, 18.2f }, { -13.3f, 10.5f }, { -16.8f, 0.45f } };
+	inline constexpr float HubRiverSpacing = 0.2f;
+	inline constexpr float HubRiverFreeboard = 0.1f;
+	inline constexpr float HubRiverStep = 0.2f;
+	inline constexpr float HubRiverBankSlope = 0.45f;
+	inline constexpr float HubRiverBlend = 0.25f;
+	inline constexpr float HubRiverWade = 0.2f;
 
 	enum class HubTier : uint8_t
 	{
@@ -203,14 +230,13 @@ namespace Game
 		Vec2 Center;
 		Vec2 Along;
 		float HalfLength = 2.4f;
-		float HalfWidth = 1.2f;
+		float HalfWidth = 1.0f;
+		float Ends = 0.0f;
 	};
 
-	inline constexpr HubFootbridge HubFootbridges[] = {
-		{ { -12.6f, 10.0f }, { -0.88f, -0.48f }, 2.5f, 1.1f },
-		{ { -16.6f, 0.45f }, { -1.0f, 0.02f }, 2.6f, 1.3f },
-	};
-	inline constexpr float HubBridgeArch = 0.32f;
+	inline constexpr float HubBridgeArch = 0.28f;
+	inline constexpr float HubBridgeReach = 1.5f;
+	inline constexpr float HubBridgeHalfWidth = 0.95f;
 
 	enum class HubBlockKind : uint8_t
 	{
@@ -254,7 +280,7 @@ namespace Game
 		{ { 18.4f, -6.4f }, 0.0f, "Sky dock" },
 		{ { -22.8f, 3.4f }, 0.0f, "Shardfall camp" },
 		{ { 3.6f, -21.2f }, 0.0f, "Broken bridge" },
-		{ { -14.6f, 9.0f }, 0.0f, "Social corner" },
+		{ { -15.6f, 9.4f }, 0.0f, "Social corner" },
 	};
 	inline constexpr float HubSignReach = 6.0f;
 
@@ -536,41 +562,127 @@ namespace Game
 		return tracks;
 	}
 
-	inline const HubTrack& HubStream()
+	struct HubRiverSample
 	{
-		static const HubTrack stream = HubSpline(HubStreamPoints, std::size(HubStreamPoints), HubStreamWidth[1], TerrainId::Water);
-		return stream;
+		Vec2 Point;
+		Vec2 Tangent;
+		float Half = 1.0f;
+		float Depth = 0.4f;
+	};
+
+	struct HubRiverShape
+	{
+		HubTrack Track;
+		std::vector<float> TrackHalf;
+		std::vector<float> TrackDepth;
+		std::vector<HubRiverSample> Samples;
+		Vec2 Low;
+		Vec2 High;
+		float Widest = 0.0f;
+
+		float Length() const { return Track.Length(); }
+	};
+
+	inline const HubRiverShape& HubRiver()
+	{
+		static const HubRiverShape shape = []
+		{
+			HubRiverShape result;
+			constexpr size_t count = std::size(HubRiverPoints);
+			Vec2 points[count];
+			for (size_t i = 0; i < count; i++)
+				points[i] = HubRiverPoints[i].Point;
+			result.Track = HubSpline(points, count, 1.0f, TerrainId::Water);
+			for (size_t i = 0; i + 1 < count; i++)
+				for (int32_t s = 0; s < HubPathSamples; s++)
+				{
+					const float t = HubSmooth(0.0f, 1.0f, float(s) / float(HubPathSamples));
+					result.TrackHalf.push_back(HubRiverPoints[i].Half + (HubRiverPoints[i + 1].Half - HubRiverPoints[i].Half) * t);
+					result.TrackDepth.push_back(HubRiverPoints[i].Depth + (HubRiverPoints[i + 1].Depth - HubRiverPoints[i].Depth) * t);
+				}
+			result.TrackHalf.push_back(HubRiverPoints[count - 1].Half);
+			result.TrackDepth.push_back(HubRiverPoints[count - 1].Depth);
+			result.Low = Vec2(1e9f, 1e9f);
+			result.High = Vec2(-1e9f, -1e9f);
+			const HubTrack& track = result.Track;
+			size_t segment = 0;
+			for (float arc = 0.0f; arc <= track.Length() + 1e-3f; arc += HubRiverSpacing)
+			{
+				while (segment + 2 < track.Points.size() && arc > track.Arc[segment + 1])
+					segment++;
+				const float span = std::max(track.Arc[segment + 1] - track.Arc[segment], 1e-6f);
+				const float t = std::clamp((arc - track.Arc[segment]) / span, 0.0f, 1.0f);
+				HubRiverSample sample;
+				sample.Point = track.Points[segment] + (track.Points[segment + 1] - track.Points[segment]) * t;
+				sample.Half = result.TrackHalf[segment] + (result.TrackHalf[segment + 1] - result.TrackHalf[segment]) * t;
+				sample.Depth = result.TrackDepth[segment] + (result.TrackDepth[segment + 1] - result.TrackDepth[segment]) * t;
+				result.Samples.push_back(sample);
+				result.Low = { std::min(result.Low.x, sample.Point.x), std::min(result.Low.y, sample.Point.y) };
+				result.High = { std::max(result.High.x, sample.Point.x), std::max(result.High.y, sample.Point.y) };
+				result.Widest = std::max(result.Widest, sample.Half);
+			}
+			const size_t samples = result.Samples.size();
+			for (size_t i = 0; i < samples; i++)
+				result.Samples[i].Tangent = Normalize(result.Samples[std::min(i + 2, samples - 1)].Point - result.Samples[i >= 2 ? i - 2 : 0].Point);
+			return result;
+		}();
+		return shape;
 	}
 
-	inline float HubStreamHalf(float arc)
+	inline HubRiverSample HubRiverSampleAt(float arc)
 	{
-		return HubStreamWidth[0] + (HubStreamWidth[1] - HubStreamWidth[0]) * std::clamp(arc / std::max(HubStream().Length(), 1.0f), 0.0f, 1.0f);
+		const std::vector<HubRiverSample>& samples = HubRiver().Samples;
+		const float index = std::clamp(arc / HubRiverSpacing, 0.0f, float(samples.size() - 1));
+		const size_t i = std::min(size_t(index), samples.size() - 2);
+		const float t = index - float(i);
+		const HubRiverSample& a = samples[i];
+		const HubRiverSample& b = samples[i + 1];
+		return { a.Point + (b.Point - a.Point) * t, Normalize(a.Tangent + (b.Tangent - a.Tangent) * t), a.Half + (b.Half - a.Half) * t, a.Depth + (b.Depth - a.Depth) * t };
+	}
+
+	struct HubRiverHit
+	{
+		float Clearance = 1e9f;
+		float Arc = 0.0f;
+		float Across = 0.0f;
+		float Half = 1.0f;
+	};
+
+	inline HubRiverHit HubRiverAt(Vec2 local)
+	{
+		const HubRiverShape& river = HubRiver();
+		HubRiverHit hit;
+		const float outside = std::max({ river.Low.x - local.x, local.x - river.High.x, river.Low.y - local.y, local.y - river.High.y });
+		if (outside > 6.0f)
+		{
+			hit.Clearance = outside - river.Widest * 1.2f;
+			return hit;
+		}
+		const std::vector<Vec2>& points = river.Track.Points;
+		float best = 1e18f;
+		float side = 1.0f;
+		for (size_t i = 0; i + 1 < points.size(); i++)
+		{
+			const Vec2 span = points[i + 1] - points[i];
+			const float t = std::clamp(Dot(local - points[i], span) / std::max(LengthSquared(span), 1e-6f), 0.0f, 1.0f);
+			const float distance = LengthSquared(local - (points[i] + span * t));
+			if (distance < best)
+			{
+				best = distance;
+				hit.Arc = river.Track.Arc[i] + (river.Track.Arc[i + 1] - river.Track.Arc[i]) * t;
+				side = span.x * (local.y - points[i].y) - span.y * (local.x - points[i].x) >= 0.0f ? 1.0f : -1.0f;
+			}
+		}
+		hit.Across = side * std::sqrt(best);
+		const float wobble = 1.0f + 0.16f * HubSigned(Vec2(hit.Arc * 0.4f, side > 0.0f ? 2.3f : -5.9f)) + 0.07f * HubSigned(Vec2(hit.Arc * 1.3f, side * 4.1f));
+		hit.Half = HubRiverSampleAt(hit.Arc).Half * wobble;
+		hit.Clearance = std::abs(hit.Across) - hit.Half;
+		return hit;
 	}
 
 	inline float HubStreamClearance(Vec2 local)
 	{
-		static const std::pair<Vec2, Vec2> box = []
-		{
-			Vec2 low(1e9f, 1e9f);
-			Vec2 high(-1e9f, -1e9f);
-			for (const Vec2 point : HubStream().Points)
-			{
-				low = { std::min(low.x, point.x), std::min(low.y, point.y) };
-				high = { std::max(high.x, point.x), std::max(high.y, point.y) };
-			}
-			return std::pair{ low, high };
-		}();
-		const float outside = std::max({ box.first.x - local.x, local.x - box.second.x, box.first.y - local.y, local.y - box.second.y });
-		if (outside > 6.0f)
-			return outside - HubStreamWidth[1];
-		float arc = 0.0f;
-		const float distance = HubStream().Nearest(local, arc);
-		return distance - HubStreamHalf(arc);
-	}
-
-	inline float HubStreamCut(Vec2 local)
-	{
-		return HubStreamDepth * (1.0f - HubSmooth(0.0f, HubStreamBank, HubStreamClearance(local)));
+		return HubRiverAt(local).Clearance;
 	}
 
 	inline float HubFlatness(Vec2 local)
@@ -595,14 +707,119 @@ namespace Game
 		return HubTerraceHeight(local) + HubRelief(local) * HubFlatness(local);
 	}
 
-	inline float HubFloor(Vec2 local)
+	struct HubRiverFlow
 	{
-		return HubBaseFloor(local) - HubStreamCut(local);
+		std::vector<float> Level;
+		std::vector<float> Rapid;
+		size_t Lip = 0;
+		float LipArc = 0.0f;
+	};
+
+	inline const HubRiverFlow& HubRiverLevels()
+	{
+		static const HubRiverFlow flow = []
+		{
+			const std::vector<HubRiverSample>& samples = HubRiver().Samples;
+			const size_t count = samples.size();
+			HubRiverFlow result;
+			result.Level.assign(count, 0.0f);
+			result.Rapid.assign(count, 0.0f);
+			result.Lip = count - 1;
+			for (size_t i = 0; i < count; i++)
+				if (HubIslandDistance(samples[i].Point) < 0.3f)
+				{
+					result.Lip = i;
+					break;
+				}
+			result.LipArc = float(result.Lip) * HubRiverSpacing;
+			float running = 1e9f;
+			float current = 1e9f;
+			for (size_t i = 0; i <= result.Lip; i++)
+			{
+				const HubRiverSample& sample = samples[i];
+				float bank = 1e9f;
+				for (const float offset : { -1.0f, -0.5f, 0.0f, 0.5f, 1.0f })
+					bank = std::min(bank, HubBaseFloor(sample.Point + Perpendicular(sample.Tangent) * (offset * (sample.Half * 1.25f + 0.3f))));
+				running = std::min(running, bank - HubRiverFreeboard);
+				if (i == 0)
+					current = running;
+				else if (running < current)
+				{
+					current = std::min(current - HubRiverStep, running);
+					for (size_t k = i >= 3 ? i - 3 : 0; k < std::min(i + 8, count); k++)
+						result.Rapid[k] = std::max(result.Rapid[k], k < i ? 0.6f : 1.0f - 0.1f * float(k - i));
+				}
+				result.Level[i] = current;
+			}
+			for (size_t i = result.Lip + 1; i < count; i++)
+				result.Level[i] = current;
+			for (size_t i = result.Lip >= 10 ? result.Lip - 10 : 0; i <= result.Lip; i++)
+				result.Rapid[i] = std::max(result.Rapid[i], 0.5f + 0.05f * float(i + 10 - result.Lip));
+			return result;
+		}();
+		return flow;
 	}
 
-	inline float HubWaterLevel(Vec2 center)
+	inline float HubRiverLevelAt(float arc)
 	{
-		return HubBaseFloor(center) - HubStreamDepth + HubWaterAboveBed;
+		const std::vector<float>& level = HubRiverLevels().Level;
+		const float index = std::clamp(arc / HubRiverSpacing, 0.0f, float(level.size() - 1));
+		const size_t i = std::min(size_t(index), level.size() - 2);
+		return level[i] + (level[i + 1] - level[i]) * (index - float(i));
+	}
+
+	inline float HubRiverChannel(Vec2 local, const HubRiverHit& hit)
+	{
+		const float level = HubRiverLevelAt(hit.Arc);
+		if (hit.Clearance >= 0.0f)
+			return level + hit.Clearance * HubRiverBankSlope;
+		const float u = std::clamp(-hit.Clearance / std::max(hit.Half, 0.1f), 0.0f, 1.0f);
+		const float depth = HubRiverSampleAt(hit.Arc).Depth * (1.0f + 0.12f * HubSigned(local * 0.9f + Vec2(3.7f, 1.1f)));
+		return level - depth * HubSmooth(0.0f, 0.85f, u) + 0.04f * u * HubSigned(local * 2.1f);
+	}
+
+	inline float HubSmoothMin(float a, float b, float k)
+	{
+		const float h = std::max(k - std::abs(a - b), 0.0f) / k;
+		return std::min(a, b) - h * h * k * 0.25f;
+	}
+
+	inline float HubFloor(Vec2 local)
+	{
+		const float base = HubBaseFloor(local);
+		const HubRiverHit hit = HubRiverAt(local);
+		if (hit.Clearance > 3.0f)
+			return base;
+		return HubSmoothMin(base, HubRiverChannel(local, hit), HubRiverBlend);
+	}
+
+	inline float HubRiverDepth(Vec2 local)
+	{
+		const HubRiverHit hit = HubRiverAt(local);
+		if (hit.Clearance > 0.0f || hit.Arc > HubRiverLevels().LipArc)
+			return 0.0f;
+		return std::max(HubRiverLevelAt(hit.Arc) - HubFloor(local), 0.0f);
+	}
+
+	inline const std::vector<HubFootbridge>& HubFootbridges()
+	{
+		static const std::vector<HubFootbridge> bridges = []
+		{
+			std::vector<HubFootbridge> result;
+			for (const Vec2 crossing : HubBridgeCrossings)
+			{
+				const HubRiverSample sample = HubRiverSampleAt(HubRiverAt(crossing).Arc);
+				HubFootbridge bridge;
+				bridge.Center = sample.Point;
+				bridge.Along = Perpendicular(sample.Tangent);
+				bridge.HalfLength = sample.Half * 1.25f + HubBridgeReach;
+				bridge.HalfWidth = HubBridgeHalfWidth;
+				bridge.Ends = 0.5f * (HubFloor(bridge.Center + bridge.Along * bridge.HalfLength) + HubFloor(bridge.Center - bridge.Along * bridge.HalfLength));
+				result.push_back(bridge);
+			}
+			return result;
+		}();
+		return bridges;
 	}
 
 	struct HubPave
@@ -672,23 +889,26 @@ namespace Game
 		return local.x >= low.x && local.y >= low.y && local.x <= high.x && local.y <= high.y;
 	}
 
+	inline float HubBridgeDeck(const HubFootbridge& bridge, float along)
+	{
+		const float t = std::clamp(along / bridge.HalfLength, -1.0f, 1.0f);
+		return bridge.Ends + 0.06f + HubBridgeArch * (1.0f - t * t);
+	}
+
 	inline std::optional<float> HubDeckHeight(Vec2 local)
 	{
 		if (HubInBox(local, HubDockLowMin(), HubDockLowMax()))
 			return HubDockLow;
 		if (HubInBox(local, HubDockHighMin(), HubDockHighMax()))
 			return HubDockHigh;
-		for (const HubFootbridge& bridge : HubFootbridges)
+		for (const HubFootbridge& bridge : HubFootbridges())
 		{
-			const Vec2 along = Normalize(bridge.Along);
 			const Vec2 offset = local - bridge.Center;
-			const float u = Dot(offset, along);
-			const float v = Dot(offset, Perpendicular(along));
+			const float u = Dot(offset, bridge.Along);
+			const float v = Dot(offset, Perpendicular(bridge.Along));
 			if (std::abs(u) > bridge.HalfLength || std::abs(v) > bridge.HalfWidth)
 				continue;
-			const float ends = std::max(HubBaseFloor(bridge.Center + along * bridge.HalfLength), HubBaseFloor(bridge.Center - along * bridge.HalfLength));
-			const float t = u / bridge.HalfLength;
-			return ends + 0.1f + HubBridgeArch * (1.0f - t * t);
+			return HubBridgeDeck(bridge, u);
 		}
 		return std::nullopt;
 	}
@@ -764,10 +984,10 @@ namespace Game
 				{ HubBlockKind::Bridge, MeshKind::Box, { 0.3f, -28.6f }, { 2.0f, 1.0f }, 0.6f, -1.5f, 0.15f, false, true },
 				{ HubBlockKind::Bridge, MeshKind::Box, { -0.3f, -31.4f }, { 1.6f, 0.9f }, 0.6f, -2.3f, -0.2f, false, true },
 			};
-			for (const HubFootbridge& bridge : HubFootbridges)
+			for (const HubFootbridge& bridge : HubFootbridges())
 			{
-				const Vec2 along = Normalize(bridge.Along);
-				const float top = *HubDeckHeight(bridge.Center);
+				const Vec2 along = bridge.Along;
+				const float top = HubBridgeDeck(bridge, 0.0f);
 				result.push_back({ HubBlockKind::Footbridge, MeshKind::Box, bridge.Center, { bridge.HalfLength, bridge.HalfWidth }, 0.22f, top - 0.22f, std::atan2(along.y, along.x), false, true });
 				for (const float side : { -1.0f, 1.0f })
 					result.push_back({ HubBlockKind::Fence, MeshKind::Box, bridge.Center + Perpendicular(along) * (side * (bridge.HalfWidth - 0.06f)), { bridge.HalfLength, 0.05f }, 0.75f, top, std::atan2(along.y, along.x), true, true });

@@ -3,6 +3,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cmath>
+#include <span>
 
 namespace Game
 {
@@ -20,6 +21,9 @@ namespace Game
 		constexpr float FidgetBreak = 0.2f;
 		constexpr float FidgetDelayMin = 8.0f;
 		constexpr float FidgetDelaySpread = 8.0f;
+		constexpr float EmoteFade = 0.3f;
+		constexpr float EmoteBreak = 0.15f;
+		constexpr float EmoteTwist = 1.0f;
 		constexpr float StrikeSettle = 18.0f;
 		constexpr float HoldRelease = 1.7f;
 		constexpr float StrikeLead = 0.12f;
@@ -51,6 +55,7 @@ namespace Game
 		constexpr glm::vec3 StaffUpper{ -0.14f, -1.0f, 0.12f };
 		constexpr glm::vec3 StaffFore{ 0.12f, -0.3f, 1.0f };
 		constexpr glm::vec3 StaffShaft{ 0.0f, 1.0f, 0.1f };
+		constexpr glm::vec3 PalmAim{ 0.0f, -0.25f, 1.0f };
 		constexpr float ChestTwist = 1.2f;
 		constexpr float HeadTwist = 0.75f;
 		constexpr float NeckShare = 0.4f;
@@ -139,7 +144,7 @@ namespace Game
 			}
 		}
 
-		Anim IdleOf(Stance stance)
+		Anim IdleOf(Stance stance, bool alert)
 		{
 			switch (stance)
 			{
@@ -151,7 +156,7 @@ namespace Game
 			case Stance::Shambling:
 				return Anim::SkeletonIdle;
 			default:
-				return Anim::Idle;
+				return alert ? Anim::IdleAlert : Anim::Idle;
 			}
 		}
 	}
@@ -208,7 +213,9 @@ namespace Game
 			const float stride = clip ? models.GetStrideSpeed(*clip) * input.Scale : 0.0f;
 			return stride > 0.1f ? speed / stride : 1.0f;
 		};
-		Anim anim = IdleOf(input.Pose);
+		Anim anim = IdleOf(input.Pose, input.Alert);
+		if (!library.Clip(anim, m_Skeleton))
+			anim = IdleOf(input.Pose, false);
 		float rate = 1.0f;
 		float stride = 1.0f;
 		if (striding && !m_Free)
@@ -323,7 +330,9 @@ namespace Game
 		else
 		{
 			const float away = std::abs(AngleBetween(m_BodyYaw, input.Facing));
-			if (input.Attacking || away > TurnStart)
+			if (m_Emote.Weight > 0.0f && !input.Attacking)
+				m_Turning = false;
+			else if (input.Attacking || away > TurnStart)
 				m_Turning = true;
 			else if (away < TurnStop)
 				m_Turning = false;
@@ -475,7 +484,35 @@ namespace Game
 		m_Flinch.Weight = std::max(0.0f, m_Flinch.Weight - dt * FlinchFade * FlinchWeight);
 
 		const bool still = !m_Striding && m_Phase == Phase::None && !overriding && m_Override.Weight <= 0.0f && m_Flinch.Weight < 0.1f && !m_Turning;
-		UpdateFidget(library, still, dt);
+		UpdateEmote(library, input, (m_Striding && !GetEmote(UnpackEmote(input.Emote)).Mobile) || m_Phase != Phase::None || overriding, dt);
+		UpdateFidget(library, still && m_Emote.Current.Clip < 0, input.Alert, dt);
+	}
+
+	void CharacterAnimator::UpdateEmote(const CharacterLibrary& library, const Input& input, bool blocked, float dt)
+	{
+		if (input.Emote != m_EmoteCode)
+		{
+			m_EmoteCode = input.Emote;
+			const Emote emote = UnpackEmote(input.Emote);
+			if (emote != Emote::None && !blocked)
+				if (const std::optional<uint32_t> clip = library.Clip(EmoteAnim(emote), m_Skeleton))
+				{
+					m_EmoteLoose = GetEmote(emote).Loop;
+					m_Emote.Start({ int32_t(*clip), 0.0f, 1.0f, m_EmoteLoose }, m_Emote.Weight > 0.0f);
+				}
+		}
+		if (m_Emote.Current.Clip < 0)
+			return;
+		m_Emote.Advance(dt, EmoteFade);
+		const float duration = library.GetModels().GetClip(uint32_t(m_Emote.Current.Clip)).Duration();
+		const bool ending = !m_Emote.Current.Loop && m_Emote.Current.Time > duration - EmoteFade;
+		const bool stopped = blocked || input.Emote == 0 || input.Dead;
+		if (!stopped && !ending)
+			m_Emote.Weight = std::min(1.0f, m_Emote.Weight + dt / EmoteFade);
+		else
+			m_Emote.Weight = std::max(0.0f, m_Emote.Weight - dt / (stopped ? EmoteBreak : EmoteFade));
+		if (m_Emote.Weight <= 0.0f && (ending || stopped))
+			m_Emote.Current.Clip = -1;
 	}
 
 	void CharacterAnimator::Update(const CharacterLibrary& library, const Input& input, float dt)
@@ -521,6 +558,8 @@ namespace Game
 			m_Action.Weight = std::max(0.0f, m_Action.Weight - dt / ActionFadeOut);
 			m_Flinch.Weight = 0.0f;
 			m_Fidget.Weight = 0.0f;
+			m_Emote.Weight = 0.0f;
+			m_Emote.Current.Clip = -1;
 			m_Override.Weight = std::min(1.0f, m_Override.Weight + dt / OverrideFade);
 			m_Override.Advance(dt, OverrideFade);
 		}
@@ -540,7 +579,7 @@ namespace Game
 		Compose(library, input, dt);
 	}
 
-	void CharacterAnimator::UpdateFidget(const CharacterLibrary& library, bool still, float dt)
+	void CharacterAnimator::UpdateFidget(const CharacterLibrary& library, bool still, bool alert, float dt)
 	{
 		const ModelLibrary& models = library.GetModels();
 		m_IdleTime = still ? m_IdleTime + dt : 0.0f;
@@ -548,7 +587,8 @@ namespace Game
 		{
 			std::array<uint32_t, IdleFidgets.size()> choices{};
 			uint32_t count = 0;
-			for (const Anim anim : IdleFidgets)
+			const std::span<const Anim> pool = alert ? std::span<const Anim>(AlertFidgets) : std::span<const Anim>(IdleFidgets);
+			for (const Anim anim : pool)
 				if (const std::optional<uint32_t> clip = library.Clip(anim, m_Skeleton); clip && int32_t(*clip) != m_LastFidget)
 					choices[count++] = *clip;
 			if (count > 0)
@@ -672,8 +712,9 @@ namespace Game
 			return;
 		const glm::vec3 up(0.0f, 1.0f, 0.0f);
 		TurnJoint(skeleton, pose, *rig.Hips, glm::angleAxis(yaw, up));
-		const float torso = std::clamp(yaw, -ChestTwist, ChestTwist);
-		const float gaze = std::clamp(yaw - torso, -HeadTwist, HeadTwist);
+		const float follow = 1.0f - EmoteTwist * m_Emote.Weight * (1.0f - m_Moving);
+		const float torso = std::clamp(yaw, -ChestTwist, ChestTwist) * follow;
+		const float gaze = std::clamp(yaw * follow - torso, -HeadTwist, HeadTwist);
 		TurnJoint(skeleton, pose, *rig.Spine, glm::angleAxis(-SpineShare * torso, up));
 		TurnJoint(skeleton, pose, *rig.Chest, glm::angleAxis(-(1.0f - SpineShare) * torso, up));
 		if (rig.Neck)
@@ -695,6 +736,27 @@ namespace Game
 		const glm::vec2 whip = Local(m_Whip - m_Recoil, input.Facing);
 		if (const float amount = glm::length(whip); amount > 1e-3f)
 			TurnJoint(skeleton, pose, rig.Neck.value_or(rig.Head), glm::angleAxis(amount * RecoilNeck, TiltAxis(whip)));
+	}
+
+	void CharacterAnimator::OpenHand(const ModelSkeleton& skeleton, const CharacterRig& rig, const Input& input, Pose& pose) const
+	{
+		if (!rig.Palm || !rig.HasRightArm || input.Dead)
+			return;
+		const uint32_t wrist = rig.RightArm[2];
+		const uint32_t hand = *rig.Palm;
+		Pose rest;
+		RestPose(skeleton, rest);
+		const float relax = 1.0f - m_Emote.Weight * (1.0f - m_Action.Weight);
+		pose[wrist].Rotation = glm::normalize(glm::slerp(pose[wrist].Rotation, rest[wrist].Rotation, relax));
+		pose[hand].Rotation = glm::normalize(glm::slerp(pose[hand].Rotation, rest[hand].Rotation, relax));
+		const float push = m_Action.Weight * (1.0f - m_Override.Weight);
+		if (push < 1e-3f)
+			return;
+		const glm::quat global = GlobalRotation(skeleton, pose, int32_t(hand));
+		const glm::quat turn = RotationBetween(glm::normalize(global * rig.PalmNormal), glm::normalize(PalmAim));
+		const int32_t parent = skeleton.Parents[hand];
+		const glm::quat above = parent >= 0 ? GlobalRotation(skeleton, pose, parent) : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+		pose[hand].Rotation = glm::normalize(glm::slerp(pose[hand].Rotation, glm::inverse(above) * turn * global, push));
 	}
 
 	void CharacterAnimator::HoldStaff(const ModelSkeleton& skeleton, const CharacterRig& rig, const Input& input, Pose& pose) const
@@ -728,7 +790,7 @@ namespace Game
 		const glm::vec2 lean = Local(m_Lean, input.Facing);
 		const float tilt = glm::length(lean);
 		const bool able = rig.HasLegs && input.Ground;
-		const float goal = able && input.Grounded && !input.Dead && !input.Stunned ? 1.0f - m_Override.Weight : 0.0f;
+		const float goal = able && input.Grounded && !input.Dead && !input.Stunned ? (1.0f - m_Override.Weight) * (m_EmoteLoose ? 1.0f - m_Emote.Weight : 1.0f) : 0.0f;
 		m_Planted += (goal - m_Planted) * Ease(PlantRate, dt);
 		if (!able || m_Planted < 1e-3f)
 		{
@@ -968,6 +1030,15 @@ namespace Game
 			Sample(library, m_Fidget, fidget);
 			BlendPose(pose, fidget, m_Fidget.Weight, joints);
 		}
+		if (m_Emote.Weight > 0.0f && m_Emote.Current.Clip >= 0)
+		{
+			Pose emote = pose;
+			Sample(library, m_Emote, emote);
+			JointWeights mask{};
+			for (uint32_t joint = 0; joint < joints; joint++)
+				mask[joint] = rig.UpperBody[joint] + (1.0f - rig.UpperBody[joint]) * (1.0f - m_Moving);
+			BlendPose(pose, emote, m_Emote.Weight, joints, &mask);
+		}
 		if (m_Action.Weight > 0.0f && m_Action.Current.Clip >= 0)
 		{
 			Pose action = pose;
@@ -995,6 +1066,8 @@ namespace Game
 		Twist(skeleton, rig, input, pose);
 		if (input.Pose == Stance::Staff)
 			HoldStaff(skeleton, rig, input, pose);
+		if (input.FreeHand)
+			OpenHand(skeleton, rig, input, pose);
 		if (m_Flinch.Weight > 0.0f && m_Flinch.Current.Clip >= 0)
 		{
 			const ModelClip& clip = models.GetClip(uint32_t(m_Flinch.Current.Clip));

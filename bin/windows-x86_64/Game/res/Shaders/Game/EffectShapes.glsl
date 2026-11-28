@@ -9,6 +9,7 @@ const uint ShapeHex = 15u;
 const uint ShapeLeaf = 16u;
 const uint ShapeBubble = 17u;
 const uint ShapePearl = 18u;
+const uint ShapeCrescent = 22u;
 
 const uint DecalRunes = 0u;
 const uint DecalSector = 1u;
@@ -1260,6 +1261,27 @@ float SlashShape(vec2 uv, vec4 params, float pixel)
 	return (band * 0.2 + blade) * trail;
 }
 
+float CrescentShape(vec2 uv, vec4 params, uint seed, float pixel)
+{
+	float r = length(uv);
+	float angle = atan(uv.y, uv.x) * (params.w < 0.0 ? -1.0 : 1.0);
+	float halfArc = params.x;
+	float head = mix(-halfArc, halfArc, params.y);
+	float span = max(abs(params.w), 0.05);
+	float t = (head - angle) / span;
+	if (t < -0.04 || t > 1.0 || angle < -halfArc - 0.02 || r > 1.02)
+		return 0.0;
+	float s = clamp(t, 0.0, 1.0);
+	float profile = (1.0 - exp(-s * 16.0)) * pow(1.0 - s, 1.35) * smoothstep(-0.04, 0.0, t);
+	float thick = params.z * profile;
+	float inner = 1.0 - thick;
+	float depth = clamp((r - inner) / max(thick, 1e-3), 0.0, 1.0);
+	float body = smoothstep(inner - 0.01, inner + 0.03, r) * (1.0 - smoothstep(1.0 - pixel * 1.5, 1.0, r));
+	float streak = pow(max(sin(r * 140.0 + float(seed & 255u) * 0.37 + s * 3.0), 0.0), 10.0) * 0.35 * (1.0 - depth);
+	float edge = Line(abs(r - 0.985), 0.008 + 0.01 * profile, pixel) * smoothstep(0.0, 0.05, profile);
+	return (body * (0.14 + 0.66 * depth * depth) + streak * body) * (1.0 - s * s) + 0.9 * edge * (1.0 - s);
+}
+
 float SnowflakeShape(vec2 uv, float pixel)
 {
 	float r = length(uv);
@@ -1615,6 +1637,8 @@ float ParticleShape(uint shape, vec2 uv, uint seed, vec4 params, float pixel, fl
 		return RuneCircle(uv, pixel, max(params.w, 0.05), params.x, params.y, 0.0, params.z, seed, time);
 	if (shape == ShapeSlash)
 		return SlashShape(uv, params, pixel);
+	if (shape == ShapeCrescent)
+		return CrescentShape(uv, params, seed, pixel);
 	if (shape == ShapeSnowflake)
 		return SnowflakeShape(uv, pixel);
 	if (shape == ShapeBeam)

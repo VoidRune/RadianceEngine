@@ -15,6 +15,8 @@ namespace Game
 	inline constexpr Rdn::Format GlassPyramidFormat = Rdn::Format::R16G16B16A16_Sfloat;
 	inline constexpr Rdn::Format GlassBackFormat = Rdn::Format::R16G16B16A16_Sfloat;
 	inline constexpr uint32_t GlassPyramidLevels = 4;
+	inline constexpr size_t MaxWaterFish = 12;
+	inline constexpr size_t MaxWaterRipples = 8;
 
 	struct GlassFacet
 	{
@@ -49,6 +51,7 @@ namespace Game
 		glm::vec4 Absorb{ 0.0f, 0.0f, 0.0f, 1.5f };
 		glm::vec4 Look{ 1.0f, 0.0f, 0.0f, 0.0f };
 		bool Water = false;
+		bool River = false;
 	};
 
 	struct GlassModelBatch
@@ -116,6 +119,8 @@ namespace Game
 		void Draw(const GlassFacet& facet);
 		uint32_t AddShield(const EnergyShield& shield);
 		void DrawCell(const EnergyCell& cell);
+		void DrawFish(const glm::vec4& fish) { if (m_Fish.size() < MaxWaterFish) m_Fish.push_back(fish); }
+		void DrawRipple(const glm::vec4& ripple) { if (m_Ripples.size() < MaxWaterRipples) m_Ripples.push_back(ripple); }
 		void Render(Rdn::RenderGraph& graph, Rdn::RGImage scene, Rdn::RGImage emission, Rdn::RGImage depth, Rdn::Extent2D extent, uint32_t frameIndex,
 			const WorldCamera& camera, const SceneLighting& lighting, const EnvironmentView& environment, float time, std::span<const SpellLight> lights);
 		GlassModelBatch& GetModels() { return m_Models; }
@@ -172,6 +177,11 @@ namespace Game
 			glm::vec4 Environment;
 			glm::vec4 Translucent;
 			std::array<glm::vec4, MaxSpellLights * 2> Lights;
+			glm::vec4 Sheen;
+			glm::vec4 SheenRadiance;
+			std::array<glm::vec4, MaxWaterFish> Fish;
+			std::array<glm::vec4, MaxWaterRipples> Ripples;
+			glm::vec4 WaterCounts;
 		};
 
 		struct PyramidConstants
@@ -197,6 +207,7 @@ namespace Game
 		std::unique_ptr<Rdn::Pipeline> m_ModelBack;
 		std::unique_ptr<Rdn::Pipeline> m_ModelFront;
 		std::unique_ptr<Rdn::Pipeline> m_ModelWater;
+		std::unique_ptr<Rdn::Pipeline> m_ModelRiver;
 		std::unique_ptr<Rdn::Pipeline> m_ModelDepth;
 		GlassModelBatch m_Models;
 		std::unique_ptr<Rdn::GpuRingBuffer> m_Frame;
@@ -208,5 +219,7 @@ namespace Game
 		std::vector<FacetGpu> m_Facets;
 		std::vector<ShieldGpu> m_Shields;
 		std::vector<CellGpu> m_Cells;
+		std::vector<glm::vec4> m_Fish;
+		std::vector<glm::vec4> m_Ripples;
 	};
 }

@@ -143,6 +143,7 @@ namespace Game
 		float Static = 0.0f;
 		uint8_t Overload = 0;
 		uint8_t RecastAbility = UINT8_MAX;
+		uint8_t RecastCharges = 0;
 		float ManaStall = 0.0f;
 		uint8_t Weave = 0;
 		uint8_t WeaveSpell = UINT8_MAX;
@@ -154,6 +155,7 @@ namespace Game
 		float GuardLost = 0.0f;
 		float GuardIdle = 0.0f;
 		bool GuardUp = false;
+		bool SwingQueued = false;
 		bool Alive = true;
 		bool Airborne = false;
 
@@ -300,6 +302,11 @@ namespace Game
 	};
 
 	struct Effect
+	{
+		float Remaining = 0.0f;
+	};
+
+	struct SpikeSeed
 	{
 		float Remaining = 0.0f;
 	};

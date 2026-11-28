@@ -92,6 +92,15 @@ namespace Game
 			float Time = 0.0f;
 		};
 
+		enum class SwordPhase : uint8_t
+		{
+			Hidden,
+			Hover,
+			Windup,
+			Release,
+			Recover,
+		};
+
 		struct EntityFx
 		{
 			uint8_t LastHealth = 255;
@@ -121,11 +130,64 @@ namespace Game
 			float DeathAge = -1.0f;
 			float SpawnAge = 1e9f;
 			float CrystalForm = 0.0f;
+			float SwordShow = 0.0f;
+			float SwordIdle = 1e3f;
+			float SwordGlow = 0.0f;
+			float SwordClock = 0.0f;
+			float SwordWindup = 0.25f;
+			uint8_t SwordPhase = 0;
+			AbilityId SwordSwing = AbilityId::Count;
+			bool SwordHeld = false;
+			bool SwordForming = false;
+			bool SwordConfirmed = false;
+			CrystalSwordLook SwordFrom;
+			CrystalSwordLook SwordNow;
+			CrystalSwordLook SwordDrawn;
+			Vec2 SwordStrikePoint;
+			float SwordStrikeFacing = 0.0f;
+			float SwordStrikeReach = 0.0f;
+			float SwordFacing = 0.0f;
+			glm::vec3 SwordGripSpeed{ 0.0f };
+			glm::vec3 SwordAimSpeed{ 0.0f };
+			glm::vec3 SwordFlatSpeed{ 0.0f };
+			std::array<std::pair<glm::vec3, glm::vec3>, 6> SwordHistory{};
+			uint32_t SwordHistoryCount = 0;
+			float SwordHistoryStep = 0.016f;
 			glm::vec3 DeathColor{ 0.0f };
 			Element HitElement = Element::Physical;
 			AbilityId Cast = AbilityId::Count;
 			EntityState Last;
 			CharacterAnimator Animator;
+		};
+
+		struct SwordPiece
+		{
+			glm::vec3 Position{ 0.0f };
+			glm::vec3 Velocity{ 0.0f };
+			glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+			glm::vec3 Heading{ 1.0f, 0.0f, 0.0f };
+			float Spin = 0.0f;
+			float Angle = 0.0f;
+			float Size = 1.0f;
+			float Age = 0.0f;
+			float Life = 1.0f;
+			uint32_t Variant = 0;
+			uint32_t Seed = 0;
+			bool Burst = false;
+		};
+
+		struct SwordSpire
+		{
+			glm::vec3 Base{ 0.0f };
+			glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+			float Size = 1.0f;
+			float Yaw = 0.0f;
+			float Delay = 0.0f;
+			float Age = 0.0f;
+			float Life = 1.0f;
+			uint32_t Variant = 0;
+			uint32_t Seed = 0;
+			bool Cluster = false;
 		};
 
 		struct BladeFade
@@ -225,6 +287,24 @@ namespace Game
 			float Age = 0.0f;
 			uint32_t Seed = 0;
 			float Extend = 1.0f;
+			bool Shattered = false;
+		};
+
+		struct SpikeShard
+		{
+			glm::mat4 Basis{ 1.0f };
+			glm::vec3 Pivot{ 0.0f };
+			glm::vec3 Center{ 0.0f };
+			glm::vec3 Velocity{ 0.0f };
+			glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+			float Spin = 0.0f;
+			float Angle = 0.0f;
+			float Radius = 0.1f;
+			float Age = 0.0f;
+			float Life = 1.0f;
+			uint32_t Mesh = 0;
+			uint32_t Seed = 0;
+			bool Buried = false;
 		};
 
 		struct NovaField
@@ -344,7 +424,10 @@ namespace Game
 		ArcFade EndArc(uint32_t netId, const EntityState& last) const;
 		void DrawArc(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& head) const;
 		void DrawArcFades(WorldRenderer& renderer) const;
-		void DrawHook(WorldRenderer& renderer, const EntityState& entity, float age) const;
+		void DrawSwordStrike(WorldRenderer& renderer, const EntityState& entity, float age) const;
+		void DrawFloatingSword(WorldRenderer& renderer, const EntityState& entity, const EntityFx& fx) const;
+		void DrawThrownSword(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& center) const;
+		float SwordAreaOf(const EntityState& entity) const;
 		CharacterAnimator::Input AnimationInput(const EntityState& entity) const;
 		void DrawCorpses(WorldRenderer& renderer) const;
 		glm::vec4 CharacterTint(const EntityState& entity) const;
@@ -363,6 +446,12 @@ namespace Game
 		void DrawFireballCharge(WorldRenderer& renderer, const EntityState& entity, const glm::vec3& base) const;
 		uint32_t FormingBlades(const EntityState& caster, float age, std::array<ObsidianLook, ObsidianVolley>& blades) const;
 		void ObsidianMoments(EntityFx& fx, const EntityState& entity, float dt);
+		void SwordMoments(EntityFx& fx, const EntityState& entity, float dt);
+		void SwordStruck(const EntityState& strike);
+		void SwordHit(const HitEvent& hit);
+		void ShatterSword(EntityFx& fx, const EntityState& entity, float area);
+		void UpdateSwordDebris(float dt);
+		void DrawSwordDebris(WorldRenderer& renderer) const;
 		void DrawObsidianCharge(WorldRenderer& renderer, const EntityState& entity) const;
 		void LaunchBlade(EntityFx& fx, const EntityState& entity);
 		void StrikeBlade(const HitEvent& hit);
@@ -371,12 +460,20 @@ namespace Game
 		Vec2 SpikeAimOf(const EntityState& caster) const;
 		void SpikeMoments(EntityFx& fx, const EntityState& entity, float dt);
 		void EruptSpike(const EntityState& spike);
+		void SpikeChunks(const glm::vec3& base, float facing, uint32_t seed, bool crumble);
+		void SkewerHit(const HitEvent& hit);
+		void PlaceSatellites(EarthSpikeLook& look, Vec2 position) const;
 		void AddTrauma(float amount);
 		void Rumble(const glm::vec3& point, float strength, uint32_t owner = NoPlayer);
 		void FeelHit(const HitEvent& hit);
 		void UpdateDanger(float dt);
-		void EndSpike(const EntityState& spike);
-		EarthSpikeLook SpikeLook(const EntityState& spike) const;
+		void EndSpike(const EntityState& spike, float age = -1.0f);
+		void ShatterSpike(const EarthSpikeLook& look, bool burst);
+		void UpdateSpikeShards(float dt);
+		void DrawSpikeShards(WorldRenderer& renderer) const;
+		EarthSpikeLook SpikeLook(const EntityState& spike, float age = -1.0f) const;
+		void DrawBarrageReticle(WorldRenderer& renderer, const EntityState& self) const;
+		void DrawSpikeTelegraph(WorldRenderer& renderer, const glm::vec3& origin, float facing, float progress, float area, uint32_t seed) const;
 		GroundDecal SpikeRift(const EntityState& spike, float glow) const;
 		void DrawSpikeAim(WorldRenderer& renderer, const EntityState& caster) const;
 		void DrawSpikeRuins(WorldRenderer& renderer) const;
@@ -445,6 +542,8 @@ namespace Game
 		void UpdateRunFeel(float dt);
 		void DrawRunStreak();
 		void DrawPerfectDodge();
+		void UpdateEmoteWheel();
+		void DrawEmoteWheel();
 		void DrawSpellStrip(const UiRect& area);
 		bool AcceptSpellDrop(const UiRect& rect, uint32_t slot, bool clicked);
 		bool CanEditSpells() const;
@@ -492,6 +591,10 @@ namespace Game
 		float StageBlast(int index, glm::vec3& ground, float& power) const;
 		FireballLook StageCharge() const;
 		float StageComet(glm::vec3& ground) const;
+		float StageSpike() const;
+		EntityState StageSpikeEntity() const;
+		void UpdateSpikeStage(float dt);
+		void DrawSpikeStage(WorldRenderer& renderer) const;
 		void UpdateChess();
 		void CommitChessMove(uint8_t from, uint8_t to, Chess::Piece promotion);
 		Chess::Position ShownChessPosition() const;
@@ -561,6 +664,7 @@ namespace Game
 		SpellMeshes m_SpellMeshes;
 		std::unordered_map<uint32_t, SpearPath> m_SpearPaths;
 		std::vector<SpikeRuin> m_SpikeRuins;
+		std::vector<SpikeShard> m_SpikeShards;
 		std::vector<NovaField> m_NovaFields;
 		std::vector<VoidWell> m_VoidWells;
 		std::unordered_map<uint32_t, ShieldView> m_Shields;
@@ -606,7 +710,10 @@ namespace Game
 		std::vector<ArcFade> m_ArcFades;
 		std::vector<BladeSlash> m_BladeSlashes;
 		std::vector<BladeFade> m_BladeFades;
+		std::vector<SwordPiece> m_SwordPieces;
+		std::vector<SwordSpire> m_SwordSpires;
 		mutable std::unordered_map<uint32_t, std::pair<glm::vec3, float>> m_WandTips;
+		mutable std::unordered_map<uint32_t, glm::vec3> m_ChestShift;
 		struct Flame
 		{
 			glm::vec3 Position{ 0.0f };
@@ -636,6 +743,8 @@ namespace Game
 			float Life = 1.0f;
 			uint64_t Key = 0;
 			uint8_t Mesh = 0;
+			bool Cold = false;
+			uint32_t Model = UINT32_MAX;
 		};
 		std::vector<CometChunk> m_CometChunks;
 		uint32_t m_CometChunkKeys = 0;
@@ -693,6 +802,11 @@ namespace Game
 		uint8_t m_SeenRound = 0;
 		uint8_t m_FoughtRound = 0;
 		bool m_LoadoutOpen = true;
+		bool m_EmoteWheel = false;
+		glm::vec2 m_EmoteCenter{ 0.0f };
+		Emote m_EmoteChoice = Emote::None;
+		float m_EmoteStageClock = 0.0f;
+		float m_SwordStageClock = 0.0f;
 		bool m_ActMapOpen = false;
 		bool m_MerchantOpen = false;
 		bool m_GrimoireOpen = false;

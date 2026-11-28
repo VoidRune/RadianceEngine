@@ -92,6 +92,11 @@ namespace Game
 			uint64_t SnapshotBytes = 0;
 			uint32_t Snapshots = 0;
 			bool Rematch = false;
+			uint8_t EmoteCode = 0;
+			uint8_t EmoteSequence = 0;
+			Vec2 EmoteOrigin;
+			float EmoteFacing = 0.0f;
+			float EmoteAge = 0.0f;
 		};
 
 		struct Bot
@@ -116,6 +121,8 @@ namespace Game
 		float ReturnSeconds() const;
 		void StartBrawl(MapKind choice, const MatchRules& rules);
 		void OnRematch(Client& client, bool rematch);
+		void StartEmote(Client& client, Emote emote);
+		void UpdateEmotes();
 		void FlushNotices();
 		void SendRecap();
 		void RemoveClient(ConnectionId connection);

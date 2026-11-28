@@ -38,7 +38,7 @@ namespace Game
 		AbilityId::ArcLightning,
 		AbilityId::DiamondWard,
 		AbilityId::FrostSpear,
-		AbilityId::ChainHook,
+		AbilityId::CrystalSword,
 		AbilityId::Firebomb,
 		AbilityId::ObsidianBlades,
 		AbilityId::StormStrike,
@@ -161,10 +161,22 @@ namespace Game
 	inline constexpr float MaxPush = 42.0f;
 	inline constexpr float PushStagger = 12.0f;
 	inline constexpr float MissingHealthKnockback = 0.6f;
-	inline constexpr float HookPull = 1.8f;
-	inline constexpr float HookAnchorSeconds = 1.0f;
-	inline constexpr float HookYankSpeed = 20.0f;
-	inline constexpr float HookYankStop = 0.6f;
+	inline constexpr AbilityId SwordSwings[] = { AbilityId::CrystalSword, AbilityId::SwordSweep, AbilityId::SwordCleave };
+	inline constexpr uint8_t SwordFollowUps = uint8_t(std::size(SwordSwings) - 1);
+	inline constexpr float SwordWindow = 0.75f;
+	inline constexpr float SwordGap = 0.28f;
+	inline constexpr float SwordStrike = 0.14f;
+	inline constexpr float SwordLungeInput = 0.2f;
+	inline constexpr float SwordLungeCone = 0.4f;
+	inline constexpr float SwordBreakPush = 4.0f;
+	inline constexpr float SwordMinLunge = 0.3f;
+	inline constexpr float SwordStandoff = 1.0f;
+
+	inline constexpr AbilityId FollowUpSwing(uint8_t charges)
+	{
+		return SwordSwings[SwordFollowUps + 1u - std::clamp<uint8_t>(charges, 1, SwordFollowUps)];
+	}
+
 	inline constexpr float FrostNovaWindow = 1.2f;
 	static_assert(FrostNovaWindow < Abilities[size_t(AbilityId::GlacialNova)].EffectDuration);
 	inline constexpr float FrostNovaUnripe = 0.3f;
@@ -845,7 +857,7 @@ namespace Game
 	inline bool Refracts(AbilityId id)
 	{
 		const AbilityKind kind = GetAbility(id).Kind;
-		return (kind == AbilityKind::Projectile || kind == AbilityKind::Ground) && id != AbilityId::ChainHook;
+		return (kind == AbilityKind::Projectile || kind == AbilityKind::Ground);
 	}
 
 	inline bool IsAreaSpell(AbilityId id)
@@ -936,10 +948,15 @@ namespace Game
 		for (uint32_t i = 0; i < BrawlSlots; i++)
 		{
 			traits.Skills[i + 1] = IsBrawlSpell(loadout.Spells[i]) ? MakeBrawlSkill(loadout.Spells[i], 1.0f, mode) : SkillTraits{};
-			if (loadout.Spells[i] == AbilityId::ChainHook && HasCard(loadout.Cards, CardId::LongChain))
+			if (loadout.Spells[i] == AbilityId::CrystalSword && HasCard(loadout.Cards, CardId::ColossusBlade))
 			{
-				traits.Skills[i + 1].RangeScale = LongChainScale;
-				traits.Skills[i + 1].Cooldown *= LongChainCooldown;
+				traits.Skills[i + 1].AreaScale *= ColossusArea;
+				traits.Skills[i + 1].CastTime *= ColossusPace;
+			}
+			if (loadout.Spells[i] == AbilityId::EarthSpike && HasCard(loadout.Cards, CardId::StoneBarrage))
+			{
+				traits.Skills[i + 1].Recasts = BarrageCharges;
+				traits.Skills[i + 1].Cooldown *= BarrageCooldown;
 			}
 		}
 		for (SkillTraits& skill : traits.Skills)

@@ -44,8 +44,8 @@ namespace Game
 		ability = CreditOf(ability);
 		switch (ability)
 		{
-		case AbilityId::ChainHook:
-			return { 1.0f, 0.68f, 0.34f };
+		case AbilityId::CrystalSword:
+			return { 0.42f, 1.0f, 0.86f };
 		case AbilityId::ObsidianBlades:
 			return { 0.7f, 0.45f, 0.92f };
 		case AbilityId::Firebomb:

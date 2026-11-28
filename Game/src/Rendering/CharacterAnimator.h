@@ -24,6 +24,9 @@ namespace Game
 			bool Hurt = false;
 			bool Attacking = false;
 			bool Grounded = true;
+			bool Alert = false;
+			bool FreeHand = false;
+			uint8_t Emote = 0;
 			AttackAnim Attack;
 			float Windup = 0.5f;
 			Vec2 Push;
@@ -111,13 +114,15 @@ namespace Game
 		void Act(const CharacterLibrary& library, const Input& input, bool walking, float dt);
 		void StartAttack(const CharacterLibrary& library, const Input& input);
 		void EndAttack(const CharacterLibrary& library);
-		void UpdateFidget(const CharacterLibrary& library, bool still, float dt);
+		void UpdateFidget(const CharacterLibrary& library, bool still, bool alert, float dt);
+		void UpdateEmote(const CharacterLibrary& library, const Input& input, bool blocked, float dt);
 		void Compose(const CharacterLibrary& library, const Input& input, float dt);
 		void Inertialize(const CharacterLibrary& library, Pose& pose, uint32_t joints, float dt);
 		void Sample(const CharacterLibrary& library, const Crossfade& layers, Pose& pose) const;
 		void Twist(const ModelSkeleton& skeleton, const CharacterRig& rig, const Input& input, Pose& pose) const;
 		void React(const ModelSkeleton& skeleton, const CharacterRig& rig, const Input& input, Pose& pose) const;
 		void HoldStaff(const ModelSkeleton& skeleton, const CharacterRig& rig, const Input& input, Pose& pose) const;
+		void OpenHand(const ModelSkeleton& skeleton, const CharacterRig& rig, const Input& input, Pose& pose) const;
 		void Plant(const ModelSkeleton& skeleton, const CharacterRig& rig, const Input& input, Pose& pose, float dt);
 		void Swing(const ModelSkeleton& skeleton, const CharacterRig& rig, const Input& input, const Pose& pose, float dt);
 		float MoveAngle(const Input& input) const;
@@ -128,6 +133,7 @@ namespace Game
 		Crossfade m_Override;
 		Crossfade m_Flinch;
 		Crossfade m_Fidget;
+		Crossfade m_Emote;
 		Inertia m_Inertia;
 		JointMatrices m_Globals;
 		std::array<Foot, 2> m_Feet;
@@ -163,6 +169,8 @@ namespace Game
 		int32_t m_LastFidget = -1;
 		uint32_t m_Seed = 0x9E3779B9u;
 		uint8_t m_Variant = 0;
+		uint8_t m_EmoteCode = 0;
+		bool m_EmoteLoose = false;
 		uint8_t m_Contacts = 3;
 		bool m_Striding = false;
 		bool m_Free = false;

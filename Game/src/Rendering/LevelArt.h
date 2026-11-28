@@ -55,6 +55,20 @@ namespace Game
 		FireKind Kind = FireKind::Campfire;
 	};
 
+	enum class SprayKind : uint8_t
+	{
+		Lip,
+		Mist,
+		Splash,
+	};
+
+	struct LevelSpray
+	{
+		glm::vec3 Position{ 0.0f };
+		float Scale = 1.0f;
+		SprayKind Kind = SprayKind::Mist;
+	};
+
 	struct SceneChunk
 	{
 		Vec2 Min{ 1e9f, 1e9f };
@@ -86,6 +100,7 @@ namespace Game
 		std::vector<uint8_t> PropDrawn;
 		std::vector<uint8_t> WallDrawn;
 		std::vector<LevelFire> Fires;
+		std::vector<LevelSpray> Sprays;
 		GroundField Ground;
 		GrassField Grass;
 		PeakRelief Relief;

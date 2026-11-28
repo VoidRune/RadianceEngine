@@ -15,7 +15,7 @@ namespace Game
 		using Json = nlohmann::json;
 
 		constexpr uint32_t ProfileVersion = 3;
-		constexpr const char* AbilityKeys[] = { "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain", "EmberBolt", "Gust", "Comet", "Warp", "GlacialNova", "GravityWell", "ArcLightning", "DiamondWard", "FrostSpear", "ChainHook", "Firebomb", "ObsidianBlades", "StormStrike", "FirebombSkip", "FirebombSkip2", "StormJump", "HookAnchor", "HookPull", "HookYank", "FirebombFlame", "Ignite", "ShatterBurst", "EarthSpike", "PurpleFireball", "HexShield", "GlacialEruption", "WellBurst", "WarpWake", "CrawlerBite", "Pounce", "ShardSpit", "RubyBurst", "RubyShard", "Aftershock", "Resonance", "Ascension", "ShardBomb", "FrostClock", "DuelistSlash", "DuelistCleave", "DuelistThrust", "DuelistLunge", "ArcherShot", "ArcherVolley", "PerfectDodge", "BruteSlam", "BruteQuake", "MothDust", "MothDive", "LensBeam", "LensFlare", "ObeliskPulse", "VolatileBlast", "GeodeToss", "LensSweep", "RuneZone", "RuneBlast" };
+		constexpr const char* AbilityKeys[] = { "Roll", "Bite", "Spit", "Slam", "Firestrike", "TomeVolley", "PageStorm", "ShelfCrush", "ArcaneRing", "ArcaneBurst", "InkSpiral", "CrystalSpike", "TailSweep", "Eruption", "ShardBurst", "CrystalRain", "EmberBolt", "Gust", "Comet", "Warp", "GlacialNova", "GravityWell", "ArcLightning", "DiamondWard", "FrostSpear", "CrystalSword", "Firebomb", "ObsidianBlades", "StormStrike", "FirebombSkip", "FirebombSkip2", "StormJump", "SwordSweep", "SwordCleave", "SwordShatter", "FirebombFlame", "Ignite", "ShatterBurst", "EarthSpike", "PurpleFireball", "HexShield", "GlacialEruption", "WellBurst", "WarpWake", "CrawlerBite", "Pounce", "ShardSpit", "RubyBurst", "RubyShard", "Aftershock", "Resonance", "Ascension", "ShardBomb", "FrostClock", "DuelistSlash", "DuelistCleave", "DuelistThrust", "DuelistLunge", "ArcherShot", "ArcherVolley", "PerfectDodge", "BruteSlam", "BruteQuake", "MothDust", "MothDive", "LensBeam", "LensFlare", "ObeliskPulse", "VolatileBlast", "GeodeToss", "LensSweep", "RuneZone", "RuneBlast", "SwordThrow" };
 		static_assert(std::size(AbilityKeys) == size_t(AbilityId::Count));
 
 		std::optional<AbilityId> AbilityFromKey(const std::string& name)
@@ -26,6 +26,8 @@ namespace Game
 				return AbilityId::DiamondWard;
 			if (name == "Shockwave")
 				return AbilityId::GlacialNova;
+			if (name == "ChainHook")
+				return AbilityId::CrystalSword;
 			if (name == "SplittingBolt" || name == "ObsidianShards")
 				return AbilityId::ObsidianBlades;
 			const auto key = std::find(std::begin(AbilityKeys), std::end(AbilityKeys), name);

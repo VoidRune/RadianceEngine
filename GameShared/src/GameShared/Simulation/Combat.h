@@ -61,7 +61,6 @@ namespace Game
 	bool DealDamage(World& world, Entity target, const HitInfo& hit);
 	void StrikeArea(World& world, const AbilityDef& ability, int32_t damage, const AbilityContext& context);
 	void StrikeCircle(World& world, Vec2 center, float radius, const HitInfo& hit, Team side, float rewind, std::span<const Entity> spared = {});
-	void ReelIn(World& world, Entity caster, uint32_t owner, Vec2 point);
 	void CancelRecast(World& world, Entity caster, AbilityId ability);
 	void UpdateProjectiles(World& world, float dt);
 	void UpdateStrikes(World& world, float dt);

@@ -64,7 +64,7 @@ namespace Game
 	enum class DuoId : uint8_t
 	{
 		FrozenComet,
-		AbyssalHook,
+		AbyssalEdge,
 		StormSkip,
 		ThunderSpear,
 		ObsidianQuake,
@@ -83,7 +83,7 @@ namespace Game
 
 	inline constexpr DuoDef Duos[] = {
 		{ DuoId::FrozenComet, "Frozen Comet", "Comet chills what it hits, and freezes enemies that were already chilled for 1 s.", AbilityId::Comet, AbilityId::GlacialNova },
-		{ DuoId::AbyssalHook, "Abyssal Hook", "Hooking an enemy opens a small void eye on it that drags its pack together.", AbilityId::ChainHook, AbilityId::GravityWell },
+		{ DuoId::AbyssalEdge, "Abyssal Edge", "Crystal Sword's overhead cleave opens a small void eye on the enemy it hits that drags its pack together.", AbilityId::CrystalSword, AbilityId::GravityWell },
 		{ DuoId::StormSkip, "Storm Skip", "Every Firebomb burst arcs lightning to the nearest enemy.", AbilityId::Firebomb, AbilityId::ArcLightning },
 		{ DuoId::ThunderSpear, "Thunder Spear", "Frost Spear hits on chilled enemies call a storm strike down on them.", AbilityId::FrostSpear, AbilityId::StormStrike },
 		{ DuoId::ObsidianQuake, "Obsidian Quake", "Earth Spike bursts into a ring of obsidian blades.", AbilityId::EarthSpike, AbilityId::ObsidianBlades },

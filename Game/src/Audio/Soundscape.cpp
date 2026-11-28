@@ -1,4 +1,5 @@
 #include "Soundscape.h"
+#include <GameShared/Content/HubLayout.h>
 #include <algorithm>
 #include <cmath>
 
@@ -8,7 +9,7 @@ namespace Game
 	{
 		constexpr float EmitterOn = 17.0f;
 		constexpr float EmitterOff = 21.0f;
-		constexpr size_t MaxEmitters = 6;
+		constexpr size_t MaxEmitters = 8;
 		constexpr float LayerRate = 1.2f;
 
 		struct BedDef
@@ -79,6 +80,16 @@ namespace Game
 			for (const PlacedProp& prop : level->Props)
 				if (const float volume = FireVolume(prop.Id); volume > 0.0f)
 					m_Emitters.push_back({ prop.Position, level->Map.GetHeight(prop.Position) + 1.0f, volume });
+		if (level && level->Kind == MapKind::Hub && m_Bank.Has(Cue::Stream))
+		{
+			const HubRiverFlow& flow = HubRiverLevels();
+			for (float arc = 2.0f; arc < flow.LipArc - 3.0f; arc += 6.0f)
+				m_Emitters.push_back({ EmberCenter + HubRiverSampleAt(arc).Point, HubRiverLevelAt(arc) + 0.3f, 0.6f, Cue::Stream });
+			const HubRiverSample head = HubRiverSampleAt(0.0f);
+			m_Emitters.push_back({ EmberCenter + head.Point - head.Tangent * head.Half, HubRiverLevelAt(0.0f) + 0.6f, 0.9f, Cue::Stream });
+			if (m_Bank.Has(Cue::Waterfall))
+				m_Emitters.push_back({ EmberCenter + HubRiverSampleAt(flow.LipArc).Point, HubRiverLevelAt(flow.LipArc) - 1.0f, 1.0f, Cue::Waterfall });
+		}
 		m_NextCall = 6.0f + 10.0f * m_Random.Float();
 		m_StormTarget = 0.0f;
 		if (scene == m_Scene)
@@ -129,11 +140,11 @@ namespace Game
 			if (active >= MaxEmitters)
 				break;
 			Emitter& emitter = m_Emitters[index];
-			emitter.Voice = m_Bank.Play(Cue::Campfire, {
+			emitter.Voice = m_Bank.Play(emitter.Sound, {
 				.Volume = emitter.Volume,
 				.Position = Timbre::Vec3(emitter.Position.x, emitter.Height, emitter.Position.y),
 				.FadeIn = 1.5f,
-				.StartTime = 70.0f * m_Random.Float(),
+				.StartTime = (emitter.Sound == Cue::Campfire ? 70.0f : emitter.Sound == Cue::Stream ? 14.5f : 4.4f) * m_Random.Float(),
 			});
 			active++;
 		}

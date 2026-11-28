@@ -141,6 +141,7 @@ namespace Game
 
 	void GameClient::Update(float dt, const InputSampler& sampleInput)
 	{
+		m_EmoteAge += dt;
 		Predict(dt, sampleInput);
 		Receive(dt);
 	}
@@ -248,6 +249,17 @@ namespace Game
 	void GameClient::VoteRematch(bool rematch)
 	{
 		SendAction(ActionType::Rematch, rematch ? 1u : 0u);
+	}
+
+	void GameClient::PlayEmote(Emote emote)
+	{
+		if (!m_HasPrediction || !m_PredictedState.Alive || m_PredictedState.IsCasting())
+			return;
+		m_Emote = PackEmote(emote, ++m_EmoteSequence);
+		m_EmoteOrigin = m_PredictedMotion.Position;
+		m_EmoteFacing = m_HasViewAim ? m_ViewAim : m_PredictedMotion.Facing;
+		m_EmoteAge = 0.0f;
+		SendAction(ActionType::Emote, uint32_t(emote));
 	}
 
 	void GameClient::PickRunCard(uint32_t choice)
@@ -604,6 +616,7 @@ namespace Game
 			if (IsRunPaused())
 				break;
 			CollectBodies(ahead, m_Bodies);
+			AddRivalBodies(state, m_Bodies);
 			SimulatePlayer(*m_Level, motion, state, traits, input, GetTickSeconds(), m_Bodies, ArenaFor(ahead));
 			ahead++;
 		}
@@ -672,12 +685,17 @@ namespace Game
 			const PlayerTraits& traits = GetTraits();
 			const uint32_t ahead = uint32_t(m_PendingInputs.size() - 1);
 			CollectBodies(ahead, m_Bodies);
+			AddRivalBodies(m_PredictedState, m_Bodies);
 			const PlayerActions actions = SimulatePlayer(*m_Level, m_PredictedMotion, m_PredictedState, traits, input, dt, m_Bodies, ArenaFor(ahead));
 			if (actions.Teleported())
 			{
 				m_PreviousMotion = m_PredictedMotion;
 				m_Teleports++;
 			}
+			const Vec2 cursor = m_PredictedMotion.Position + FromAngle(input.Aim) * input.AimDistance;
+			for (PredictedEffect& effect : m_PredictedEffects)
+				if (effect.Pending && effect.Ability == AbilityId::EarthSpike)
+					effect.Facing = AngleOf(SteerSpike(effect.Position, FromAngle(effect.Facing), cursor));
 			const uint16_t tag = uint16_t(input.Sequence);
 			for (uint32_t slot = 0; slot < AbilitySlots; slot++)
 				if (actions.HasRecast(slot))
@@ -691,6 +709,15 @@ namespace Game
 
 	void GameClient::PredictRecast(AbilityId ability, const PlayerActions& actions, uint16_t recastTag, uint32_t slot)
 	{
+		if (ability == AbilityId::EarthSpike)
+		{
+			const SkillTraits& skill = GetTraits().Skills[slot];
+			const size_t index = std::min<size_t>(size_t(std::max(int32_t(skill.Recasts) - int32_t(actions.RecastCharges), 0)), std::size(BarrageAreas) - 1);
+			const uint8_t scale = uint8_t(std::clamp(std::lround(GetTraits().AreaScale * skill.AreaScale * BarrageAreas[index] * 16.0f), 1l, 255l));
+			m_PredictedEffects.push_back({ .Tag = recastTag, .Ability = ability, .Position = actions.RecastPoint, .Facing = AngleOf(actions.Direction), .Remaining = GetAbility(ability).EffectDuration, .Scale = scale });
+			RememberTag(recastTag);
+			return;
+		}
 		if (ability == AbilityId::GlacialNova)
 		{
 			const float life = GetAbility(AbilityId::GlacialEruption).EffectDuration;
@@ -708,19 +735,19 @@ namespace Game
 			m_PredictedEffects.insert(m_PredictedEffects.end(), eruptions.begin(), eruptions.end());
 			return;
 		}
-		if (ability != AbilityId::ChainHook)
+		if (ability != AbilityId::CrystalSword)
 			return;
-		uint16_t tag = 0;
-		for (const PredictedProjectile& hook : m_PredictedProjectiles)
-			if (hook.Ability == AbilityId::ChainHook)
-				tag = hook.Tag;
-		for (const PredictedEffect& anchor : m_PredictedEffects)
-			if (anchor.Ability == AbilityId::HookAnchor)
-				tag = anchor.Tag;
-		std::erase_if(m_PredictedProjectiles, [](const PredictedProjectile& projectile) { return projectile.Ability == AbilityId::ChainHook; });
-		std::erase_if(m_PredictedEffects, [](const PredictedEffect& effect) { return effect.Ability == AbilityId::HookAnchor; });
-		if (tag != 0)
-			m_PredictedEffects.push_back({ .Tag = tag, .Index = 2, .Ability = AbilityId::HookYank, .Position = actions.RecastPoint, .Facing = AngleOf(actions.RecastPoint - m_PredictedMotion.Position), .Remaining = GetAbility(AbilityId::HookYank).EffectDuration });
+		const AbilityId swing = FollowUpSwing(actions.RecastCharges);
+		if (swing == AbilityId::SwordCleave && HasCard(m_LocalPlayer.Brawl.Cards, CardId::HurledEdge))
+		{
+			SkillTraits thrown = GetTraits().Skills[slot];
+			thrown.Ability = AbilityId::SwordThrow;
+			PredictAbility(thrown, recastTag, actions, GetTraits());
+			return;
+		}
+		const uint8_t scale = uint8_t(std::clamp(std::lround(GetTraits().AreaScale * GetTraits().Skills[slot].AreaScale * 16.0f), 1l, 255l));
+		m_PredictedEffects.push_back({ .Tag = recastTag, .Ability = swing, .Position = m_PredictedMotion.Position, .Facing = AngleOf(actions.Direction), .Remaining = GetAbility(swing).EffectDuration, .Scale = scale });
+		RememberTag(recastTag);
 	}
 
 	void GameClient::PredictAbility(const SkillTraits& skill, uint16_t tag, const PlayerActions& actions, const PlayerTraits& traits)
@@ -767,7 +794,23 @@ namespace Game
 		{
 			if (ability.Id == AbilityId::EarthSpike)
 			{
-				m_PredictedEffects.push_back({ .Tag = tag, .Ability = ability.Id, .Position = actions.CastPoint, .Facing = AngleOf(actions.CastAim), .Remaining = ability.EffectDuration, .Scale = scale });
+				const CardMask cards = m_LocalPlayer.Brawl.Cards;
+				const float seconds = SpikeSeconds(cards, ability.EffectDuration);
+				const uint8_t flags = SpikeFlags(cards);
+				m_PredictedEffects.push_back({ .Tag = tag, .Ability = ability.Id, .Position = actions.CastPoint, .Facing = AngleOf(actions.CastAim), .Remaining = seconds, .Scale = scale, .Charge = flags });
+				if (HasCard(cards, CardId::SpikeBloom))
+				{
+					const float area = traits.AreaScale * skill.AreaScale;
+					const float facing = AngleOf(actions.CastAim);
+					const uint8_t flankScale = uint8_t(std::clamp(std::lround(area * BloomArea * 16.0f), 1l, 255l));
+					const ArenaState arena = ArenaFor(0);
+					for (uint32_t side = 0; side < 2; side++)
+					{
+						const Vec2 position = BloomBase(actions.CastPoint, facing, area, side);
+						if (IsSpellGround(*m_Level, arena, position))
+							m_PredictedEffects.push_back({ .Tag = tag, .Index = uint8_t(1 + side), .Ability = ability.Id, .Position = position, .Facing = facing, .Remaining = BloomDelay, .Scale = flankScale, .Pending = true });
+					}
+				}
 				break;
 			}
 			const Vec2 target = GetGroundTarget(*m_Level, origin, actions.Direction, actions.AimDistance, ability.Range);
@@ -798,11 +841,14 @@ namespace Game
 
 	void GameClient::StepPredictedEffects(float dt)
 	{
+		std::vector<BodyCircle> walls;
+		if (!m_PredictedProjectiles.empty())
+			CollectWalls(walls);
 		for (PredictedProjectile& projectile : m_PredictedProjectiles)
 		{
 			projectile.Previous = projectile.Position;
 			const Vec2 end = projectile.Position + projectile.Velocity * dt;
-			const float travel = CastSegment(*m_Level, projectile.Position, end, Block::Projectiles, &projectile.Floor);
+			const float travel = std::min(CastSegment(*m_Level, projectile.Position, end, Block::Projectiles, &projectile.Floor), walls.empty() ? 1.0f : CastBodies(projectile.Position, end, projectile.Radius, walls));
 			projectile.Position = Lerp(projectile.Position, end, travel);
 			const bool clear = travel >= 1.0f;
 			projectile.Lifetime -= dt;
@@ -844,7 +890,6 @@ namespace Game
 				{
 					projectile.Position = Lerp(projectile.Previous, projectile.Position, parameter);
 					projectile.Lifetime = 0.0f;
-					projectile.Caught = true;
 					break;
 				}
 				projectile.Pierce--;
@@ -852,11 +897,6 @@ namespace Game
 			}
 			if (projectile.Lifetime <= 0.0f && projectile.Explodes)
 				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = projectile.Index, .Ability = projectile.Ability, .Position = projectile.Position, .Facing = AngleOf(projectile.Velocity), .Remaining = GetAbility(projectile.Ability).EffectDuration, .Scale = projectile.Blast, .Charge = projectile.Charge });
-			if (projectile.Lifetime <= 0.0f && projectile.Ability == AbilityId::ChainHook && !projectile.Reflected)
-			{
-				const AbilityId end = projectile.Caught ? AbilityId::HookPull : AbilityId::HookAnchor;
-				m_PredictedEffects.push_back({ .Tag = projectile.Tag, .Index = uint8_t(projectile.Caught ? 3 : 1), .Ability = end, .Position = projectile.Position, .Facing = AngleOf(projectile.Velocity), .Remaining = GetAbility(end).EffectDuration });
-			}
 		}
 		std::erase_if(m_PredictedProjectiles, [](const PredictedProjectile& projectile) { return projectile.Lifetime <= 0.0f; });
 		for (PredictedEffect& effect : m_PredictedEffects)
@@ -885,6 +925,15 @@ namespace Game
 		return tag != 0 && std::find(m_PredictedTags.begin(), m_PredictedTags.begin() + count, tag) != m_PredictedTags.begin() + count;
 	}
 
+	void GameClient::AddRivalBodies(const PlayerState& state, std::vector<BodyCircle>& bodies) const
+	{
+		if (m_Snapshots.empty() || !InSwordCombo(state, GetTraits()))
+			return;
+		for (const EntityState& entity : m_Snapshots.back().Entities)
+			if (entity.Kind == EntityKind::Player && entity.NetId != m_Welcome.PlayerNetId && !entity.Has(EntityFlags::Dead) && IsHostile(entity))
+				bodies.push_back({ entity.Position, PlayerRadius });
+	}
+
 	void GameClient::CollectBodies(uint32_t ticksAhead, std::vector<BodyCircle>& bodies) const
 	{
 		bodies.clear();
@@ -907,6 +956,22 @@ namespace Game
 			}
 			bodies.push_back({ position, def->Radius * (entity.Has(EntityFlags::Elite) ? EliteSize : 1.0f) });
 		}
+		std::vector<BodyCircle> walls;
+		CollectWalls(walls);
+		bodies.insert(bodies.end(), walls.begin(), walls.end());
+	}
+
+	void GameClient::CollectWalls(std::vector<BodyCircle>& walls) const
+	{
+		walls.clear();
+		const float reach = GetAbility(AbilityId::EarthSpike).Reach;
+		if (!m_Snapshots.empty())
+			for (const EntityState& entity : m_Snapshots.back().Entities)
+				if (entity.Kind == EntityKind::Effect && entity.Variant == uint8_t(AbilityId::EarthSpike) && (entity.Charge & SpikeWallFlag) != 0 && !entity.Has(EntityFlags::Pending))
+					walls.push_back(SpikeWall(entity.Position, entity.Facing, entity.GetScale(), reach));
+		for (const PredictedEffect& effect : m_PredictedEffects)
+			if (effect.Ability == AbilityId::EarthSpike && (effect.Charge & SpikeWallFlag) != 0)
+				walls.push_back(SpikeWall(effect.Position, effect.Facing, float(effect.Scale) / 16.0f, reach));
 	}
 
 	void GameClient::AdvanceClock(float dt)
@@ -1057,11 +1122,18 @@ namespace Game
 			self.Flags |= server->Flags & (ServerFlags | uint32_t(EntityFlags::BloodShield));
 		if (GetTraits().WeaveStacks > 0 && m_PredictedState.Weave >= GetTraits().WeaveStacks)
 			self.Flags |= uint32_t(EntityFlags::Archmage);
+		if (!m_PredictedState.Alive || m_PredictedState.IsCasting() || m_PredictedState.IsStunned() || m_PredictedState.DashDistance > 0.0f || !EmoteHolds(UnpackEmote(m_Emote), m_EmoteAge, Length(m_PredictedMotion.Position - m_EmoteOrigin)))
+			m_Emote = 0;
+		if (m_Emote != 0)
+		{
+			self.Variant = m_Emote;
+			self.Facing = m_EmoteFacing;
+		}
 		if (m_PredictedState.CastSlot >= 0)
 		{
 			const SkillTraits& skill = GetTraits().Skills[size_t(m_PredictedState.CastSlot)];
 			self.Flags |= uint16_t(EntityFlags::Attacking);
-			self.Variant = uint8_t(skill.Ability);
+			self.Variant = uint8_t(SwingOf(m_PredictedState, GetTraits(), uint32_t(m_PredictedState.CastSlot)));
 			if (IsCharged(skill))
 				self.Charge = PackCharge(ChargePower(m_PredictedState, skill));
 			if (IsGuard(skill))

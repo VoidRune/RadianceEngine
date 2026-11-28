@@ -453,6 +453,9 @@ namespace Game
 		case ActionType::Rematch:
 			OnRematch(client, action.Value != 0);
 			break;
+		case ActionType::Emote:
+			StartEmote(client, Emote(std::min<uint32_t>(action.Value, uint32_t(Emote::Count))));
+			break;
 		case ActionType::StartRun:
 			if (m_World->IsHub())
 			{
@@ -631,12 +634,41 @@ namespace Game
 				ProcessInputs(client);
 		m_Squad.Update(*m_World);
 		m_World->Step();
+		UpdateEmotes();
 		if (m_World->GetSettings().Map != m_Session.Map || m_World->GetSettings().Seed != m_Session.MapSeed)
 			ApplyArenaChange();
 		HandleWorldEvents();
 		FlushNotices();
 		if (m_World->GetTick() % m_Config.SnapshotInterval == 0)
 			SendSnapshots();
+	}
+
+	void GameServer::StartEmote(Client& client, Emote emote)
+	{
+		const PlayerController* controller = m_World->GetEntities().TryGet<PlayerController>(client.Player);
+		const Transform* transform = m_World->GetEntities().TryGet<Transform>(client.Player);
+		client.EmoteCode = 0;
+		if (emote == Emote::None || emote >= Emote::Count || !controller || !transform || !controller->State.Alive || controller->State.IsCasting())
+			return;
+		client.EmoteCode = PackEmote(emote, ++client.EmoteSequence);
+		client.EmoteOrigin = transform->Position;
+		client.EmoteFacing = transform->Facing;
+		client.EmoteAge = 0.0f;
+	}
+
+	void GameServer::UpdateEmotes()
+	{
+		for (Client& client : m_Clients)
+		{
+			if (client.EmoteCode == 0)
+				continue;
+			client.EmoteAge += m_World->GetTickSeconds();
+			const PlayerController* controller = m_World->GetEntities().TryGet<PlayerController>(client.Player);
+			const Transform* transform = m_World->GetEntities().TryGet<Transform>(client.Player);
+			if (!controller || !transform || !controller->State.Alive || controller->State.IsCasting() || controller->State.IsStunned() || controller->State.DashDistance > 0.0f
+				|| !EmoteHolds(UnpackEmote(client.EmoteCode), client.EmoteAge, Length(transform->Position - client.EmoteOrigin)))
+				client.EmoteCode = 0;
+		}
 	}
 
 	void GameServer::ProcessInputs(Client& client)
@@ -829,11 +861,16 @@ namespace Game
 				if (controller->State.IsFalling())
 					state.Flags |= uint16_t(controller->State.Fall < FallSeconds ? EntityFlags::Falling : EntityFlags::Lifted);
 				state.Variant = uint8_t(AbilityId::Count);
+				if (const Client* owner = FindClientByPlayer(controller->PlayerId); owner && owner->EmoteCode != 0)
+				{
+					state.Variant = owner->EmoteCode;
+					state.Facing = owner->EmoteFacing;
+				}
 				if (controller->State.CastSlot >= 0)
 				{
 					const SkillTraits& skill = controller->Traits.Skills[size_t(controller->State.CastSlot)];
 					state.Flags |= uint16_t(EntityFlags::Attacking);
-					state.Variant = uint8_t(skill.Ability);
+					state.Variant = uint8_t(SwingOf(controller->State, controller->Traits, uint32_t(controller->State.CastSlot)));
 					if (IsCharged(skill))
 						state.Charge = PackCharge(ChargePower(controller->State, skill));
 					if (IsGuard(skill))
@@ -920,6 +957,8 @@ namespace Game
 					}
 				}
 			}
+			if (entities.Has<SpikeSeed>(entity))
+				state.Flags |= uint16_t(EntityFlags::Pending);
 			if (const PendingStrike* pending = entities.TryGet<PendingStrike>(entity))
 			{
 				state.Flags |= uint16_t(EntityFlags::Pending);

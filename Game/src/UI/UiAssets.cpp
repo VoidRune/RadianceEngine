@@ -150,7 +150,7 @@ namespace Game
 		case AbilityId::ArcLightning: return UiIcon::LightningArc;
 		case AbilityId::DiamondWard: return UiIcon::CutDiamond;
 		case AbilityId::FrostSpear: return UiIcon::IceSpear;
-		case AbilityId::ChainHook: return UiIcon::SpearHook;
+		case AbilityId::CrystalSword: return UiIcon::SwordSlice;
 		case AbilityId::Firebomb: return UiIcon::HighShot;
 		case AbilityId::ObsidianBlades: return UiIcon::ObsidianBlades;
 		case AbilityId::StormStrike: return UiIcon::ArcingBolt;
@@ -180,8 +180,10 @@ namespace Game
 		case CardId::GlassCannon: return UiIcon::SkullCrack;
 		case CardId::Echo: return UiIcon::Dodge;
 		case CardId::HeavyRobes: return UiIcon::Robe;
-		case CardId::LongChain: return UiIcon::SpearHook;
-		case CardId::Whiplash: return UiIcon::Sprint;
+		case CardId::ColossusBlade: return UiIcon::SwordSlice;
+		case CardId::Riposte: return UiIcon::CheckedShield;
+		case CardId::HurledEdge: return UiIcon::CurvyKnife;
+		case CardId::ShatteringFinale: return UiIcon::Shard;
 		case CardId::ClusterBomb: return UiIcon::ArrowCluster;
 		case CardId::StickyFire: return UiIcon::Fireball;
 		case CardId::RazorGlass: return UiIcon::StrikingArrows;
@@ -218,6 +220,10 @@ namespace Game
 		case CardId::Refraction: return UiIcon::Prism;
 		case CardId::UnstableArcana: return UiIcon::UnstableOrb;
 		case CardId::Archmage: return UiIcon::PointyHat;
+		case CardId::SpikeBloom: return UiIcon::SplitArrows;
+		case CardId::StoneBarrage: return UiIcon::EarthCrack;
+		case CardId::Bulwark: return UiIcon::ChessRook;
+		case CardId::SpikeShrapnel: return UiIcon::Shard;
 		default: return UiIcon::Upgrade;
 		}
 	}

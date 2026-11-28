@@ -322,7 +322,7 @@ namespace Game
 			Box({ 0.0f, 0.2f }, 0.48f, { 0.22f, 0.03f }, 0.5f, WoodMid),
 		};
 
-		inline constexpr PropCollider BenchColliders[] = { Rect({ 0.72f, 0.22f }, Block::Movement) };
+		inline constexpr PropCollider BenchColliders[] = { Rect({ 0.95f, 0.36f }, Block::Movement) };
 		inline constexpr PropPart BenchParts[] = {
 			Box({}, 0.4f, { 0.7f, 0.2f }, 0.07f, WoodMid),
 			Box({ -0.58f, 0.0f }, 0.0f, { 0.05f, 0.17f }, 0.4f, Iron),
@@ -342,7 +342,7 @@ namespace Game
 			Sphere({ 0.22f, 0.0f }, 1.43f, { 0.04f, 0.04f }, 0.09f, Flame, 0.0f, 1.0f),
 		};
 
-		inline constexpr PropCollider LampPostColliders[] = { Circle(0.16f) };
+		inline constexpr PropCollider LampPostColliders[] = { Circle(0.4f) };
 		inline constexpr PropPart LampPostParts[] = {
 			Cylinder({}, 0.0f, { 0.14f, 0.14f }, 0.25f, Iron),
 			Cylinder({}, 0.25f, { 0.07f, 0.07f }, 2.3f, Iron),

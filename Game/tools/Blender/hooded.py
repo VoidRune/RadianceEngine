@@ -775,8 +775,29 @@ def preview(folder, prefix, views, samples):
         bpy.data.objects.remove(camera)
 
 
+def export_animations(folder):
+    rig = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
+    nodes = [bpy.data.objects[name] for name, _, _ in SLOTS]
+    if rig.animation_data:
+        for track in list(rig.animation_data.nla_tracks):
+            rig.animation_data.nla_tracks.remove(track)
+        rig.animation_data.action = None
+    for action in list(bpy.data.actions):
+        bpy.data.actions.remove(action)
+    heroanim.build_actions(rig)
+    bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(folder, NAME + '.blend'), compress=True)
+    for node in nodes:
+        for name in [attribute.name for attribute in node.data.color_attributes]:
+            node.data.color_attributes.remove(node.data.color_attributes[name])
+    kit.export_gltf(nodes, os.path.join(folder, NAME + '.gltf'), EMISSIVE, armature=rig, animations=True)
+
+
 def main():
     args = pk.options()
+    if args.get('--anims'):
+        export_animations(os.path.abspath(args['--anims']))
+        return
     kit.reset()
     kit.enable_gpu()
     target = kit.collection('Export')

@@ -247,7 +247,7 @@ namespace Game
 		{
 			brawler.RoundKnockouts = 0;
 			brawler.RoundCasts = 0;
-			brawler.Hooked = {};
+			brawler.Cleaved = {};
 			brawler.Returned = {};
 			brawler.Afterburn = 0.0f;
 			brawler.LavaBank = 0.0f;
@@ -1161,13 +1161,13 @@ namespace Game
 			m_Brawlers[playerId].RoundCasts++;
 	}
 
-	void MatchDirector::NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, bool pull, uint32_t returned)
+	void MatchDirector::NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, uint32_t returned)
 	{
 		if (!TracksFeats() || victim >= MaxPlayers || attacker >= MaxPlayers || attacker == victim)
 			return;
 		Brawler& target = m_Brawlers[victim];
-		if (pull && CreditOf(AbilityId(ability)) == AbilityId::ChainHook)
-			target.Hooked = { attacker, m_Brawl.Clock };
+		if (AbilityId(ability) == AbilityId::SwordCleave)
+			target.Cleaved = { attacker, m_Brawl.Clock };
 		if (returned == victim)
 			target.Returned = { attacker, m_Brawl.Clock };
 	}
@@ -1197,8 +1197,8 @@ namespace Game
 			return;
 		Brawler& fallen = m_Brawlers[victim];
 		const auto recent = [&](const FeatMark& mark) { return mark.By < MaxPlayers && mark.By != victim && m_Brawl.Clock - mark.At <= KillCreditSeconds; };
-		if (hazard && recent(fallen.Hooked))
-			world.Achieve(fallen.Hooked.By, Achievement::Hooked);
+		if (hazard && recent(fallen.Cleaved))
+			world.Achieve(fallen.Cleaved.By, Achievement::Cleaved);
 		if (killer < MaxPlayers && killer != victim)
 		{
 			if (hazard)
@@ -1208,7 +1208,7 @@ namespace Game
 			if (++m_Brawlers[killer].RoundKnockouts == HatTrickKnockouts)
 				world.Achieve(killer, Achievement::HatTrick);
 		}
-		fallen.Hooked = {};
+		fallen.Cleaved = {};
 		fallen.Returned = {};
 	}
 

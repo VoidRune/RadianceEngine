@@ -346,6 +346,8 @@ namespace Game
 				state.CastSlot = -1;
 				state.CastTimer = 0.0f;
 			}
+			if (Length(impulse) >= SwordBreakPush && InSwordCombo(state, controller->Traits))
+				BreakSwordCombo(state, controller->Traits);
 			return true;
 		}
 
@@ -414,7 +416,7 @@ namespace Game
 			if (brawlDamage && !world.IsShardfall())
 				state.Mana = std::max(state.Mana - absorbed * HexShieldManaPerPoint, 0.0f);
 			if (const Replicated* replicated = entities.TryGet<Replicated>(target))
-				world.RecordHit({ replicated->NetId, point, uint16_t(std::lround(absorbed)), false, true, hit.Damages, hit.Attacker, true });
+				world.RecordHit({ replicated->NetId, point, uint16_t(std::lround(absorbed)), false, true, hit.Damages, hit.Attacker, true, false, hit.Ability });
 			if (wear <= left)
 			{
 				if (hit.Push != 0.0f && hit.Mode != PushMode::Pull)
@@ -871,7 +873,7 @@ namespace Game
 		if (const PlayerController* crystal = entities.TryGet<PlayerController>(target); crystal && crystal->State.Alive && crystal->State.Invulnerable <= 0.0f && hit.Attacker != NoPlayer && hit.Attacker != crystal->PlayerId && world.BreakCrystalWard(target, crystal->PlayerId))
 			return true;
 		if (const PlayerController* victim = entities.TryGet<PlayerController>(target); victim && victim->State.Alive && victim->State.Invulnerable <= 0.0f)
-			world.NoteBlow(victim->PlayerId, hit.Attacker, hit.Ability, hit.Mode == PushMode::Pull, hit.Returned);
+			world.NoteBlow(victim->PlayerId, hit.Attacker, hit.Ability, hit.Returned);
 		if (damage <= 0)
 		{
 			if (!ApplyKnockback(world, target, hit, true))
@@ -952,6 +954,8 @@ namespace Game
 		const float reach = ability.Reach * context.AreaScale;
 		const float halfWidth = ability.Width * context.AreaScale * 0.5f;
 		const HitInfo hit = MakeHit(damage, ability, context);
+		const bool sword = CreditOf(ability.Id) == AbilityId::CrystalSword;
+		bool blocked = false;
 		for (const Target& target : CollectTargets(world, context.Origin, reach))
 		{
 			Vec2 position;
@@ -969,8 +973,33 @@ namespace Game
 			}
 			else if (!nova && distance > target.Radius + 0.2f && std::abs(AngleBetween(facing, AngleOf(offset))) > ability.HalfArc)
 				continue;
-			if (HasLineOfFire(world.GetLevel(), context.Origin, position))
-				DealDamage(world, target.Handle, hit);
+			if (!HasLineOfFire(world.GetLevel(), context.Origin, position))
+				continue;
+			if (const PlayerController* victim = sword ? world.GetEntities().TryGet<PlayerController>(target.Handle) : nullptr)
+				blocked = blocked || IsWarded(victim->State) || (IsGuarding(victim->State, victim->Traits) && std::abs(AngleBetween(target.Facing, AngleOf(context.Origin - position))) <= GetAbility(AbilityId::HexShield).HalfArc);
+			DealDamage(world, target.Handle, hit);
+		}
+		if (blocked)
+			if (PlayerController* caster = world.GetEntities().TryGet<PlayerController>(context.Source))
+				BreakSwordCombo(caster->State, caster->Traits);
+	}
+
+	namespace
+	{
+		void ShatterThrow(World& world, const Projectile& projectile, Vec2 position, uint32_t owner, uint16_t tag)
+		{
+			const AbilityDef& shatter = GetAbility(AbilityId::SwordShatter);
+			if ((projectile.Perks & PerkShatter) == 0)
+			{
+				world.SpawnEffect(AbilityId::SwordShatter, position, AngleOf(projectile.Velocity), owner, tag, 1.0f);
+				return;
+			}
+			AbilityContext shards;
+			shards.Side = projectile.Side;
+			shards.Owner = owner;
+			shards.Source = projectile.Source;
+			shards.PvpScale = projectile.PvpScale;
+			world.SpawnCardStrike(AbilityId::SwordShatter, position, AngleOf(projectile.Velocity), 0.0f, shatter.ImpactRadius, shatter.Push, 0, false, shards);
 		}
 	}
 
@@ -999,17 +1028,25 @@ namespace Game
 			bool Blocked = false;
 		};
 		std::vector<Burst> bursts;
-		struct Hooked
-		{
-			Vec2 Position;
-			float Facing = 0.0f;
-			uint32_t Owner = NoPlayer;
-			uint16_t Tag = 0;
-			Entity Source;
-			bool Caught = false;
-		};
-		std::vector<Hooked> hooks;
 
+		struct Parry
+		{
+			Vec2 Center;
+			float Facing = 0.0f;
+			float Reach = 0.0f;
+			uint32_t Owner = NoPlayer;
+		};
+		std::vector<Parry> parries;
+		entities.Each<PlayerController>([&](Entity player, PlayerController& controller)
+		{
+			const Transform* place = entities.TryGet<Transform>(player);
+			const PlayerState& state = controller.State;
+			if (!place || !state.Alive || state.CastSlot < 0 || controller.Traits.Skills[size_t(state.CastSlot)].Ability != AbilityId::CrystalSword || !HasCard(world.GetCards(controller.PlayerId), CardId::Riposte))
+				return;
+			parries.push_back({ place->Position, place->Facing, RiposteReach * controller.Traits.Skills[size_t(state.CastSlot)].AreaScale, controller.PlayerId });
+		});
+		std::vector<BodyCircle> walls;
+		world.CollectWalls(walls);
 		entities.Each<Projectile>([&](Entity entity, Projectile& projectile)
 		{
 			Transform* transform = entities.TryGet<Transform>(entity);
@@ -1026,14 +1063,32 @@ namespace Game
 				Seek(world, sweep.Pick(targets, transform->Position, SeekRange), projectile, transform->Position, owner, alreadyHit, dt);
 			const Vec2 start = transform->Position;
 			const Vec2 end = start + projectile.Velocity * dt;
-			const float travel = CastSegment(world.GetLevel(), start, end, Block::Projectiles, &projectile.Floor);
+			float travel = CastSegment(world.GetLevel(), start, end, Block::Projectiles, &projectile.Floor);
+			const float barrier = walls.empty() ? 1.0f : CastBodies(start, end, projectile.Radius, walls);
+			const bool barred = barrier < travel;
+			travel = std::min(travel, barrier);
 			const Vec2 reached = Lerp(start, end, travel);
 			transform->Position = reached;
 			transform->Facing = AngleOf(projectile.Velocity);
-			const bool hook = projectile.Ability == uint8_t(AbilityId::ChainHook);
 			const bool walled = travel < 1.0f;
-			const bool clear = !walled || (projectile.Bounces > 0 && !hook && Rebound(world.GetLevel(), projectile, start, end, travel));
+			const bool clear = !walled || (!barred && projectile.Bounces > 0 && Rebound(world.GetLevel(), projectile, start, end, travel));
 			projectile.Lifetime -= dt;
+			bool parried = false;
+			for (const Parry& parry : parries)
+			{
+				float parameter = 0.0f;
+				if (parry.Owner == owner || (projectile.Side == Team::Players && !world.AreRivals(owner, parry.Owner)) || !SegmentTouchesCircle(start, reached, parry.Center, parry.Reach + projectile.Radius, parameter))
+					continue;
+				const Vec2 point = Lerp(start, reached, parameter);
+				if (std::abs(AngleBetween(parry.Facing, AngleOf(point - parry.Center))) > RiposteArc)
+					continue;
+				world.SpawnEffect(AbilityId::SwordShatter, point, AngleOf(projectile.Velocity), parry.Owner, 0, 0.3f);
+				world.QueueDestroy(entity);
+				parried = true;
+				break;
+			}
+			if (parried)
+				return;
 
 			contacts.clear();
 			const Vec2 low = { std::min(start.x, reached.x) - projectile.Radius, std::min(start.y, reached.y) - projectile.Radius };
@@ -1045,7 +1100,7 @@ namespace Game
 				float parameter = 0.0f;
 				if (!IsHostile(world, projectile.Side, owner, target) || alreadyHit(target.Handle) || !TargetPosition(world, target, projectile.Rewind, position))
 					continue;
-				if (target.Mirrored && !hook && SegmentTouchesCircle(start, reached, position, target.Radius + projectile.Radius, parameter))
+				if (target.Mirrored && SegmentTouchesCircle(start, reached, position, target.Radius + projectile.Radius, parameter))
 					contacts.push_back({ target.Handle, parameter, false, false, true });
 				else if (target.Warded && SegmentTouchesCircle(start, reached, position, std::max(target.Radius, DiamondWardReach) + projectile.Radius, parameter))
 					contacts.push_back({ target.Handle, parameter, false, true });
@@ -1056,13 +1111,7 @@ namespace Game
 			}
 			std::sort(contacts.begin(), contacts.end(), [](const Contact& a, const Contact& b) { return a.Parameter < b.Parameter; });
 
-			HitInfo hit = MakeHit(projectile, owner);
-			if (hook)
-				if (const Transform* caster = entities.TryGet<Transform>(projectile.Source))
-				{
-					hit.Mode = PushMode::Pull;
-					hit.PushOrigin = caster->Position;
-				}
+			const HitInfo hit = MakeHit(projectile, owner);
 			bool spent = false;
 			bool reflected = false;
 			Vec2 last = reached;
@@ -1098,17 +1147,12 @@ namespace Game
 					world.GetStats().PlayerProjectileHits++;
 				if (contact.Guarded || contact.Warded)
 				{
-					const PlayerController* guard = entities.TryGet<PlayerController>(contact.Handle);
-					if (hook)
-						hooks.push_back({ point, transform->Facing, owner, tag, projectile.Source, guard && (contact.Warded ? !IsWarded(guard->State) : !IsGuarding(guard->State, guard->Traits)) });
 					if (projectile.HitCount < projectile.Hits.size())
 						projectile.Hits[projectile.HitCount++] = contact.Handle;
 					spent = true;
 					last = point;
 					break;
 				}
-				if (hook)
-					hooks.push_back({ point, transform->Facing, owner, tag, projectile.Source, true });
 				if (projectile.Chain > 0 && Chain(world, sweep.Pick(targets, point, ChainReach(projectile)), projectile, contact.Handle, point, owner))
 				{
 					spent = true;
@@ -1127,7 +1171,7 @@ namespace Game
 			}
 			if (reflected)
 				return;
-			if (!spent && (!clear || projectile.Lifetime <= 0.0f) && projectile.Side == Team::Players && projectile.ImpactRadius <= 0.0f && !hook && (projectile.Perks & (PerkDebt | PerkBurst | PerkSplit)) == 0)
+			if (!spent && (!clear || projectile.Lifetime <= 0.0f) && projectile.Side == Team::Players && projectile.ImpactRadius <= 0.0f && (projectile.Perks & (PerkDebt | PerkBurst | PerkSplit)) == 0)
 				if (const float debt = world.RunSigilPower(owner, SigilId::MirrorDebt); debt > 0.0f)
 				{
 					projectile.Perks |= PerkDebt;
@@ -1144,10 +1188,10 @@ namespace Game
 				Explode(world, projectile, reached, owner, tag);
 			else if (!spent && clear && projectile.Lifetime <= 0.0f && (projectile.Perks & PerkSplit))
 				bursts.push_back({ projectile, reached, owner });
-			if (HasRune(projectile.Runes, RuneId::Split) && !hook && (spent || !clear || projectile.Lifetime <= 0.0f))
+			if (HasRune(projectile.Runes, RuneId::Split) && (spent || !clear || projectile.Lifetime <= 0.0f))
 				bursts.push_back({ projectile, spent ? last : reached, owner, true, victim, !spent && !clear });
-			if (hook && !spent && (!clear || projectile.Lifetime <= 0.0f))
-				hooks.push_back({ reached, transform->Facing, owner, tag, projectile.Source, false });
+			if (projectile.Ability == uint8_t(AbilityId::SwordThrow) && (spent || !clear || projectile.Lifetime <= 0.0f))
+				ShatterThrow(world, projectile, spent ? last : reached, owner, tag);
 			if (projectile.Ability == uint8_t(AbilityId::FrostSpear) && (spent || !clear || projectile.Lifetime <= 0.0f))
 				world.AddCrust(last, projectile.Pierce > 0 || projectile.Radius > GetAbility(AbilityId::FrostSpear).ProjectileRadius + 0.05f ? SpearCrustCharged : SpearCrustRadius);
 			if (spent || !clear || projectile.Lifetime <= 0.0f)
@@ -1158,38 +1202,6 @@ namespace Game
 				Shatter(world, burst.Source, burst.Position, burst.Owner, burst.Struck, burst.Blocked);
 			else
 				Split(world, burst.Source, burst.Position, burst.Owner);
-		for (const Hooked& hooked : hooks)
-		{
-			world.SpawnEffect(hooked.Caught ? AbilityId::HookPull : AbilityId::HookAnchor, hooked.Position, hooked.Facing, hooked.Owner, hooked.Tag, 1.0f);
-			if (hooked.Caught)
-				CancelRecast(world, hooked.Source, AbilityId::ChainHook);
-		}
-	}
-
-	void ReelIn(World& world, Entity caster, uint32_t owner, Vec2 point)
-	{
-		EntityRegistry& entities = world.GetEntities();
-		uint16_t tag = 0;
-		std::vector<Entity> gone;
-		entities.Each<Projectile>([&](Entity entity, Projectile& projectile)
-		{
-			if (projectile.Ability != uint8_t(AbilityId::ChainHook) || projectile.Source != caster)
-				return;
-			if (const Replicated* replicated = entities.TryGet<Replicated>(entity))
-				tag = replicated->Tag;
-			gone.push_back(entity);
-		});
-		entities.Each<Replicated>([&](Entity entity, Replicated& replicated)
-		{
-			if (replicated.Kind != EntityKind::Effect || replicated.Variant != uint8_t(AbilityId::HookAnchor) || replicated.Owner != owner)
-				return;
-			tag = replicated.Tag;
-			gone.push_back(entity);
-		});
-		for (const Entity entity : gone)
-			world.DestroyEntity(entity);
-		const Transform* transform = entities.TryGet<Transform>(caster);
-		world.SpawnEffect(AbilityId::HookYank, point, transform ? AngleOf(point - transform->Position) : 0.0f, owner, tag, 1.0f);
 	}
 
 	void CancelRecast(World& world, Entity caster, AbilityId ability)

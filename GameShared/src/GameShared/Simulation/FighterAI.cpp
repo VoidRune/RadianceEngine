@@ -571,7 +571,7 @@ namespace Game
 		const Health* health = world.GetEntities().TryGet<Health>(entity);
 		if (!kit || !health || health->IsDead())
 			return;
-		const bool control = hit.Stun > 0.0f || hit.Chill > 0.0f || CreditOf(AbilityId(hit.Ability)) == AbilityId::ChainHook;
+		const bool control = hit.Stun > 0.0f || hit.Chill > 0.0f;
 		if (control && enemy.Move >= 0 && enemy.Windup > 0.0f && kit->Moves[size_t(enemy.Move)].Channel)
 		{
 			CancelMove(enemy);

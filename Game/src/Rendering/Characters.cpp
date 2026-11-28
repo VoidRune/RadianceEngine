@@ -15,7 +15,7 @@ namespace Game
 	{
 		constexpr const char* AnimNames[] = {
 			"Idle_A", "Skeletons_Idle", "Melee_2H_Idle", "Ranged_Bow_Idle",
-			"Hero_Idle_Look", "Hero_Idle_LookRight", "Hero_Idle_Scan", "Hero_Idle_Wand", "Hero_Idle_Stretch", "Hero_Idle_Rub", "Hero_Idle_Nod",
+			"Hero_Idle_Look", "Hero_Idle_LookRight", "Hero_Idle_Scan", "Hero_Idle_Wand", "Hero_Idle_Stretch", "Hero_Idle_Rub", "Hero_Idle_Nod", "Hero_Idle_Think", "Hero_Idle_Around", "Hero_Idle_Alert",
 			"Walking_A", "Hero_Jog",
 			"Running_A", "Running_HoldingBow", "Running_HoldingRifle", "Skeletons_Walking",
 			"Walking_Backwards", "Running_Strafe_Left", "Running_Strafe_Right", "Hero_Strafe_Walk_Left", "Hero_Strafe_Walk_Right",
@@ -23,8 +23,9 @@ namespace Game
 			"Hit_A", "Hit_B", "Death_A", "Skeletons_Death",
 			"Melee_1H_Attack_Slice_Horizontal", "Melee_1H_Attack_Chop", "Melee_1H_Attack_Stab", "Melee_2H_Attack_Stab", "Melee_2H_Attack_Chop", "Melee_2H_Attack_Spinning", "Melee_Unarmed_Attack_Punch_A",
 			"Ranged_Magic_Shoot", "Ranged_Magic_Spellcasting", "Ranged_Magic_Raise",
-			"Hero_Cast_Flick", "Hero_Cast_Slash", "Hero_Cast_Backhand", "Hero_Cast_Lunge", "Hero_Cast_Hurl", "Hero_Cast_Surge", "Hero_Cast_Lash", "Hero_Cast_Grasp",
-			"Hero_Cast_Lob", "Hero_Cast_Smite", "Hero_Cast_Summon", "Hero_Cast_Call", "Hero_Cast_Push", "Hero_Cast_Ward", "Hero_Cast_Nova", "Hero_Cast_Blink",
+			"Hero_Cast_Flick", "Hero_Cast_Slash", "Hero_Cast_Backhand", "Hero_Cast_Fan", "Hero_Cast_Point", "Hero_Cast_Javelin", "Hero_Cast_Cup", "Hero_Sword_A", "Hero_Sword_B", "Hero_Sword_C", "Hero_Cast_Grasp", "Hero_Cast_Lob",
+			"Hero_Cast_Smite", "Hero_Cast_Heave", "Hero_Cast_Summon", "Hero_Cast_Nova", "Hero_Cast_Erupt", "Hero_Cast_Push", "Hero_Cast_Ward", "Hero_Cast_Encase", "Hero_Cast_Blink",
+			"Hero_Emote_Wave", "Hero_Emote_Salute", "Hero_Emote_Laugh", "Hero_Emote_Shrug", "Hero_Emote_Victory", "Hero_Emote_Sit",
 			"Ranged_Bow_Draw", "Ranged_Bow_Release", "Ranged_Bow_Draw_Up", "Ranged_Bow_Release_Up",
 			"Ranged_2H_Aiming", "Ranged_2H_Shoot", "Use_Item",
 		};
@@ -44,25 +45,37 @@ namespace Game
 			case Anim::CastFlick:
 			case Anim::CastSlash:
 			case Anim::CastBackhand:
-			case Anim::CastLunge:
-			case Anim::CastHurl:
-			case Anim::CastSurge:
-			case Anim::CastLash:
+			case Anim::CastFan:
+			case Anim::CastPoint:
+			case Anim::CastJavelin:
+			case Anim::CastCup:
 			case Anim::CastGrasp:
 			case Anim::CastBlink:
 				return Anim::MagicShoot;
+			case Anim::CastSwordA:
+			case Anim::CastSwordB:
+				return Anim::Slash;
+			case Anim::CastSwordC:
+				return Anim::Chop;
 			case Anim::CastSmite:
 			case Anim::CastSummon:
-			case Anim::CastCall:
+			case Anim::CastHeave:
 				return Anim::MagicRaise;
 			case Anim::CastLob:
 			case Anim::CastPush:
 			case Anim::CastWard:
+			case Anim::CastEncase:
 			case Anim::CastNova:
+			case Anim::CastErupt:
 				return Anim::MagicCast;
 			default:
 				return Anim::Count;
 			}
+		}
+
+		bool HeroOnly(Anim anim)
+		{
+			return std::find(IdleFidgets.begin(), IdleFidgets.end(), anim) != IdleFidgets.end() || anim == Anim::IdleAlert || (anim >= Anim::EmoteWave && anim <= Anim::EmoteSit);
 		}
 
 		struct OutfitModel
@@ -150,8 +163,7 @@ namespace Game
 				const Anim fallback = FallbackOf(Anim(i));
 				if (!rig.Clips[i] && fallback != Anim::Count)
 					rig.Clips[i] = rig.Clips[size_t(fallback)];
-				const bool optional = std::find(IdleFidgets.begin(), IdleFidgets.end(), Anim(i)) != IdleFidgets.end();
-				if (!rig.Clips[i] && index == m_Shared && !optional)
+				if (!rig.Clips[i] && index == m_Shared && !HeroOnly(Anim(i)))
 					RDN_LOG_WARNING("Animation {} is missing from the model library", AnimNames[i]);
 			}
 			rig.Hips = models.FindJoint("hips", index);
@@ -179,6 +191,11 @@ namespace Game
 			JointMatrices globals;
 			ComputeGlobals(skeleton, rest, globals);
 			rig.HipHeight = rig.Hips ? std::max(globals[*rig.Hips][3].y, 0.1f) : 1.0f;
+			if (rig.Chest)
+				rig.ChestRest = glm::vec3(globals[*rig.Chest][3]);
+			rig.Palm = models.FindJoint("hand.r", index);
+			if (rig.Palm)
+				rig.PalmNormal = glm::normalize(glm::inverse(glm::mat3(globals[*rig.Palm])) * glm::vec3(0.0f, -1.0f, 0.0f));
 			rig.HasLegs = rig.Hips.has_value();
 			for (uint32_t side = 0; side < 2; side++)
 			{
@@ -395,6 +412,21 @@ namespace Game
 		{
 			result.Tip = glm::vec3(0.0f, HandTip, 0.0f);
 			result.TipJoint = rig.RightHand;
+			result.FreeHand = true;
+		}
+		if (const std::vector<uint32_t> wand = WeaponMeshes(Focus::Wand); !wand.empty())
+		{
+			const ModelMesh& mesh = m_Models.GetMesh(wand.front());
+			const glm::vec3 span = mesh.Max - mesh.Min;
+			const int axis = span.x >= span.y && span.x >= span.z ? 0 : span.y >= span.z ? 1 : 2;
+			glm::vec3 low = (mesh.Min + mesh.Max) * 0.5f;
+			glm::vec3 high = low;
+			low[axis] = mesh.Min[axis];
+			high[axis] = mesh.Max[axis];
+			if (!m_Hero && glm::length(low) > glm::length(high))
+				std::swap(low, high);
+			result.GripAxis = glm::normalize(high - low);
+			result.Grip = low + result.GripAxis * glm::dot(-low, result.GripAxis);
 		}
 		result.Height = TopOf(result) * result.Scale;
 		return m_Players.emplace(key, std::move(result)).first->second;
@@ -453,32 +485,39 @@ namespace Game
 		case AbilityId::EmberBolt:
 			return { .Windup = Anim::CastFlick, .Variants = 3 };
 		case AbilityId::FrostSpear:
-			return { .Windup = Anim::CastHurl, .Hold = true };
+			return { .Windup = Anim::CastJavelin, .Hold = true, .HoldAt = 0.77f, .HoldReach = 0.16f };
 		case AbilityId::PurpleFireball:
-			return { .Windup = Anim::CastSurge, .Hold = true };
+			return { .Windup = Anim::CastCup, .Hold = true, .HoldAt = 0.75f, .HoldReach = 0.18f };
 		case AbilityId::ObsidianBlades:
-			return { Anim::CastSlash };
+			return { Anim::CastFan };
 		case AbilityId::HexShield:
 			return { .Windup = Anim::CastWard, .Hold = true, .HoldAt = 1.25f, .HoldReach = 0.14f };
 		case AbilityId::ArcLightning:
-			return { Anim::CastHurl };
-		case AbilityId::ChainHook:
-			return { Anim::CastLash };
+			return { Anim::CastPoint };
+		case AbilityId::CrystalSword:
+			return { Anim::CastSwordA };
+		case AbilityId::SwordSweep:
+			return { Anim::CastSwordB };
+		case AbilityId::SwordCleave:
+			return { Anim::CastSwordC };
 		case AbilityId::GravityWell:
 			return { Anim::CastGrasp };
 		case AbilityId::Firebomb:
 			return { Anim::CastLob };
 		case AbilityId::StormStrike:
-		case AbilityId::EarthSpike:
 			return { Anim::CastSmite };
+		case AbilityId::EarthSpike:
+			return { Anim::CastHeave };
 		case AbilityId::Warp:
 			return { Anim::CastBlink };
 		case AbilityId::Comet:
 			return { Anim::CastSummon };
 		case AbilityId::GlacialNova:
 			return { Anim::CastNova };
+		case AbilityId::Gust:
+			return { Anim::CastPush };
 		case AbilityId::DiamondWard:
-			return { Anim::CastWard };
+			return { Anim::CastEncase };
 		default:
 			return {};
 		}
@@ -554,7 +593,7 @@ namespace Game
 		return transform;
 	}
 
-	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent, const glm::vec4& flash, const ModelDissolve& dissolve, uint32_t extraFlags)
+	CharacterPose DrawCharacterModel(WorldRenderer& renderer, const CharacterLibrary& library, const CharacterLook& look, const CharacterAnimator& animator, const glm::vec3& base, float facing, float scale, const glm::vec4& tint, float emission, const glm::vec4& accent, const glm::vec4& flash, const ModelDissolve& dissolve, uint32_t extraFlags, bool props)
 	{
 		CharacterPose pose;
 		pose.Model = ModelTransform(base, facing, scale);
@@ -567,7 +606,8 @@ namespace Game
 		for (const CharacterPart& part : look.Parts)
 			renderer.DrawModel(part.Mesh, pose.Model, palette, glm::vec4(glm::vec3(tint) * part.Shade, tint.a), emission, base.y, accent, (accented ? part.Accent : 0u) | extraFlags, flash, dissolve);
 		for (const PropAttachment& prop : look.Props)
-			renderer.DrawModel(prop.Mesh, pose.Model * pose.Globals[prop.Joint] * prop.Offset, NoPalette, tint, emission, base.y, accent, extraFlags, flash, dissolve);
+			if (props)
+				renderer.DrawModel(prop.Mesh, pose.Model * pose.Globals[prop.Joint] * prop.Offset, NoPalette, tint, emission, base.y, accent, extraFlags, flash, dissolve);
 		return pose;
 	}
 }

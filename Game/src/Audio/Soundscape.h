@@ -43,6 +43,7 @@ namespace Game
 			Vec2 Position;
 			float Height = 0.0f;
 			float Volume = 1.0f;
+			Cue Sound = Cue::Campfire;
 			Timbre::Voice Voice;
 		};
 

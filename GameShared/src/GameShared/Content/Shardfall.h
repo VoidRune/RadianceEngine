@@ -367,7 +367,7 @@ namespace Game
 		{ AbilityId::ArcLightning, 100, 4.0f, 0.35f, "Lightning that jumps from crawler to crawler through a pack." },
 		{ AbilityId::DiamondWard, 0, 14.0f, 0.0f, "Encase yourself in crystal. Spit and shards bounce back at whoever cast them." },
 		{ AbilityId::FrostSpear, 50, 4.0f, 0.15f, "Charge a spear that pierces a whole lane, chilling and freezing." },
-		{ AbilityId::ChainHook, 90, 5.0f, 0.25f, "Yank a crawler to you, or pull yourself to where the hook bites." },
+		{ AbilityId::CrystalSword, 20, 1.2f, 0.34f, "A conjured crystal sword. Three lunging strikes; the overhead cleave reaches farthest and hits hardest." },
 		{ AbilityId::Firebomb, 60, 5.0f, 0.35f, "A skipping bomb that bursts along its lane." },
 		{ AbilityId::ObsidianBlades, 20, 4.0f, 0.2f, "A fan of seven blades. A shotgun for close range." },
 		{ AbilityId::StormStrike, 80, 5.0f, 0.3f, "A delayed bolt on your cursor that jumps on. Good on elites and clumps." },
@@ -647,8 +647,10 @@ namespace Game
 		CardId::Overcharge,
 		CardId::ThornedMirror,
 		CardId::BlackIce,
-		CardId::LongChain,
-		CardId::Whiplash,
+		CardId::ColossusBlade,
+		CardId::ShatteringFinale,
+		CardId::Riposte,
+		CardId::HurledEdge,
 		CardId::ClusterBomb,
 		CardId::StickyFire,
 		CardId::RazorGlass,
@@ -845,7 +847,7 @@ namespace Game
 		{ AbilityId::ObsidianBlades, { MilestoneKind::Projectiles, 2.0f, CardId::Count, "throws 9 blades" }, { MilestoneKind::Card, 0.0f, CardId::RazorGlass, "blades cut through the first crawler" } },
 		{ AbilityId::GravityWell, { MilestoneKind::Area, 0.3f, CardId::Count, "30% wider pull" }, { MilestoneKind::Card, 0.0f, CardId::Implosion, "the eye bursts when it closes" } },
 		{ AbilityId::EarthSpike, { MilestoneKind::Area, 0.3f, CardId::Count, "30% bigger spike" }, { MilestoneKind::Area, 0.3f, CardId::Count, "30% bigger again" } },
-		{ AbilityId::ChainHook, { MilestoneKind::Range, 0.3f, CardId::Count, "30% longer reach" }, { MilestoneKind::Card, 0.0f, CardId::Whiplash, "hooked crawlers take 80% more" } },
+		{ AbilityId::CrystalSword, { MilestoneKind::Area, 0.3f, CardId::Count, "30% longer strikes" }, { MilestoneKind::Card, 0.0f, CardId::ShatteringFinale, "the cleave bursts into crystal shards" } },
 		{ AbilityId::StormStrike, { MilestoneKind::Area, 0.3f, CardId::Count, "30% wider strike" }, { MilestoneKind::Card, 0.0f, CardId::ForkedLightning, "a second bolt follows" } },
 		{ AbilityId::Warp, { MilestoneKind::Cooldown, 0.7f, CardId::Count, "recharges 30% faster" }, { MilestoneKind::Card, 0.0f, CardId::Afterimage, "leaves a shockwave where you left" } },
 		{ AbilityId::DiamondWard, { MilestoneKind::Durability, 0.3f, CardId::Count, "holds 30% more" }, { MilestoneKind::Card, 0.0f, CardId::ThornedMirror, "reflections hit 50% harder" } },
@@ -903,7 +905,7 @@ namespace Game
 		case AbilityId::GravityWell:
 		case AbilityId::Warp:
 			return TagMana;
-		case AbilityId::ChainHook:
+		case AbilityId::CrystalSword:
 			return TagBlood;
 		case AbilityId::EarthSpike:
 		case AbilityId::DiamondWard:
@@ -1011,10 +1013,10 @@ namespace Game
 		{
 			const AbilityId spell = loadout.Spells[i];
 			traits.Skills[i + 1] = IsBrawlSpell(spell) ? MakeRunSkill(spell, loadout.Ranks[i + 1], loadout.Cards) : SkillTraits{};
-			if (spell == AbilityId::ChainHook && HasCard(cards, CardId::LongChain))
+			if (spell == AbilityId::CrystalSword && HasCard(cards, CardId::ColossusBlade))
 			{
-				traits.Skills[i + 1].RangeScale *= LongChainScale;
-				traits.Skills[i + 1].Cooldown *= LongChainCooldown;
+				traits.Skills[i + 1].AreaScale *= ColossusArea;
+				traits.Skills[i + 1].CastTime *= ColossusPace;
 			}
 		}
 		ApplyCasting(traits, cards, BrawlMode::Damage);
@@ -1043,7 +1045,7 @@ namespace Game
 			}
 			if (sigils > 1 && IsAreaSpell(skill.Ability))
 				skill.AreaScale *= 1.0f + StackWideSigils * float(sigils - 1);
-			const bool projectile = def.Kind == AbilityKind::Projectile && skill.Ability != AbilityId::ChainHook;
+			const bool projectile = def.Kind == AbilityKind::Projectile;
 			if (projectile && multishot > 0)
 			{
 				skill.ExtraProjectiles = uint8_t(skill.ExtraProjectiles + multishot * (skill.Ability == AbilityId::ObsidianBlades ? 2u : 1u));

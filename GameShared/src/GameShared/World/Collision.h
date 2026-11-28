@@ -1,4 +1,5 @@
 #pragma once
+#include "GameShared/Content/Cards.h"
 #include "GameShared/World/Level.h"
 #include <span>
 
@@ -8,7 +9,22 @@ namespace Game
 	{
 		Vec2 Position;
 		float Radius = 0.0f;
+		Vec2 End;
+		bool Capsule = false;
 	};
+
+	inline Vec2 NearestOnBody(const BodyCircle& body, Vec2 point)
+	{
+		return body.Capsule ? Lerp(body.Position, body.End, ClosestPointParameter(body.Position, body.End, point)) : body.Position;
+	}
+
+	inline BodyCircle SpikeWall(Vec2 origin, float facing, float scale, float reach)
+	{
+		const Vec2 axis = FromAngle(facing);
+		return { origin + axis * (0.1f * scale), BulwarkRadius * scale, origin + axis * std::max((reach - 0.25f) * scale, 0.2f), true };
+	}
+
+	float CastBodies(Vec2 from, Vec2 to, float radius, std::span<const BodyCircle> bodies);
 
 	inline constexpr float VoidLedge = 0.15f;
 

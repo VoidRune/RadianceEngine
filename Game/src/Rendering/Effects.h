@@ -49,6 +49,8 @@ namespace Game
 		Obsidian,
 		SulfurFire,
 		Leaf,
+		Spray,
+		Mist,
 		Count,
 	};
 
@@ -173,6 +175,17 @@ namespace Game
 		AuraFrostCrownMist,
 		FallingLeaves,
 		CometDebris,
+		WaterSpray,
+		WaterMist,
+		WaterSplash,
+		SwordConjure,
+		SwordSpark,
+		SwordHit,
+		SwordCleave,
+		SwordShatter,
+		SwordFade,
+		SwordAura,
+		SwordDust,
 		Count,
 	};
 

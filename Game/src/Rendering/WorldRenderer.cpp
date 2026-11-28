@@ -462,6 +462,7 @@ namespace Game
 			m_Materials.push_back(material);
 		}
 		m_LibraryMeshes = uint32_t(m_DrawMeshes.size());
+		m_LibraryGlassSurfaces = m_GlassSurfaces.size();
 		m_TilingMaterialBase = uint32_t(m_Materials.size());
 		for (const ModelMaterial& tiling : data.Materials)
 		{
@@ -639,8 +640,20 @@ namespace Game
 				continue;
 			}
 			const uint32_t material = std::min<uint32_t>(desc.Material, uint32_t(m_Materials.size() - 1));
+			uint32_t glass = UINT32_MAX;
+			if (desc.River)
+			{
+				GlassSurface surface{ .Absorb = desc.Absorb, .Look = desc.Look, .Min = glm::vec3(1e9f), .Max = glm::vec3(-1e9f), .Water = true, .River = true };
+				for (uint32_t i = desc.FirstIndex; i < desc.FirstIndex + desc.IndexCount; i++)
+				{
+					surface.Min = glm::min(surface.Min, vertices[indices[i]].Position);
+					surface.Max = glm::max(surface.Max, vertices[indices[i]].Position);
+				}
+				glass = uint32_t(m_GlassSurfaces.size());
+				m_GlassSurfaces.push_back(surface);
+			}
 			m_DrawMeshes.push_back({ .FirstIndex = firstIndex + desc.FirstIndex, .IndexCount = desc.IndexCount, .Material = material, .Layer = std::min<uint32_t>(desc.Layer, uint32_t(m_Materials.size() - 1)), .Flags = desc.Flags,
-				.AlphaTested = (m_Materials[material].Flags & 1u) != 0 });
+				.AlphaTested = (m_Materials[material].Flags & 1u) != 0, .Glass = glass });
 		}
 		UploadGeometry(m_LevelVertices, m_LevelIndices);
 		m_ModelDraws.resize(m_DrawMeshes.size());
@@ -659,6 +672,7 @@ namespace Game
 		m_LevelVertices.clear();
 		m_LevelIndices.clear();
 		m_DrawMeshes.resize(m_LibraryMeshes);
+		m_GlassSurfaces.resize(m_LibraryGlassSurfaces);
 		UploadGeometry({}, {});
 		m_ModelDraws.resize(m_DrawMeshes.size());
 		m_ModelShadowDraws.resize(m_DrawMeshes.size());
@@ -1472,7 +1486,8 @@ namespace Game
 					continue;
 				const DrawMesh& source = m_DrawMeshes[mesh];
 				const GlassSurface& surface = m_GlassSurfaces[source.Glass];
-				glass.Draws.push_back({ .FirstIndex = source.FirstIndex, .IndexCount = source.IndexCount, .FirstInstance = first, .InstanceCount = instances, .Absorb = surface.Absorb, .Look = glm::vec4(surface.Look.x, surface.Look.y, m_GiQuality != GiQuality::Off ? 1.0f : 0.0f, (source.Flags & MeshDeep) != 0 ? 1.0f : surface.Look.w), .Water = surface.Water });
+				const glm::vec4 look = surface.River ? surface.Look : glm::vec4(surface.Look.x, surface.Look.y, m_GiQuality != GiQuality::Off ? 1.0f : 0.0f, (source.Flags & MeshDeep) != 0 ? 1.0f : surface.Look.w);
+				glass.Draws.push_back({ .FirstIndex = source.FirstIndex, .IndexCount = source.IndexCount, .FirstInstance = first, .InstanceCount = instances, .Absorb = surface.Absorb, .Look = look, .Water = surface.Water, .River = surface.River });
 				for (uint32_t i = first; i < first + instances; i++)
 				{
 					const ModelInstance& instance = m_PackedModels[i];

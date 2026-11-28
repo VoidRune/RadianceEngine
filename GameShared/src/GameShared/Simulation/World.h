@@ -103,7 +103,7 @@ namespace Game
 		void RecordDamage(uint32_t victim, uint32_t attacker, int32_t amount, uint8_t ability) { m_Match.RecordDamage(victim, attacker, amount, ability); }
 		int32_t ShapeBrawlDamage(PlayerState& state, uint32_t victim, uint32_t attacker, uint8_t ability, bool unmitigated, bool chilled, int32_t amount) { return m_Match.ShapeDamage(state, victim, attacker, ability, unmitigated, chilled, amount); }
 		void AfterBrawlDamage(Entity target, uint32_t victim, uint32_t attacker, uint8_t ability, int32_t dealt) { m_Match.AfterDamage(*this, target, victim, attacker, ability, dealt); }
-		void NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, bool pull, uint32_t returned) { m_Match.NoteBlow(victim, attacker, ability, pull, returned); }
+		void NoteBlow(uint32_t victim, uint32_t attacker, uint8_t ability, uint32_t returned) { m_Match.NoteBlow(victim, attacker, ability, returned); }
 		void NoteFling(uint32_t victim, uint32_t attacker, uint8_t ability) { m_Match.NoteFling(*this, victim, attacker, ability); }
 		CardMask GetCards(uint32_t playerId) const { return IsShardfall() ? m_Run.GetCards(playerId) : m_Match.GetCards(playerId); }
 		Entity SpawnLoot(LootKind kind, Vec2 position);
@@ -145,6 +145,8 @@ namespace Game
 		bool RunShrine(Entity player, uint32_t choice);
 		bool RunSocket(Entity player, uint32_t rune, uint32_t slot, uint32_t socket);
 		bool RunUnsocket(Entity player, uint32_t rune);
+		void CollectWalls(std::vector<BodyCircle>& walls);
+		void SpawnBloom(const AbilityContext& context, float facing);
 		void QueueCast(Entity caster, AbilityId ability, const AbilityContext& context, float delay, bool track = false, bool follow = false) { m_Casts.push_back({ caster, ability, context, delay, track, follow }); }
 		void OnEnemySlammed(Entity enemy, float speed) { if (IsShardfall()) m_Run.OnSlammed(*this, enemy, speed); }
 		void OnEnemyFlung(Entity enemy) { if (IsShardfall()) m_Run.OnFlung(*this, enemy); }
@@ -230,6 +232,7 @@ namespace Game
 		void UpdateHub(float dt);
 		void UpdateBalloon(float dt);
 		void UpdateEchoes(float dt);
+		void UpdateBlooms(float dt);
 		void CastCopies(AbilityId ability, const AbilityContext& context);
 		void StargazeAt(const PlayerController& controller, Vec2 origin, const PlayerActions& actions);
 		PlayerTraits ComputeTraits(uint32_t playerId) const;
@@ -269,6 +272,17 @@ namespace Game
 			float Strength = EchoPushScale;
 		};
 		std::vector<EchoCast> m_Echoes;
+		struct BloomSeed
+		{
+			Entity Seed;
+			Entity Caster;
+			AbilityContext Context;
+			Vec2 Position;
+			float Facing = 0.0f;
+			float Remaining = 0.0f;
+		};
+		std::vector<BloomSeed> m_Blooms;
+		std::array<Vec2, MaxPlayers> m_Cursors{};
 		struct DelayedCast
 		{
 			Entity Caster;

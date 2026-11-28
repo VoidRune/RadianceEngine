@@ -132,7 +132,7 @@ namespace Game
 
 		bool ClimbsOutOfPit(const PlayerState& state)
 		{
-			return state.DashSpeed <= 0.0f || state.DashSpeed == HookYankSpeed;
+			return state.DashSpeed <= 0.0f;
 		}
 
 		Vec2 Move(const Level& level, const ArenaState& next, PlayerState& state, Vec2 position, Vec2 delta, std::span<const BodyCircle> bodies)
@@ -256,6 +256,69 @@ namespace Game
 			return 1.0f + traits.TempoStep * float(state.TempoStacks);
 		}
 
+		Vec2 SwordLunge(const PlayerState& state, const PlayerTraits& traits, uint32_t slot, Vec2 aim, Vec2 move, float aimDistance, float before, float after)
+		{
+			const float pace = Length(move);
+			const float toward = pace > SwordLungeInput ? std::clamp((Dot(move / pace, aim) - SwordLungeCone) / (1.0f - SwordLungeCone), 0.0f, 1.0f) : 0.0f;
+			if (toward <= 0.0f)
+				return {};
+			const SkillTraits& skill = traits.Skills[slot];
+			const AbilityId swing = SwingOf(state, traits, slot);
+			const float windup = SwingWindup(skill, swing) / CastPace(state, traits);
+			if (windup <= ReadyEpsilon)
+				return {};
+			const float strike = std::min(SwordStrike, windup);
+			const auto eased = [&](float timer)
+			{
+				const float t = 1.0f - std::clamp(timer / strike, 0.0f, 1.0f);
+				return t * t * (3.0f - 2.0f * t);
+			};
+			return aim * (SwordLungeDistance(swing, aimDistance) * toward * (eased(after) - eased(before)));
+		}
+
+		float SwingCost(const PlayerState& state, const PlayerTraits& traits, uint32_t slot, AbilityId swing)
+		{
+			const float base = GetAbility(AbilityId::CrystalSword).BrawlMana;
+			return base > 0.0f ? SpellCost(state, traits, slot) * GetAbility(swing).BrawlMana / base : 0.0f;
+		}
+
+		void EndCombo(PlayerState& state)
+		{
+			state.RecastTimer = 0.0f;
+			state.RecastSlot = -1;
+			state.RecastAbility = UINT8_MAX;
+			state.RecastCharges = 0;
+			state.SwingQueued = false;
+		}
+
+		void Swing(Vec2 origin, PlayerState& state, PlayerActions& actions, const PlayerTraits& traits, uint32_t slot, Vec2 aim)
+		{
+			const float cost = SwingCost(state, traits, slot, SwingOf(state, traits, slot));
+			actions.ManaBefore = state.Mana;
+			if (state.Mana + ReadyEpsilon < cost)
+				actions.BloodCost += (cost - state.Mana) * traits.BloodRate;
+			state.Mana = std::max(state.Mana - cost, 0.0f);
+			state.CastSlot = -1;
+			state.CastTimer = 0.0f;
+			actions.Recast |= uint8_t(1u << slot);
+			actions.RecastAbility = AbilityId::CrystalSword;
+			actions.RecastPoint = origin;
+			actions.RecastAge = state.RecastAge;
+			actions.RecastCharges = state.RecastCharges;
+			state.RecastOrigin = origin;
+			state.RecastAim = aim;
+			state.RecastCharges = uint8_t(state.RecastCharges - 1);
+			state.SwingQueued = false;
+			if (state.RecastCharges > 0)
+			{
+				state.RecastTimer = SwordWindow;
+				state.RecastReach = state.RecastAge + SwordGap;
+				return;
+			}
+			EndCombo(state);
+			state.Cooldowns[slot] = traits.Skills[slot].Cooldown;
+		}
+
 		void Release(const Level& level, Vec2 origin, PlayerState& state, PlayerActions& actions, const PlayerTraits& traits, uint32_t slot, Vec2 aim, float aimDistance)
 		{
 			const SkillTraits& skill = traits.Skills[slot];
@@ -297,16 +360,17 @@ namespace Game
 				actions.CastAim = state.CastAim;
 			}
 			const AbilityDef& ability = GetAbility(skill.Ability);
-			if (IsRecastable(skill.Ability) && ability.ProjectileSpeed > 0.0f)
+			if (skill.Ability == AbilityId::CrystalSword)
 			{
-				const float range = ability.ProjectileRange * skill.RangeScale;
 				state.RecastSlot = int8_t(slot);
 				state.RecastAbility = uint8_t(skill.Ability);
 				state.RecastAge = 0.0f;
-				state.RecastOrigin = origin + aim * ability.SpawnOffset;
+				state.RecastOrigin = origin;
 				state.RecastAim = aim;
-				state.RecastReach = range * std::clamp(CastSegment(level, state.RecastOrigin, state.RecastOrigin + aim * range, Block::Projectiles), 0.0f, 1.0f);
-				state.RecastTimer = range / ability.ProjectileSpeed + (skill.Ability == AbilityId::ChainHook ? HookAnchorSeconds : 0.0f);
+				state.RecastReach = SwordGap;
+				state.RecastTimer = SwordWindow;
+				state.RecastCharges = SwordFollowUps;
+				state.SwingQueued = false;
 			}
 			else if (skill.Ability == AbilityId::GlacialNova)
 			{
@@ -317,6 +381,17 @@ namespace Game
 				state.RecastAim = aim;
 				state.RecastReach = GetAbility(AbilityId::GlacialEruption).Reach * traits.AreaScale * skill.AreaScale;
 				state.RecastTimer = FrostNovaWindow;
+			}
+			else if (skill.Ability == AbilityId::EarthSpike && skill.Recasts > 0)
+			{
+				state.RecastSlot = int8_t(slot);
+				state.RecastAbility = uint8_t(skill.Ability);
+				state.RecastAge = 0.0f;
+				state.RecastOrigin = state.CastPoint;
+				state.RecastAim = state.CastAim;
+				state.RecastReach = BarrageGap;
+				state.RecastTimer = BarrageWindow;
+				state.RecastCharges = skill.Recasts;
 			}
 			if (ability.Kind == AbilityKind::Dash)
 			{
@@ -434,11 +509,6 @@ namespace Game
 		return traits.OverloadEvery > 0 && slot < AbilitySlots && traits.Skills[slot].ManaCost > 0.0f && !IsGuard(traits.Skills[slot]) && state.Overload + 1u >= traits.OverloadEvery;
 	}
 
-	bool IsRecastable(AbilityId ability)
-	{
-		return ability == AbilityId::ChainHook || ability == AbilityId::GlacialNova;
-	}
-
 	bool AwaitsNovaRecast(const PlayerState& state, uint32_t slot)
 	{
 		return state.RecastSlot == int8_t(slot) && state.RecastTimer > 0.0f && AbilityId(state.RecastAbility) == AbilityId::GlacialNova;
@@ -479,9 +549,46 @@ namespace Game
 		return span > ReadyEpsilon ? std::clamp((state.Charge - skill.CastTime) / span, 0.0f, 1.0f) : 1.0f;
 	}
 
-	Vec2 GetHookPoint(const PlayerState& state)
+	bool AwaitsSwing(const PlayerState& state, uint32_t slot)
 	{
-		return state.RecastOrigin + state.RecastAim * std::min(state.RecastAge * GetAbility(AbilityId::ChainHook).ProjectileSpeed, state.RecastReach);
+		return state.RecastSlot == int8_t(slot) && state.RecastTimer > 0.0f && AbilityId(state.RecastAbility) == AbilityId::CrystalSword && state.RecastCharges > 0;
+	}
+
+	AbilityId SwingOf(const PlayerState& state, const PlayerTraits& traits, uint32_t slot)
+	{
+		const AbilityId ability = slot < AbilitySlots ? traits.Skills[slot].Ability : AbilityId::Count;
+		if (ability != AbilityId::CrystalSword || !AwaitsSwing(state, slot))
+			return ability;
+		return FollowUpSwing(state.RecastCharges);
+	}
+
+	float SwingWindup(const SkillTraits& skill, AbilityId swing)
+	{
+		const float base = GetAbility(skill.Ability).CastTime;
+		const float pace = base > ReadyEpsilon ? skill.CastTime / base : 1.0f;
+		return GetAbility(swing).CastTime * pace;
+	}
+
+	float SwordLungeDistance(AbilityId swing, float aimDistance)
+	{
+		return std::clamp(aimDistance - SwordStandoff, SwordMinLunge, GetAbility(swing).Lunge);
+	}
+
+	bool InSwordCombo(const PlayerState& state, const PlayerTraits& traits)
+	{
+		const bool swinging = state.CastSlot >= 0 && traits.Skills[size_t(state.CastSlot)].Ability == AbilityId::CrystalSword;
+		return swinging || (state.RecastSlot >= 0 && AbilityId(state.RecastAbility) == AbilityId::CrystalSword && state.RecastTimer > 0.0f);
+	}
+
+	void BreakSwordCombo(PlayerState& state, const PlayerTraits& traits)
+	{
+		if (state.CastSlot >= 0 && traits.Skills[size_t(state.CastSlot)].Ability == AbilityId::CrystalSword)
+		{
+			state.CastSlot = -1;
+			state.CastTimer = 0.0f;
+		}
+		if (state.RecastSlot >= 0 && AbilityId(state.RecastAbility) == AbilityId::CrystalSword)
+			EndCombo(state);
 	}
 
 	Vec2 GetGroundTarget(const Level& level, Vec2 origin, Vec2 direction, float aimDistance, float range)
@@ -511,6 +618,18 @@ namespace Game
 			if (const Vec2 point = target - direction * back; IsSpellGround(level, arena, point))
 				return point;
 		return origin;
+	}
+
+	Vec2 BarragePoint(const Level& level, const ArenaState& arena, Vec2 previous, Vec2 origin, Vec2 direction, float aimDistance, float range)
+	{
+		const Vec2 point = GetSpikeOrigin(level, arena, origin, direction, aimDistance, range);
+		const Vec2 away = point - previous;
+		if (LengthSquared(away) >= BarrageSpacing * BarrageSpacing)
+			return point;
+		const Vec2 wanted = previous + (LengthSquared(away) > 1e-4f ? Normalize(away) : direction) * BarrageSpacing;
+		const Vec2 offset = wanted - origin;
+		const float distance = Length(offset);
+		return distance > 1e-3f ? GetSpikeOrigin(level, arena, origin, offset / distance, distance, range) : point;
 	}
 
 	Vec2 SteerSpike(Vec2 point, Vec2 aim, Vec2 cursor)
@@ -675,6 +794,7 @@ namespace Game
 		{
 			state.RecastSlot = -1;
 			state.RecastAbility = UINT8_MAX;
+			state.SwingQueued = false;
 		}
 		TendGuard(state, traits, dt);
 		if (!state.Alive)
@@ -747,27 +867,55 @@ namespace Game
 			state.Snap = traits.SnapWindow;
 		}
 
-		if (state.RecastSlot >= 0 && state.DashDistance <= 0.0f && (pressed & uint8_t(SlotButton(uint32_t(state.RecastSlot)))) != 0)
+		const bool barrage = state.RecastSlot >= 0 && AbilityId(state.RecastAbility) == AbilityId::EarthSpike;
+		if (barrage && state.DashDistance <= 0.0f && state.RecastAge >= state.RecastReach && (pressed & uint8_t(SlotButton(uint32_t(state.RecastSlot)))) != 0)
+		{
+			const uint32_t slot = uint32_t(state.RecastSlot);
+			const AbilityDef& spike = GetAbility(AbilityId::EarthSpike);
+			actions.Recast |= uint8_t(1u << slot);
+			actions.RecastAbility = AbilityId::EarthSpike;
+			actions.RecastPoint = BarragePoint(level, arena, state.RecastOrigin, transform.Position, aim, input.AimDistance, spike.Range * traits.Skills[slot].RangeScale);
+			state.RecastOrigin = actions.RecastPoint;
+			actions.RecastAge = state.RecastAge;
+			actions.RecastCharges = state.RecastCharges;
+			state.RecastCharges = uint8_t(state.RecastCharges - 1);
+			state.RecastReach = state.RecastAge + BarrageGap;
+			if (state.RecastCharges == 0)
+			{
+				state.RecastTimer = 0.0f;
+				state.RecastSlot = -1;
+				state.RecastAbility = UINT8_MAX;
+			}
+		}
+		const bool sword = state.RecastSlot >= 0 && AbilityId(state.RecastAbility) == AbilityId::CrystalSword;
+		if (sword)
+		{
+			const uint32_t slot = uint32_t(state.RecastSlot);
+			const uint8_t button = uint8_t(SlotButton(slot));
+			if ((pressed & button) != 0)
+				state.SwingQueued = true;
+			if (state.CastSlot < 0 && state.DashDistance <= 0.0f && state.RecastAge >= state.RecastReach && (state.SwingQueued || input.IsDown(SlotButton(slot))) && traits.Skills[slot].Usable)
+			{
+				if (state.Mana + ReadyEpsilon < SwingCost(state, traits, slot, SwingOf(state, traits, slot)) && traits.BloodRate <= 0.0f)
+					EndCombo(state);
+				else
+				{
+					state.SwingQueued = false;
+					state.CastSlot = int8_t(slot);
+					state.CastTimer = SwingWindup(traits.Skills[slot], SwingOf(state, traits, slot)) / CastPace(state, traits);
+					state.CastAim = aim;
+					state.Charge = 0.0f;
+					state.RecastTimer = std::max(state.RecastTimer, state.CastTimer + dt * 2.0f);
+				}
+			}
+		}
+		else if (!barrage && state.RecastSlot >= 0 && state.DashDistance <= 0.0f && (pressed & uint8_t(SlotButton(uint32_t(state.RecastSlot)))) != 0)
 		{
 			const uint32_t slot = uint32_t(state.RecastSlot);
 			actions.Recast |= uint8_t(1u << slot);
 			actions.RecastAbility = AbilityId(state.RecastAbility);
-			actions.RecastPoint = actions.RecastAbility == AbilityId::ChainHook ? GetHookPoint(state) : state.RecastOrigin;
+			actions.RecastPoint = state.RecastOrigin;
 			actions.RecastAge = state.RecastAge;
-			if (actions.RecastAbility == AbilityId::ChainHook)
-			{
-				const Vec2 offset = actions.RecastPoint - transform.Position;
-				const float distance = Length(offset);
-				if (distance > HookYankStop + 0.05f)
-				{
-					state.CastSlot = -1;
-					state.CastTimer = 0.0f;
-					state.DashDirection = offset / distance;
-					state.DashDistance = distance - HookYankStop;
-					state.DashSpeed = HookYankSpeed;
-					state.Push = {};
-				}
-			}
 			state.RecastTimer = 0.0f;
 			state.RecastSlot = -1;
 			state.RecastAbility = UINT8_MAX;
@@ -806,18 +954,29 @@ namespace Game
 				else
 				{
 					state.CastTimer -= dt;
-					lunge = LungeStep(skill, aim, input.AimDistance, before, state.CastTimer);
+					const bool blade = skill.Ability == AbilityId::CrystalSword;
+					if (blade && before > SwordStrike)
+						state.CastAim = aim;
+					const Vec2 swingAim = blade && LengthSquared(state.CastAim) > 0.5f ? state.CastAim : aim;
+					if (blade)
+					{
+						transform.Facing = AngleOf(swingAim);
+						actions.Direction = swingAim;
+					}
+					lunge = blade ? SwordLunge(state, traits, uint32_t(castingSlot), swingAim, move, input.AimDistance, before, state.CastTimer) : LungeStep(skill, aim, input.AimDistance, before, state.CastTimer);
 					if (AimsFromPoint(skill.Ability))
 						state.CastAim = SteerSpike(state.CastPoint, state.CastAim, transform.Position + aim * input.AimDistance);
-					if (state.CastTimer <= ReadyEpsilon)
-						Release(level, transform.Position, state, actions, traits, uint32_t(castingSlot), aim, input.AimDistance);
+					if (state.CastTimer <= ReadyEpsilon && blade && AwaitsSwing(state, uint32_t(castingSlot)))
+						Swing(transform.Position, state, actions, traits, uint32_t(castingSlot), swingAim);
+					else if (state.CastTimer <= ReadyEpsilon)
+						Release(level, transform.Position, state, actions, traits, uint32_t(castingSlot), swingAim, input.AimDistance);
 				}
 			}
 			else
 			{
 				for (const uint32_t slot : CastPriority)
 				{
-					if (!input.IsDown(SlotButton(slot)))
+					if (!input.IsDown(SlotButton(slot)) || AwaitsSwing(state, slot))
 						continue;
 					if (!CanCast(state, traits, slot))
 					{
@@ -847,7 +1006,9 @@ namespace Game
 					else
 					{
 						state.CastSlot = int8_t(slot);
-						state.CastTimer = snapped ? 0.0f : starting.CastTime / CastPace(state, traits);
+						state.CastTimer = snapped ? 0.0f : (starting.Ability == AbilityId::CrystalSword ? SwingWindup(starting, AbilityId::CrystalSword) : starting.CastTime) / CastPace(state, traits);
+						if (starting.Ability == AbilityId::CrystalSword)
+							state.CastAim = aim;
 						state.Charge = snapped ? starting.ChargeTime : 0.0f;
 						castingSlot = int32_t(slot);
 					}

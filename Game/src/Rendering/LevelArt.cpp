@@ -253,9 +253,9 @@ namespace Game
 			case PropId::Fountain:
 				return { { { { .Mesh = "Fountain" } } } };
 			case PropId::LampPost:
-				return { { { { .Mesh = "HubProps/LampPost" }, Fire({ 0.0f, 2.55f, 0.0f }, FireKind::Lantern) } } };
+				return { { { { .Mesh = "HubDecor/Lantern" }, Fire({ 1.0f, 1.66f, -0.02f }, FireKind::Lantern) } } };
 			case PropId::Bench:
-				return { { { { .Mesh = "HubProps/Bench" } } } };
+				return { { { { .Mesh = "HubDecor/Bench" } } } };
 			case PropId::Signpost:
 				return { { { { .Mesh = "HubProps/Signpost" } } } };
 			case PropId::NoticeBoard:
@@ -743,6 +743,21 @@ namespace Game
 		constexpr const char* HubDirtMaterial = "forest_ground_04";
 		constexpr glm::vec3 HubGroundTint{ 0.85f, 0.95f, 0.75f };
 		constexpr glm::vec3 HubDirtTint{ 1.0f, 0.95f, 0.88f };
+		constexpr const char* HubBedMaterial = "ganges_river_pebbles";
+		constexpr const char* HubSiltMaterial = "brown_mud_rocks_01";
+		constexpr const char* HubPlankMaterial = "worn_planks";
+		constexpr glm::vec3 HubBedTint{ 0.92f, 0.9f, 0.84f };
+		constexpr glm::vec3 HubSiltTint{ 0.85f, 0.86f, 0.78f };
+		constexpr glm::vec3 HubPlankTint{ 1.0f, 0.9f, 0.78f };
+		constexpr float HubWetBand = 0.35f;
+		constexpr float HubBedBand = -0.6f;
+		constexpr float HubBedCell = -0.2f;
+		constexpr glm::vec4 HubRiverAbsorb{ 1.3f, 0.5f, 0.42f, 1.333f };
+		constexpr float HubRiverMurk = 1.5f;
+		constexpr float HubFallDrop = 9.0f;
+		constexpr float HubFallScroll = 3.5f;
+		constexpr float HubCascadeHeight = 0.95f;
+		constexpr float HubCascadeHalf = 0.42f;
 		constexpr float PavingBlend = 0.7f;
 		constexpr float SkirtDrop = 0.35f;
 		constexpr float WaterDrop = 0.15f;
@@ -5403,6 +5418,7 @@ namespace Game
 				std::vector<float> Band;
 				std::vector<uint8_t> Stone;
 				std::vector<uint32_t> Splat;
+				std::vector<float> River;
 
 				size_t Index(int32_t i, int32_t j) const { return size_t(j) * size_t(Columns) + size_t(i); }
 			};
@@ -5482,13 +5498,26 @@ namespace Game
 					m_Renderer.SetMaterialLook(*m_HubGround, HubGroundTint, 0.5f, 0.3f);
 				if (m_HubDirt)
 					m_Renderer.SetMaterialLook(*m_HubDirt, HubDirtTint, 0.6f, 0.36f);
+				m_HubBed = m_Renderer.FindMaterialSlot(HubBedMaterial);
+				m_HubSilt = m_Renderer.FindMaterialSlot(HubSiltMaterial);
+				m_HubPlanks = m_Renderer.FindMaterialSlot(HubPlankMaterial);
+				if (m_HubBed)
+					m_Renderer.SetMaterialLook(*m_HubBed, HubBedTint, 0.8f, 0.42f);
+				if (m_HubSilt)
+					m_Renderer.SetMaterialLook(*m_HubSilt, HubSiltTint, 0.5f, 0.35f);
+				if (m_HubPlanks)
+					m_Renderer.SetMaterialLook(*m_HubPlanks, HubPlankTint, 0.0f, 0.0f);
 				HubSampleField();
 				HubTerrain();
 				HubWater();
+				HubBridges();
 				LayHubStairs();
 				HubRocks();
+				HubRiverRocks();
+				HubLilies();
 				HubDressing();
 				Props();
+				HubFences();
 				HubBlockouts();
 				HubGrass();
 			}
@@ -5498,80 +5527,150 @@ namespace Game
 				const std::optional<uint32_t> water = m_Renderer.FindMaterialSlot("GroundWater");
 				if (!water)
 					return;
-				const HubTrack& stream = HubStream();
-				const glm::vec3 up(0.0f, 1.0f, 0.0f);
-				const glm::vec3 deep(0.85f, 0.97f, 1.0f);
+				const HubRiverShape& river = HubRiver();
+				const HubRiverFlow& flow = HubRiverLevels();
+				const std::vector<HubRiverSample>& samples = river.Samples;
+				if (samples.size() < 4)
+					return;
 				std::vector<ModelVertex> vertices;
 				std::vector<uint32_t> indices;
-				const auto vertex = [&](Vec2 point, float height, const glm::vec3& normal, const glm::vec3& tint, glm::vec2 uv)
+				const auto pack = [](float r, float g, float b, float a)
+				{
+					const auto unorm = [](float value) { return uint32_t(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f)); };
+					return unorm(r) | (unorm(g) << 8) | (unorm(b) << 16) | (unorm(a) << 24);
+				};
+				const auto vertex = [&](const glm::vec3& position, const glm::vec3& normal, const glm::vec3& along, glm::vec2 uv, uint32_t color)
 				{
 					ModelVertex v;
-					v.Position = { point.x, height, point.y };
+					v.Position = position;
 					v.U = uv.x;
 					v.V = uv.y;
 					v.Normal = normal;
 					v.Weights = 255;
-					v.Tangent = PackTangent(glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f) - normal * normal.x + glm::vec3(0.0f, 0.0f, 1e-4f)), 1.0f);
-					v.Color = PackTint(tint);
+					v.Tangent = PackTangent(along, 1.0f);
+					v.Color = color;
 					vertices.push_back(v);
 					return uint32_t(vertices.size() - 1);
 				};
-				constexpr int32_t Across = 4;
-				float lip = stream.Length();
-				for (float s = 0.0f; s < stream.Length(); s += 0.1f)
-					if (HubIslandDistance(stream.At(s)) < 0.25f)
+				const auto triangle = [&](uint32_t a, uint32_t b, uint32_t c)
+				{
+					const glm::vec3 face = glm::cross(vertices[b].Position - vertices[a].Position, vertices[c].Position - vertices[a].Position);
+					if (glm::dot(face, vertices[a].Normal + vertices[b].Normal + vertices[c].Normal) >= 0.0f)
+						indices.insert(indices.end(), { a, b, c });
+					else
+						indices.insert(indices.end(), { a, c, b });
+				};
+				constexpr int32_t Across = 8;
+				const auto strip = [&](uint32_t previous, uint32_t row)
+				{
+					for (uint32_t a = 0; a < uint32_t(Across); a++)
 					{
-						lip = s;
-						break;
+						triangle(previous + a, row + a, previous + a + 1);
+						triangle(previous + a + 1, row + a, row + a + 1);
 					}
-				float lastLevel = 1e9f;
+				};
+				const size_t lip = std::min(flow.Lip, samples.size() - 1);
+				std::vector<float> area(lip + 1);
+				for (size_t i = 0; i <= lip; i++)
+					area[i] = samples[i].Half * samples[i].Depth;
+				std::vector<float> sorted = area;
+				std::nth_element(sorted.begin(), sorted.begin() + sorted.size() / 2, sorted.end());
+				const float typical = sorted[sorted.size() / 2];
+				std::vector<float> paces(lip + 1);
+				std::vector<float> travel(lip + 1, 0.0f);
+				for (size_t i = 0; i <= lip; i++)
+				{
+					paces[i] = std::clamp(0.55f * typical / std::max(area[i], 0.05f), 0.12f, 0.9f) + 0.3f * flow.Rapid[std::min(i, flow.Rapid.size() - 1)];
+					if (i > 0)
+						travel[i] = travel[i - 1] + HubRiverSpacing / (0.45f + 0.55f * std::min(paces[i], 1.0f));
+				}
+				const HubRiverSample& head = samples.front();
+				const Vec2 cascadeLip = head.Point - head.Tangent * (head.Half * 1.12f + 0.15f);
+				const float cascadeTop = flow.Level[0] + HubCascadeHeight;
+				const Vec2 impact = cascadeLip + head.Tangent * (0.55f * std::sqrt(HubCascadeHeight) + 0.15f);
+				const float springReach = 1.7f;
+				const glm::vec3 up(0.0f, 1.0f, 0.0f);
 				uint32_t previous = 0;
 				bool first = true;
-				for (float s = 0.0f;; s += 0.3f)
+				const float cap = head.Half * 1.3f + 0.8f;
+				for (float arc = -cap;; arc += HubRiverSpacing)
 				{
-					s = std::min(s, lip);
-					const Vec2 center = stream.At(s);
-					const Vec2 ahead = stream.At(std::min(s + 0.2f, stream.Length())) - stream.At(std::max(s - 0.2f, 0.0f));
-					const Vec2 side = Perpendicular(Normalize(ahead));
-					const float half = HubStreamHalf(s) + 0.18f;
-					const float level = std::min(HubWaterLevel(center), lastLevel);
-					lastLevel = level;
+					const float clamped = std::min(arc, float(lip) * HubRiverSpacing);
+					const size_t i = std::min(size_t(std::max(clamped, 0.0f) / HubRiverSpacing + 0.5f), lip);
+					const HubRiverSample sample = HubRiverSampleAt(std::max(clamped, 0.0f));
+					const Vec2 center = clamped < 0.0f ? head.Point + head.Tangent * clamped : sample.Point;
+					const Vec2 side = Perpendicular(sample.Tangent);
+					const float width = std::lerp(sample.Half * 1.25f + 0.8f, sample.Half * 1.02f, Ease((clamped - (float(lip) * HubRiverSpacing - 3.0f)) / 2.4f));
+					const float level = HubRiverLevelAt(std::max(clamped, 0.0f));
+					const float rapid = flow.Rapid[std::min(i, flow.Rapid.size() - 1)];
+					const float pace = paces[i];
+					const float tau = clamped < 0.0f ? clamped / (0.45f + 0.55f * std::min(paces[0], 1.0f)) : travel[i];
+					const glm::vec3 along(sample.Tangent.x, 0.0f, sample.Tangent.y);
 					const uint32_t row = uint32_t(vertices.size());
 					for (int32_t a = 0; a <= Across; a++)
 					{
 						const float t = float(a) / float(Across) * 2.0f - 1.0f;
-						const Vec2 point = EmberCenter + center + side * (t * half);
-						vertex(point, level, up, glm::mix(deep, glm::vec3(1.0f), t * t), { point.x, point.y });
+						const Vec2 point = EmberCenter + center + side * (t * width);
+						const float boil = 1.0f - Ease(Length(point - EmberCenter - impact) / springReach);
+						const float brow = HubBrow(HubEdgeDistance(point - EmberCenter));
+						vertex({ point.x, level - brow, point.y }, up, along, { t * width, tau }, pack(pace + brow, std::max(rapid, Ease(brow / 0.12f)), boil, 1.0f));
 					}
 					if (!first)
-						for (uint32_t a = 0; a < uint32_t(Across); a++)
-							indices.insert(indices.end(), { previous + a, row + a, previous + a + 1, previous + a + 1, row + a, row + a + 1 });
+						strip(previous, row);
 					previous = row;
 					first = false;
-					if (s >= lip)
+					if (clamped >= float(lip) * HubRiverSpacing)
 						break;
 				}
-				const Vec2 edge = stream.At(lip);
-				const Vec2 out = Normalize(stream.At(std::min(lip + 0.3f, stream.Length())) - stream.At(std::max(lip - 0.3f, 0.0f)));
-				const Vec2 side = Perpendicular(out);
-				const float half = HubStreamHalf(lip) + 0.18f;
-				const float top = lastLevel;
-				for (int32_t k = 0; k <= 14; k++)
+				const auto sheet = [&](Vec2 edgePoint, Vec2 out, float top, float half, float total, float fade, int32_t rows, float flare)
 				{
-					const float drop = float(k) * 1.1f;
-					const float push = 0.35f * std::sqrt(drop);
-					const glm::vec3 normal = glm::normalize(glm::vec3(out.x, 0.25f, out.y));
-					const uint32_t row = uint32_t(vertices.size());
-					for (int32_t a = 0; a <= Across; a++)
+					const Vec2 side = Perpendicular(out);
+					uint32_t last = UINT32_MAX;
+					float travelled = 0.0f;
+					glm::vec3 before(0.0f);
+					for (int32_t k = 0; k <= rows; k++)
 					{
-						const float t = float(a) / float(Across) * 2.0f - 1.0f;
-						const Vec2 point = EmberCenter + edge + out * push + side * (t * half * (1.0f + 0.04f * drop));
-						vertex(point, top - drop, normal, glm::mix(glm::vec3(0.75f, 0.88f, 0.95f), glm::vec3(1.0f), 0.5f * t * t), { point.x + point.y, top - drop });
+						const float drop = total * float(k) * float(k) / float(rows * rows);
+						const float push = 0.55f * std::sqrt(drop) + 0.15f;
+						const float slope = 0.27f / std::max(std::sqrt(drop), 0.2f);
+						const glm::vec3 down = glm::normalize(glm::vec3(out.x * slope, -1.0f, out.y * slope));
+						const glm::vec3 across(side.x, 0.0f, side.y);
+						glm::vec3 normal = glm::normalize(glm::cross(across, down));
+						if (glm::dot(normal, glm::vec3(out.x, 0.5f, out.y)) < 0.0f)
+							normal = -normal;
+						const Vec2 base = EmberCenter + edgePoint + out * push;
+						const glm::vec3 middle(base.x, top - drop, base.y);
+						if (k > 0)
+							travelled += glm::length(middle - before);
+						before = middle;
+						const float spread = half * (1.0f + flare * drop);
+						const uint32_t row = uint32_t(vertices.size());
+						for (int32_t a = 0; a <= Across; a++)
+						{
+							const float t = float(a) / float(Across) * 2.0f - 1.0f;
+							const float bow = 0.12f * (1.0f - t * t) * Ease(drop / 1.5f);
+							const glm::vec3 position = middle + across * (t * spread) + glm::vec3(out.x, 0.0f, out.y) * bow;
+							const float rim = 1.0f - Ease((std::abs(t) - 0.7f) / 0.3f);
+							vertex(position, normal, down, { t * spread, travelled / HubFallScroll }, pack(1.0f, std::min(0.35f + 0.5f * drop, 1.0f) * rim, fade * drop / total, 0.0f));
+						}
+						if (last != UINT32_MAX)
+							strip(last, row);
+						last = row;
 					}
-					for (uint32_t a = 0; a < uint32_t(Across); a++)
-						indices.insert(indices.end(), { previous + a, row + a, previous + a + 1, previous + a + 1, row + a, row + a + 1 });
-					previous = row;
+				};
+				const HubRiverSample edge = samples[lip];
+				sheet(edge.Point, edge.Tangent, flow.Level[lip] - HubBrow(HubEdgeDistance(edge.Point)), edge.Half * 1.2f, HubFallDrop, 1.0f, 22, 0.035f);
+				sheet(cascadeLip, head.Tangent, cascadeTop, HubCascadeHalf, HubCascadeHeight + 0.15f, 0.25f, 8, 0.12f);
+				const float fallTop = flow.Level[lip] - HubBrow(HubEdgeDistance(edge.Point));
+				const Vec2 lipWorld = EmberCenter + edge.Point + edge.Tangent * 0.3f;
+				m_Scene.Sprays.push_back({ { lipWorld.x, fallTop + 0.05f, lipWorld.y }, 1.0f, SprayKind::Lip });
+				for (const float drop : { 1.6f, 3.6f, 6.2f })
+				{
+					const Vec2 at = EmberCenter + edge.Point + edge.Tangent * (0.55f * std::sqrt(drop) + 0.45f);
+					m_Scene.Sprays.push_back({ { at.x, fallTop - drop, at.y }, 0.8f + 0.15f * drop, SprayKind::Mist });
 				}
+				const Vec2 splash = EmberCenter + impact;
+				m_Scene.Sprays.push_back({ { splash.x, flow.Level[0] + 0.03f, splash.y }, 1.0f, SprayKind::Splash });
 				glm::vec3 low(1e9f);
 				glm::vec3 high(-1e9f);
 				for (const ModelVertex& v : vertices)
@@ -5579,9 +5678,277 @@ namespace Game
 					low = glm::min(low, v.Position);
 					high = glm::max(high, v.Position);
 				}
-				std::vector<LevelMeshDesc> meshes = { { .FirstIndex = 0, .IndexCount = uint32_t(indices.size()), .Material = *water, .Layer = *water, .Flags = MeshWater | MeshVertexTint | MeshGround } };
+				const Vec2 springWorld = EmberCenter + impact;
+				std::vector<LevelMeshDesc> meshes = { { .FirstIndex = 0, .IndexCount = uint32_t(indices.size()), .Material = *water, .Layer = *water, .Flags = MeshWater, .River = true, .Absorb = HubRiverAbsorb, .Look = glm::vec4(HubRiverMurk, 0.0f, springWorld.x, springWorld.y) } };
 				const uint32_t base = m_Renderer.AddLevelGeometry(vertices, indices, meshes);
 				Insert(base, m_Renderer.MakeModelInstance(base, glm::mat4(1.0f), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.0f, low.y), low, high, false, low.y);
+			}
+
+			void HubBridges()
+			{
+				if (!m_HubPlanks || m_HubGrid.Surface.empty())
+					return;
+				constexpr int32_t Segments = 16;
+				constexpr float Thickness = 0.09f;
+				constexpr float Overhang = 0.4f;
+				constexpr float BeamDepth = 0.2f;
+				constexpr float BeamHalf = 0.075f;
+				constexpr float BeamInset = 0.18f;
+				std::vector<ModelVertex> vertices;
+				std::vector<uint32_t> indices;
+				std::vector<LevelMeshDesc> meshes;
+				std::vector<std::pair<glm::vec3, glm::vec3>> bounds;
+				glm::vec3 low(1e9f);
+				glm::vec3 high(-1e9f);
+				const auto vertex = [&](const glm::vec3& position, const glm::vec3& normal, const glm::vec3& tangent, glm::vec2 uv)
+				{
+					ModelVertex v;
+					v.Position = position;
+					v.U = uv.x;
+					v.V = uv.y;
+					v.Normal = normal;
+					v.Weights = 255;
+					v.Tangent = PackTangent(tangent, 1.0f);
+					v.Color = 0xFFFFFFFFu;
+					vertices.push_back(v);
+					low = glm::min(low, position);
+					high = glm::max(high, position);
+					return uint32_t(vertices.size() - 1);
+				};
+				const auto quad = [&](uint32_t a, uint32_t b, uint32_t c, uint32_t d)
+				{
+					const glm::vec3 face = glm::cross(vertices[b].Position - vertices[a].Position, vertices[c].Position - vertices[a].Position);
+					if (glm::dot(face, vertices[a].Normal) >= 0.0f)
+						indices.insert(indices.end(), { a, b, c, a, c, d });
+					else
+						indices.insert(indices.end(), { a, c, b, a, d, c });
+				};
+				for (const HubFootbridge& bridge : HubFootbridges())
+				{
+					const uint32_t firstIndex = uint32_t(indices.size());
+					low = glm::vec3(1e9f);
+					high = glm::vec3(-1e9f);
+					const Vec2 center = EmberCenter + bridge.Center;
+					const Vec2 side2 = Perpendicular(bridge.Along);
+					const glm::vec3 along(bridge.Along.x, 0.0f, bridge.Along.y);
+					const glm::vec3 side(side2.x, 0.0f, side2.y);
+					const float reach = bridge.HalfLength + Overhang;
+					const auto deckAt = [&](float u)
+					{
+						if (std::abs(u) <= bridge.HalfLength)
+							return HubBridgeDeck(bridge, u);
+						const float sign = u < 0.0f ? -1.0f : 1.0f;
+						const float end = HubBridgeDeck(bridge, sign * bridge.HalfLength);
+						const Vec2 at = center + bridge.Along * u;
+						const float ground = HubSample(m_HubGrid.Surface, at) - 0.03f;
+						return std::lerp(end, std::min(end, ground), (std::abs(u) - bridge.HalfLength) / Overhang);
+					};
+					std::array<float, Segments + 1> us{};
+					std::array<float, Segments + 1> ys{};
+					std::array<glm::vec3, Segments + 1> ups{};
+					for (int32_t k = 0; k <= Segments; k++)
+					{
+						us[k] = -reach + 2.0f * reach * float(k) / float(Segments);
+						ys[k] = deckAt(us[k]);
+					}
+					for (int32_t k = 0; k <= Segments; k++)
+					{
+						const int32_t a = std::max(k - 1, 0);
+						const int32_t b = std::min(k + 1, Segments);
+						const float rise = (ys[b] - ys[a]) / std::max(us[b] - us[a], 1e-4f);
+						ups[k] = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f) - along * rise);
+					}
+					const auto point = [&](int32_t k, float across, float lift)
+					{
+						const Vec2 at = center + bridge.Along * us[k] + side2 * across;
+						return glm::vec3(at.x, ys[k] + lift, at.y);
+					};
+					const float w = bridge.HalfWidth;
+					for (int32_t k = 0; k < Segments; k++)
+					{
+						const glm::vec3 slope = glm::normalize(point(k + 1, 0.0f, 0.0f) - point(k, 0.0f, 0.0f));
+						quad(vertex(point(k, -w, 0.0f), ups[k], along, { us[k], -w }), vertex(point(k + 1, -w, 0.0f), ups[k + 1], along, { us[k + 1], -w }),
+							vertex(point(k + 1, w, 0.0f), ups[k + 1], along, { us[k + 1], w }), vertex(point(k, w, 0.0f), ups[k], along, { us[k], w }));
+						quad(vertex(point(k, -w, -Thickness), -ups[k], along, { us[k], -w }), vertex(point(k, w, -Thickness), -ups[k], along, { us[k], w }),
+							vertex(point(k + 1, w, -Thickness), -ups[k + 1], along, { us[k + 1], w }), vertex(point(k + 1, -w, -Thickness), -ups[k + 1], along, { us[k + 1], -w }));
+						for (const float s : { -1.0f, 1.0f })
+						{
+							const glm::vec3 out = side * s;
+							quad(vertex(point(k, s * w, 0.0f), out, slope, { us[k], 0.0f }), vertex(point(k, s * w, -Thickness), out, slope, { us[k], Thickness }),
+								vertex(point(k + 1, s * w, -Thickness), out, slope, { us[k + 1], Thickness }), vertex(point(k + 1, s * w, 0.0f), out, slope, { us[k + 1], 0.0f }));
+							const float inner = s * (w - BeamInset - BeamHalf);
+							const float outer = s * (w - BeamInset + BeamHalf);
+							const float top = -Thickness;
+							const float bottom = -Thickness - BeamDepth;
+							for (const auto& [across, normal] : { std::pair{ outer, out }, std::pair{ inner, -out } })
+								quad(vertex(point(k, across, top), normal, slope, { us[k], 0.3f }), vertex(point(k, across, bottom), normal, slope, { us[k], 0.3f + BeamDepth }),
+									vertex(point(k + 1, across, bottom), normal, slope, { us[k + 1], 0.3f + BeamDepth }), vertex(point(k + 1, across, top), normal, slope, { us[k + 1], 0.3f }));
+							quad(vertex(point(k, inner, bottom), -ups[k], slope, { us[k], 0.6f }), vertex(point(k, outer, bottom), -ups[k], slope, { us[k], 0.6f + 2.0f * BeamHalf }),
+								vertex(point(k + 1, outer, bottom), -ups[k + 1], slope, { us[k + 1], 0.6f + 2.0f * BeamHalf }), vertex(point(k + 1, inner, bottom), -ups[k + 1], slope, { us[k + 1], 0.6f }));
+						}
+					}
+					for (const int32_t k : { 0, Segments })
+					{
+						const glm::vec3 out = along * (k == 0 ? -1.0f : 1.0f);
+						quad(vertex(point(k, -w, 0.0f), out, side, { -w, 0.0f }), vertex(point(k, w, 0.0f), out, side, { w, 0.0f }),
+							vertex(point(k, w, -Thickness), out, side, { w, Thickness }), vertex(point(k, -w, -Thickness), out, side, { -w, Thickness }));
+					}
+					meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(indices.size()) - firstIndex, .Material = *m_HubPlanks, .Layer = *m_HubPlanks, .Flags = MeshWorn });
+					bounds.push_back({ low, high });
+				}
+				if (meshes.empty())
+					return;
+				const uint32_t base = m_Renderer.AddLevelGeometry(vertices, indices, meshes);
+				for (uint32_t index = 0; index < uint32_t(meshes.size()); index++)
+				{
+					const auto& [lo, hi] = bounds[index];
+					Insert(base + index, m_Renderer.MakeModelInstance(base + index, glm::mat4(1.0f), NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.0f, lo.y), lo, hi, false, lo.y);
+				}
+				m_HubBridges = true;
+			}
+
+			void HubLilies()
+			{
+				std::array<std::optional<uint32_t>, 4> pads{};
+				for (uint32_t v = 0; v < pads.size(); v++)
+					pads[v] = m_Renderer.FindEffectMesh("HubLilyPad" + std::to_string(v));
+				const std::optional<uint32_t> flowers[] = { m_Renderer.FindEffectMesh("HubLilyFlower0"), m_Renderer.FindEffectMesh("HubLilyFlower1") };
+				if (!pads[0] || !flowers[0])
+					return;
+				const auto floatOn = [this](float level, Vec2 world, const glm::mat4&, float reach, uint32_t mesh, const glm::mat4& transform)
+				{
+					const glm::vec3 low(world.x - reach, level - 0.05f, world.y - reach);
+					const glm::vec3 high(world.x + reach, level + 0.2f, world.y + reach);
+					Insert(mesh, m_Renderer.MakeModelInstance(mesh, transform, NoPalette, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), 0.0f, level), low, high, false, level);
+				};
+				const HubRiverFlow& flow = HubRiverLevels();
+				const Vec2 impact = HubRiver().Samples.front().Point - HubRiver().Samples.front().Tangent * (HubRiver().Samples.front().Half * 0.35f);
+				const auto open = [&](Vec2 local)
+				{
+					for (const HubFootbridge& bridge : HubFootbridges())
+						if (Length(local - bridge.Center) < bridge.HalfLength + 0.6f)
+							return false;
+					return HubRiverDepth(local) > 0.14f && HubStreamClearance(local) < -0.2f && Length(local - impact) > 1.4f;
+				};
+				uint32_t serial = 0;
+				for (float arc = 0.0f; arc < flow.LipArc - 4.0f; arc += 0.8f)
+				{
+					const uint32_t key = 0xA200u + serial++;
+					const HubRiverSample sample = HubRiverSampleAt(arc);
+					if (sample.Half < 1.35f || Unit(int32_t(key), 1, 0xA2u) > 0.42f)
+						continue;
+					const float side = Unit(int32_t(key), 2, 0xA2u) < 0.5f ? -1.0f : 1.0f;
+					const Vec2 cluster = sample.Point + Perpendicular(sample.Tangent) * (side * sample.Half * (0.45f + 0.3f * Unit(int32_t(key), 3, 0xA2u)));
+					const int32_t count = 3 + int32_t(Hash(int32_t(key), 4, 0xA2u) % 5u);
+					bool flowered = false;
+					for (int32_t n = 0; n < count; n++)
+					{
+						const float spin = TwoPi * Unit(int32_t(key), 10 + n, 0xA2u);
+						const Vec2 local = cluster + FromAngle(spin) * (0.6f * std::sqrt(Unit(int32_t(key), 20 + n, 0xA2u)));
+						if (!open(local))
+							continue;
+						const float level = HubRiverLevelAt(HubRiverAt(local).Arc);
+						const float radius = 0.15f + 0.14f * Unit(int32_t(key), 30 + n, 0xA2u);
+						const Vec2 world = EmberCenter + local;
+						const glm::mat4 place = Translation({ world.x, level, world.y }) * RotationY(TwoPi * Unit(int32_t(key), 40 + n, 0xA2u));
+						floatOn(level, world, place, radius, *pads[Hash(int32_t(key), 50 + n, 0xA2u) % pads.size()], place * Scaling({ radius, 1.0f, radius }));
+						if (!flowered && Unit(int32_t(key), 60 + n, 0xA2u) < 0.3f)
+						{
+							flowered = true;
+							const float bloom = 0.09f + 0.04f * Unit(int32_t(key), 70 + n, 0xA2u);
+							floatOn(level, world, place, radius, *flowers[Hash(int32_t(key), 80 + n, 0xA2u) % 2u], place * Translation({ 0.15f * radius, 0.01f, 0.0f }) * Scaling({ bloom, bloom * 0.9f, bloom }));
+						}
+					}
+				}
+			}
+
+			void HubRiverRocks()
+			{
+				std::vector<uint32_t> big;
+				std::vector<uint32_t> small;
+				for (const char* name : { "Cliff3Far", "Cliff1Far", "RubbleFar" })
+					if (const std::optional<uint32_t> mesh = m_Models.FindMesh(std::string("HubCliffs/") + name))
+						big.push_back(*mesh);
+				for (const char* name : { "RubbleFar", "LedgeFar", "Cliff1Far" })
+					if (const std::optional<uint32_t> mesh = m_Models.FindMesh(std::string("HubCliffs/") + name))
+						small.push_back(*mesh);
+				if (big.empty() || small.empty() || m_HubGrid.Surface.empty())
+					return;
+				const std::vector<HubRiverSample>& samples = HubRiver().Samples;
+				const HubRiverFlow& flow = HubRiverLevels();
+				const auto place = [&](const std::vector<uint32_t>& meshes, Vec2 local, float size, float sink, uint32_t key)
+				{
+					const uint32_t mesh = meshes[Hash(int32_t(key), 1, 0x91u) % meshes.size()];
+					const ModelMesh& source = m_Models.GetMesh(mesh);
+					const float scale = size / std::max(source.Max.x - source.Min.x, 0.1f);
+					const Vec2 world = EmberCenter + local;
+					const float ground = HubSample(m_HubGrid.Surface, world);
+					HubRock(mesh, mesh, world, ground - source.Min.y * scale - sink * (source.Max.y - source.Min.y) * scale, TwoPi * Unit(int32_t(key), 2, 0x91u), scale);
+				};
+				const auto blocked = [&](Vec2 local, float radius)
+				{
+					for (const HubFootbridge& bridge : HubFootbridges())
+						if (Length(local - bridge.Center) < bridge.HalfLength + radius + 0.5f)
+							return true;
+					return HubPaving(local).Inside > -0.4f - radius;
+				};
+				const HubRiverSample& spring = samples.front();
+				const Vec2 back = spring.Tangent * -1.0f;
+				const Vec2 lipPoint = spring.Point + back * (spring.Half * 1.12f + 0.15f);
+				const float lipTop = flow.Level[0] + HubCascadeHeight;
+				const auto perch = [&](const std::vector<uint32_t>& meshes, Vec2 local, float size, float top, uint32_t key)
+				{
+					const uint32_t mesh = meshes[Hash(int32_t(key), 1, 0x97u) % meshes.size()];
+					const ModelMesh& source = m_Models.GetMesh(mesh);
+					const float scale = size / std::max(source.Max.x - source.Min.x, 0.1f);
+					HubRock(mesh, mesh, EmberCenter + local, top - source.Max.y * scale, AngleOf(back) + 0.4f * (Unit(int32_t(key), 2, 0x97u) - 0.5f), scale);
+				};
+				perch(big, lipPoint + back * 0.5f, 1.7f, lipTop + 0.12f, 0x9700u);
+				for (const float s : { -1.0f, 1.0f })
+					perch(big, lipPoint + back * 0.35f + Perpendicular(back) * (s * (HubCascadeHalf + 0.6f)), 1.3f, lipTop + 0.35f + 0.15f * s, 0x9710u + uint32_t(s + 1.0f));
+				perch(small, lipPoint + back * 1.4f + Perpendicular(back) * 0.5f, 1.0f, lipTop + 0.55f, 0x9720u);
+				for (int32_t i = 0; i < 6; i++)
+				{
+					const float angle = (-80.0f + 32.0f * float(i)) * Pi / 180.0f + 0.15f * (Unit(i, 3, 0x92u) - 0.5f);
+					if (std::abs(angle) < 0.5f)
+						continue;
+					const Vec2 direction = back * std::cos(angle) + Perpendicular(back) * std::sin(angle);
+					const float size = 1.1f + 0.8f * Unit(i, 4, 0x92u) + (std::abs(angle) < 0.6f ? 0.6f : 0.0f);
+					place(big, spring.Point + direction * (spring.Half * 1.2f + 0.5f * size), size, 0.25f, 0x9200u + uint32_t(i));
+				}
+				uint32_t serial = 0;
+				for (float arc = 3.0f; arc < flow.LipArc - 1.5f; arc += 1.0f + 0.9f * Unit(int32_t(arc * 10.0f), 1, 0x93u))
+				{
+					const uint32_t key = 0x9300u + serial++;
+					const HubRiverSample sample = HubRiverSampleAt(arc);
+					const float sideSign = Unit(int32_t(key), 2, 0x93u) < 0.5f ? -1.0f : 1.0f;
+					const float size = 0.32f + 0.45f * Unit(int32_t(key), 3, 0x93u);
+					const Vec2 local = sample.Point + Perpendicular(sample.Tangent) * (sideSign * (sample.Half * (0.95f + 0.25f * Unit(int32_t(key), 4, 0x93u))));
+					if (blocked(local, size) || Unit(int32_t(key), 5, 0x93u) < 0.3f)
+						continue;
+					place(small, local, size, 0.35f, key);
+					if (Unit(int32_t(key), 6, 0x93u) < 0.45f)
+					{
+						const Vec2 partner = local + sample.Tangent * (0.35f + 0.3f * Unit(int32_t(key), 7, 0x93u)) + Perpendicular(sample.Tangent) * (sideSign * 0.25f);
+						if (!blocked(partner, 0.3f))
+							place(small, partner, size * 0.55f, 0.3f, key + 0x400u);
+					}
+				}
+				for (const float arc : { 6.5f, 19.2f, 30.6f, 33.4f })
+				{
+					const HubRiverSample sample = HubRiverSampleAt(arc);
+					const uint32_t key = 0x9500u + uint32_t(arc * 10.0f);
+					const Vec2 local = sample.Point + Perpendicular(sample.Tangent) * (sample.Half * (Unit(int32_t(key), 1, 0x95u) - 0.5f) * 0.8f);
+					if (!blocked(local, 0.5f))
+						place(small, local, 0.55f + 0.25f * Unit(int32_t(key), 2, 0x95u), 0.55f, key);
+				}
+				const HubRiverSample lip = HubRiverSampleAt(flow.LipArc - 0.4f);
+				for (const float offset : { -1.0f, 1.0f, 0.15f })
+				{
+					const uint32_t key = 0x9600u + uint32_t((offset + 2.0f) * 10.0f);
+					const float size = offset == 0.15f ? 0.5f : 0.85f;
+					place(offset == 0.15f ? small : big, lip.Point + Perpendicular(lip.Tangent) * (offset * lip.Half), size, 0.35f, key);
+				}
 			}
 
 			void HubSampleField()
@@ -5597,6 +5964,7 @@ namespace Game
 				grid.Pave.assign(count, 0.0f);
 				grid.Stone.assign(count, uint8_t(TerrainId::Flagstone));
 				grid.Splat.assign(count, 0u);
+				grid.River.assign(count, 10.0f);
 				for (int32_t j = 0; j < grid.Rows; j++)
 					for (int32_t i = 0; i < grid.Columns; i++)
 					{
@@ -5606,6 +5974,7 @@ namespace Game
 						grid.Edge[k] = edge;
 						if (edge < -2.5f)
 							continue;
+						grid.River[k] = HubStreamClearance(local);
 						const HubPave pave = HubPaving(local);
 						grid.Floor[k] = HubFloor(local);
 						grid.Paved[k] = pave.Inside;
@@ -5653,13 +6022,27 @@ namespace Game
 				dirt = std::max(dirt, grid.Stone[k] == uint8_t(TerrainId::Dirt) ? 0.92f * Ease((grid.Paved[k] + 0.45f) / 0.4f) : mud);
 				dirt = std::max(dirt, 0.5f * Ease((Fbm(point * 0.3f, 521u, 3) - 0.68f) / 0.12f));
 				dirt = std::max(dirt, 0.8f * (1.0f - Ease((Length(local) - EmberSurroundRadius) / 0.6f)));
-				dirt = std::max(dirt, 0.6f * (1.0f - Ease((HubStreamClearance(local) - 0.1f) / 0.9f)));
+				const float river = grid.River[k];
+				dirt = std::max(dirt, 0.85f * (1.0f - Ease((river - HubWetBand) / (0.6f + 0.5f * Fbm(point * 0.6f, 557u, 2)))));
 				std::array<float, 4> weights{};
+				float shade = std::clamp(0.84f + 0.36f * (Fbm(point * 0.21f, 541u, 3) - 0.5f) - 0.12f * rock, 0.0f, 1.0f);
+				if (river < HubWetBand && m_HubBed && m_HubSilt)
+				{
+					shade *= 0.66f + 0.34f * Ease((river - 0.05f) / (HubWetBand - 0.05f));
+					if (river > HubBedBand)
+					{
+						weights[SplatDirt] = 1.0f;
+						return PackSplat(weights, shade);
+					}
+					const float deep = Ease((HubBedBand - river) / 0.5f);
+					weights[SplatSand] = deep * Ease((Fbm(point * 0.55f, 563u, 3) - 0.3f) / 0.3f);
+					weights[SplatDirt] = (1.0f - deep) * 0.6f;
+					return PackSplat(weights, shade);
+				}
 				weights[SplatSand] = m_HubPaving ? grid.Band[k] : 0.0f;
 				weights[SplatRock] = rock;
 				weights[SplatDirt] = dirt * (1.0f - rock);
 				weights[SplatGrass] = std::max(1.0f - weights[SplatRock] - weights[SplatDirt], 0.0f);
-				const float shade = std::clamp(0.84f + 0.36f * (Fbm(point * 0.21f, 541u, 3) - 0.5f) - 0.12f * rock, 0.0f, 1.0f);
 				return PackSplat(weights, shade);
 			}
 
@@ -5711,6 +6094,10 @@ namespace Game
 				const uint32_t wallColor = PackSplat({ 0.0f, 0.3f, 0.7f, 0.0f }, 0.28f);
 				const uint32_t material = m_HubGround.value_or(m_Splat[SplatGrass]) | (m_HubDirt.value_or(m_Splat[SplatDirt]) << 16);
 				const uint32_t layer = m_Splat[SplatRock] | (m_HubPaving.value_or(m_Splat[SplatSand]) << 16);
+				const bool riverbed = m_HubBed && m_HubSilt;
+				const uint32_t bedMaterial = m_HubSilt.value_or(0u) | (m_HubDirt.value_or(m_Splat[SplatDirt]) << 16);
+				const uint32_t bedLayer = m_Splat[SplatRock] | (m_HubBed.value_or(0u) << 16);
+				std::vector<uint32_t> bedIndices;
 				const auto tangentOf = [](const glm::vec3& normal)
 				{
 					glm::vec3 tangent = glm::vec3(1.0f, 0.0f, 0.0f) - normal * normal.x;
@@ -5800,15 +6187,19 @@ namespace Game
 										if (inA != inB)
 											polygon.push_back({ a, b, field[a] / (field[a] - field[b]), true, inA });
 									}
+									bool bedCell = riverbed && !lower;
+									for (const size_t k : corners)
+										bedCell = bedCell && grid.River[k] < HubBedCell;
+									std::vector<uint32_t>& target = bedCell ? bedIndices : indices;
 									for (size_t m = 1; m + 1 < polygon.size(); m++)
 									{
 										const uint32_t p0 = vertexOf(polygon[0]);
 										const uint32_t p1 = vertexOf(polygon[m]);
 										const uint32_t p2 = vertexOf(polygon[m + 1]);
 										if (lower)
-											indices.insert(indices.end(), { p0, p1, p2 });
+											target.insert(target.end(), { p0, p1, p2 });
 										else
-											indices.insert(indices.end(), { p0, p2, p1 });
+											target.insert(target.end(), { p0, p2, p1 });
 									}
 									if (!lower)
 										continue;
@@ -5843,10 +6234,19 @@ namespace Game
 											indices.insert(indices.end(), { v0, v2, v1, v0, v3, v2 });
 									}
 								}
-							if (uint32_t(indices.size()) == firstIndex)
-								continue;
-							meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(indices.size()) - firstIndex, .Material = material, .Layer = layer, .Flags = lower ? MeshSplat | MeshGround : MeshSplat });
-							bounds.push_back({ low, high });
+							if (uint32_t(indices.size()) > firstIndex)
+							{
+								meshes.push_back({ .FirstIndex = firstIndex, .IndexCount = uint32_t(indices.size()) - firstIndex, .Material = material, .Layer = layer, .Flags = lower ? MeshSplat | MeshGround : MeshSplat });
+								bounds.push_back({ low, high });
+							}
+							if (!bedIndices.empty())
+							{
+								const uint32_t bedFirst = uint32_t(indices.size());
+								indices.insert(indices.end(), bedIndices.begin(), bedIndices.end());
+								meshes.push_back({ .FirstIndex = bedFirst, .IndexCount = uint32_t(bedIndices.size()), .Material = bedMaterial, .Layer = bedLayer, .Flags = MeshSplat });
+								bounds.push_back({ low, high });
+								bedIndices.clear();
+							}
 						}
 					}
 				const uint32_t base = m_Renderer.AddLevelGeometry(vertices, indices, meshes);
@@ -6169,7 +6569,7 @@ namespace Game
 							const Vec2 gradient = HubGradient(grid.Edge, point);
 							const Vec2 out = LengthSquared(gradient) > 1e-8f ? Normalize(gradient) * -1.0f : Vec2(1.0f, 0.0f);
 							const bool convex = HubSample(grid.Edge, point - out * 3.0f) < 2.0f;
-							if (r >= 1 && HubSample(grid.Edge, point + out * (2.0f + 1.5f * float(r))) > -1.5f - 1.2f * float(r))
+							if ((r >= 1 && HubSample(grid.Edge, point + out * (2.0f + 1.5f * float(r))) > -1.5f - 1.2f * float(r)) || (r < 2 && HubSample(grid.River, point) < 0.2f))
 							{
 								s += 0.6f;
 								continue;
@@ -6190,10 +6590,15 @@ namespace Game
 							const float scale = ring.Scale * (small ? 0.6f : 1.0f) * (1.0f + ring.ScaleJitter * (2.0f * Unit(int32_t(key), 3, 0x61u) - 1.0f));
 							const bool flipped = kind != 1 && Unit(int32_t(key), 5, 0x61u) < 0.5f;
 							const Vec2 spot = point + out * (ring.Reach - scale * ((flipped ? -middleOut : middleOut) + halfOut));
+							if (r < 2 && HubSample(grid.River, spot) < 0.25f)
+							{
+								s += 0.6f;
+								continue;
+							}
 							float yaw = AngleOf(out) - std::atan2(face.y, face.x) + 0.25f * (2.0f * Unit(int32_t(key), 4, 0x61u) - 1.0f);
 							if (flipped)
 								yaw += Pi;
-							const float floor = HubSample(grid.Floor, point - out * 1.6f);
+							const float floor = std::max(HubSample(grid.Floor, point - out * 1.6f), HubSample(grid.Floor, point - out * 0.5f));
 							const float top = floor + ring.Top + ring.Jitter * (2.0f * Unit(int32_t(key), 6, 0x61u) - 1.0f);
 							HubRock(mesh, r == 0 ? far[size_t(kind)] : std::nullopt, spot, top, yaw, hanging ? scale * 1.25f : scale);
 							s += ring.Spacing * 2.0f * halfSide * scale;
@@ -6518,6 +6923,8 @@ namespace Game
 						for (float t = -(length - side); t <= length - side + 1e-3f; t += std::max(side * 0.5f, 0.2f))
 							carve(EmberCenter + block.Center + (wide ? axis : across) * t, side * 1.1f, side * 1.1f + 0.35f, hugBuilt);
 					}
+				for (const Vec2 post : m_HubFencePosts)
+					carve(post, 0.3f, 0.6f, hugBuilt);
 				const ModelLibraryData& data = m_Models.GetData();
 				for (const HubRockTop& rock : m_HubRockTops)
 				{
@@ -6612,7 +7019,7 @@ namespace Game
 						float allowed = Ease((Length(local) - EmberSurroundRadius - 0.1f) / 0.35f);
 						allowed *= Ease((HubNearestStair(local) - 0.05f) / 0.4f);
 						const float clearance = HubStreamClearance(local);
-						allowed *= HubSmooth(-0.3f, 0.02f, clearance);
+						allowed *= HubSmooth(-0.05f, 0.3f, clearance);
 						if (HubUnderGate(local, 0.0f) || HubDeckHeight(local))
 							allowed = 0.0f;
 						density *= allowed;
@@ -6640,6 +7047,14 @@ namespace Game
 						float tall = std::max({ rim, meadow, 0.7f * hollow, HubTallFloor }) * (1.0f - Ease((grid.Paved[k] + 2.2f) / 1.8f));
 						texel.z = std::clamp(unit(packed, 24), 0.0f, 1.0f);
 						texel.w = std::clamp(0.1f + 0.45f * Ease((Fbm(point * 0.11f, 711u, 2) - 0.55f) / 0.3f) + 0.4f * dirt, 0.0f, 1.0f);
+						const float shore = Ease((clearance + 0.6f) / 0.2f) * (1.0f - Ease((clearance - 0.1f) / 0.25f));
+						const float reed = shore * Ease((Fbm(point * 0.32f, 0x5EEDu, 2) - 0.47f) / 0.12f) * keep[k] * Ease(edge / 0.35f) * Ease((-grid.Paved[k] - 0.6f) / 0.6f);
+						if (reed > 0.05f && !HubDeckHeight(local) && !HubUnderGate(local, 0.0f))
+						{
+							texel.y = 0.45f + 0.4f * reed;
+							field.Flora[k] = 255u << 16;
+							continue;
+						}
 						if (density <= 0.0f)
 						{
 							texel.y = density;
@@ -6664,7 +7079,7 @@ namespace Game
 						density *= 1.0f - 0.35f * crowd;
 						tall *= 1.0f - 0.85f * crowd;
 						texel.y = density + tall * Ease((density - 0.55f) / 0.3f);
-						field.Flora[k] = byte(spikes) | (byte(ferns) << 8) | (byte(wet) << 16) | (byte(bloom) << 24);
+						field.Flora[k] = byte(spikes) | (byte(ferns) << 8) | (byte(std::min(wet, 0.9f)) << 16) | (byte(bloom) << 24);
 					}
 			}
 
@@ -6697,7 +7112,91 @@ namespace Game
 					AddBox({ .Mesh = mesh, .Center = { center.x, base + lift + height * 0.5f, center.y }, .Half = { half.x, height * 0.5f, half.y }, .Color = tint, .Yaw = yaw, .Base = base, .Reach = Length(half) + 0.65f * std::max(top, 0.0f), .Cut = solid });
 				};
 				for (const HubBlock& block : HubBlocks())
-					add(block.Mesh, EmberCenter + block.Center, block.Half, block.Height, block.Lift, block.Yaw, color(block.Kind), block.Solid && block.Kind != HubBlockKind::Wall && block.Kind != HubBlockKind::Fence, block.Absolute);
+					if ((block.Kind != HubBlockKind::Fence || !m_HubFences) && (block.Kind != HubBlockKind::Footbridge || !m_HubBridges))
+						add(block.Mesh, EmberCenter + block.Center, block.Half, block.Height, block.Lift, block.Yaw, color(block.Kind), block.Solid && block.Kind != HubBlockKind::Wall && block.Kind != HubBlockKind::Fence, block.Absolute);
+			}
+
+			void HubFences()
+			{
+				constexpr float RailSpan = 1.963f;
+				constexpr float RailHeight = 0.888f;
+				constexpr float Sink = 0.04f;
+				constexpr float RailTuck = 0.12f;
+				const std::optional<uint32_t> rail = m_Models.FindMesh("HubDecor/FenceRail");
+				const std::optional<uint32_t> endPost = m_Models.FindMesh("HubDecor/PillarEnd");
+				const std::optional<uint32_t> midPost = m_Models.FindMesh("HubDecor/PillarTall");
+				if (!rail || !endPost || !midPost)
+					return;
+				const float woodLength = std::max(m_Models.GetMesh(*rail).Max.x - m_Models.GetMesh(*rail).Min.x, 0.1f);
+				m_HubFences = true;
+				struct Joint
+				{
+					Vec2 Point;
+					Vec2 Axis;
+					float Ground = 0.0f;
+					float Scale = 1.0f;
+					int32_t Count = 0;
+				};
+				std::vector<Joint> joints;
+				const auto joint = [&](Vec2 point, Vec2 axis, float ground, float scale)
+				{
+					for (Joint& existing : joints)
+						if (LengthSquared(existing.Point - point) < 0.15f * 0.15f)
+						{
+							existing.Axis = existing.Axis + axis;
+							existing.Ground = std::max(existing.Ground, ground);
+							existing.Count++;
+							return;
+						}
+					joints.push_back({ point, axis, ground, scale, 1 });
+				};
+				const auto bridgeOf = [](const HubBlock& block) -> const HubFootbridge*
+				{
+					for (const HubFootbridge& bridge : HubFootbridges())
+						if (std::abs(Dot(block.Center - bridge.Center, bridge.Along)) < 0.05f && std::abs(std::abs(Dot(block.Center - bridge.Center, Perpendicular(bridge.Along))) - (bridge.HalfWidth - 0.06f)) < 0.05f)
+							return &bridge;
+					return nullptr;
+				};
+				const auto ground = [&](const HubBlock& block, Vec2 world)
+				{
+					if (const HubFootbridge* bridge = bridgeOf(block))
+						return HubBridgeDeck(*bridge, Dot(world - EmberCenter - bridge->Center, bridge->Along)) - Sink;
+					return block.Absolute ? block.Lift : HubSample(m_HubGrid.Surface, world) + block.Lift - Sink;
+				};
+				const glm::vec4 white(1.0f, 1.0f, 1.0f, 0.0f);
+				for (const HubBlock& block : HubBlocks())
+				{
+					if (block.Kind != HubBlockKind::Fence)
+						continue;
+					const Vec2 axis = FromAngle(block.Yaw);
+					const float length = std::max(2.0f * block.Half.x - 0.08f, 0.2f);
+					const float scale = block.Height / RailHeight;
+					const int32_t pieces = std::max(int32_t(std::lround(length / (RailSpan * scale))), 1);
+					const float gap = length / float(pieces);
+					const float stretch = std::max(gap - 2.0f * RailTuck * scale, 0.1f) / woodLength;
+					const Vec2 start = EmberCenter + block.Center - axis * (0.5f * length);
+					for (int32_t p = 0; p < pieces; p++)
+					{
+						const Vec2 middle = start + axis * (gap * (float(p) + 0.5f));
+						const float y = ground(block, middle);
+						const float pitch = std::atan2(ground(block, start + axis * (gap * float(p + 1))) - ground(block, start + axis * (gap * float(p))), gap);
+						Add(*rail, Translation({ middle.x, y, middle.y }) * RotationY(block.Yaw) * RotationZ(pitch) * Scaling({ stretch, scale, scale }), white, y, false, y);
+					}
+					for (int32_t p = 0; p <= pieces; p++)
+					{
+						const Vec2 point = start + axis * (gap * float(p));
+						joint(point, axis, ground(block, point), scale);
+						if (p > 0 && p < pieces)
+							joint(point, axis, ground(block, point), scale);
+					}
+				}
+				for (const Joint& j : joints)
+				{
+					const uint32_t mesh = j.Count == 1 ? *endPost : *midPost;
+					const float yaw = LengthSquared(j.Axis) > 1e-4f ? std::atan2(j.Axis.y, j.Axis.x) : 0.0f;
+					Add(mesh, Translation({ j.Point.x, j.Ground, j.Point.y }) * RotationY(yaw) * Scaling(Uniform(j.Scale)), white, j.Ground, false, j.Ground);
+					m_HubFencePosts.push_back(j.Point);
+				}
 			}
 
 			void Props()
@@ -7250,11 +7749,17 @@ namespace Game
 			int32_t m_GroundRows = 0;
 			bool m_Terrain = false;
 			bool m_Hub = false;
+			bool m_HubFences = false;
+			std::vector<Vec2> m_HubFencePosts;
 			HubGrid m_HubGrid;
 			std::vector<HubRockTop> m_HubRockTops;
 			std::optional<uint32_t> m_HubPaving;
 			std::optional<uint32_t> m_HubGround;
 			std::optional<uint32_t> m_HubDirt;
+			std::optional<uint32_t> m_HubBed;
+			std::optional<uint32_t> m_HubSilt;
+			std::optional<uint32_t> m_HubPlanks;
+			bool m_HubBridges = false;
 			LakeShore m_LakeLand;
 			bool m_Floating = false;
 			std::array<uint32_t, 4> m_Splat{};
@@ -7301,8 +7806,92 @@ namespace Game
 		return CourseOf(SummitBorderRing);
 	}
 
+	std::optional<uint32_t> MakeLilyMesh(WorldRenderer& renderer, uint32_t variant, bool flower)
+	{
+		const std::string name = flower ? "HubLilyFlower" + std::to_string(variant) : "HubLilyPad" + std::to_string(variant);
+		if (const std::optional<uint32_t> mesh = renderer.FindEffectMesh(name))
+			return mesh;
+		std::vector<ModelVertex> vertices;
+		std::vector<uint32_t> indices;
+		const auto vertex = [&](const glm::vec3& position, const glm::vec3& normal, const glm::vec3& tint)
+		{
+			ModelVertex v;
+			v.Position = position;
+			v.U = position.x;
+			v.V = position.z;
+			v.Normal = normal;
+			v.Weights = 255;
+			v.Tangent = PackTangent(glm::vec3(1.0f, 0.0f, 0.0f), 1.0f);
+			v.Color = PackTint(tint);
+			vertices.push_back(v);
+			return uint32_t(vertices.size() - 1);
+		};
+		const auto triangle = [&](uint32_t a, uint32_t b, uint32_t c)
+		{
+			const glm::vec3 face = glm::cross(vertices[b].Position - vertices[a].Position, vertices[c].Position - vertices[a].Position);
+			if (glm::dot(face, vertices[a].Normal) >= 0.0f)
+				indices.insert(indices.end(), { a, b, c });
+			else
+				indices.insert(indices.end(), { a, c, b });
+		};
+		const glm::vec3 up(0.0f, 1.0f, 0.0f);
+		if (!flower)
+		{
+			constexpr int32_t Segments = 22;
+			const float notch = 0.22f + 0.1f * Unit(int32_t(variant), 1, 0xA1u);
+			const glm::vec3 green = glm::mix(glm::vec3(0.05f, 0.12f, 0.025f), glm::vec3(0.09f, 0.16f, 0.03f), Unit(int32_t(variant), 2, 0xA1u));
+			const uint32_t center = vertex({ 0.0f, 0.004f, 0.0f }, up, green * 1.25f);
+			std::vector<uint32_t> inner;
+			std::vector<uint32_t> outer;
+			for (int32_t s = 0; s <= Segments; s++)
+			{
+				const float angle = notch + (TwoPi - 2.0f * notch) * float(s) / float(Segments);
+				const glm::vec2 dir(std::cos(angle), std::sin(angle));
+				const float wobble = 1.0f + 0.05f * std::sin(angle * 5.0f + float(variant) * 2.1f);
+				const float vein = (s % 2 == 0) ? 0.82f : 1.0f;
+				inner.push_back(vertex({ dir.x * 0.55f, 0.006f, dir.y * 0.55f }, up, green * (1.1f * vein)));
+				const glm::vec3 rim = glm::mix(green, glm::vec3(0.35f, 0.16f, 0.08f), 0.35f * Unit(int32_t(variant), 3 + s, 0xA1u));
+				outer.push_back(vertex({ dir.x * wobble, 0.014f, dir.y * wobble }, glm::normalize(glm::vec3(-dir.x * 0.12f, 1.0f, -dir.y * 0.12f)), rim * 0.9f));
+			}
+			for (int32_t s = 0; s < Segments; s++)
+			{
+				triangle(center, inner[s], inner[s + 1]);
+				triangle(inner[s], outer[s], outer[s + 1]);
+				triangle(inner[s], outer[s + 1], inner[s + 1]);
+			}
+		}
+		else
+		{
+			constexpr int32_t Petals = 9;
+			const glm::vec3 petal = variant % 2 == 0 ? glm::vec3(0.95f, 0.93f, 0.9f) : glm::vec3(0.95f, 0.62f, 0.75f);
+			const uint32_t heart = vertex({ 0.0f, 0.09f, 0.0f }, up, glm::vec3(0.95f, 0.75f, 0.15f));
+			for (int32_t ring = 0; ring < 2; ring++)
+				for (int32_t p = 0; p < Petals; p++)
+				{
+					const float angle = TwoPi * (float(p) + 0.5f * float(ring)) / float(Petals);
+					const float reach = ring == 0 ? 1.0f : 0.7f;
+					const float lift = ring == 0 ? 0.1f : 0.16f;
+					const glm::vec2 dir(std::cos(angle), std::sin(angle));
+					const glm::vec2 side(-dir.y, dir.x);
+					const glm::vec3 normal = glm::normalize(glm::vec3(-dir.x * 0.5f, 1.0f, -dir.y * 0.5f));
+					const uint32_t base = vertex({ dir.x * 0.12f, 0.05f, dir.y * 0.12f }, normal, petal * 0.85f);
+					const uint32_t left = vertex({ (dir.x * 0.5f + side.x * 0.22f) * reach, lift, (dir.y * 0.5f + side.y * 0.22f) * reach }, normal, petal);
+					const uint32_t tip = vertex({ dir.x * reach, lift + 0.08f, dir.y * reach }, normal, petal);
+					const uint32_t right = vertex({ (dir.x * 0.5f - side.x * 0.22f) * reach, lift, (dir.y * 0.5f - side.y * 0.22f) * reach }, normal, petal);
+					triangle(base, left, tip);
+					triangle(base, tip, right);
+					triangle(heart, base, left);
+				}
+		}
+		return renderer.AddEffectMesh(name, vertices, indices, EffectMaterial{ .Color = glm::vec3(1.0f), .Roughness = flower ? 0.6f : 0.62f }, MeshVertexTint);
+	}
+
 	void RegisterPeakMeshes(WorldRenderer& renderer)
 	{
+		for (uint32_t variant = 0; variant < 4; variant++)
+			MakeLilyMesh(renderer, variant, false);
+		MakeLilyMesh(renderer, 0, true);
+		MakeLilyMesh(renderer, 1, true);
 		const EffectMaterial storm{ .Color = { 0.82f, 0.96f, 1.0f }, .Roughness = 0.03f, .Metallic = 0.0f, .Emission = { 0.1f, 0.42f, 0.75f }, .Translucency = 0.5f, .Transmission = 1.0f, .Ior = 1.62f, .Absorption = { 2.8f, 0.8f, 0.25f } };
 		const EffectMaterial amethyst{ .Color = { 0.9f, 0.84f, 1.0f }, .Roughness = 0.03f, .Metallic = 0.0f, .Emission = { 0.42f, 0.16f, 0.75f }, .Translucency = 0.5f, .Transmission = 1.0f, .Ior = 1.62f, .Absorption = { 0.9f, 2.4f, 0.3f } };
 		for (uint32_t variant = 0; variant < PeakCrystalShapes * 2; variant++)

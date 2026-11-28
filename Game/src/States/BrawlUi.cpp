@@ -363,6 +363,8 @@ namespace Game
 				return Format("%d, then %d on the skip", base, scaled(float(GetAbility(AbilityId::FirebombSkip).BrawlDamage)));
 			case AbilityId::StormStrike:
 				return Format("%d, then %d on the jump", base, scaled(float(GetAbility(AbilityId::StormJump).BrawlDamage)));
+			case AbilityId::CrystalSword:
+				return Format("%d, %d, then %d on the cleave", base, scaled(float(GetAbility(AbilityId::SwordSweep).BrawlDamage)), scaled(float(GetAbility(AbilityId::SwordCleave).BrawlDamage)));
 			case AbilityId::ObsidianBlades:
 				return Format("%d per blade, %d if all %u land", base, base * int(ObsidianVolley), unsigned(ObsidianVolley));
 			case AbilityId::FrostSpear:
@@ -387,8 +389,8 @@ namespace Game
 			}
 			switch (id)
 			{
-			case AbilityId::ChainHook:
-				return Format("Hooks and pulls   %.0f s", double(def.Cooldown));
+			case AbilityId::CrystalSword:
+				return Format("3 strikes, shove %.1f to %.0f   %.2g s", double(def.Push), double(GetAbility(AbilityId::SwordCleave).Push), double(def.Cooldown));
 			case AbilityId::Firebomb:
 				return Format("Shove %.0f twice   %.1f s", double(def.Push), double(def.Cooldown));
 			case AbilityId::ObsidianBlades:
@@ -472,8 +474,8 @@ namespace Game
 				return "Block";
 			case AbilityId::FrostSpear:
 				return "Charge";
-			case AbilityId::ChainHook:
-				return "Hook";
+			case AbilityId::CrystalSword:
+				return "Combo";
 			case AbilityId::Firebomb:
 				return "Lob";
 			case AbilityId::ObsidianBlades:
@@ -612,10 +614,14 @@ namespace Game
 				tooltip.Pair("Shove", Format(damage ? "%.1f" : "%.0f", double(def.Push * shove)));
 			else if (def.Push < 0.0f)
 				tooltip.Pair("Pull", "through the center");
-			else if (id == AbilityId::ChainHook)
-				tooltip.Pair("Pull", "to you and past you");
-			if (id == AbilityId::ChainHook)
-				tooltip.Pair("Press again", "yank yourself to the hook");
+			if (id == AbilityId::CrystalSword)
+			{
+				const AbilityDef& cleave = GetAbility(AbilityId::SwordCleave);
+				tooltip.Pair("Press again", Format("within %.1f s: sweep back, then an overhead cleave", double(SwordWindow)));
+				tooltip.Pair("Lunge", Format("up to %.1f toward the cursor, %.1f on the cleave", double(def.Lunge), double(cleave.Lunge)));
+				tooltip.Pair("Reach", Format("%.1f in a wide arc, %.1f on the cleave", double(def.Lunge + def.Reach), double(cleave.Lunge + cleave.Reach)));
+				tooltip.Pair("Cleave", Format(damage ? "shove %.1f along a narrow line" : "shove %.0f along a narrow line", double(cleave.Push * shove)));
+			}
 			else if (id == AbilityId::Firebomb)
 				tooltip.Pair("Skips", Format(damage ? "%.1f further, shove %.1f" : "%.1f further, shove %.0f", double(FirebombSkipDistance), double(GetAbility(AbilityId::FirebombSkip).Push * shove)));
 			else if (id == AbilityId::StormStrike)
@@ -629,7 +635,7 @@ namespace Game
 				tooltip.Pair("Range", Format("%.1f", double(def.ProjectileRange)));
 			else if (def.Kind == AbilityKind::Ground || def.Kind == AbilityKind::Dash)
 				tooltip.Pair("Range", Format("%.1f", double(def.Range)));
-			else if (def.Reach > 0.0f)
+			else if (def.Reach > 0.0f && id != AbilityId::CrystalSword)
 				tooltip.Pair("Reach", Format("%.1f", double(def.Reach)));
 			if (def.Chain > 0)
 				tooltip.Pair("Jumps", std::to_string(def.Chain));
@@ -2944,7 +2950,7 @@ namespace Game
 		const char* SpellFormName(AbilityId spell)
 		{
 			const uint8_t forms = SpellForms(spell);
-			return (forms & FormBlast) ? "Exploding projectile" : (forms & FormBolt) ? "Projectile" : (forms & FormChain) ? "Chaining projectile" : (forms & FormHook) ? "Hook" : (forms & FormStrike) ? "Ground spell" : (forms & FormNova) ? "Nova" : "Utility spell";
+			return (forms & FormBlast) ? "Exploding projectile" : (forms & FormBolt) ? "Projectile" : (forms & FormChain) ? "Chaining projectile" : (forms & FormBlade) ? "Blade" : (forms & FormStrike) ? "Ground spell" : (forms & FormNova) ? "Nova" : "Utility spell";
 		}
 
 		void DrawRuneStone(UiDrawList& draw, RuneId rune, glm::vec2 center, float radius, float alpha = 1.0f, float lift = 0.0f)

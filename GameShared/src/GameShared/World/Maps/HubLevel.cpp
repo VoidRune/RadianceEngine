@@ -16,7 +16,7 @@ namespace Game
 		constexpr float LampAngles[] = { 30.0f, 150.0f, 210.0f, 330.0f };
 		constexpr Vec2 PathLamps[] = { { 3.6f, 11.4f }, { -3.6f, 11.4f }, { 3.3f, -13.0f }, { -3.3f, -13.5f }, { 3.0f, -20.2f }, { -3.2f, -20.2f }, { -13.0f, 2.4f }, { -20.4f, 3.0f }, { 12.6f, -3.2f }, { 20.2f, -9.4f }, { 7.4f, 11.0f }, { -9.2f, 10.8f }, { -27.4f, 5.2f }, { 31.4f, -8.6f } };
 		constexpr float RiftCrystalRing = 1.35f;
-		constexpr Vec2 Oaks[] = { { -11.5f, 24.5f }, { -6.5f, 26.0f }, { 6.5f, 26.3f }, { -15.5f, 23.0f }, { -14.6f, 15.6f }, { -20.5f, 6.8f }, { -22.0f, -3.0f }, { -25.5f, -8.2f }, { -29.0f, 11.5f }, { -10.0f, -9.5f }, { 37.5f, 6.0f }, { 24.5f, -3.4f }, { -33.5f, -11.0f } };
+		constexpr Vec2 Oaks[] = { { -10.2f, 25.6f }, { -6.5f, 26.0f }, { 6.5f, 26.3f }, { -16.4f, 23.7f }, { -15.8f, 15.4f }, { -20.5f, 6.8f }, { -22.0f, -3.0f }, { -27.4f, -6.6f }, { -29.0f, 11.5f }, { -10.0f, -9.5f }, { 37.5f, 6.0f }, { 24.5f, -3.4f }, { -33.0f, -8.6f } };
 		constexpr Vec2 Pines[] = { { 14.0f, 25.8f }, { 19.0f, 26.3f }, { 24.5f, 26.0f }, { 34.5f, 24.0f }, { 37.8f, 18.5f } };
 		constexpr Vec2 Shrubs[] = { { -6.0f, -12.0f }, { -9.0f, -18.0f }, { 6.0f, -16.5f }, { 12.0f, -9.0f }, { 19.0f, -13.6f }, { 5.0f, -6.5f }, { -5.0f, -6.8f }, { -12.0f, -4.0f }, { 16.0f, -2.5f }, { 31.0f, 0.5f }, { -24.0f, -11.5f }, { -17.0f, -12.2f }, { 7.6f, 14.6f }, { -7.6f, 14.6f }, { 33.0f, 16.0f } };
 		constexpr Vec2 Boulders[] = { { -8.6f, 15.4f }, { -7.8f, 21.4f }, { 8.4f, 16.2f }, { 9.6f, 21.0f }, { -3.6f, 24.8f }, { 3.8f, 25.0f }, { -26.0f, 18.6f }, { -18.4f, 20.4f }, { -39.0f, -2.4f }, { 38.6f, 0.6f }, { 13.0f, -16.6f }, { -4.8f, -21.4f }, { -36.2f, 0.4f } };
@@ -31,6 +31,16 @@ namespace Game
 		{
 			const Vec2 d = to - from;
 			return std::atan2(d.x, -d.y);
+		}
+
+		float LampArm(Vec2 local)
+		{
+			constexpr float Step = 1.5f;
+			const auto inside = [](Vec2 p) { return HubPaving(p).Inside; };
+			Vec2 d = { inside(local + Vec2(Step, 0.0f)) - inside(local - Vec2(Step, 0.0f)), inside(local + Vec2(0.0f, Step)) - inside(local - Vec2(0.0f, Step)) };
+			if (LengthSquared(d) < 1e-4f)
+				d = -local;
+			return std::atan2(d.y, d.x);
 		}
 
 		void Set(TileMap& map, int32_t x, int32_t y, TerrainId terrain, float height)
@@ -49,7 +59,8 @@ namespace Game
 					if (!HubIsLand(local))
 						continue;
 					const HubPave paving = HubPaving(local);
-					Set(map, x, y, paving.Inside > 0.0f ? paving.Stone : TerrainId::Grass, HubFloor(local));
+					const TerrainId ground = HubRiverDepth(local) > HubRiverWade ? TerrainId::Water : paving.Inside > 0.0f ? paving.Stone : TerrainId::Grass;
+					Set(map, x, y, ground, HubFloor(local));
 				}
 			for (const HubStair& stair : HubStairs)
 				builder.Stairs({ int32_t(Origin.x) + stair.X, int32_t(Origin.y) + stair.Y, stair.Width, stair.Height }, stair.Up, stair.Bottom, stair.Top, TerrainId::Dirt);
@@ -114,9 +125,9 @@ namespace Game
 		builder.Reserve(maple, 4.6f);
 
 		for (const float degrees : LampAngles)
-			builder.Prop(PropId::LampPost, Origin + FromAngle(degrees * Pi / 180.0f) * LampReach);
+			builder.Prop(PropId::LampPost, Origin + FromAngle(degrees * Pi / 180.0f) * LampReach, (degrees + 180.0f) * Pi / 180.0f);
 		for (const Vec2 spot : PathLamps)
-			builder.Prop(PropId::LampPost, World(spot));
+			builder.Prop(PropId::LampPost, World(spot), LampArm(spot));
 		for (const auto& arc : HubWallArcs)
 		{
 			for (const float degrees : { arc[0] - 3.0f, arc[1] + 3.0f })

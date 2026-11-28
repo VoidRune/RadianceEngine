@@ -221,6 +221,18 @@ namespace Game
 					{ .Kind = K::Leaf, .Count = 0.9f, .Shape = SpawnShape::Disc, .Radius = 1.2f, .Direction = { 0.3f, -1.0f, 0.2f }, .Cone = 0.6f, .Speed = { 0.2f, 0.5f }, .Life = { 9.0f, 13.0f }, .Size = { 0.09f, 0.14f }, .Tint = { 1.0f, 0.42f, 0.16f } },
 					{ .Kind = K::Leaf, .Count = 0.7f, .Shape = SpawnShape::Disc, .Radius = 1.2f, .Direction = { 0.3f, -1.0f, 0.2f }, .Cone = 0.6f, .Speed = { 0.2f, 0.5f }, .Life = { 9.0f, 13.0f }, .Size = { 0.08f, 0.13f }, .Tint = { 0.85f, 0.16f, 0.08f } },
 				});
+				set(Fx::WaterSpray, {
+					{ .Kind = K::Spray, .Count = 26.0f, .Shape = SpawnShape::Disc, .Radius = 0.7f, .Direction = { 0.0f, -0.3f, 0.0f }, .Cone = 1.3f, .Speed = { 0.6f, 1.8f }, .Life = { 0.5f, 1.0f }, .Size = { 0.018f, 0.035f } },
+					{ .Kind = K::Mist, .Count = 2.2f, .Shape = SpawnShape::Disc, .Radius = 0.8f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.6f, .Speed = { 0.2f, 0.6f }, .Life = { 2.0f, 3.5f }, .Size = { 0.7f, 1.3f } },
+				});
+				set(Fx::WaterMist, {
+					{ .Kind = K::Mist, .Count = 1.6f, .Shape = SpawnShape::Disc, .Radius = 1.0f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.9f, .Speed = { 0.3f, 0.9f }, .Life = { 2.5f, 4.5f }, .Size = { 1.0f, 2.2f } },
+					{ .Kind = K::Spray, .Count = 6.0f, .Shape = SpawnShape::Disc, .Radius = 0.8f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 1.5f, 3.0f }, .Life = { 0.5f, 0.9f }, .Size = { 0.015f, 0.03f } },
+				});
+				set(Fx::WaterSplash, {
+					{ .Kind = K::Spray, .Count = 30.0f, .Shape = SpawnShape::Disc, .Outward = true, .Radius = 0.35f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.75f, .Speed = { 0.8f, 2.0f }, .Life = { 0.35f, 0.7f }, .Size = { 0.014f, 0.028f } },
+					{ .Kind = K::Mist, .Count = 1.4f, .Shape = SpawnShape::Disc, .Radius = 0.4f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.1f, 0.3f }, .Life = { 1.8f, 3.0f }, .Size = { 0.5f, 0.9f } },
+				});
 				set(Fx::AuraFrostCrownMist, {
 					{ .Kind = K::Frost, .Count = 4.0f, .Shape = SpawnShape::Disc, .Radius = 0.11f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.35f, .Speed = { 0.05f, 0.14f }, .Life = { 0.7f, 1.2f }, .Size = { 0.05f, 0.08f }, .Tint = { 0.35f, 0.35f, 0.35f } },
 					{ .Kind = K::Snow, .Count = 3.0f, .Shape = SpawnShape::Disc, .Radius = 0.12f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.5f, .Speed = { 0.1f, 0.25f }, .Life = { 0.8f, 1.3f }, .Size = { 0.012f, 0.022f } },
@@ -471,6 +483,50 @@ namespace Game
 					{ .Kind = K::Streak, .Count = 12.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 8.0f, 14.0f }, .Life = { 0.08f, 0.18f }, .Size = { 0.016f, 0.028f }, .Tint = glassSpark * 0.6f },
 					{ .Kind = K::VioletEmber, .Count = 14.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 3.0f, 8.0f }, .Life = { 0.2f, 0.45f }, .Size = { 0.014f, 0.026f } },
 					{ .Kind = K::Smoke, .Count = 4.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 0.6f, 1.6f }, .Life = { 0.4f, 0.7f }, .Size = { 0.25f, 0.4f }, .Tint = soot * 0.6f },
+				});
+				const glm::vec3 swordFlash{ 0.02f, 0.13f, 0.2f };
+				const glm::vec3 swordSpark{ 0.45f, 1.1f, 0.77f };
+				const glm::vec3 swordMote{ 0.53f, 0.83f, 0.48f };
+				const glm::vec3 swordShard{ 0.39f, 1.0f, 0.68f };
+				set(Fx::SwordConjure, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.08f, 0.08f }, .Size = { 0.3f, 0.3f }, .Tint = swordFlash },
+					{ .Kind = K::Mote, .Count = 10.0f, .Outward = true, .Radius = 0.1f, .Cone = FullSphere, .Speed = { 0.8f, 2.2f }, .Life = { 0.15f, 0.32f }, .Size = { 0.015f, 0.03f }, .Tint = swordMote },
+					{ .Kind = K::Streak, .Count = 5.0f, .Outward = true, .Radius = 0.06f, .Cone = FullSphere, .Speed = { 2.5f, 5.0f }, .Life = { 0.05f, 0.1f }, .Size = { 0.01f, 0.016f }, .Tint = swordSpark * 0.5f },
+				});
+				set(Fx::SwordSpark, {
+					{ .Kind = K::Streak, .Count = 6.0f, .Aimed = true, .Radius = 0.12f, .Cone = 0.35f, .Speed = { 6.0f, 11.0f }, .Life = { 0.06f, 0.12f }, .Size = { 0.012f, 0.02f }, .Tint = swordSpark * 0.55f },
+					{ .Kind = K::Mote, .Count = 9.0f, .Aimed = true, .Radius = 0.25f, .Cone = 1.1f, .Speed = { 0.6f, 2.4f }, .Life = { 0.2f, 0.45f }, .Size = { 0.014f, 0.028f }, .Tint = swordMote },
+				});
+				set(Fx::SwordHit, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.06f, 0.06f }, .Size = { 0.4f, 0.4f }, .Tint = swordFlash * 1.2f },
+					{ .Kind = K::DiamondShard, .Count = 6.0f, .Aimed = true, .Radius = 0.08f, .Cone = 0.8f, .Speed = { 3.0f, 7.0f }, .Life = { 0.3f, 0.6f }, .Size = { 0.02f, 0.045f }, .Tint = swordShard },
+					{ .Kind = K::Streak, .Count = 7.0f, .Aimed = true, .Radius = 0.05f, .Cone = 1.0f, .Speed = { 6.0f, 12.0f }, .Life = { 0.05f, 0.1f }, .Size = { 0.014f, 0.022f }, .Tint = swordSpark * 0.6f },
+					{ .Kind = K::Mote, .Count = 10.0f, .Outward = true, .Radius = 0.1f, .Cone = FullSphere, .Speed = { 1.5f, 4.0f }, .Life = { 0.2f, 0.4f }, .Size = { 0.015f, 0.03f }, .Tint = swordMote },
+				});
+				set(Fx::SwordCleave, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.1f, 0.1f }, .Size = { 0.75f, 0.75f }, .Tint = swordFlash * 1.4f },
+					{ .Kind = K::DiamondShard, .Count = 9.0f, .Outward = true, .Radius = 0.25f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 0.9f, .Speed = { 2.5f, 6.5f }, .Life = { 0.4f, 0.8f }, .Size = { 0.02f, 0.04f }, .Tint = swordShard },
+					{ .Kind = K::Mote, .Count = 16.0f, .Outward = true, .Radius = 0.3f, .Cone = FullSphere, .Speed = { 1.0f, 3.5f }, .Life = { 0.3f, 0.6f }, .Size = { 0.015f, 0.03f }, .Tint = swordMote },
+					{ .Kind = K::Streak, .Count = 10.0f, .Outward = true, .Radius = 0.2f, .Direction = { 0.0f, 0.4f, 0.0f }, .Cone = 1.3f, .Speed = { 7.0f, 12.0f }, .Life = { 0.08f, 0.16f }, .Size = { 0.016f, 0.026f }, .Tint = swordSpark * 0.55f },
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.3f, 0.3f }, .Size = { 1.3f, 1.3f }, .Tint = { 0.12f, 0.5f, 0.62f }, .Lift = -0.5f },
+				});
+				set(Fx::SwordShatter, {
+					{ .Kind = K::Flash, .Count = 1.0f, .Life = { 0.12f, 0.12f }, .Size = { 1.0f, 1.0f }, .Tint = swordFlash * 1.5f },
+					{ .Kind = K::DiamondShard, .Count = 18.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.6f, 0.0f }, .Cone = 1.3f, .Speed = { 3.0f, 8.0f }, .Life = { 0.5f, 1.0f }, .Size = { 0.03f, 0.065f }, .Tint = swordShard },
+					{ .Kind = K::Mote, .Count = 26.0f, .Outward = true, .Radius = 0.5f, .Cone = FullSphere, .Speed = { 1.0f, 4.0f }, .Life = { 0.35f, 0.75f }, .Size = { 0.02f, 0.04f }, .Tint = swordMote },
+					{ .Kind = K::Streak, .Count = 16.0f, .Outward = true, .Radius = 0.4f, .Direction = { 0.0f, 0.3f, 0.0f }, .Cone = 1.4f, .Speed = { 8.0f, 14.0f }, .Life = { 0.12f, 0.24f }, .Size = { 0.02f, 0.03f }, .Tint = swordSpark * 0.5f },
+					{ .Kind = K::Shockwave, .Count = 1.0f, .Life = { 0.34f, 0.34f }, .Size = { 2.0f, 2.0f }, .Tint = { 0.12f, 0.5f, 0.62f }, .Lift = -0.6f },
+				});
+				set(Fx::SwordFade, {
+					{ .Kind = K::Mote, .Count = 6.0f, .Outward = true, .Radius = 0.12f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.2f, .Speed = { 0.3f, 1.2f }, .Life = { 0.25f, 0.5f }, .Size = { 0.012f, 0.024f }, .Tint = swordMote },
+				});
+				set(Fx::SwordAura, {
+					{ .Kind = K::Mote, .Count = 7.0f, .Density = 5.0f, .Shape = SpawnShape::Segment, .Radius = 0.07f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.2f, .Speed = { 0.1f, 0.5f }, .Life = { 0.3f, 0.65f }, .Size = { 0.012f, 0.024f }, .Tint = swordMote, .Inherit = 0.05f },
+					{ .Kind = K::DiamondShard, .Count = 1.5f, .Density = 1.2f, .Shape = SpawnShape::Segment, .Radius = 0.06f, .Direction = { 0.0f, -1.0f, 0.0f }, .Cone = 0.8f, .Speed = { 0.2f, 0.7f }, .Life = { 0.3f, 0.55f }, .Size = { 0.01f, 0.02f }, .Tint = swordShard },
+				});
+				set(Fx::SwordDust, {
+					{ .Kind = K::Mote, .Count = 5.0f, .Outward = true, .Radius = 0.25f, .Direction = { 0.0f, 1.0f, 0.0f }, .Cone = 1.0f, .Speed = { 0.2f, 0.7f }, .Life = { 0.5f, 0.95f }, .Size = { 0.014f, 0.028f }, .Tint = swordMote },
+					{ .Kind = K::DiamondShard, .Count = 2.0f, .Outward = true, .Radius = 0.2f, .Cone = FullSphere, .Speed = { 0.3f, 1.0f }, .Life = { 0.4f, 0.7f }, .Size = { 0.012f, 0.022f }, .Tint = swordShard },
 				});
 				set(Fx::VoidBurst, {
 					{ .Kind = K::Obsidian, .Count = 26.0f, .Outward = true, .Radius = 0.15f, .Cone = FullSphere, .Speed = { 3.0f, 8.0f }, .Life = { 0.5f, 0.9f }, .Size = { 0.025f, 0.055f } },
@@ -787,6 +843,19 @@ namespace Game
 		leaf.Motion.x = 1.3f;
 		leaf.Motion.y = 0.1f;
 
+		ParticleMaterial& spray = define(ParticleKind::Spray, ParticleShape::Spark, ParticleAlign::Velocity, 0.0f, 0.0f);
+		SetColors(spray, { 0.85f, 0.92f, 0.95f, 0.0f }, { 0.85f, 0.92f, 0.95f, 0.75f }, { 0.8f, 0.88f, 0.92f, 0.6f }, { 0.78f, 0.86f, 0.9f, 0.0f }, { 0.0f, 0.1f, 0.75f, 1.0f });
+		spray.Sizes = { 0.8f, 1.0f, 0.9f, 0.6f };
+		spray.Physics = { -9.0f, 0.6f, 0.0f, 0.0f };
+		spray.Look.w = 0.6f;
+
+		ParticleMaterial& mist = define(ParticleKind::Mist, ParticleShape::Smoke, ParticleAlign::Billboard, 0.0f, 0.0f);
+		SetColors(mist, { 0.82f, 0.9f, 0.95f, 0.0f }, { 0.82f, 0.9f, 0.95f, 0.22f }, { 0.8f, 0.88f, 0.93f, 0.14f }, { 0.78f, 0.86f, 0.92f, 0.0f }, { 0.0f, 0.2f, 0.6f, 1.0f });
+		mist.Sizes = { 0.4f, 0.8f, 1.15f, 1.4f };
+		mist.Physics = { 0.15f, 1.6f, 0.5f, 0.6f };
+		mist.Motion.x = 0.4f;
+		mist.Motion.y = 0.4f;
+
 		ParticleMaterial& violetEmber = define(ParticleKind::VioletEmber, ParticleShape::Spark, ParticleAlign::Velocity, 1.0f, 1.6f);
 		SetColors(violetEmber, { 3.0f, 1.2f, 4.0f, 1.0f }, { 2.4f, 0.6f, 3.6f, 1.0f }, { 1.0f, 0.15f, 2.0f, 0.8f }, { 0.25f, 0.02f, 0.6f, 0.0f }, { 0.0f, 0.4f, 0.8f, 1.0f });
 		violetEmber.Sizes = { 1.0f, 1.0f, 0.8f, 0.3f };
@@ -904,8 +973,8 @@ namespace Game
 		case AbilityId::ArcaneBurst:
 		case AbilityId::ArcaneRing:
 			return Fx::ArcaneBurst;
-		case AbilityId::HookAnchor:
-			return Fx::ArrowImpact;
+		case AbilityId::SwordShatter:
+			return Fx::SwordShatter;
 		case AbilityId::Aftershock:
 		case AbilityId::ShelfCrush:
 		case AbilityId::Eruption:
@@ -1413,8 +1482,26 @@ namespace Game
 			Shockwave(ground, radius * 1.7f, 0.32f, 0.1f, 0.3f);
 			break;
 		}
-		case AbilityId::HookAnchor:
-			cracks(ground, 0.5f, 1.4f, 0.0f);
+		case AbilityId::CrystalSword:
+		case AbilityId::SwordSweep:
+			Shockwave(ground, reach * 1.02f, 0.3f, 0.07f, 0.22f, facing, def.HalfArc);
+			break;
+		case AbilityId::SwordCleave:
+		{
+			const glm::vec3 middle = ground + forward * (reach * 0.55f);
+			GroundDecal rift = decal(DecalShape::Fissure, middle, glm::vec2(reach * 0.5f, 0.32f));
+			rift.Yaw = facing;
+			rift.Color = glm::vec4(color * 0.5f, 1.0f);
+			rift.Tint = glm::vec4(0.05f, 0.08f, 0.08f, 0.6f);
+			rift.Roughness = 0.4f;
+			rift.Params = glm::vec4(0.6f, 1.0f, 1.0f, 0.0f);
+			Mark(rift, 1.6f, 0.02f, 0.8f, 1.0f, 0.08f, 2.5f);
+			Shockwave(ground + forward * (reach * 0.92f), 1.6f * scale, 0.32f, 0.1f, 0.24f);
+			break;
+		}
+		case AbilityId::SwordShatter:
+			shock(radius, 0.3f, 0.8f);
+			Shockwave(ground, radius * 1.35f, 0.36f, 0.1f, 0.24f);
 			break;
 		case AbilityId::Comet:
 		{

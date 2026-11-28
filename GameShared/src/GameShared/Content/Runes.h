@@ -40,7 +40,7 @@ namespace Game
 	{
 		FormBolt = 1 << 0,
 		FormChain = 1 << 1,
-		FormHook = 1 << 2,
+		FormBlade = 1 << 2,
 		FormStrike = 1 << 3,
 		FormNova = 1 << 4,
 		FormBlast = 1 << 5,
@@ -62,7 +62,7 @@ namespace Game
 	};
 
 	inline constexpr uint8_t FormShots = FormBolt | FormChain;
-	inline constexpr uint8_t FormAttacks = FormBolt | FormChain | FormHook | FormStrike | FormNova;
+	inline constexpr uint8_t FormAttacks = FormBolt | FormChain | FormBlade | FormStrike | FormNova;
 
 	inline constexpr RuneDef Runes[] = {
 		{ RuneId::Multicast, RuneKind::Modifier, CardRarity::Common, FormShots, "Multicast", "Fires 1 more projectile in a fan. Obsidian Blades throws 2 more. Each one deals 20% less.", "Projectile spells" },
@@ -136,13 +136,12 @@ namespace Game
 		switch (def.Kind)
 		{
 		case AbilityKind::Projectile:
-			if (id == AbilityId::ChainHook)
-				return FormHook;
 			return uint8_t((def.Chain > 0 ? FormChain : FormBolt) | (def.ImpactRadius > 0.0f ? FormBlast : 0));
 		case AbilityKind::Ground:
 			return FormStrike;
-		case AbilityKind::Nova:
 		case AbilityKind::Melee:
+			return id == AbilityId::CrystalSword ? FormBlade : FormNova;
+		case AbilityKind::Nova:
 			return FormNova;
 		default:
 			return FormUtility;
